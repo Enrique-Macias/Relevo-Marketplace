@@ -1,0 +1,3268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Compa — Feed</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Playfair+Display:wght@500;600;700&family=DM+Serif+Display&family=Instrument+Serif&family=Inter:wght@400;500;600&family=Work+Sans:wght@400;500;600&family=Sora:wght@400;500;600&family=Manrope:wght@400;500;600&display=swap');
+
+  :root{
+    --ink:#221F1C;
+    --ink-soft:#6B6660;
+    --paper:#F3F0EA;
+    --card:#FFFFFF;
+    --line: rgba(34,31,28,0.10);
+    --brick:#C1440E;
+    --brick-dark: color-mix(in srgb, var(--brick) 70%, black);
+    --brick-tint: color-mix(in srgb, var(--brick) 15%, white);
+    --forest:#2F6B4F;
+    --forest-tint: color-mix(in srgb, var(--forest) 15%, white);
+    --gold:#D9A441;
+    --gold-tint:#F7ECD6;
+    --slate:#5B6B78;
+    --slate-tint:#E3E9EC;
+    --font-display: 'Fraunces';
+    --font-body: 'Inter';
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:#DAD5CB;
+    font-family:'Inter', sans-serif;
+    min-height:100vh;
+    padding:48px 20px;
+  }
+
+  .workspace{
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    gap:32px;
+    max-width:1180px;
+    margin:0 auto;
+  }
+
+  .phones{display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start; max-width:800px;}
+  .phone-block{display:flex; flex-direction:column; align-items:center; gap:12px;}
+  .phone-label{
+    font-size:12.5px; font-weight:600; color:#8A8680;
+    text-transform:uppercase; letter-spacing:0.04em;
+  }
+
+  /* External style controls — tool chrome, not part of the app */
+  .controls{
+    width:240px;
+    flex-shrink:0;
+    background:#FFFFFF;
+    border:1px solid rgba(0,0,0,0.08);
+    border-radius:16px;
+    padding:20px;
+    position:sticky;
+    top:48px;
+  }
+  .controls h2{
+    font-size:13px; font-weight:600; color:#221F1C;
+    margin-bottom:2px;
+  }
+  .controls .sub{
+    font-size:12px; color:#8A8680; margin-bottom:18px;
+  }
+  .ctrl-group{margin-bottom:18px;}
+  .ctrl-group:last-child{margin-bottom:0;}
+  .ctrl-group-label{
+    font-size:11px; font-weight:600; color:#8A8680;
+    text-transform:uppercase; letter-spacing:0.04em;
+    margin-bottom:10px;
+  }
+  .ctrl-row{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:9px;
+  }
+  .ctrl-row:last-child{margin-bottom:0;}
+  .ctrl-row label{font-size:12.5px; color:#221F1C;}
+  .ctrl-row input[type="color"]{
+    width:28px; height:28px; border-radius:8px;
+    border:1px solid rgba(0,0,0,0.12);
+    padding:0; cursor:pointer; background:none;
+  }
+  .ctrl-row select{
+    font-size:12px; padding:6px 8px;
+    border:1px solid rgba(0,0,0,0.15);
+    border-radius:8px; background:#fff; color:#221F1C;
+    max-width:128px;
+  }
+  .reset-btn{
+    margin-top:16px; width:100%;
+    font-size:12px; font-weight:600; color:#221F1C;
+    background:#F3F0EA; border:1px solid rgba(0,0,0,0.08);
+    border-radius:9px; padding:9px 0; cursor:pointer;
+  }
+  .reset-btn:hover{background:#EAE6DD;}
+
+  .device{
+    width:375px;
+    height:812px;
+    background:var(--paper);
+    border-radius:44px;
+    border:10px solid #100E0C;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.35);
+    overflow:hidden;
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    font-family:var(--font-body), sans-serif;
+  }
+
+  .notch{
+    position:absolute;
+    top:10px; left:50%; transform:translateX(-50%);
+    width:120px; height:24px;
+    background:#100E0C;
+    border-radius:0 0 16px 16px;
+    z-index:10;
+  }
+
+  .statusbar{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:16px 26px 4px;
+    font-size:13px; font-weight:600; color:var(--ink);
+    flex-shrink:0;
+  }
+  .statusbar .icons{display:flex; gap:5px; align-items:center;}
+
+  .screen{
+    flex:1;
+    overflow-y:auto;
+    padding-bottom:8px;
+  }
+  .screen::-webkit-scrollbar{display:none;}
+
+  header.top{
+    padding:14px 20px 0;
+    flex-shrink:0;
+  }
+  .brand-row{
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .wordmark{
+    font-family:var(--font-display), serif;
+    font-weight:600;
+    font-size:24px;
+    color:var(--ink);
+    letter-spacing:-0.5px;
+  }
+  .top-actions{display:flex; align-items:center; gap:10px;}
+  .icon-btn{
+    width:24px; height:24px;
+    display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  .dot{
+    position:absolute; top:-1px; right:0px;
+    width:7px; height:7px; border-radius:50%;
+    background:var(--brick); border:1.5px solid var(--paper);
+  }
+  .avatar{
+    width:36px; height:36px; border-radius:50%;
+    background:var(--forest-tint); color:var(--forest);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:600; font-size:13px;
+  }
+
+  .campus-chip{
+    margin-top:8px;
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:14px; color:var(--ink); font-weight:600;
+  }
+  .campus-chip svg.chevron{margin-left:1px;}
+
+  /* Hero */
+  .hero{
+    margin:14px 0 0;
+    border-radius:20px;
+    position:relative;
+    overflow:hidden;
+    padding:20px 20px 54px;
+    background:linear-gradient(135deg, var(--ink) 0%, var(--brick-dark) 100%);
+  }
+  .hero-eyebrow{
+    font-size:11px; font-weight:600; letter-spacing:0.06em;
+    color:rgba(243,240,234,0.65);
+    margin-bottom:8px;
+  }
+  .hero-headline{
+    font-family:var(--font-display), serif;
+    font-weight:500;
+    font-size:24px;
+    line-height:1.15;
+    color:var(--paper);
+    max-width:220px;
+    margin-bottom:16px;
+  }
+  .hero-stats{
+    display:flex; gap:8px; flex-wrap:wrap;
+    position:relative; z-index:2;
+  }
+  .hero-stat{
+    font-size:11.5px; font-weight:500;
+    color:var(--paper);
+    background:rgba(243,240,234,0.14);
+    border:1px solid rgba(243,240,234,0.25);
+    padding:6px 11px;
+    border-radius:20px;
+  }
+  .hero-skyline{
+    position:absolute; bottom:0; left:0; right:0;
+    height:60px; z-index:1;
+    opacity:0.9;
+  }
+
+  .search-row{
+    margin:16px 20px 0;
+    display:flex; gap:10px;
+  }
+  .search-field{
+    flex:1;
+    display:flex; align-items:center; gap:8px;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:11px 14px;
+  }
+  .search-field input{
+    border:none; outline:none; background:transparent;
+    font-size:14px; color:var(--ink);
+    width:100%;
+  }
+  .search-field input::placeholder{color:#A8A29A;}
+  .filter-btn{
+    width:42px; height:42px; border-radius:14px;
+    background:var(--ink); flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+
+  /* Section header */
+  .section-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    padding:22px 20px 12px;
+  }
+  .section-title{
+    font-family:var(--font-body), sans-serif;
+    font-weight:600;
+    font-size:15px;
+    letter-spacing:-0.01em;
+    color:var(--ink);
+  }
+  .section-link{
+    font-size:12.5px; font-weight:600;
+    color:var(--brick);
+    display:flex; align-items:center; gap:4px;
+  }
+
+  /* Category grid */
+  .cat-grid{
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    gap:9px;
+    padding:0 20px;
+  }
+  .cat-item{
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:10px 6px;
+    height:86px;
+  }
+  .cat-icon{
+    width:32px; height:32px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .cat-label{
+    font-size:11px; font-weight:600; color:var(--ink);
+    text-align:center; line-height:1.25;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+
+  /* Product grid — uniform, responsive to any number/mix of items */
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:12px;
+    padding:0 20px 90px;
+  }
+  .card{
+    background:var(--card);
+    border-radius:16px;
+    overflow:hidden;
+    border:1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+  }
+  .thumb{
+    position:relative;
+    width:100%;
+    aspect-ratio:4 / 5;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .thumb .heart{
+    position:absolute; top:9px; right:9px;
+    width:28px; height:28px; border-radius:50%;
+    background:rgba(255,255,255,0.85);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .thumb .badge{
+    position:absolute; top:9px; left:9px;
+    font-size:10.5px; font-weight:600;
+    padding:4px 8px; border-radius:8px;
+    background:rgba(255,255,255,0.9);
+    color:var(--ink);
+  }
+  .info{padding:11px 12px 13px; flex:1; display:flex; flex-direction:column;}
+  .price{
+    font-family:var(--font-display), serif;
+    font-weight:600;
+    font-size:19px;
+    color:var(--ink);
+    line-height:1;
+    margin-bottom:5px;
+  }
+  .title{
+    font-size:13px; color:var(--ink);
+    font-weight:500;
+    line-height:1.3;
+    margin-bottom:6px;
+    display:-webkit-box;
+    -webkit-line-clamp:1;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+  .meta{
+    display:flex; align-items:center; gap:5px;
+    font-size:11px; color:var(--ink-soft);
+    margin-top:auto;
+  }
+  .meta .sep{color:var(--line);}
+
+  .tabbar{
+    position:absolute; bottom:0; left:0; right:0;
+    height:78px;
+    background:rgba(243,240,234,0.92);
+    backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-around;
+    padding-bottom:14px;
+  }
+  .tab{
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    color:#A8A29A;
+    font-size:10px; font-weight:500;
+  }
+  .tab.active{color:var(--ink);}
+  .tab.active svg{stroke:var(--ink);}
+  .tab svg{stroke:#A8A29A;}
+
+  /* Listing detail screen */
+  .detail-photo{
+    position:relative;
+    width:100%; height:340px;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .detail-nav{
+    position:absolute; top:16px; left:20px; right:20px;
+    display:flex; justify-content:space-between; z-index:3;
+  }
+  .round-btn{
+    width:36px; height:36px; border-radius:50%;
+    background:rgba(255,255,255,0.9);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .nav-actions{display:flex; gap:8px;}
+  .detail-dots{
+    position:absolute; bottom:14px; left:0; right:0;
+    display:flex; justify-content:center; gap:5px;
+  }
+  .detail-dots span{
+    width:6px; height:6px; border-radius:50%;
+    background:rgba(255,255,255,0.5);
+  }
+  .detail-dots span.active{background:#fff; width:16px; border-radius:4px;}
+  .detail-badge{
+    position:absolute; bottom:34px; right:20px;
+    font-size:11px; font-weight:600;
+    padding:5px 10px; border-radius:8px;
+    background:rgba(255,255,255,0.92);
+    color:var(--ink);
+  }
+
+  .detail-body{padding:18px 20px 100px;}
+  .detail-price{
+    font-family:var(--font-display), serif;
+    font-weight:600; font-size:28px;
+    color:var(--ink); margin-bottom:6px;
+  }
+  .detail-title{
+    font-size:16px; font-weight:600; color:var(--ink);
+    line-height:1.35; margin-bottom:10px;
+  }
+  .detail-meta{
+    display:flex; align-items:center; gap:6px;
+    font-size:12.5px; color:var(--ink-soft);
+    margin-bottom:20px;
+  }
+  .detail-meta .sep{color:var(--line);}
+
+  .seller-card{
+    display:flex; align-items:center; gap:11px;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:13px 14px;
+    margin-bottom:20px;
+  }
+  .seller-avatar{
+    width:44px; height:44px; border-radius:50%;
+    background:var(--forest-tint); color:var(--forest);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:600; font-size:14px; flex-shrink:0;
+  }
+  .seller-info{flex:1; min-width:0;}
+  .seller-name-row{display:flex; align-items:center; gap:5px;}
+  .seller-name{font-size:13.5px; font-weight:600; color:var(--ink);}
+  .verified-tick{
+    width:14px; height:14px; border-radius:50%;
+    background:var(--forest); flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .seller-sub{font-size:11.5px; color:var(--ink-soft); margin-top:2px;}
+  .seller-chevron{color:var(--ink-soft); flex-shrink:0;}
+
+  .detail-section{margin-bottom:22px;}
+  .detail-section-title{
+    font-family:var(--font-body), sans-serif;
+    font-weight:600; font-size:13.5px; color:var(--ink);
+    margin-bottom:9px;
+  }
+  .detail-desc{
+    font-size:13.5px; line-height:1.6; color:var(--ink-soft);
+  }
+  .spec-row{
+    display:flex; justify-content:space-between;
+    padding:9px 0;
+    border-bottom:1px solid var(--line);
+    font-size:13px;
+  }
+  .spec-row:last-child{border-bottom:none;}
+  .spec-key{color:var(--ink-soft);}
+  .spec-val{color:var(--ink); font-weight:500;}
+
+  .sticky-cta{
+    position:absolute; bottom:0; left:0; right:0;
+    padding:14px 20px 22px;
+    background:rgba(243,240,234,0.94);
+    backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);
+    display:flex; gap:10px;
+  }
+  .fav-btn{
+    width:48px; height:48px; border-radius:14px;
+    background:var(--card); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .whatsapp-btn{
+    flex:1; border-radius:14px;
+    background:var(--brick); color:var(--paper);
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    font-size:14px; font-weight:600;
+  }
+
+  /* Onboarding / verification */
+  .auth-body{padding:44px 24px 0; display:flex; flex-direction:column; align-items:center; text-align:center;}
+  .auth-logo{width:52px; height:52px; border-radius:16px; background:var(--ink); display:flex; align-items:center; justify-content:center; margin-bottom:26px;}
+  .auth-logo span{font-family:var(--font-display), serif; font-weight:600; font-size:22px; color:var(--paper);}
+  .auth-headline{font-family:var(--font-display), serif; font-weight:500; font-size:22px; color:var(--ink); margin-bottom:9px; max-width:250px;}
+  .auth-sub{font-size:13px; color:var(--ink-soft); line-height:1.55; margin-bottom:28px; max-width:250px;}
+  .field{width:100%; text-align:left; margin-bottom:16px;}
+  .field-label{font-size:12.5px; font-weight:600; color:var(--ink); margin-bottom:7px; display:block;}
+  .text-field{width:100%; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px; font-size:14px; color:var(--ink); font-family:inherit;}
+  .text-field::placeholder{color:#A8A29A;}
+  .primary-btn{width:100%; background:var(--brick); color:var(--paper); border:none; border-radius:14px; padding:15px 0; font-size:14.5px; font-weight:600; margin-top:4px;}
+  .auth-link{font-size:12.5px; color:var(--ink-soft); margin-top:22px;}
+  .auth-link b{color:var(--brick); font-weight:600;}
+  .auth-terms{font-size:11px; color:#A8A29A; margin-top:18px; line-height:1.5; max-width:250px;}
+
+  /* Create listing form */
+  .form-header{display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--line); flex-shrink:0;}
+  .form-title{font-family:var(--font-body), sans-serif; font-weight:600; font-size:15px; color:var(--ink);}
+  .form-body{padding:18px 20px 100px;}
+  .photo-row{display:flex; gap:10px; margin-bottom:22px;}
+  .photo-thumb{width:76px; height:76px; border-radius:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
+  .photo-add{width:76px; height:76px; border-radius:14px; border:1.5px dashed var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; flex-shrink:0; color:var(--ink-soft); font-size:9.5px; font-weight:500;}
+  .textarea-field{width:100%; min-height:84px; resize:none; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px; font-size:14px; color:var(--ink); font-family:inherit; line-height:1.5;}
+  .textarea-field::placeholder{color:#A8A29A;}
+  .segmented{display:flex; gap:8px; flex-wrap:wrap;}
+  .segment{padding:9px 14px; border-radius:20px; border:1px solid var(--line); font-size:12.5px; font-weight:500; color:var(--ink-soft); background:var(--card);}
+  .segment.active{background:var(--ink); color:var(--paper); border-color:var(--ink);}
+  .select-field{display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px; font-size:14px; color:var(--ink);}
+
+  /* Profile */
+  .profile-top{display:flex; align-items:center; justify-content:space-between; padding:16px 20px 0; flex-shrink:0;}
+  .profile-block{display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 20px 20px;}
+  .profile-avatar{width:76px; height:76px; border-radius:50%; background:var(--forest-tint); color:var(--forest); display:flex; align-items:center; justify-content:center; font-family:var(--font-display), serif; font-weight:600; font-size:24px; margin-bottom:12px;}
+  .profile-name-row{display:flex; align-items:center; gap:6px;}
+  .profile-name{font-size:17px; font-weight:600; color:var(--ink);}
+  .profile-sub{font-size:12.5px; color:var(--ink-soft); margin-top:4px;}
+  .profile-rating{display:flex; align-items:center; gap:5px; margin-top:9px; font-size:12.5px; color:var(--ink-soft);}
+  .stat-row{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:0 20px 22px;}
+  .stat-card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 6px; text-align:center;}
+  .stat-num{font-family:var(--font-display), serif; font-weight:600; font-size:19px; color:var(--ink);}
+  .stat-label{font-size:10px; color:var(--ink-soft); margin-top:3px;}
+  .menu-list{padding:2px 20px 100px;}
+  .menu-row{display:flex; align-items:center; gap:12px; padding:13px 0; border-bottom:1px solid var(--line);}
+  .menu-row:last-child{border-bottom:none;}
+  .menu-icon{width:34px; height:34px; border-radius:10px; background:var(--paper); display:flex; align-items:center; justify-content:center; color:var(--ink-soft); flex-shrink:0;}
+  .menu-label{flex:1; font-size:13.5px; color:var(--ink); font-weight:500;}
+  .fab{
+    position:absolute; right:20px; bottom:96px; z-index:5;
+    width:52px; height:52px; border-radius:50%;
+    background:var(--brick);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 8px 18px rgba(0,0,0,0.22);
+  }
+  .sold-badge{position:absolute; inset:0; background:rgba(34,31,28,0.55); display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; font-weight:600; letter-spacing:0.03em;}
+
+  /* Page-level heading (favorites, notifications) */
+  .page-heading{font-family:var(--font-body), sans-serif; font-weight:600; font-size:19px; color:var(--ink); padding:16px 20px 4px; flex-shrink:0;}
+  .page-heading-row{display:flex; align-items:center; gap:12px; padding:16px 20px 4px; flex-shrink:0;}
+  .page-heading-row .page-heading{padding:0;}
+
+  /* Search results */
+  .active-chips{display:flex; gap:8px; flex-wrap:wrap; padding:14px 20px 2px;}
+  .active-chip{display:flex; align-items:center; gap:6px; padding:7px 8px 7px 13px; border-radius:20px; background:var(--ink); color:var(--paper); font-size:12px; font-weight:500;}
+
+  /* Pill chip row (used for sort options) */
+  .chips{
+    display:flex; gap:8px; overflow-x:auto;
+    padding:14px 20px 4px;
+    scrollbar-width:none;
+  }
+  .chips::-webkit-scrollbar{display:none;}
+  .chip{
+    flex-shrink:0;
+    padding:8px 15px;
+    border-radius:20px;
+    font-size:13px; font-weight:500;
+    border:1px solid var(--line);
+    background:var(--card);
+    color:var(--ink-soft);
+    white-space:nowrap;
+  }
+  .chip.active{
+    background:var(--ink);
+    color:var(--paper);
+    border-color:var(--ink);
+  }
+  .results-count{font-size:12.5px; color:var(--ink-soft); padding:16px 20px 4px;}
+
+  /* Filter sheet */
+  .sheet-handle{width:36px; height:4px; border-radius:2px; background:var(--line); margin:10px auto 6px;}
+  .sheet-header{display:flex; align-items:center; justify-content:space-between; padding:6px 20px 14px; border-bottom:1px solid var(--line); flex-shrink:0;}
+  .sheet-title{font-family:var(--font-body), sans-serif; font-weight:600; font-size:16px; color:var(--ink);}
+  .sheet-body{padding:18px 20px 0;}
+  .price-row{display:flex; gap:10px;}
+  .price-row .text-field{flex:1;}
+  .sheet-footer{display:flex; gap:10px; padding:16px 20px 22px; border-top:1px solid var(--line); flex-shrink:0;}
+  .ghost-btn{flex:1; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 0; font-size:13.5px; font-weight:600; color:var(--ink); text-align:center;}
+
+  /* Public seller profile */
+  .review-row{padding:13px 0; border-bottom:1px solid var(--line);}
+  .review-row:last-child{border-bottom:none;}
+  .review-top{display:flex; align-items:center; gap:8px; margin-bottom:5px;}
+  .review-avatar{width:26px; height:26px; border-radius:50%; background:var(--slate-tint); color:var(--slate); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; flex-shrink:0;}
+  .review-name{font-size:12.5px; font-weight:600; color:var(--ink);}
+  .review-stars{display:flex; gap:2px; margin-left:auto;}
+  .review-text{font-size:12.5px; color:var(--ink-soft); line-height:1.5;}
+
+  /* Notifications */
+  .notif-row{display:flex; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line); align-items:flex-start;}
+  .notif-icon{width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .notif-text{flex:1; min-width:0;}
+  .notif-top{display:flex; align-items:baseline; justify-content:space-between; gap:8px;}
+  .notif-title{font-size:12.5px; font-weight:600; color:var(--ink);}
+  .notif-time{font-size:10.5px; color:var(--ink-soft); white-space:nowrap;}
+  .notif-desc{font-size:12px; color:var(--ink-soft); margin-top:2px; line-height:1.4;}
+  .notif-unread{width:7px; height:7px; border-radius:50%; background:var(--brick); flex-shrink:0; margin-top:6px;}
+
+  /* OTP */
+  .otp-row{display:flex; gap:8px; margin-bottom:22px;}
+  .otp-box{
+    width:42px; height:52px; border-radius:12px;
+    background:var(--card); border:1.5px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-display), serif; font-weight:600; font-size:20px;
+    color:var(--ink);
+  }
+  .otp-box.filled{border-color:var(--brick);}
+
+  /* Photo upload circle (complete/edit profile) */
+  .photo-upload-circle{
+    width:84px; height:84px; border-radius:50%;
+    border:1.5px dashed var(--line);
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom:22px; position:relative; flex-shrink:0;
+  }
+  .photo-upload-circle .cam-badge{
+    position:absolute; bottom:0; right:0;
+    width:26px; height:26px; border-radius:50%;
+    background:var(--brick); border:2px solid var(--paper);
+    display:flex; align-items:center; justify-content:center;
+  }
+
+  /* Listing status actions (edit listing) */
+  .status-section{padding:6px 20px 100px;}
+  .status-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 0; border-bottom:1px solid var(--line);
+  }
+  .status-row:last-child{border-bottom:none;}
+  .status-row-label{display:flex; align-items:center; gap:11px;}
+  .status-row-icon{width:34px; height:34px; border-radius:10px; background:var(--paper); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--ink-soft);}
+  .status-row-text{font-size:13.5px; font-weight:500; color:var(--ink);}
+  .status-row-text.danger{color:var(--brick);}
+  .toggle{width:40px; height:24px; border-radius:12px; background:var(--line); position:relative; flex-shrink:0;}
+  .toggle.on{background:var(--forest);}
+  .toggle-knob{position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff;}
+  .toggle.on .toggle-knob{left:18px;}
+
+  /* Report sheet */
+  .radio-row{display:flex; align-items:center; gap:11px; padding:13px 0; border-bottom:1px solid var(--line);}
+  .radio-row:last-child{border-bottom:none;}
+  .radio-circle{width:18px; height:18px; border-radius:50%; border:1.5px solid var(--line); flex-shrink:0; position:relative;}
+  .radio-circle.selected{border-color:var(--brick);}
+  .radio-circle.selected::after{content:''; position:absolute; inset:3px; border-radius:50%; background:var(--brick);}
+  .radio-label{font-size:13.5px; color:var(--ink); font-weight:500;}
+
+  /* Rating */
+  .rate-avatar{width:64px; height:64px; border-radius:50%; background:var(--forest-tint); color:var(--forest); display:flex; align-items:center; justify-content:center; font-family:var(--font-display), serif; font-weight:600; font-size:22px; margin-bottom:16px;}
+  .rate-stars{display:flex; gap:9px; margin:20px 0 24px;}
+
+  /* Empty / success states */
+  .empty-state{display:flex; flex-direction:column; align-items:center; text-align:center; padding:64px 30px 0;}
+  .empty-icon{width:72px; height:72px; border-radius:50%; background:var(--paper); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; margin-bottom:22px;}
+  .empty-icon.success{background:var(--forest-tint); border:none;}
+  .empty-title{font-family:var(--font-display), serif; font-weight:500; font-size:19px; color:var(--ink); margin-bottom:9px; max-width:240px;}
+  .empty-sub{font-size:13px; color:var(--ink-soft); line-height:1.55; max-width:230px; margin-bottom:24px;}
+  .empty-actions{width:100%; display:flex; flex-direction:column; gap:10px;}
+
+  /* Onboarding */
+  .onboard-screen{display:flex; flex-direction:column; height:100%;}
+  .onboard-top{display:flex; justify-content:flex-end; padding:16px 20px 0; flex-shrink:0;}
+  .onboard-skip{font-size:12.5px; font-weight:600; color:var(--ink-soft);}
+  .onboard-mid{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 32px;}
+  .onboard-illustration{width:112px; height:112px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-bottom:30px; flex-shrink:0;}
+  .onboard-headline{font-family:var(--font-display), serif; font-weight:500; font-size:22px; color:var(--ink); margin-bottom:11px; max-width:250px;}
+  .onboard-sub{font-size:13.5px; color:var(--ink-soft); line-height:1.6; max-width:250px;}
+  .onboard-bottom{padding:0 24px 30px; flex-shrink:0;}
+  .onboard-dots{display:flex; justify-content:center; gap:6px; margin-bottom:20px;}
+  .onboard-dot{width:6px; height:6px; border-radius:50%; background:var(--line);}
+  .onboard-dot.active{width:20px; border-radius:4px; background:var(--brick);}
+
+  /* Screen filter bar — tool chrome, not part of the app */
+  .filter-bar-wrap{
+    position:sticky; top:0; z-index:20;
+    background:rgba(218,213,203,0.92);
+    backdrop-filter:blur(10px);
+    padding:14px 0 16px;
+    margin:-48px -20px 24px;
+  }
+  .filter-bar{
+    display:flex; gap:8px; flex-wrap:wrap;
+    max-width:1180px; margin:0 auto;
+    padding:0 20px;
+  }
+  .filter-chip{
+    padding:9px 16px; border-radius:20px;
+    font-size:12.5px; font-weight:600;
+    background:#fff; color:#57534E;
+    border:1px solid rgba(0,0,0,0.1);
+    cursor:pointer;
+  }
+  .filter-chip.active{
+    background:#221F1C; color:#F3F0EA; border-color:#221F1C;
+  }
+  .filter-count{
+    font-size:12px; color:#8A8680; font-weight:500;
+    display:flex; align-items:center; padding-left:4px;
+  }
+
+  /* Confirmation modal */
+  .modal-backdrop{
+    position:absolute; inset:0; z-index:10;
+    background:rgba(34,31,28,0.55);
+    display:flex; align-items:center; justify-content:center;
+    padding:0 26px;
+  }
+  .modal-card{
+    width:100%; background:var(--card); border-radius:20px;
+    padding:24px 20px 20px; text-align:center;
+  }
+  .modal-icon{
+    width:50px; height:50px; border-radius:50%;
+    background:var(--brick-tint);
+    display:flex; align-items:center; justify-content:center;
+    margin:0 auto 16px;
+  }
+  .modal-title{
+    font-family:var(--font-display), serif; font-weight:500; font-size:17px;
+    color:var(--ink); margin-bottom:8px;
+  }
+  .modal-sub{
+    font-size:12.5px; color:var(--ink-soft); line-height:1.55;
+    margin-bottom:20px;
+  }
+  .modal-actions{display:flex; gap:10px;}
+  .danger-btn{
+    flex:1.2; background:var(--brick); color:var(--paper);
+    border:none; border-radius:14px; padding:13px 0;
+    font-size:13.5px; font-weight:600;
+  }
+
+  /* Toast */
+  .toast{
+    position:absolute; left:20px; right:20px; bottom:100px; z-index:10;
+    background:var(--ink); color:var(--paper);
+    border-radius:14px; padding:13px 15px;
+    display:flex; align-items:center; gap:10px;
+    box-shadow:0 10px 24px rgba(0,0,0,0.22);
+  }
+  .toast-icon{
+    width:24px; height:24px; border-radius:50%; flex-shrink:0;
+    background:var(--forest);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .toast-text{font-size:13px; font-weight:500;}
+
+  /* Error state */
+  .error-icon{background:var(--brick-tint);}
+
+  /* Select buyer (to mark as sold) */
+  .buyer-row{display:flex; align-items:center; gap:12px; padding:13px 0; border-bottom:1px solid var(--line);}
+  .buyer-row:last-child{border-bottom:none;}
+  .buyer-avatar{width:38px; height:38px; border-radius:50%; background:var(--slate-tint); color:var(--slate); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; flex-shrink:0;}
+  .buyer-info{flex:1; min-width:0;}
+  .buyer-name{font-size:13.5px; font-weight:600; color:var(--ink);}
+  .buyer-time{font-size:11.5px; color:var(--ink-soft); margin-top:2px;}
+
+  /* Splash screen */
+  .splash-screen{
+    height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; background:linear-gradient(135deg, var(--ink) 0%, var(--brick-dark) 100%);
+  }
+  .splash-logo{
+    width:64px; height:64px; border-radius:20px; background:var(--paper);
+    display:flex; align-items:center; justify-content:center; margin-bottom:18px;
+  }
+  .splash-logo span{font-family:var(--font-display), serif; font-weight:600; font-size:28px; color:var(--brick);}
+  .splash-word{font-family:var(--font-display), serif; font-weight:600; font-size:26px; color:var(--paper); margin-bottom:6px;}
+  .splash-tag{font-size:12.5px; color:rgba(243,240,234,0.65);}
+  .splash-dots{display:flex; gap:6px; margin-top:36px;}
+  .splash-dot{width:6px; height:6px; border-radius:50%; background:rgba(243,240,234,0.5); animation:splash-blink 1.2s infinite ease-in-out;}
+  .splash-dot:nth-child(2){animation-delay:0.2s;}
+  .splash-dot:nth-child(3){animation-delay:0.4s;}
+  @keyframes splash-blink{0%,80%,100%{opacity:0.3;} 40%{opacity:1;}}
+
+  /* Notification permission prompt */
+  .notif-permission-icon{background:var(--brick-tint);}
+
+  /* Loading skeleton */
+  .skeleton{
+    background:linear-gradient(90deg, var(--line) 25%, rgba(0,0,0,0.05) 37%, var(--line) 63%);
+    background-size:400% 100%;
+    animation:skeleton-pulse 1.4s ease infinite;
+    border-radius:8px;
+  }
+  @keyframes skeleton-pulse{0%{background-position:100% 50%;} 100%{background-position:0 50%;}}
+  .sk-cat-icon{width:32px; height:32px; border-radius:8px; margin-bottom:7px;}
+  .sk-cat-label{width:70%; height:9px; border-radius:4px;}
+  .sk-thumb{width:100%; aspect-ratio:4/5; border-radius:16px 16px 0 0;}
+  .sk-line{height:10px; border-radius:4px; margin-bottom:7px;}
+
+  /* University / zone selector lists */
+  .list-row{display:flex; align-items:center; justify-content:space-between; padding:14px 0; border-bottom:1px solid var(--line);}
+  .list-row:last-child{border-bottom:none;}
+  .list-row-name{font-size:13.5px; font-weight:600; color:var(--ink);}
+  .list-row-sub{font-size:11.5px; color:var(--ink-soft); margin-top:2px;}
+  .list-section-label{font-size:11px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; padding:16px 0 4px;}
+  .current-loc-row{display:flex; align-items:center; gap:10px; padding:13px 0; color:var(--brick); font-weight:600; font-size:13.5px;}
+</style>
+</head>
+<body>
+
+<div class="filter-bar-wrap">
+  <div class="filter-bar">
+    <div class="filter-chip active" data-filter="all">Todas</div>
+    <div class="filter-chip" data-filter="onboarding">Onboarding</div>
+    <div class="filter-chip" data-filter="explorar">Explorar</div>
+    <div class="filter-chip" data-filter="publicar">Publicar</div>
+    <div class="filter-chip" data-filter="cuenta">Cuenta</div>
+    <div class="filter-chip" data-filter="confianza">Confianza</div>
+    <div class="filter-chip" data-filter="notificaciones">Notificaciones</div>
+    <div class="filter-chip" data-filter="sistema">Sistema</div>
+    <span class="filter-count" id="filter-count"></span>
+  </div>
+</div>
+
+<div class="workspace">
+
+  <aside class="controls">
+    <h2>Editor de estilo</h2>
+    <div class="sub">Cambios en vivo — no forman parte de la app.</div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Colores</div>
+      <div class="ctrl-row">
+        <label for="c-primary">Primario</label>
+        <input type="color" id="c-primary" value="#c1440e">
+      </div>
+      <div class="ctrl-row">
+        <label for="c-secondary">Secundario</label>
+        <input type="color" id="c-secondary" value="#2f6b4f">
+      </div>
+      <div class="ctrl-row">
+        <label for="c-bg">Fondo</label>
+        <input type="color" id="c-bg" value="#f3f0ea">
+      </div>
+      <div class="ctrl-row">
+        <label for="c-surface">Tarjetas</label>
+        <input type="color" id="c-surface" value="#ffffff">
+      </div>
+      <div class="ctrl-row">
+        <label for="c-text">Texto</label>
+        <input type="color" id="c-text" value="#221f1c">
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Tipografía</div>
+      <div class="ctrl-row">
+        <label for="f-display">Títulos</label>
+        <select id="f-display">
+          <option value="Fraunces">Fraunces</option>
+          <option value="Playfair Display">Playfair Display</option>
+          <option value="DM Serif Display">DM Serif Display</option>
+          <option value="Instrument Serif">Instrument Serif</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <label for="f-body">Texto</label>
+        <select id="f-body">
+          <option value="Inter">Inter</option>
+          <option value="Work Sans">Work Sans</option>
+          <option value="Sora">Sora</option>
+          <option value="Manrope">Manrope</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="reset-btn" id="reset-style">Restablecer</button>
+  </aside>
+
+  <div class="phones">
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Feed</div>
+<div class="device">
+  <div class="notch"></div>
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="icons">
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+      <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+      <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+    </div>
+  </div>
+
+  <div class="screen">
+    <header class="top">
+      <div class="brand-row">
+        <div class="wordmark">Compa</div>
+        <div class="top-actions">
+          <div class="icon-btn">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="1.8" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+            <div class="dot"></div>
+          </div>
+          <div class="avatar">EM</div>
+        </div>
+      </div>
+      <div class="campus-chip">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg>
+        <span>Monterrey, N.L.</span>
+        <svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+
+      <div class="hero">
+        <div class="hero-eyebrow">HECHO PARA ESTUDIANTES</div>
+        <div class="hero-headline">Compra y vende sin salir del campus.</div>
+        <div class="hero-stats">
+          <div class="hero-stat">800+ publicaciones</div>
+          <div class="hero-stat">Verificado por correo institucional</div>
+        </div>
+        <svg class="hero-skyline" viewBox="0 0 335 60" preserveAspectRatio="none">
+          <path d="M0 60 L0 38 L30 38 L34 24 L40 24 L46 12 L52 24 L60 24 L64 34 L90 34 L94 20 L102 20 L108 6 L114 20 L122 20 L126 40 L150 40 L154 30 L162 30 L168 44 L200 44 L206 18 L216 18 L224 4 L232 18 L242 18 L248 42 L280 42 L284 32 L294 32 L300 46 L335 46 L335 60 Z" fill="rgba(243,240,234,0.16)"/>
+        </svg>
+      </div>
+    </header>
+
+    <div class="search-row">
+      <div class="search-field">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="text" placeholder="Busca libros, electrónica, muebles…">
+      </div>
+      <div class="filter-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F3F0EA" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+      </div>
+    </div>
+
+    <div class="section-head" style="padding-top:20px;">
+      <div class="section-title">Categorías</div>
+      <div class="section-link">Ver todas <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    </div>
+
+    <div class="cat-grid">
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+        </div>
+        <div class="cat-label">Libros</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+        </div>
+        <div class="cat-label">Electrónica</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+        </div>
+        <div class="cat-label">Muebles</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg>
+        </div>
+        <div class="cat-label">Ropa</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><circle cx="12" cy="12" r="7"/><path d="M12 5v14M5 12h14" stroke-width="1"/></svg>
+        </div>
+        <div class="cat-label">Deportes</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        </div>
+        <div class="cat-label">Apuntes</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
+        </div>
+        <div class="cat-label">Hogar</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+        </div>
+        <div class="cat-label">Más</div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Recomendado para ti</div>
+      <div class="section-link">Ver todo <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    </div>
+
+    <div class="grid">
+
+      <div class="card">
+        <div class="thumb" style="background:var(--brick-tint);">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.5"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+          <div class="badge">Como nuevo</div>
+          <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+        </div>
+        <div class="info">
+          <div class="price">$280</div>
+          <div class="title">Cálculo de Larson, 9a edición</div>
+          <div class="meta">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+            <span>Campus MTY</span><span class="sep">·</span><span>hace 2h</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="thumb" style="background:var(--slate-tint);">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+          <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+        </div>
+        <div class="info">
+          <div class="price">$3,200</div>
+          <div class="title">Monitor Dell 24" IPS</div>
+          <div class="meta">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+            <span>Campus MTY</span><span class="sep">·</span><span>hace 5h</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="thumb" style="background:var(--gold-tint);">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.5"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+        </div>
+        <div class="info">
+          <div class="price">$650</div>
+          <div class="title">Escritorio plegable</div>
+          <div class="meta">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+            <span>Campus MTY</span><span class="sep">·</span><span>hace 1d</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="thumb" style="background:var(--forest-tint);">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1.5"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg>
+          <div class="badge">Nuevo</div>
+          <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+        </div>
+        <div class="info">
+          <div class="price">$180</div>
+          <div class="title">Sudadera Tec talla M</div>
+          <div class="meta">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+            <span>Campus MTY</span><span class="sep">·</span><span>hace 1d</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="thumb" style="background:var(--brick-tint);">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        </div>
+        <div class="info">
+          <div class="price">$1,450</div>
+          <div class="title">Reloj Casio G-Shock</div>
+          <div class="meta">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+            <span>Campus MTY</span><span class="sep">·</span><span>hace 2d</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="thumb" style="background:var(--slate-tint);">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><circle cx="12" cy="12" r="7"/><path d="M12 5v14M5 12h14" stroke-width="1"/></svg>
+        </div>
+        <div class="info">
+          <div class="price">$220</div>
+          <div class="title">Balón de fútbol #5</div>
+          <div class="meta">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+            <span>Campus MTY</span><span class="sep">·</span><span>hace 3d</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="tabbar">
+    <div class="tab active">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>
+      Inicio
+    </div>
+    <div class="tab">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      Buscar
+    </div>
+    <div class="tab">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+      Favoritos
+    </div>
+    <div class="tab">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+      Perfil
+    </div>
+  </div>
+</div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Selector de zona</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">Elige tu zona</div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+      <div class="screen">
+        <div class="sheet-body">
+          <div class="search-field" style="margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" placeholder="Busca tu zona o ciudad">
+          </div>
+
+          <div class="current-loc-row">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2"/></svg>
+            Usar mi ubicación actual
+          </div>
+
+          <div class="list-section-label">Zonas populares</div>
+          <div class="list-row">
+            <div class="list-row-name">Monterrey, N.L.</div>
+            <div class="radio-circle selected"></div>
+          </div>
+          <div class="list-row">
+            <div class="list-row-name">San Nicolás de la Garza, N.L.</div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div class="list-row-name">San Pedro Garza García, N.L.</div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div class="list-row-name">Guadalupe, N.L.</div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div class="list-row-name">Apodaca, N.L.</div>
+            <div class="radio-circle"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Detalle de publicación</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+
+      <div class="screen">
+        <div class="detail-photo" style="background:var(--brick-tint);">
+          <div class="detail-nav">
+            <div class="round-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </div>
+            <div class="nav-actions">
+              <div class="round-btn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+              </div>
+              <div class="round-btn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h13l-3.5 5L18 14H5"/></svg>
+              </div>
+            </div>
+          </div>
+          <div class="detail-badge">Como nuevo</div>
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+          <div class="detail-dots">
+            <span class="active"></span><span></span><span></span><span></span>
+          </div>
+        </div>
+
+        <div class="detail-body">
+          <div class="detail-price">$280</div>
+          <div class="detail-title">Cálculo de Larson, 9a edición</div>
+          <div class="detail-meta">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+            <span>Campus MTY</span><span class="sep">·</span><span>hace 2h</span><span class="sep">·</span><span>48 vistas</span>
+          </div>
+
+          <div class="seller-card">
+            <div class="seller-avatar">JM</div>
+            <div class="seller-info">
+              <div class="seller-name-row">
+                <span class="seller-name">Jorge Muñoz</span>
+                <span class="verified-tick">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+                </span>
+              </div>
+              <div class="seller-sub">Ingeniería Industrial · 12 ventas</div>
+            </div>
+            <svg class="seller-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+
+          <div class="detail-section">
+            <div class="detail-section-title">Descripción</div>
+            <div class="detail-desc">Libro de cálculo diferencial e integral, 9a edición. Sin subrayados ni marcas, pasta en buen estado. Lo usé para la materia de Cálculo I, ya no lo necesito. Precio negociable, entrega en el campus.</div>
+          </div>
+
+          <div class="detail-section">
+            <div class="detail-section-title">Detalles</div>
+            <div class="spec-row"><span class="spec-key">Categoría</span><span class="spec-val">Libros</span></div>
+            <div class="spec-row"><span class="spec-key">Condición</span><span class="spec-val">Como nuevo</span></div>
+            <div class="spec-row"><span class="spec-key">Zona de entrega</span><span class="spec-val">Campus MTY</span></div>
+            <div class="spec-row"><span class="spec-key">Publicado</span><span class="spec-val">Hace 2 horas</span></div>
+          </div>
+        </div>
+
+        <div class="sticky-cta">
+          <div class="fav-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+          </div>
+          <div class="whatsapp-btn">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 01-12.4 7.5L4 20l1.1-4.4A8.5 8.5 0 1121 11.5z"/><path d="M8.5 10.5c0 3 2.5 5.5 5.5 5.5"/></svg>
+            <span>Contactar por WhatsApp</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Detalle (vista vendedor)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+
+      <div class="screen">
+        <div class="detail-photo" style="background:var(--brick-tint);">
+          <div class="detail-nav">
+            <div class="round-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </div>
+            <div class="nav-actions">
+              <div class="round-btn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+              </div>
+              <div class="round-btn">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="#221F1C"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+              </div>
+            </div>
+          </div>
+          <div class="detail-badge">Como nuevo</div>
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+          <div class="detail-dots">
+            <span class="active"></span><span></span><span></span><span></span>
+          </div>
+        </div>
+
+        <div class="detail-body">
+          <div class="detail-price">$280</div>
+          <div class="detail-title">Cálculo de Larson, 9a edición</div>
+          <div class="detail-meta">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+            <span>Campus MTY</span><span class="sep">·</span><span>hace 2h</span>
+          </div>
+
+          <div class="stat-row" style="padding:0 0 20px;">
+            <div class="stat-card"><div class="stat-num">48</div><div class="stat-label">Vistas</div></div>
+            <div class="stat-card"><div class="stat-num">6</div><div class="stat-label">Favoritos</div></div>
+            <div class="stat-card"><div class="stat-num">3</div><div class="stat-label">Contactos</div></div>
+          </div>
+
+          <div class="detail-section">
+            <div class="detail-section-title">Descripción</div>
+            <div class="detail-desc">Libro de cálculo diferencial e integral, 9a edición. Sin subrayados ni marcas, pasta en buen estado. Lo usé para la materia de Cálculo I, ya no lo necesito. Precio negociable, entrega en el campus.</div>
+          </div>
+
+          <div class="detail-section">
+            <div class="detail-section-title">Detalles</div>
+            <div class="spec-row"><span class="spec-key">Categoría</span><span class="spec-val">Libros</span></div>
+            <div class="spec-row"><span class="spec-key">Condición</span><span class="spec-val">Como nuevo</span></div>
+            <div class="spec-row"><span class="spec-key">Zona de entrega</span><span class="spec-val">Campus MTY</span></div>
+            <div class="spec-row"><span class="spec-key">Publicado</span><span class="spec-val">Hace 2 horas</span></div>
+          </div>
+        </div>
+
+        <div class="sticky-cta">
+          <div class="ghost-btn">Marcar como vendida</div>
+          <button class="primary-btn" style="margin-top:0; flex:1.2;">Editar publicación</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Splash</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="screen" style="overflow:hidden;">
+        <div class="splash-screen">
+          <div class="splash-logo"><span>C</span></div>
+          <div class="splash-word">Compa</div>
+          <div class="splash-tag">Tu campus, tu mercado</div>
+          <div class="splash-dots">
+            <div class="splash-dot"></div><div class="splash-dot"></div><div class="splash-dot"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Onboarding 1/3</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="onboard-screen">
+          <div class="onboard-top"><span class="onboard-skip">Omitir</span></div>
+          <div class="onboard-mid">
+            <div class="onboard-illustration" style="background:var(--brick-tint);">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.4"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="18" cy="9" r="2.4"/><path d="M15.5 20a4.5 4.5 0 018 0"/></svg>
+            </div>
+            <div class="onboard-headline">Compra y vende con tu comunidad</div>
+            <div class="onboard-sub">Un catálogo hecho solo para estudiantes: libros, electrónica, muebles y más, cerca de ti.</div>
+          </div>
+          <div class="onboard-bottom">
+            <div class="onboard-dots">
+              <div class="onboard-dot active"></div><div class="onboard-dot"></div><div class="onboard-dot"></div>
+            </div>
+            <button class="primary-btn">Siguiente</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Onboarding 2/3</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="onboard-screen">
+          <div class="onboard-top"><span class="onboard-skip">Omitir</span></div>
+          <div class="onboard-mid">
+            <div class="onboard-illustration" style="background:var(--forest-tint);">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1.4"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+            </div>
+            <div class="onboard-headline">Verificado, cero desconocidos</div>
+            <div class="onboard-sub">Verificamos tu correo institucional para que sepas que del otro lado siempre hay otro estudiante real.</div>
+          </div>
+          <div class="onboard-bottom">
+            <div class="onboard-dots">
+              <div class="onboard-dot"></div><div class="onboard-dot active"></div><div class="onboard-dot"></div>
+            </div>
+            <button class="primary-btn">Siguiente</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Onboarding 3/3</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="onboard-screen">
+          <div class="onboard-top"><span class="onboard-skip" style="visibility:hidden;">Omitir</span></div>
+          <div class="onboard-mid">
+            <div class="onboard-illustration" style="background:var(--gold-tint);">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.4"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg>
+            </div>
+            <div class="onboard-headline">Todo cerca, todo fácil</div>
+            <div class="onboard-sub">Encuentra artículos por campus y ponte de acuerdo en persona — sin comisiones ni envíos.</div>
+          </div>
+          <div class="onboard-bottom">
+            <div class="onboard-dots">
+              <div class="onboard-dot"></div><div class="onboard-dot"></div><div class="onboard-dot active"></div>
+            </div>
+            <button class="primary-btn">Comenzar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Verificación</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="auth-body">
+          <div class="auth-logo"><span>C</span></div>
+          <div class="auth-headline">Verifica que eres estudiante</div>
+          <div class="auth-sub">Usa tu correo institucional para crear tu cuenta y acceder al catálogo de tu campus.</div>
+
+          <div class="field">
+            <label class="field-label">Correo institucional</label>
+            <input class="text-field" type="text" placeholder="nombre@estudiante.tec.mx">
+          </div>
+
+          <button class="primary-btn">Enviar código de verificación</button>
+
+          <div class="auth-link">¿Ya tienes cuenta? <b>Inicia sesión</b></div>
+          <div class="auth-terms">Al continuar aceptas los Términos de uso y el Aviso de privacidad de Compa.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="publicar">
+    <div class="phone-label">Publicar</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        <div class="form-title">Nueva publicación</div>
+        <span style="font-size:13px; font-weight:600; color:var(--brick);">Guardar</span>
+      </div>
+      <div class="screen">
+        <div class="form-body">
+          <div class="photo-row">
+            <div class="photo-thumb" style="background:var(--brick-tint);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="photo-add">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Agregar
+            </div>
+            <div class="photo-add">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Agregar
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Título</label>
+            <input class="text-field" type="text" placeholder="Ej. Cálculo de Larson, 9a edición">
+          </div>
+
+          <div class="field">
+            <label class="field-label">Precio</label>
+            <input class="text-field" type="text" placeholder="$ 0.00">
+          </div>
+
+          <div class="field">
+            <label class="field-label">Categoría</label>
+            <div class="segmented">
+              <div class="segment active">Libros</div>
+              <div class="segment">Electrónica</div>
+              <div class="segment">Muebles</div>
+              <div class="segment">Ropa</div>
+              <div class="segment">Deportes</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Condición</label>
+            <div class="segmented">
+              <div class="segment">Nuevo</div>
+              <div class="segment active">Como nuevo</div>
+              <div class="segment">Buen estado</div>
+              <div class="segment">Usado</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Descripción</label>
+            <textarea class="textarea-field" placeholder="Cuenta el estado del artículo, si tiene detalles, por qué lo vendes…"></textarea>
+          </div>
+
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Zona de entrega</label>
+            <div class="select-field">
+              <span>Campus MTY</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="sticky-cta">
+          <button class="primary-btn" style="margin-top:0;">Publicar artículo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Perfil</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="profile-top">
+          <div class="wordmark" style="font-size:20px;">Perfil</div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.04 1.56V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1.04-1.56 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.56-1.04H3a2 2 0 110-4h.09a1.7 1.7 0 001.56-1.04 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001.04-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.04 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.56 1.04H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.04z"/></svg>
+        </div>
+
+        <div class="profile-block">
+          <div class="profile-avatar">EM</div>
+          <div class="profile-name-row">
+            <span class="profile-name">Enrique M.</span>
+            <span class="verified-tick">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </div>
+          <div class="profile-sub">Ingeniería en Sistemas · Campus MTY</div>
+          <div class="profile-rating">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)" stroke-width="1"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <span>4.9 · 23 calificaciones</span>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-num">5</div><div class="stat-label">Activas</div></div>
+          <div class="stat-card"><div class="stat-num">18</div><div class="stat-label">Vendidos</div></div>
+          <div class="stat-card"><div class="stat-num">12</div><div class="stat-label">Favoritos</div></div>
+        </div>
+
+        <div class="section-head" style="padding-top:2px;">
+          <div class="section-title">Mis publicaciones</div>
+          <div class="section-link">Ver todas <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+        </div>
+
+        <div class="grid" style="padding-bottom:20px;">
+          <div class="card">
+            <div class="thumb" style="background:var(--slate-tint); position:relative;">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+              <div class="sold-badge">Vendido</div>
+            </div>
+            <div class="info">
+              <div class="price">$3,200</div>
+              <div class="title">Monitor Dell 24" IPS</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--gold-tint);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.5"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+            </div>
+            <div class="info">
+              <div class="price">$650</div>
+              <div class="title">Escritorio plegable</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="menu-list">
+          <div class="menu-row">
+            <div class="menu-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></div>
+            <div class="menu-label">Editar perfil</div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+          <div class="menu-row">
+            <div class="menu-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+            <div class="menu-label">Verificación</div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+          <div class="menu-row">
+            <div class="menu-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg></div>
+            <div class="menu-label">Ayuda y soporte</div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+          <div class="menu-row">
+            <div class="menu-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></div>
+            <div class="menu-label">Cerrar sesión</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fab">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>
+          Inicio
+        </div>
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          Buscar
+        </div>
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+          Favoritos
+        </div>
+        <div class="tab active">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          Perfil
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Favoritos</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="page-heading">Favoritos</div>
+        <div class="grid" style="padding-top:14px;">
+          <div class="card">
+            <div class="thumb" style="background:var(--brick-tint);">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.5"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="var(--brick)" stroke="var(--brick)" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+            </div>
+            <div class="info">
+              <div class="price">$280</div>
+              <div class="title">Cálculo de Larson, 9a edición</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 2h</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--forest-tint);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1.5"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg>
+              <div class="badge">Nuevo</div>
+              <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="var(--brick)" stroke="var(--brick)" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+            </div>
+            <div class="info">
+              <div class="price">$180</div>
+              <div class="title">Sudadera Tec talla M</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 1d</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--brick-tint);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+              <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="var(--brick)" stroke="var(--brick)" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+            </div>
+            <div class="info">
+              <div class="price">$1,450</div>
+              <div class="title">Reloj Casio G-Shock</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 2d</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--slate-tint);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><circle cx="12" cy="12" r="7"/><path d="M12 5v14M5 12h14" stroke-width="1"/></svg>
+              <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="var(--brick)" stroke="var(--brick)" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+            </div>
+            <div class="info">
+              <div class="price">$220</div>
+              <div class="title">Balón de fútbol #5</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 3d</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>
+          Inicio
+        </div>
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          Buscar
+        </div>
+        <div class="tab active">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+          Favoritos
+        </div>
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          Perfil
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Iniciar sesión</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="auth-body">
+          <div class="auth-logo"><span>C</span></div>
+          <div class="auth-headline">Qué bueno verte de nuevo</div>
+          <div class="auth-sub">Inicia sesión con tu cuenta de Compa para seguir comprando y vendiendo en tu campus.</div>
+
+          <div class="field">
+            <label class="field-label">Correo institucional</label>
+            <input class="text-field" type="text" placeholder="nombre@estudiante.tec.mx">
+          </div>
+          <div class="field">
+            <label class="field-label">Contraseña</label>
+            <input class="text-field" type="text" placeholder="••••••••">
+          </div>
+
+          <button class="primary-btn">Iniciar sesión</button>
+
+          <div class="auth-link"><b>¿Olvidaste tu contraseña?</b></div>
+          <div class="auth-terms">¿No tienes cuenta? Verifica tu correo institucional para crear una.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Recuperar contraseña</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="auth-body">
+          <div class="auth-logo" style="background:var(--forest);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+          </div>
+          <div class="auth-headline">Recupera tu contraseña</div>
+          <div class="auth-sub">Te enviaremos un enlace a tu correo institucional para que la restablezcas.</div>
+
+          <div class="field">
+            <label class="field-label">Correo institucional</label>
+            <input class="text-field" type="text" placeholder="nombre@estudiante.tec.mx">
+          </div>
+
+          <button class="primary-btn">Enviar enlace</button>
+
+          <div class="auth-link"><b>Volver a iniciar sesión</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Búsqueda (recomendados)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="search-row" style="margin-top:14px;">
+          <div class="search-field">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" placeholder="Busca libros, electrónica, muebles…">
+          </div>
+          <div class="filter-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F3F0EA" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+          </div>
+        </div>
+
+        <div class="section-head" style="padding-top:6px;">
+          <div class="section-title">Recomendado para ti</div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="thumb" style="background:var(--brick-tint);">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.5"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              <div class="badge">Como nuevo</div>
+              <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+            </div>
+            <div class="info">
+              <div class="price">$280</div>
+              <div class="title">Cálculo de Larson, 9a edición</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 2h</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--slate-tint);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+              <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+            </div>
+            <div class="info">
+              <div class="price">$3,200</div>
+              <div class="title">Monitor Dell 24" IPS</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 5h</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--gold-tint);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.5"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+            </div>
+            <div class="info">
+              <div class="price">$650</div>
+              <div class="title">Escritorio plegable</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 1d</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--forest-tint);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1.5"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg>
+              <div class="badge">Nuevo</div>
+              <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+            </div>
+            <div class="info">
+              <div class="price">$180</div>
+              <div class="title">Sudadera Tec talla M</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 1d</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>
+          Inicio
+        </div>
+        <div class="tab active">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          Buscar
+        </div>
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+          Favoritos
+        </div>
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          Perfil
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Búsqueda</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="search-row" style="margin-top:14px;">
+          <div class="search-field">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" value="cálculo" placeholder="Busca libros, electrónica, muebles…">
+          </div>
+          <div class="filter-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F3F0EA" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+          </div>
+        </div>
+
+        <div class="active-chips">
+          <div class="active-chip">Libros <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
+          <div class="active-chip">Bajo $500 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
+          <div class="active-chip">Campus MTY <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
+        </div>
+
+        <div class="results-count">14 resultados para "cálculo"</div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="thumb" style="background:var(--brick-tint);">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.5"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              <div class="badge">Como nuevo</div>
+              <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+            </div>
+            <div class="info">
+              <div class="price">$280</div>
+              <div class="title">Cálculo de Larson, 9a edición</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 2h</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--gold-tint);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.5"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="info">
+              <div class="price">$350</div>
+              <div class="title">Cálculo vectorial, Stewart</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 4h</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>
+          Inicio
+        </div>
+        <div class="tab active">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          Buscar
+        </div>
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+          Favoritos
+        </div>
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          Perfil
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Filtros</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">Filtros</div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+      <div class="screen">
+        <div class="sheet-body">
+          <div class="field">
+            <label class="field-label">Categoría</label>
+            <div class="segmented">
+              <div class="segment active">Libros</div>
+              <div class="segment">Electrónica</div>
+              <div class="segment">Muebles</div>
+              <div class="segment">Ropa</div>
+              <div class="segment">Deportes</div>
+              <div class="segment">Apuntes</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Precio</label>
+            <div class="price-row">
+              <input class="text-field" type="text" placeholder="Mínimo">
+              <input class="text-field" type="text" placeholder="Máximo">
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Condición</label>
+            <div class="segmented">
+              <div class="segment">Nuevo</div>
+              <div class="segment active">Como nuevo</div>
+              <div class="segment">Buen estado</div>
+              <div class="segment">Usado</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Ordenar por</label>
+            <div class="segmented">
+              <div class="segment active">Recientes</div>
+              <div class="segment">Precio: menor</div>
+              <div class="segment">Precio: mayor</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="sheet-footer">
+        <div class="ghost-btn">Limpiar todo</div>
+        <button class="primary-btn" style="margin-top:0; flex:1.4;">Aplicar filtros</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Perfil público</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="profile-top">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+        </div>
+
+        <div class="profile-block">
+          <div class="profile-avatar">JM</div>
+          <div class="profile-name-row">
+            <span class="profile-name">Jorge Muñoz</span>
+            <span class="verified-tick">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </div>
+          <div class="profile-sub">Ingeniería Industrial · Campus MTY</div>
+          <div class="profile-rating">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)" stroke-width="1"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <span>4.9 · 23 calificaciones</span>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-num">8</div><div class="stat-label">Activas</div></div>
+          <div class="stat-card"><div class="stat-num">12</div><div class="stat-label">Vendidos</div></div>
+          <div class="stat-card"><div class="stat-num">8m</div><div class="stat-label">En Compa</div></div>
+        </div>
+
+        <div style="padding:0 20px 20px;">
+          <div class="whatsapp-btn" style="border-radius:14px; padding:13px 0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 01-12.4 7.5L4 20l1.1-4.4A8.5 8.5 0 1121 11.5z"/><path d="M8.5 10.5c0 3 2.5 5.5 5.5 5.5"/></svg>
+            <span>Contactar por WhatsApp</span>
+          </div>
+        </div>
+
+        <div class="section-head" style="padding-top:2px;">
+          <div class="section-title">Calificaciones</div>
+        </div>
+
+        <div class="menu-list" style="padding-top:0;">
+          <div class="review-row">
+            <div class="review-top">
+              <div class="review-avatar">EM</div>
+              <span class="review-name">Enrique M.</span>
+              <div class="review-stars">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+              </div>
+            </div>
+            <div class="review-text">Todo perfecto, el libro estaba tal como lo describió. Entrega rápida en el campus.</div>
+          </div>
+          <div class="review-row">
+            <div class="review-top">
+              <div class="review-avatar">LP</div>
+              <span class="review-name">Lionn P.</span>
+              <div class="review-stars">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+              </div>
+            </div>
+            <div class="review-text">Buena comunicación, quedamos rápido en un punto de entrega en el campus.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="notificaciones">
+    <div class="phone-label">Notificaciones</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="page-heading">Notificaciones</div>
+      </div>
+      <div class="screen">
+        <div class="notif-row">
+          <div class="notif-icon" style="background:var(--brick-tint);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--brick)" stroke="var(--brick)" stroke-width="1"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+          </div>
+          <div class="notif-text">
+            <div class="notif-top">
+              <span class="notif-title">Bajó el precio de un favorito</span>
+              <span class="notif-time">hace 12m</span>
+            </div>
+            <div class="notif-desc">"Monitor Dell 24" IPS" ahora cuesta $2,900, antes $3,200.</div>
+          </div>
+          <div class="notif-unread"></div>
+        </div>
+        <div class="notif-row">
+          <div class="notif-icon" style="background:var(--forest-tint);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+          </div>
+          <div class="notif-text">
+            <div class="notif-top">
+              <span class="notif-title">Tu correo fue verificado</span>
+              <span class="notif-time">hace 1h</span>
+            </div>
+            <div class="notif-desc">Ya puedes publicar y contactar a otros estudiantes del campus.</div>
+          </div>
+          <div class="notif-unread"></div>
+        </div>
+        <div class="notif-row">
+          <div class="notif-icon" style="background:var(--gold-tint);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+          </div>
+          <div class="notif-text">
+            <div class="notif-top">
+              <span class="notif-title">Nueva publicación cerca de ti</span>
+              <span class="notif-time">hace 3h</span>
+            </div>
+            <div class="notif-desc">Se publicó "Escritorio plegable" en Campus MTY, dentro de tus categorías seguidas.</div>
+          </div>
+        </div>
+        <div class="notif-row">
+          <div class="notif-icon" style="background:var(--slate-tint);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="2"><path d="M3 6l9 6 9-6"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
+          </div>
+          <div class="notif-text">
+            <div class="notif-top">
+              <span class="notif-title">Respuesta a tu reporte</span>
+              <span class="notif-time">hace 1d</span>
+            </div>
+            <div class="notif-desc">Revisamos tu reporte sobre una publicación y tomamos acción.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Categoría</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row" style="justify-content:space-between;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          <div class="page-heading">Libros</div>
+        </div>
+        <div class="round-btn" style="background:var(--card); border:1px solid var(--line);">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="results-count" style="padding-top:2px;">32 publicaciones en Campus MTY</div>
+
+        <div class="chips">
+          <div class="chip active">Recientes</div>
+          <div class="chip">Precio: menor</div>
+          <div class="chip">Precio: mayor</div>
+          <div class="chip">Mejor calificados</div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="thumb" style="background:var(--brick-tint);">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.5"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              <div class="badge">Como nuevo</div>
+              <div class="heart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg></div>
+            </div>
+            <div class="info">
+              <div class="price">$280</div>
+              <div class="title">Cálculo de Larson, 9a edición</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 2h</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--gold-tint);">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.5"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="info">
+              <div class="price">$350</div>
+              <div class="title">Cálculo vectorial, Stewart</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 4h</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--slate-tint);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="info">
+              <div class="price">$150</div>
+              <div class="title">Física para ciencias, Serway</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 6h</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="thumb" style="background:var(--forest-tint);">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1.5"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              <div class="badge">Nuevo</div>
+            </div>
+            <div class="info">
+              <div class="price">$420</div>
+              <div class="title">Contabilidad financiera, Warren</div>
+              <div class="meta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+                <span>Campus MTY</span><span class="sep">·</span><span>hace 1d</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Ver todas (categorías)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="page-heading">Categorías</div>
+      </div>
+      <div class="screen">
+        <div class="cat-grid" style="padding:16px 20px 100px; grid-template-columns:repeat(3, 1fr); gap:10px;">
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="cat-label">Libros</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+            </div>
+            <div class="cat-label">Electrónica</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+            </div>
+            <div class="cat-label">Muebles</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg>
+            </div>
+            <div class="cat-label">Ropa</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><circle cx="12" cy="12" r="7"/><path d="M12 5v14M5 12h14" stroke-width="1"/></svg>
+            </div>
+            <div class="cat-label">Deportes</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            </div>
+            <div class="cat-label">Apuntes</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
+            </div>
+            <div class="cat-label">Hogar</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+            </div>
+            <div class="cat-label">Papelería</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+            <div class="cat-label">Instrumentos</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M12 21a9 9 0 110-18c4 0 7 2.5 7 5.5 0 2-1.5 3-3 3h-2a1.5 1.5 0 000 3h.5a1.5 1.5 0 010 3H12z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/></svg>
+            </div>
+            <div class="cat-label">Arte y manualidades</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M3 9a2 2 0 100 6 2 2 0 010 4h16a2 2 0 010-4 2 2 0 100-6 2 2 0 010-4H3a2 2 0 010 4z"/><path d="M9 4v16" stroke-dasharray="2 2"/></svg>
+            </div>
+            <div class="cat-label">Boletos y eventos</div>
+          </div>
+          <div class="cat-item">
+            <div class="cat-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+            </div>
+            <div class="cat-label">Otros</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Código de verificación</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="auth-body">
+          <div class="auth-logo"><span>C</span></div>
+          <div class="auth-headline">Ingresa el código</div>
+          <div class="auth-sub">Te enviamos un código de 6 dígitos a nombre@estudiante.tec.mx</div>
+
+          <div class="otp-row">
+            <div class="otp-box filled">4</div>
+            <div class="otp-box filled">8</div>
+            <div class="otp-box filled">2</div>
+            <div class="otp-box">–</div>
+            <div class="otp-box">–</div>
+            <div class="otp-box">–</div>
+          </div>
+
+          <button class="primary-btn">Verificar</button>
+
+          <div class="auth-link">¿No llegó el código? <b>Reenviar</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Completar perfil</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="auth-body">
+          <div class="auth-headline" style="margin-bottom:6px;">Cuéntanos de ti</div>
+          <div class="auth-sub">Esto lo verán otros estudiantes cuando les contactes por una publicación.</div>
+
+          <div class="photo-upload-circle">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.8"><circle cx="12" cy="13" r="4"/><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/></svg>
+            <div class="cam-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Nombre completo</label>
+            <input class="text-field" type="text" placeholder="Ej. Enrique Macías">
+          </div>
+          <div class="field">
+            <label class="field-label">Universidad</label>
+            <div class="select-field">
+              <span style="color:#A8A29A;">Selecciona tu universidad</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Campus</label>
+            <div class="select-field">
+              <span style="color:#A8A29A;">Selecciona tu campus</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+
+          <button class="primary-btn" style="margin-top:28px;">Continuar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Selector de universidad</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="form-title">Tu universidad</div>
+        <span style="width:16px;"></span>
+      </div>
+      <div class="screen">
+        <div class="form-body" style="padding-top:16px;">
+          <div class="search-field" style="margin-bottom:6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" placeholder="Busca tu universidad">
+          </div>
+
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Tecnológico de Monterrey</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle selected"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">UANL</div>
+              <div class="list-row-sub">San Nicolás de la Garza, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">UDEM</div>
+              <div class="list-row-sub">San Pedro Garza García, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">UANL — FIME</div>
+              <div class="list-row-sub">San Nicolás de la Garza, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Universidad de Guadalajara</div>
+              <div class="list-row-sub">Guadalajara, Jal.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">ITESO</div>
+              <div class="list-row-sub">Guadalajara, Jal.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">UNAM</div>
+              <div class="list-row-sub">Ciudad de México</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Universidad Panamericana</div>
+              <div class="list-row-sub">Ciudad de México</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Anáhuac</div>
+              <div class="list-row-sub">Ciudad de México</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Permiso de notificaciones</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="empty-state" style="padding-top:80px;">
+          <div class="empty-icon notif-permission-icon">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+          </div>
+          <div class="empty-title">No te pierdas nada</div>
+          <div class="empty-sub">Te avisamos cuando baje el precio de un favorito o alguien te contacte por una publicación.</div>
+          <div class="empty-actions">
+            <button class="primary-btn" style="margin-top:0;">Activar notificaciones</button>
+            <div class="ghost-btn">Ahora no</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Editar perfil</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="form-title">Editar perfil</div>
+        <span style="font-size:13px; font-weight:600; color:var(--brick);">Guardar</span>
+      </div>
+      <div class="screen">
+        <div class="form-body" style="display:flex; flex-direction:column; align-items:center;">
+          <div class="photo-upload-circle" style="border-style:solid; border-color:var(--line);">
+            <div class="seller-avatar" style="width:100%; height:100%; font-size:22px;">EM</div>
+            <div class="cam-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4"><circle cx="12" cy="13" r="4"/><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/></svg>
+            </div>
+          </div>
+
+          <div style="width:100%;">
+            <div class="field">
+              <label class="field-label">Nombre completo</label>
+              <input class="text-field" type="text" value="Enrique Macías">
+            </div>
+            <div class="field">
+              <label class="field-label">Carrera</label>
+              <input class="text-field" type="text" value="Ingeniería en Sistemas">
+            </div>
+            <div class="field">
+              <label class="field-label">Universidad</label>
+              <div class="select-field"><span>Tec de Monterrey</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label class="field-label">Campus</label>
+              <div class="select-field"><span>Campus MTY</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="publicar">
+    <div class="phone-label">Editar publicación</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="form-title">Editar publicación</div>
+        <span style="font-size:13px; font-weight:600; color:var(--brick);">Guardar</span>
+      </div>
+      <div class="screen">
+        <div class="form-body" style="padding-bottom:16px;">
+          <div class="photo-row">
+            <div class="photo-thumb" style="background:var(--brick-tint);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="photo-add">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Agregar
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Título</label>
+            <input class="text-field" type="text" value="Cálculo de Larson, 9a edición">
+          </div>
+          <div class="field">
+            <label class="field-label">Precio</label>
+            <input class="text-field" type="text" value="$ 280">
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Descripción</label>
+            <textarea class="textarea-field">Libro de cálculo diferencial e integral, 9a edición. Sin subrayados ni marcas, pasta en buen estado.</textarea>
+          </div>
+        </div>
+
+        <div class="section-head" style="padding-top:4px;">
+          <div class="section-title">Estado de la publicación</div>
+        </div>
+
+        <div class="status-section">
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></div>
+              <span class="status-row-text">Pausar publicación</span>
+            </div>
+            <div class="toggle"><div class="toggle-knob"></div></div>
+          </div>
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+              <span class="status-row-text">Marcar como vendida</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon" style="color:var(--brick);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg></div>
+              <span class="status-row-text danger">Eliminar publicación</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="confianza">
+    <div class="phone-label">Reportar publicación</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">Reportar publicación</div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+      <div class="screen">
+        <div class="sheet-body">
+          <div class="field">
+            <label class="field-label">¿Cuál es el motivo?</label>
+            <div class="radio-row"><div class="radio-circle selected"></div><span class="radio-label">Es spam o publicidad</span></div>
+            <div class="radio-row"><div class="radio-circle"></div><span class="radio-label">Sospecho que es fraude</span></div>
+            <div class="radio-row"><div class="radio-circle"></div><span class="radio-label">Contenido inapropiado</span></div>
+            <div class="radio-row"><div class="radio-circle"></div><span class="radio-label">No es un estudiante</span></div>
+            <div class="radio-row"><div class="radio-circle"></div><span class="radio-label">Otro motivo</span></div>
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Cuéntanos más (opcional)</label>
+            <textarea class="textarea-field" placeholder="Da más contexto para que podamos revisarlo…"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="sheet-footer">
+        <button class="primary-btn" style="margin-top:0;">Enviar reporte</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="confianza">
+    <div class="phone-label">Calificar</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="auth-body">
+          <div class="rate-avatar">JM</div>
+          <div class="auth-headline">¿Cómo estuvo tu experiencia con Jorge?</div>
+          <div class="auth-sub">Tu calificación ayuda a que la comunidad confíe más en Compa.</div>
+
+          <div class="rate-stars">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)" stroke-width="1"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)" stroke-width="1"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)" stroke-width="1"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)" stroke-width="1"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.3"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+          </div>
+
+          <div class="field">
+            <textarea class="textarea-field" placeholder="Cuéntanos cómo fue (opcional)"></textarea>
+          </div>
+
+          <button class="primary-btn">Enviar calificación</button>
+          <div class="auth-link"><b>Omitir por ahora</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Favoritos vacío</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading">Favoritos</div>
+      <div class="screen">
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.6"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+          </div>
+          <div class="empty-title">Aún no tienes favoritos</div>
+          <div class="empty-sub">Toca el corazón en cualquier publicación para guardarla aquí y encontrarla rápido después.</div>
+          <div class="empty-actions">
+            <button class="primary-btn" style="margin-top:0;">Explorar catálogo</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>
+          Inicio
+        </div>
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          Buscar
+        </div>
+        <div class="tab active">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+          Favoritos
+        </div>
+        <div class="tab">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          Perfil
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="publicar">
+    <div class="phone-label">Publicación creada</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="empty-state" style="padding-top:90px;">
+          <div class="empty-icon success">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <div class="empty-title">¡Tu publicación ya está activa!</div>
+          <div class="empty-sub">"Cálculo de Larson, 9a edición" ya es visible para estudiantes de Campus MTY.</div>
+          <div class="empty-actions">
+            <button class="primary-btn" style="margin-top:0;">Ver mi publicación</button>
+            <div class="ghost-btn">Volver al inicio</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="sistema">
+    <div class="phone-label">Confirmar eliminar</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="form-title">Editar publicación</div>
+        <span style="font-size:13px; font-weight:600; color:var(--brick);">Guardar</span>
+      </div>
+      <div class="screen">
+        <div class="status-section" style="padding-top:20px;">
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></div>
+              <span class="status-row-text">Pausar publicación</span>
+            </div>
+            <div class="toggle"><div class="toggle-knob"></div></div>
+          </div>
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+              <span class="status-row-text">Marcar como vendida</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon" style="color:var(--brick);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg></div>
+              <span class="status-row-text danger">Eliminar publicación</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-backdrop">
+          <div class="modal-card">
+            <div class="modal-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+            </div>
+            <div class="modal-title">¿Eliminar esta publicación?</div>
+            <div class="modal-sub">Esta acción no se puede deshacer. Se perderán los favoritos y el historial de contactos.</div>
+            <div class="modal-actions">
+              <div class="ghost-btn">Cancelar</div>
+              <button class="danger-btn">Eliminar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="sistema">
+    <div class="phone-label">Error de conexión</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="empty-state" style="padding-top:110px;">
+          <div class="empty-icon error-icon">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8" stroke-linecap="round"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>
+          </div>
+          <div class="empty-title">Sin conexión a internet</div>
+          <div class="empty-sub">No pudimos cargar el catálogo. Revisa tu conexión e intenta de nuevo.</div>
+          <div class="empty-actions">
+            <button class="primary-btn" style="margin-top:0;">Reintentar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="sistema">
+    <div class="phone-label">Toast de éxito</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="form-title">Editar perfil</div>
+        <span style="font-size:13px; font-weight:600; color:var(--brick);">Guardar</span>
+      </div>
+      <div class="screen">
+        <div class="form-body" style="display:flex; flex-direction:column; align-items:center;">
+          <div class="photo-upload-circle" style="border-style:solid; border-color:var(--line);">
+            <div class="seller-avatar" style="width:100%; height:100%; font-size:22px;">EM</div>
+          </div>
+          <div style="width:100%;">
+            <div class="field">
+              <label class="field-label">Nombre completo</label>
+              <input class="text-field" type="text" value="Enrique Macías">
+            </div>
+            <div class="field">
+              <label class="field-label">Carrera</label>
+              <input class="text-field" type="text" value="Ingeniería en Sistemas">
+            </div>
+          </div>
+        </div>
+
+        <div class="toast">
+          <div class="toast-icon">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <span class="toast-text">Cambios guardados</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="confianza">
+    <div class="phone-label">¿A quién le vendiste?</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="form-title">Marcar como vendida</div>
+        <span style="width:16px;"></span>
+      </div>
+      <div class="screen">
+        <div class="form-body">
+          <div class="auth-sub" style="text-align:left; max-width:none; margin-bottom:18px;">"Cálculo de Larson, 9a edición" — elige quién se la llevó para poder calificarlo. Esto es opcional pero ayuda a la comunidad.</div>
+
+          <div class="field-label" style="margin-bottom:2px;">Personas que te contactaron</div>
+          <div class="buyer-row">
+            <div class="buyer-avatar">EM</div>
+            <div class="buyer-info">
+              <div class="buyer-name">Enrique Macías</div>
+              <div class="buyer-time">Te contactó hace 1h</div>
+            </div>
+            <div class="radio-circle selected"></div>
+          </div>
+          <div class="buyer-row">
+            <div class="buyer-avatar">LP</div>
+            <div class="buyer-info">
+              <div class="buyer-name">Lionn Pérez</div>
+              <div class="buyer-time">Te contactó hace 4h</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="buyer-row">
+            <div class="buyer-avatar">DW</div>
+            <div class="buyer-info">
+              <div class="buyer-name">Danny Wu</div>
+              <div class="buyer-time">Te contactó ayer</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="field-label" style="margin:20px 0 2px;">Otra opción</div>
+          <div class="buyer-row" style="border-bottom:none;">
+            <div class="buyer-avatar" style="background:var(--paper); color:var(--ink-soft);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </div>
+            <div class="buyer-info">
+              <div class="buyer-name">No fue a través de Compa</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+        </div>
+
+        <div class="sticky-cta">
+          <button class="primary-btn" style="margin-top:0;">Confirmar venta</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="sistema">
+    <div class="phone-label">Loading / skeleton</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <header class="top">
+        <div class="brand-row">
+          <div class="wordmark">Compa</div>
+          <div class="top-actions">
+            <div class="icon-btn">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="1.8" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+            </div>
+            <div class="avatar">EM</div>
+          </div>
+        </div>
+        <div class="campus-chip">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg>
+          <span>Monterrey, N.L.</span>
+          <svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+      </header>
+
+      <div class="search-row">
+        <div class="search-field">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" placeholder="Busca libros, electrónica, muebles…">
+        </div>
+        <div class="filter-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F3F0EA" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+        </div>
+      </div>
+
+      <div class="screen">
+        <div class="section-head" style="padding-top:20px;">
+          <div class="section-title">Categorías</div>
+        </div>
+        <div class="cat-grid">
+          <div class="cat-item"><div class="skeleton sk-cat-icon"></div><div class="skeleton sk-cat-label"></div></div>
+          <div class="cat-item"><div class="skeleton sk-cat-icon"></div><div class="skeleton sk-cat-label"></div></div>
+          <div class="cat-item"><div class="skeleton sk-cat-icon"></div><div class="skeleton sk-cat-label"></div></div>
+          <div class="cat-item"><div class="skeleton sk-cat-icon"></div><div class="skeleton sk-cat-label"></div></div>
+          <div class="cat-item"><div class="skeleton sk-cat-icon"></div><div class="skeleton sk-cat-label"></div></div>
+          <div class="cat-item"><div class="skeleton sk-cat-icon"></div><div class="skeleton sk-cat-label"></div></div>
+          <div class="cat-item"><div class="skeleton sk-cat-icon"></div><div class="skeleton sk-cat-label"></div></div>
+          <div class="cat-item"><div class="skeleton sk-cat-icon"></div><div class="skeleton sk-cat-label"></div></div>
+        </div>
+
+        <div class="section-head">
+          <div class="section-title">Recomendado para ti</div>
+        </div>
+        <div class="grid">
+          <div class="card">
+            <div class="skeleton sk-thumb"></div>
+            <div class="info">
+              <div class="skeleton sk-line" style="width:40%; height:16px;"></div>
+              <div class="skeleton sk-line" style="width:85%;"></div>
+              <div class="skeleton sk-line" style="width:55%; margin-bottom:0;"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="skeleton sk-thumb"></div>
+            <div class="info">
+              <div class="skeleton sk-line" style="width:40%; height:16px;"></div>
+              <div class="skeleton sk-line" style="width:85%;"></div>
+              <div class="skeleton sk-line" style="width:55%; margin-bottom:0;"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="skeleton sk-thumb"></div>
+            <div class="info">
+              <div class="skeleton sk-line" style="width:40%; height:16px;"></div>
+              <div class="skeleton sk-line" style="width:85%;"></div>
+              <div class="skeleton sk-line" style="width:55%; margin-bottom:0;"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="skeleton sk-thumb"></div>
+            <div class="info">
+              <div class="skeleton sk-line" style="width:40%; height:16px;"></div>
+              <div class="skeleton sk-line" style="width:85%;"></div>
+              <div class="skeleton sk-line" style="width:55%; margin-bottom:0;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  </div>
+
+</div>
+
+<script>
+  var root = document.documentElement;
+  var defaults = {
+    '--brick': '#c1440e',
+    '--forest': '#2f6b4f',
+    '--paper': '#f3f0ea',
+    '--card': '#ffffff',
+    '--ink': '#221f1c',
+    '--font-display': "'Fraunces'",
+    '--font-body': "'Inter'"
+  };
+
+  var phoneBlocks = document.querySelectorAll('.phone-block');
+  var filterChips = document.querySelectorAll('.filter-chip');
+  var filterCount = document.getElementById('filter-count');
+
+  function applyFilter(filter){
+    var visible = 0;
+    phoneBlocks.forEach(function(block){
+      var match = filter === 'all' || block.getAttribute('data-cat') === filter;
+      block.style.display = match ? '' : 'none';
+      if (match) visible++;
+    });
+    filterCount.textContent = visible + ' de ' + phoneBlocks.length + ' pantallas';
+  }
+
+  filterChips.forEach(function(chip){
+    chip.addEventListener('click', function(){
+      filterChips.forEach(function(c){ c.classList.remove('active'); });
+      chip.classList.add('active');
+      applyFilter(chip.getAttribute('data-filter'));
+    });
+  });
+
+  applyFilter('all');
+
+  function bindColor(id, varName){
+    document.getElementById(id).addEventListener('input', function(e){
+      root.style.setProperty(varName, e.target.value);
+    });
+  }
+  bindColor('c-primary', '--brick');
+  bindColor('c-secondary', '--forest');
+  bindColor('c-bg', '--paper');
+  bindColor('c-surface', '--card');
+  bindColor('c-text', '--ink');
+
+  function bindFont(id, varName){
+    document.getElementById(id).addEventListener('change', function(e){
+      root.style.setProperty(varName, "'" + e.target.value + "'");
+    });
+  }
+  bindFont('f-display', '--font-display');
+  bindFont('f-body', '--font-body');
+
+  document.getElementById('reset-style').addEventListener('click', function(){
+    Object.keys(defaults).forEach(function(key){
+      root.style.setProperty(key, defaults[key]);
+    });
+    document.getElementById('c-primary').value = defaults['--brick'];
+    document.getElementById('c-secondary').value = defaults['--forest'];
+    document.getElementById('c-bg').value = defaults['--paper'];
+    document.getElementById('c-surface').value = defaults['--card'];
+    document.getElementById('c-text').value = defaults['--ink'];
+    document.getElementById('f-display').value = 'Fraunces';
+    document.getElementById('f-body').value = 'Inter';
+  });
+</script>
+
+</body>
+</html>

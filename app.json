@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "revelo-marketplace",
-    "slug": "revelo-marketplace",
+    "slug": "enrique-macias",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -37,6 +37,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "920c85e0-f96a-4d44-a70a-5e5f5dd80411"
+      }
+    },
+    "owner": "enrique-maciass-team"
   }
 }
