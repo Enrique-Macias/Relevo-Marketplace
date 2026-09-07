@@ -1,30 +1,66 @@
 /** `.field` + `.field-label` + `.text-field` / `.select-field`. */
 
+import { useRef } from 'react';
 import {
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type FocusEvent,
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
 
 import { IconChevronDown } from '@/components/icons';
+import { useScreenScrollViewRef } from '@/components/Screen';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { scrollToFocusedInput } from '@/lib/scroll-to-input';
 
 type FieldProps = TextInputProps & {
   label: string;
   containerStyle?: ViewStyle;
 };
 
-export function Field({ label, containerStyle, style, ...inputProps }: FieldProps) {
+/**
+ * "Scroll to focused input" implementado a mano (ver `src/lib/scroll-to-input.ts`
+ * para el porqué del mecanismo exacto). Dos alternativas que se consideraron y
+ * se descartaron para este proyecto, por si se revisita más adelante:
+ *
+ * - `react-native-keyboard-aware-scroll-view`: sin mantenimiento activo, y con
+ *   problemas documentados específicamente al usarse dentro de navegación por
+ *   stack (Expo Router corre sobre React Navigation) — el mismo tipo de
+ *   contenedor que envuelve estas pantallas.
+ * - `react-native-keyboard-controller`: la alternativa moderna y sí mantenida,
+ *   pero trae código nativo — no funciona en Expo Go, exige un development
+ *   build. Hoy toda la app (incluida esta sesión de pruebas) corre en Expo
+ *   Go; meter esa dependencia es un cambio de flujo de trabajo del proyecto
+ *   entero, no algo a decidir de paso arreglando un campo de formulario.
+ *
+ * La implementación manual es puro JS: cero dependencias nuevas, funciona en
+ * Expo Go tal como está, y es el patrón documentado de RN para esto mismo.
+ */
+export function Field({ label, containerStyle, style, onFocus, ...inputProps }: FieldProps) {
+  const inputRef = useRef<TextInput>(null);
+  const scrollViewRef = useScreenScrollViewRef();
+
+  const handleFocus = (e: FocusEvent) => {
+    onFocus?.(e);
+    // El delay importa: si se mide en el mismo tick del focus, todavía no
+    // corrió la compresión del KeyboardAvoidingView (ni terminó de animar el
+    // teclado), así que `top` saldría con la posición DE ANTES de que la
+    // pantalla se achique — el scroll apuntaría al lugar equivocado.
+    setTimeout(() => scrollToFocusedInput(scrollViewRef, inputRef), 100);
+  };
+
   return (
     <View style={[styles.field, containerStyle]}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        ref={inputRef}
         style={[styles.input, style]}
         placeholderTextColor={Colors.placeholder}
+        onFocus={handleFocus}
         {...inputProps}
       />
     </View>

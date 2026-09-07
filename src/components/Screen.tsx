@@ -9,10 +9,24 @@
  * `--paper` del `.device`.
  */
 
+import { createContext, useContext, useRef } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { Colors } from '@/constants/theme';
+
+/**
+ * El `ScrollView` de la pantalla, expuesto a cualquier `Field` que quede
+ * anidado dentro (sin importar cuántos `View` intermedios haya) — es lo que
+ * usa `scrollToFocusedInput` para llevar el campo con foco a una zona visible
+ * cuando el teclado tapa la parte baja del formulario. `null` fuera de un
+ * `Screen` con `scroll` (o dentro de uno con `scroll={false}`).
+ */
+const ScrollViewRefContext = createContext<React.RefObject<ScrollView | null> | null>(null);
+
+export function useScreenScrollViewRef() {
+  return useContext(ScrollViewRefContext);
+}
 
 type ScreenProps = {
   children: React.ReactNode;
@@ -24,17 +38,35 @@ type ScreenProps = {
 };
 
 export function Screen({ children, scroll = true, header, contentStyle }: ScreenProps) {
+  const scrollRef = useRef<ScrollView>(null);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       {header}
       {scroll ? (
-        <ScrollView
+        // Sin este KeyboardAvoidingView, en iOS el teclado se dibuja ENCIMA
+        // del ScrollView sin reducir su viewport visible — nada dentro se
+        // reacomoda, así que "hacer scroll hasta el campo" no alcanza por sí
+        // solo si el campo terminaría de cualquier forma detrás del teclado.
+        // En Android no se especifica `behavior` a propósito: el
+        // `windowSoftInputMode="adjustResize"` que ya trae Expo por default
+        // redimensiona la ventana solo; agregar `"height"` aquí comprimiría
+        // dos veces.
+        <KeyboardAvoidingView
           style={styles.flex}
-          contentContainerStyle={[styles.scrollContent, contentStyle]}
-          keyboardShouldPersistTaps="handled"
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          {children}
-        </ScrollView>
+          <ScrollViewRefContext.Provider value={scrollRef}>
+            <ScrollView
+              ref={scrollRef}
+              style={styles.flex}
+              contentContainerStyle={[styles.scrollContent, contentStyle]}
+              keyboardShouldPersistTaps="handled"
+            >
+              {children}
+            </ScrollView>
+          </ScrollViewRefContext.Provider>
+        </KeyboardAvoidingView>
       ) : (
         <View style={[styles.flex, contentStyle]}>{children}</View>
       )}
