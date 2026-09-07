@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # Relevo — Contexto del proyecto
 
 Marketplace móvil de compra-venta entre estudiantes universitarios, verificado por
