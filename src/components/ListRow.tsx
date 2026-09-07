@@ -1,7 +1,7 @@
 /** `.form-header`, `.search-field`, `.list-row` y `.radio-circle` — el sistema de los dos selectores. */
 
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View, type ViewStyle } from 'react-native';
 
 import { IconChevronLeft, IconSearch } from '@/components/icons';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
@@ -27,13 +27,28 @@ export function SearchField({
   placeholder,
   value,
   onChangeText,
+  onSubmitEditing,
+  containerStyle,
 }: {
   placeholder: string;
   value: string;
   onChangeText: (text: string) => void;
+  onSubmitEditing?: () => void;
+  /**
+   * `.search-field` no tiene ancho propio en el CSS — hereda el del bloque
+   * que lo contiene. Los usos a pantalla completa (Selector de universidad,
+   * Selector de campus, Categoría) viven solos dentro de un contenedor en
+   * columna, que por default ya estira sus hijos al ancho completo. Pero en
+   * Feed/Búsqueda el campo va en una FILA junto al botón de filtro — sin
+   * `flex:1` explícito ahí, un `TextInput` sin ancho definido se comprime al
+   * tamaño de su contenido (casi cero), y el campo queda invisible e
+   * intocable. De ahí este prop: quien lo use en una fila debe pasar
+   * `{flex:1}`.
+   */
+  containerStyle?: ViewStyle;
 }) {
   return (
-    <View style={styles.searchField}>
+    <View style={[styles.searchField, containerStyle]}>
       <IconSearch size={15} />
       <TextInput
         style={styles.searchInput}
@@ -41,6 +56,8 @@ export function SearchField({
         placeholderTextColor={Colors.placeholder}
         value={value}
         onChangeText={onChangeText}
+        onSubmitEditing={onSubmitEditing}
+        returnKeyType={onSubmitEditing ? 'search' : undefined}
         autoCorrect={false}
       />
     </View>

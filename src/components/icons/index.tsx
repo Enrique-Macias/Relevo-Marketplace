@@ -51,6 +51,17 @@ export function IconPin({ size, color }: IconProps) {
   );
 }
 
+// Pin de ubicación SIN el círculo interior (`.meta` de tarjeta de producto y
+// `.detail-meta` de Detalle) — distinto de `IconPin`, que sí lo lleva
+// (Onboarding 3/3). El propio HTML usa dos SVG distintos para esto.
+export function IconMapPin({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.5}>
+      <Path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z" />
+    </Svg>
+  );
+}
+
 // Completar perfil — dentro del círculo punteado de foto
 export function IconCamera({ size, color }: IconProps) {
   return (
@@ -175,6 +186,182 @@ export function IconLogout({ size, color }: IconProps) {
       strokeLinejoin="round"
     >
       <Path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+    </Svg>
+  );
+}
+
+// Flecha de `.section-link` ("Ver todas"/"Ver todo" en Feed)
+export function IconArrowRight({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.4}>
+      <Path d="M5 12h14M13 6l6 6-6 6" />
+    </Svg>
+  );
+}
+
+// Sliders del `.filter-btn` (Feed/Búsqueda) y el botón redondo de filtro en Categoría
+export function IconFilterSliders({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round">
+      <Path d="M4 6h16M7 12h10M10 18h4" />
+    </Svg>
+  );
+}
+
+// Corazón de favorito (`.heart`, `.fav-btn`). El HTML ya trae ambos estados
+// (contorno y relleno) — `filled` alterna entre ellos, mismo `d` en los dos.
+export function IconHeart({ size, color, filled }: IconProps & { filled?: boolean }) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={filled ? color : 'none'}
+      stroke={color}
+      strokeWidth={2}
+    >
+      <Path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z" />
+    </Svg>
+  );
+}
+
+// Compartir, en `.detail-nav` de Detalle de publicación
+export function IconShare({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Circle cx={18} cy={5} r={2.6} />
+      <Circle cx={6} cy={12} r={2.6} />
+      <Circle cx={18} cy={19} r={2.6} />
+      <Path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2" />
+    </Svg>
+  );
+}
+
+// Reportar — solo en la vista comprador de Detalle (la vendedora usa `IconKebab`)
+export function IconFlag({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M5 21V4" />
+      <Path d="M5 4h13l-3.5 5L18 14H5" />
+    </Svg>
+  );
+}
+
+// Menú de "más opciones" — solo en la vista vendedora de Detalle. Relleno
+// sólido, sin trazo — distinto de `IconDots3` (el trío de "más categorías"),
+// que es puro trazo aunque visualmente sea parecido.
+export function IconKebab({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <Circle cx={12} cy={5} r={2} />
+      <Circle cx={12} cy={12} r={2} />
+      <Circle cx={12} cy={19} r={2} />
+    </Svg>
+  );
+}
+
+// Crosshair de "Detectar campus más cercano" (Selector de campus)
+export function IconLocationCrosshair({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
+      <Circle cx={12} cy={12} r={3} />
+      <Path d="M12 2v3M12 19v3M22 12h-3M5 12H2" />
+    </Svg>
+  );
+}
+
+// Birrete del `.campus-chip` en el header del Feed
+export function IconCampusFlag({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8}>
+      <Path d="M12 3L2 8l10 5 10-5-10-5z" />
+      <Path d="M6 10.5V15c0 1 2.5 2.5 6 2.5s6-1.5 6-2.5v-4.5" />
+    </Svg>
+  );
+}
+
+// Tick del `.verified-tick` — el círculo `forest` es un `View`, esto es solo el check
+export function IconCheck({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={3}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M5 13l4 4L19 7" />
+    </Svg>
+  );
+}
+
+// `.whatsapp-btn` de Detalle de publicación
+export function IconWhatsapp({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M21 11.5a8.5 8.5 0 01-12.4 7.5L4 20l1.1-4.4A8.5 8.5 0 1121 11.5z" />
+      <Path d="M8.5 10.5c0 3 2.5 5.5 5.5 5.5" />
+    </Svg>
+  );
+}
+
+// `.seller-chevron` de la fila de vendedor en Detalle de publicación
+export function IconChevronRight({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M9 6l6 6-6 6" />
+    </Svg>
+  );
+}
+
+// Trío de "más categorías" (tile "Más" del Feed, categoría "Otros"). Solo
+// trazo, sin relleno — así está en el HTML aunque visualmente sea un aro
+// fino, no un punto sólido. Distinto de `IconKebab`.
+export function IconDots3({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.6}>
+      <Circle cx={5} cy={12} r={1.6} />
+      <Circle cx={12} cy={12} r={1.6} />
+      <Circle cx={19} cy={12} r={1.6} />
     </Svg>
   );
 }

@@ -120,6 +120,9 @@ export const Typography = {
   sectionTitle: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 15 }, // .section-title, .form-title
   buttonPrimary: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 14.5 }, // .primary-btn
   buttonWhatsapp: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 14 }, // .whatsapp-btn
+  campusChip: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 14 }, // .campus-chip (Feed) — mismo tamaño/peso que .whatsapp-btn pero es un rol distinto
+  avatarInitials: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 13 }, // .avatar (iniciales del header del Feed)
+  sellerAvatarInitials: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 14 }, // .seller-avatar (Detalle de publicación)
   input: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 14 }, // .text-field, .textarea-field, .select-field
   emphasis: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 13.5 }, // .detail-section-title, .seller-name, .ghost-btn, .list-row-name
   rowLabel: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 13.5 }, // .menu-label, .status-row-text, .radio-label
@@ -129,6 +132,8 @@ export const Typography = {
     lineHeight: 21.6, // 13.5 × 1.6
   }, // .detail-desc, .onboard-sub
   bodyStrong: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 13 }, // .title (card), .chip, .toast-text
+  cardBadge: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 10.5 }, // .thumb .badge (overlay en la tarjeta de producto — no confundir con .detail-badge, que ya matchea `caption`)
+  activeChip: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 12 }, // .active-chip
   auth: {
     fontFamily: face(Fonts.body, FontWeights.regular),
     fontSize: 13,
@@ -152,4 +157,5 @@ export const Typography = {
     lineHeight: 16.5, // 11 × 1.5
   }, // .auth-terms
   tabLabel: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 10 }, // .tab
+  statLabel: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 10 }, // .stat-label — distinto de `tabLabel`, que es 10/medium
 } as const;
