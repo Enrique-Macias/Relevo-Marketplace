@@ -256,9 +256,15 @@ Toast de éxito · Loading / skeleton
 
 ## 5. Flujos que no son obvios solo viendo las pantallas
 
-- **Verificación → acceso**: correo institucional → código OTP de 6 dígitos →
-  completar perfil (nombre, universidad, campus) → permiso de notificaciones →
-  Feed. La universidad y el campus elegidos aquí determinan qué catálogo ve el
+- **Verificación → acceso**: correo institucional (OTP passwordless) →
+  código → completar perfil (nombre, universidad, campus, y aquí se fija la
+  contraseña) → permiso de notificaciones → Feed. La sesión ya existe desde
+  que se verifica el OTP — es el equivalente de
+  `supabase.auth.signInWithOtp({ email })` seguido de la verificación del
+  código — y no depende de la contraseña. Esa contraseña, fijada después en
+  "Completar perfil", no autentica el registro: habilita el login posterior
+  por correo/contraseña (RF-02) para cuando el usuario vuelva a abrir la app.
+  La universidad y el campus elegidos aquí determinan qué catálogo ve el
   usuario de ahí en adelante.
 - **Marcar como vendida → calificación**: como no hay chat interno, el vendedor
   no sabe automáticamente quién compró. Se resuelve con la tabla

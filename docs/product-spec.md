@@ -79,11 +79,18 @@ vez validado.
 - **RF-01** Registro con correo institucional (o verificación alternativa)
   para confirmar que el usuario es estudiante. Flujo de dos pasos: correo →
   código de verificación de 6 dígitos (ver pantallas "Verificación" y
-  "Código de verificación").
-- **RF-02** Inicio de sesión (correo/contraseña, y opcionalmente Google
-  Sign-In si el correo institucional corre sobre Google Workspace).
+  "Código de verificación"). El registro en sí es passwordless — no pide
+  contraseña en este paso. La contraseña se establece después, en "Completar
+  perfil" (ver RF-03), una vez que ya existe sesión activa; no es lo que
+  autentica el registro.
+- **RF-02** Inicio de sesión por correo/contraseña — la contraseña fijada en
+  "Completar perfil" (RF-01) — para cuando el usuario vuelve a abrir la app
+  tras terminar el onboarding, y opcionalmente Google Sign-In si el correo
+  institucional corre sobre Google Workspace.
 - **RF-03** Perfil básico: nombre, universidad/campus, carrera, foto opcional,
-  calificación promedio.
+  calificación promedio. Este es también el paso donde se fija la contraseña
+  (ver RF-01/RF-02) — no es un campo de perfil visible para otros usuarios,
+  pero se establece en la misma pantalla ("Completar perfil").
 - **RF-04** Recuperación de contraseña.
 
 ### Publicaciones (listings)
