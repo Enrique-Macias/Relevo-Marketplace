@@ -216,7 +216,7 @@ correr esta suite antes de comitear.
 
 ---
 
-## 4. Inventario completo de pantallas (40)
+## 4. Inventario completo de pantallas (41)
 
 Cada pantalla abajo corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -224,9 +224,10 @@ usa el filtro visual del prototipo (Onboarding / Explorar / Publicar / Cuenta /
 Confianza / Notificaciones / Sistema). Úsalo también para organizar carpetas de
 rutas en el código (ej. `app/(onboarding)/`, `app/(explorar)/`, etc.).
 
-### Onboarding (12)
+### Onboarding (13)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
-Código de verificación · Completar perfil · Selector de universidad ·
+Código de verificación · Completar perfil ·
+Completar perfil (estado inicial) · Selector de universidad ·
 Selector de campus (onboarding) · Permiso de notificaciones ·
 Iniciar sesión · Recuperar contraseña
 
@@ -375,16 +376,44 @@ y solo al final las convenciones genéricas de los skills.
 - Variables de entorno: `.env.local` (real, ignorado) + `.env.example`
   (commiteado, vacío) — `EXPO_PUBLIC_SUPABASE_URL` y
   `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+- **Auth gating cableado**: `SessionProvider` (`src/lib/session.tsx`) escucha
+  `onAuthStateChange` y lee el perfil de `public.users`; el splash decide entre
+  carrusel / login / completar perfil / Feed, y `(tabs)/_layout.tsx` impide
+  entrar al Feed con el perfil a medias. Registro passwordless por OTP,
+  contraseña fijada en "Completar perfil" (ver §5).
+  - **Ojo con `onAuthStateChange`**: su callback es síncrono a propósito.
+    Cualquier llamada async ahí dentro provoca un deadlock conocido de
+    supabase-js que cuelga la siguiente llamada del cliente, venga de donde
+    venga. La lectura del perfil vive en un efecto aparte, fuera del lock.
+  - **Nunca `select('*')` sobre `public.users`**: `correo` está fuera del grant
+    de select, y pedir `*` hace fallar la query entera con `42501` en vez de
+    devolverla sin esa columna. Lista las columnas.
 
 **Pendiente, en este orden de prioridad:**
-1. **Auth gating** — el root layout todavía no decide a qué grupo de rutas
-   mandar según haya o no sesión activa. Sin esto, ninguna pantalla puede
-   mostrar datos reales (confirmado: `anon` no tiene grants).
+1. **Paso manual en el dashboard remoto** (bloquea probar el registro de punta
+   a punta): *Auth → Email Templates → Magic Link* tiene que incluir
+   `{{ .Token }}`, o Supabase manda un magic link en vez del código de 6
+   dígitos que espera la pantalla "Código de verificación". La versión local
+   ya está versionada en `supabase/templates/magic_link.html`.
 2. Bucket de Storage + políticas para `listing_photos.storage_url` — el
    esquema ya asume su existencia, pero `config.toml` no lo tiene configurado.
 3. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
    deja los datos listos (`listing_contacts`, `favorites`), pero no hay
    función que dispare la notificación todavía.
+
+**Backlog menor** (ninguno bloquea nada hoy — se anota explícitamente para que
+no se pierda entre las docenas de detalles de esta sesión):
+- `recuperar-password.tsx` sin conectar a `resetPasswordForEmail` — la
+  pantalla existe y navega, pero no dispara el correo real. Necesita
+  resolver deep linking primero (capturar en la app el link de vuelta que
+  manda el correo).
+- `expo-notifications` sin instalar — el botón "Activar notificaciones" del
+  onboarding solo navega, no pide permiso real al sistema operativo. Distinto
+  del pendiente #3 de arriba: ese es el lado servidor (Edge Function que
+  dispara el push); esto es el registro del device y el permiso en el
+  cliente.
+- `expo-image-picker` para la foto de perfil — el círculo de "Completar
+  perfil" es decorativo: no abre la galería ni sube nada a Storage.
 
 ---
 

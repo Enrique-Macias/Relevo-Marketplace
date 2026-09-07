@@ -238,6 +238,15 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
+# Plantilla del OTP de acceso. Sin `{{ .Token }}` en esta plantilla, Supabase
+# manda un magic link en vez del código de 6 dígitos que espera la pantalla
+# "Código de verificación" — ver el comentario del propio archivo.
+# Ojo: esto es solo para el stack local. El proyecto remoto usa la plantilla del
+# dashboard (Auth → Email Templates → Magic Link), que hay que igualar a mano.
+[auth.email.template.magic_link]
+subject = "Tu código de Relevo"
+content_path = "./supabase/templates/magic_link.html"
+
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"

@@ -1,0 +1,27 @@
+<!--
+  Plantilla del correo de acceso (RF-01).
+
+  IMPORTANTE — esta plantilla es lo que decide si el correo lleva un CÓDIGO o un
+  LINK. Supabase manda magic link por defecto; solo envía el OTP de 6 dígitos si
+  la plantilla incluye `{{ .Token }}`. Por eso aquí NO se usa
+  `{{ .ConfirmationURL }}`: la pantalla "Código de verificación" del prototipo
+  espera un código que el usuario teclea, no un link que abra el navegador.
+
+  Este archivo solo aplica al stack local (`supabase start`). El proyecto remoto
+  usa la plantilla del dashboard: Auth → Email Templates → Magic Link, que hay
+  que dejar con el mismo contenido o el flujo de código no funciona en remoto.
+-->
+<html>
+  <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #221F1C; background: #F3F0EA; padding: 32px;">
+    <h2 style="font-size: 20px; margin-bottom: 8px;">Tu código de acceso</h2>
+    <p style="font-size: 14px; color: #6B6660; margin-bottom: 24px;">
+      Ingresa este código en Relevo para verificar tu correo institucional.
+    </p>
+    <p style="font-size: 32px; font-weight: 600; letter-spacing: 6px; color: #C1440E; margin-bottom: 24px;">
+      {{ .Token }}
+    </p>
+    <p style="font-size: 12px; color: #A8A29A;">
+      El código expira en una hora. Si no fuiste tú, ignora este correo.
+    </p>
+  </body>
+</html>

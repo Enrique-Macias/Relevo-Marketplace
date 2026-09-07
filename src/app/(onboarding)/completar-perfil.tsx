@@ -1,23 +1,82 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
-import { AuthBody, AuthHeadline, AuthSub } from '@/components/AuthBody';
+import { AuthBody, AuthHeadline, AuthSub, AuthTerms } from '@/components/AuthBody';
 import { PrimaryButton } from '@/components/Buttons';
 import { Field, SelectField } from '@/components/Field';
 import { IconCamera, IconPlus } from '@/components/icons';
 import { Screen } from '@/components/Screen';
-import { Colors, Radii } from '@/constants/theme';
+import { Colors, Radii, Typography } from '@/constants/theme';
+import { useSession } from '@/lib/session';
+import { supabase } from '@/lib/supabase';
+
+import { usePerfilDraft } from './_layout';
+
+/** Mínimo de la pantalla; el servidor tiene el suyo (`minimum_password_length`). */
+const MIN_PASSWORD = 8;
 
 /** Frame "Completar perfil". Sin `.auth-logo`: el frame no lo tiene. */
 export default function CompletarPerfilScreen() {
-  const [nombre, setNombre] = useState('');
-  // Los selectores devuelven su elección por query param al hacer `router.back()`.
-  const { universidad, campus } = useLocalSearchParams<{
-    universidad?: string;
-    campus?: string;
-  }>();
+  const { session, refreshProfile } = useSession();
+  const {
+    nombre,
+    setNombre,
+    universidad,
+    campus,
+    password,
+    setPassword,
+    passwordConfirm,
+    setPasswordConfirm,
+  } = usePerfilDraft();
+
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const passwordOk = password.length >= MIN_PASSWORD && password === passwordConfirm;
+  const puedeGuardar =
+    nombre.trim().length > 0 && universidad !== null && campus !== null && passwordOk;
+
+  const guardar = async () => {
+    if (!session?.user) return;
+    setGuardando(true);
+    setError(null);
+
+    // Orden deliberado: primero la contraseña, después el perfil. Si falla el
+    // update de la tabla, la contraseña ya quedó fija y reintentar es
+    // inofensivo; al revés dejaría un perfil completo sin contraseña, y el
+    // gating mandaría al usuario al Feed sin poder volver a entrar nunca por
+    // login (RF-02).
+    const { error: ePass } = await supabase.auth.updateUser({ password });
+    if (ePass) {
+      setGuardando(false);
+      setError(ePass.message);
+      return;
+    }
+
+    // Solo las columnas del grant de update. Mandar `correo`/`estado`/
+    // `rating_promedio`, aunque fuera sin cambiarlas, rechaza el statement
+    // completo por privilegios de columna.
+    const { error: ePerfil } = await supabase
+      .from('users')
+      .update({
+        nombre: nombre.trim(),
+        universidad_id: universidad!.id,
+        campus_id: campus!.id,
+      })
+      .eq('id', session.user.id);
+
+    if (ePerfil) {
+      setGuardando(false);
+      setError(ePerfil.message);
+      return;
+    }
+
+    await refreshProfile();
+    setGuardando(false);
+    router.replace('/notificaciones');
+  };
 
   return (
     <Screen>
@@ -43,28 +102,57 @@ export default function CompletarPerfilScreen() {
           placeholder="Ej. Enrique Macías"
           value={nombre}
           onChangeText={setNombre}
+          editable={!guardando}
         />
         <SelectField
           label="Universidad"
-          value={universidad}
+          value={universidad?.nombre}
           placeholder="Selecciona tu universidad"
           onPress={() => router.push('/selector-universidad')}
+          disabled={guardando}
         />
-        {/* El último `.field` del frame lleva `style="margin-bottom:0"`. */}
+        {/*
+          El campus depende de la universidad: `campus.universidad_id` es FK, así
+          que sin universidad elegida no hay lista que mostrar. El cambio de
+          universidad limpia el campus en el borrador (ver `_layout.tsx`).
+        */}
         <SelectField
           label="Campus"
-          value={campus}
+          value={campus?.nombre}
           placeholder="Selecciona tu campus"
           onPress={() => router.push('/selector-campus')}
+          disabled={universidad === null || guardando}
+        />
+        <Field
+          label="Crea una contraseña"
+          placeholder="••••••••"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          editable={!guardando}
+        />
+        {/* El último `.field` del frame lleva `style="margin-bottom:0"`. */}
+        <Field
+          label="Confirma tu contraseña"
+          placeholder="••••••••"
+          value={passwordConfirm}
+          onChangeText={setPasswordConfirm}
+          secureTextEntry
+          editable={!guardando}
           containerStyle={styles.lastField}
         />
+        {/* `.auth-terms` con `style="margin-top:6px"`, como en el frame. */}
+        <AuthTerms style={styles.hint}>Usa al menos {MIN_PASSWORD} caracteres.</AuthTerms>
 
         {/* El frame le pone `style="margin-top:28px"` al botón. */}
         <PrimaryButton
-          label="Continuar"
-          onPress={() => router.push('/notificaciones')}
+          label={guardando ? 'Guardando…' : 'Continuar'}
+          onPress={guardar}
+          disabled={!puedeGuardar || guardando}
           style={styles.submit}
         />
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
       </AuthBody>
     </Screen>
   );
@@ -101,7 +189,16 @@ const styles = StyleSheet.create({
   lastField: {
     marginBottom: 0,
   },
+  hint: {
+    marginTop: 6,
+  },
   submit: {
     marginTop: 28,
+  },
+  error: {
+    ...Typography.meta,
+    color: Colors.brick,
+    textAlign: 'center',
+    marginTop: 12,
   },
 });

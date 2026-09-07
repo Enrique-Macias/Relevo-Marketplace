@@ -1,17 +1,41 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { getHasSeenOnboarding } from '@/lib/onboarding-flag';
+import { useSession } from '@/lib/session';
 
-/** Frame "Splash" de `design/relevo-app.html`. */
+/**
+ * Frame "Splash" — y la pantalla que decide a dónde entra el usuario.
+ *
+ * Se queda visible mientras se resuelven las dos preguntas del gating (¿hay
+ * sesión? ¿el perfil está completo?) más la bandera del carrusel. Sustituye al
+ * `setTimeout` fijo de 1.5s que tenía antes: el tiempo que tarda es el que
+ * tarde la sesión en cargar, ni más ni menos.
+ */
 export default function SplashScreen() {
+  const { status, session, isProfileComplete } = useSession();
+  const [vioCarrusel, setVioCarrusel] = useState<boolean | null>(null);
+
   useEffect(() => {
-    const t = setTimeout(() => router.replace('/bienvenida'), 1500);
-    return () => clearTimeout(t);
+    void getHasSeenOnboarding().then(setVioCarrusel);
   }, []);
+
+  const listo = status === 'ready' && vioCarrusel !== null;
+
+  if (listo) {
+    if (!session) {
+      // Sin sesión: el carrusel solo la primera vez; después, directo al login.
+      return <Redirect href={vioCarrusel ? '/iniciar-sesion' : '/bienvenida'} />;
+    }
+    if (!isProfileComplete) {
+      return <Redirect href="/completar-perfil" />;
+    }
+    return <Redirect href="/(tabs)" />;
+  }
 
   return (
     // .splash-screen{background:linear-gradient(135deg, var(--ink) 0%, var(--brick-dark) 100%);}

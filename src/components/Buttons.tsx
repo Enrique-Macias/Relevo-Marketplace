@@ -8,16 +8,25 @@ export function PrimaryButton({
   label,
   onPress,
   style,
+  disabled = false,
 }: {
   label: string;
   onPress: () => void;
   style?: ViewStyle;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
-      style={({ pressed }) => [styles.primary, pressed && styles.pressed, style]}
-      onPress={onPress}
+      style={({ pressed }) => [
+        styles.primary,
+        pressed && !disabled && styles.pressed,
+        disabled && styles.disabled,
+        style,
+      ]}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
     >
       <Text style={styles.primaryLabel}>{label}</Text>
     </Pressable>
@@ -75,5 +84,10 @@ const styles = StyleSheet.create({
   // El prototipo no define estado :active — feedback táctil mínimo, no es diseño nuevo.
   pressed: {
     opacity: 0.85,
+  },
+  // `.primary-btn.disabled, .ghost-btn.disabled, .select-field.disabled,
+  //  .text-field.disabled{ opacity:0.45; }` — regla compartida del prototipo.
+  disabled: {
+    opacity: 0.45,
   },
 });

@@ -38,6 +38,7 @@ type SelectFieldProps = {
   placeholder: string;
   onPress: () => void;
   containerStyle?: ViewStyle;
+  disabled?: boolean;
 };
 
 export function SelectField({
@@ -46,11 +47,18 @@ export function SelectField({
   placeholder,
   onPress,
   containerStyle,
+  disabled = false,
 }: SelectFieldProps) {
   return (
     <View style={[styles.field, containerStyle]}>
       <Text style={styles.label}>{label}</Text>
-      <Pressable style={styles.select} onPress={onPress} accessibilityRole="button">
+      <Pressable
+        style={[styles.select, disabled && styles.disabled]}
+        onPress={disabled ? undefined : onPress}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityState={{ disabled }}
+      >
         <Text style={value ? styles.selectValue : styles.selectPlaceholder}>
           {value ?? placeholder}
         </Text>
@@ -105,5 +113,10 @@ const styles = StyleSheet.create({
   selectPlaceholder: {
     ...Typography.input,
     color: Colors.placeholder,
+  },
+  // `.select-field.disabled{ opacity:0.45 }` — misma regla compartida del
+  // prototipo que usa `.primary-btn.disabled`.
+  disabled: {
+    opacity: 0.45,
   },
 });

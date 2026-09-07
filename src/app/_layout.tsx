@@ -4,6 +4,8 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 
+import { SessionProvider } from '@/lib/session';
+
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -27,15 +29,19 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(onboarding)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="(explorar)" />
-      <Stack.Screen name="(publicar)" />
-      <Stack.Screen name="(cuenta)" />
-      <Stack.Screen name="(confianza)" />
-      <Stack.Screen name="(notificaciones)" />
-      <Stack.Screen name="(sistema)" options={{ presentation: 'modal' }} />
-    </Stack>
+    // El provider envuelve TODO el árbol de rutas: el splash, el guard de
+    // (tabs) y las pantallas de auth leen del mismo estado de sesión.
+    <SessionProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(onboarding)" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="(explorar)" />
+        <Stack.Screen name="(publicar)" />
+        <Stack.Screen name="(cuenta)" />
+        <Stack.Screen name="(confianza)" />
+        <Stack.Screen name="(notificaciones)" />
+        <Stack.Screen name="(sistema)" options={{ presentation: 'modal' }} />
+      </Stack>
+    </SessionProvider>
   );
 }

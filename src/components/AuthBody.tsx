@@ -48,8 +48,14 @@ export function AuthLinkStrong({
   );
 }
 
-export function AuthTerms({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.terms}>{children}</Text>;
+export function AuthTerms({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: TextStyle;
+}) {
+  return <Text style={[styles.terms, style]}>{children}</Text>;
 }
 
 const styles = StyleSheet.create({

@@ -494,6 +494,16 @@
   .auth-link b{color:var(--brick); font-weight:600;}
   .auth-terms{font-size:11px; color:#A8A29A; margin-top:18px; line-height:1.5; max-width:250px;}
 
+  /* Estado deshabilitado — patrón reutilizable para cualquier control de
+     formulario, no solo el de Completar perfil. Un solo valor de opacidad para
+     que todo control inerte se lea igual; Publicar y Editar publicación lo
+     heredan sin CSS nuevo. Se nombra en compuesto (.select-field.disabled) por
+     consistencia con .otp-box.filled, .onboard-dot.active y .radio-circle.selected. */
+  .primary-btn.disabled,
+  .ghost-btn.disabled,
+  .select-field.disabled,
+  .text-field.disabled{ opacity:0.45; }
+
   /* Create listing form */
   .form-header{display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--line); flex-shrink:0;}
   .form-title{font-family:var(--font-body), sans-serif; font-weight:600; font-size:15px; color:var(--ink);}
@@ -1799,7 +1809,7 @@
           <button class="primary-btn">Iniciar sesión</button>
 
           <div class="auth-link"><b>¿Olvidaste tu contraseña?</b></div>
-          <div class="auth-terms">¿No tienes cuenta? Verifica tu correo institucional para crear una.</div>
+          <div class="auth-link">¿No tienes cuenta? <b>Verifica tu correo institucional para crear una.</b></div>
         </div>
       </div>
     </div>
@@ -2642,6 +2652,65 @@
     </div>
   </div>
 
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Completar perfil (estado inicial)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="auth-body">
+          <div class="auth-headline" style="margin-bottom:6px;">Cuéntanos de ti</div>
+          <div class="auth-sub">Esto lo verán otros estudiantes cuando les contactes por una publicación.</div>
+
+          <div class="photo-upload-circle">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.8"><circle cx="12" cy="13" r="4"/><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/></svg>
+            <div class="cam-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Nombre completo</label>
+            <input class="text-field" type="text" placeholder="Ej. Enrique Macías">
+          </div>
+          <div class="field">
+            <label class="field-label">Universidad</label>
+            <div class="select-field">
+              <span style="color:#A8A29A;">Selecciona tu universidad</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label">Campus</label>
+            <div class="select-field disabled">
+              <span style="color:#A8A29A;">Selecciona tu campus</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label">Crea una contraseña</label>
+            <input class="text-field" type="text" placeholder="••••••••">
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Confirma tu contraseña</label>
+            <input class="text-field" type="text" placeholder="••••••••">
+          </div>
+          <div class="auth-terms" style="margin-top:6px;">Usa al menos 8 caracteres.</div>
+
+          <button class="primary-btn disabled" style="margin-top:28px;">Continuar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="phone-block" data-cat="onboarding">
     <div class="phone-label">Selector de universidad</div>
     <div class="device">
@@ -2818,6 +2887,7 @@
       </div>
     </div>
   </div>
+
 
   <div class="phone-block" data-cat="onboarding">
     <div class="phone-label">Permiso de notificaciones</div>

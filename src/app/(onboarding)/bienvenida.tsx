@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton } from '@/components/Buttons';
 import { IconCheckCircle, IconPin, IconUsers } from '@/components/icons';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { markOnboardingSeen } from '@/lib/onboarding-flag';
 
 /**
  * Frames "Onboarding 1/3", "2/3" y "3/3" en una sola ruta.
@@ -69,9 +70,19 @@ export default function BienvenidaScreen() {
     }
   };
 
+  /**
+   * Salir del carrusel marca la bandera, se haya llegado por "Comenzar" o por
+   * "Omitir": el carrusel se ve una sola vez por dispositivo, complete o no el
+   * registro después.
+   */
+  const salirDelCarrusel = () => {
+    void markOnboardingSeen();
+    router.push('/verificacion');
+  };
+
   const onPrimaryPress = () => {
     if (isLast) {
-      router.push('/verificacion');
+      salirDelCarrusel();
       return;
     }
     scrollRef.current?.scrollTo({ x: (index + 1) * width, animated: true });
@@ -90,7 +101,7 @@ export default function BienvenidaScreen() {
         */}
         <Text
           style={[styles.skip, isLast && styles.skipHidden]}
-          onPress={isLast ? undefined : () => router.push('/verificacion')}
+          onPress={isLast ? undefined : salirDelCarrusel}
           suppressHighlighting
         >
           Omitir

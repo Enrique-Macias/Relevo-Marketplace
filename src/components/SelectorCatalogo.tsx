@@ -4,50 +4,71 @@
  * Los frames "Selector de universidad" y "Selector de campus (onboarding)" son
  * la misma pantalla con otro título y otros datos: `.form-header` fijo arriba,
  * `.form-body` con buscador y una lista de `.list-row` con `.radio-circle`.
- * La selección se devuelve a "Completar perfil" por query param.
+ *
+ * La selección se devuelve por el borrador del grupo (ver `(onboarding)/_layout.tsx`),
+ * no por params de ruta.
  */
 
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { FormHeader, ListRow, SearchField } from '@/components/ListRow';
 import { Screen } from '@/components/Screen';
-import { ScreenPadding } from '@/constants/theme';
-import type { Catalogo } from '@/constants/mock/catalogos';
+import { Colors, ScreenPadding, Typography } from '@/constants/theme';
+
+export type ItemCatalogo = {
+  id: number;
+  nombre: string;
+  /** `.list-row-sub`. Para universidades es la ciudad o "N campus"; para campus, la ciudad. */
+  subtitulo: string;
+};
 
 type SelectorCatalogoProps = {
   title: string;
   searchPlaceholder: string;
-  items: Catalogo[];
-  /** El frame dibuja una fila ya seleccionada; se respeta como estado inicial. */
-  initialSelectedId: string;
-  paramKey: 'universidad' | 'campus';
+  /** Carga diferida: ambas tablas solo se pueden leer con sesión activa. */
+  load: () => Promise<ItemCatalogo[]>;
+  selectedId: number | null;
+  onSelect: (item: ItemCatalogo) => void;
+  emptyText: string;
 };
 
 export function SelectorCatalogo({
   title,
   searchPlaceholder,
-  items,
-  initialSelectedId,
-  paramKey,
+  load,
+  selectedId,
+  onSelect,
+  emptyText,
 }: SelectorCatalogoProps) {
   const [query, setQuery] = useState('');
-  const [selectedId, setSelectedId] = useState(initialSelectedId);
+  const [items, setItems] = useState<ItemCatalogo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let activo = true;
+    load()
+      .then((data) => activo && setItems(data))
+      .catch((e) => activo && setError(e.message ?? 'No se pudo cargar el catálogo'));
+    return () => {
+      activo = false;
+    };
+  }, [load]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (!items) return [];
     if (!q) return items;
     return items.filter(
       (item) =>
-        item.nombre.toLowerCase().includes(q) || item.ciudad.toLowerCase().includes(q)
+        item.nombre.toLowerCase().includes(q) || item.subtitulo.toLowerCase().includes(q)
     );
   }, [items, query]);
 
-  const onSelect = (item: Catalogo) => {
-    setSelectedId(item.id);
+  const elegir = (item: ItemCatalogo) => {
+    onSelect(item);
     router.back();
-    router.setParams({ [paramKey]: item.nombre });
   };
 
   return (
@@ -63,14 +84,24 @@ export function SelectorCatalogo({
           />
         </View>
 
+        {items === null && !error ? (
+          <ActivityIndicator style={styles.estado} color={Colors.inkSoft} />
+        ) : null}
+
+        {error ? <Text style={styles.estado}>{error}</Text> : null}
+
+        {items !== null && filtered.length === 0 ? (
+          <Text style={styles.estado}>{query ? 'Sin resultados' : emptyText}</Text>
+        ) : null}
+
         {filtered.map((item, i) => (
           <ListRow
             key={item.id}
             name={item.nombre}
-            sub={item.ciudad}
+            sub={item.subtitulo}
             selected={item.id === selectedId}
             last={i === filtered.length - 1}
-            onPress={() => onSelect(item)}
+            onPress={() => elegir(item)}
           />
         ))}
       </View>
@@ -86,5 +117,13 @@ const styles = StyleSheet.create({
   },
   search: {
     marginBottom: 6,
+  },
+  // El prototipo no dibuja estados de carga/vacío para estos dos frames; es
+  // texto mínimo con los tokens existentes, no diseño nuevo.
+  estado: {
+    ...Typography.meta,
+    color: Colors.inkSoft,
+    textAlign: 'center',
+    paddingVertical: 24,
   },
 });

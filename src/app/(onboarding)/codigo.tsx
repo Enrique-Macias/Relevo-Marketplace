@@ -7,13 +7,50 @@ import { AuthBody, AuthHeadline, AuthLink, AuthLinkStrong, AuthLogo, AuthSub } f
 import { PrimaryButton } from '@/components/Buttons';
 import { Screen } from '@/components/Screen';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { useRedirectSiPerfilCompleto } from '@/lib/session';
+import { supabase } from '@/lib/supabase';
+
+import { usePerfilDraft } from './_layout';
 
 const OTP_LENGTH = 6; // `otp_length = 6` en supabase/config.toml, y 6 cajas en el frame
 
 /** Frame "Código de verificación". */
 export default function CodigoScreen() {
+  const redirect = useRedirectSiPerfilCompleto();
+  const { correo } = usePerfilDraft();
   const [code, setCode] = useState('');
+  const [verificando, setVerificando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
+
+  if (redirect) return redirect;
+
+  const verificar = async () => {
+    setVerificando(true);
+    setError(null);
+    // `type: 'email'` es el que corresponde a un OTP pedido con signInWithOtp.
+    // Si sale bien, la sesión ya existe aquí — antes de fijar contraseña.
+    const { error: e } = await supabase.auth.verifyOtp({
+      email: correo.trim(),
+      token: code,
+      type: 'email',
+    });
+    setVerificando(false);
+    if (e) {
+      setError(e.message);
+      return;
+    }
+    router.replace('/completar-perfil');
+  };
+
+  const reenviar = async () => {
+    setError(null);
+    const { error: e } = await supabase.auth.signInWithOtp({
+      email: correo.trim(),
+      options: { shouldCreateUser: true },
+    });
+    if (e) setError(e.message);
+  };
 
   return (
     <Screen>
@@ -21,7 +58,7 @@ export default function CodigoScreen() {
       <AuthBody>
         <AuthLogo mark="R" />
         <AuthHeadline>Ingresa el código</AuthHeadline>
-        <AuthSub>Te enviamos un código de 6 dígitos a nombre@estudiante.tec.mx</AuthSub>
+        <AuthSub>Te enviamos un código de 6 dígitos a {correo}</AuthSub>
 
         {/*
           El prototipo dibuja 6 cajas estáticas. Aquí son 6 cajas + un TextInput
@@ -48,10 +85,17 @@ export default function CodigoScreen() {
           autoFocus
         />
 
-        <PrimaryButton label="Verificar" onPress={() => router.push('/completar-perfil')} />
+        <PrimaryButton
+          label={verificando ? 'Verificando…' : 'Verificar'}
+          onPress={verificar}
+          disabled={code.length !== OTP_LENGTH || verificando}
+        />
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <AuthLink>
-          ¿No llegó el código? <AuthLinkStrong>Reenviar</AuthLinkStrong>
+          ¿No llegó el código?{' '}
+          <AuthLinkStrong onPress={reenviar}>Reenviar</AuthLinkStrong>
         </AuthLink>
       </AuthBody>
     </Screen>
@@ -91,5 +135,11 @@ const styles = StyleSheet.create({
     left: -9999,
     width: 1,
     height: 1,
+  },
+  error: {
+    ...Typography.meta,
+    color: Colors.brick,
+    textAlign: 'center',
+    marginTop: 12,
   },
 });
