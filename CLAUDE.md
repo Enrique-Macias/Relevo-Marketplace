@@ -1,5 +1,3 @@
-@AGENTS.md
-
 # Relevo — Contexto del proyecto
 
 Marketplace móvil de compra-venta entre estudiantes universitarios, verificado por
@@ -21,7 +19,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 39 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 41 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -81,6 +79,18 @@ llama `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, no `..._ANON_KEY` — si ves
 código o docs viejas que dicen "anon key", es el concepto equivalente pero el
 nombre técnico correcto en este proyecto es "publishable".
 
+**Correo transaccional:** Resend, con dominio propio verificado (SPF/DKIM/DMARC
+en `p=reject`, el nivel más estricto). Conectado como SMTP custom de Supabase
+Auth — el mailer default de Supabase es solo para pruebas (límite muy bajo).
+**Aviso conocido, no bloqueante:** correos institucionales con filtrado
+agresivo (confirmado con Microsoft 365 / Tec de Monterrey) pueden retener el
+correo en **Cuarentena** (`security.microsoft.com/quarantine`), sin que llegue
+ni a "Correo no deseado" — no es un problema de DNS/autenticación de nuestro
+lado (ya está en el nivel más estricto posible), es política del lado del
+destinatario. Se resuelve por usuario liberando el mensaje y marcando el
+remitente como confiable; a nivel institucional requeriría whitelisting por
+TI de cada universidad.
+
 **Principios no negociables:**
 - Row Level Security en todas las tablas — un usuario solo edita sus propias
   publicaciones y datos, sin lógica de autorización duplicada en el cliente.
@@ -117,11 +127,12 @@ Tipografía — dos familias, uso deliberado y separado:
 Ya implementado en `src/constants/theme.ts`: `Colors`, `Fonts`, `FontWeights`
 (400/500/600, todos sí se usan — no asumas que la UI evita el regular),
 `Radii` (8/12/14/16/20/9999, más el 10px de `.menu-icon`/`.status-row-icon`
-que quedó fuera del token original), `Typography` (25 roles por nombre
-semántico, cada uno citando la clase CSS exacta de origen), y
-`ScreenPadding = 20`. No hay escala formal de spacing — los paddings del
-prototipo son ad-hoc por componente; se leen directo del HTML pantalla por
-pantalla, no se inventa una escala genérica.
+que quedó fuera del token original), `Typography` (27 roles por nombre
+semántico, cada uno citando la clase CSS exacta de origen — incluye
+`.avatar`/`.seller-avatar` en weight 600, ojo si agregas un rol parecido, es
+fácil confundirlo con 500), y `ScreenPadding = 20`. No hay escala formal de
+spacing — los paddings del prototipo son ad-hoc por componente; se leen
+directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ---
 
@@ -218,11 +229,10 @@ correr esta suite antes de comitear.
 
 ## 4. Inventario completo de pantallas (41)
 
-Cada pantalla abajo corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
+Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
-usa el filtro visual del prototipo (Onboarding / Explorar / Publicar / Cuenta /
-Confianza / Notificaciones / Sistema). Úsalo también para organizar carpetas de
-rutas en el código (ej. `app/(onboarding)/`, `app/(explorar)/`, etc.).
+usa el filtro visual del prototipo. Para el estado de qué grupo ya existe
+como código real (vs. solo diseño), ver sección 8b.
 
 ### Onboarding (13)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
@@ -279,15 +289,23 @@ Toast de éxito · Loading / skeleton
   buscador) se usa una sola vez en onboarding. "Selector de campus" (bottom
   sheet, ligero) vive en el Feed para cambiar de contexto rápido sin salir del
   catálogo — pensado para cuando una universidad tenga varios campus.
-- **Búsqueda tiene dos estados, no dos pantallas separadas en producción**:
-  "Búsqueda (recomendados)" es el estado sin query (lo que ves al tocar el tab
-  Buscar o "Ver todo" desde el Feed); en cuanto el usuario escribe algo, pasa
-  al estado con chips de filtro activo y contador de resultados.
+- **El buscador de Feed y el de Búsqueda se ven idénticos pero se comportan
+  distinto — no es un bug, es la intención.** En Feed es un punto de entrada,
+  **no editable**: tocar en cualquier parte navega directo a Búsqueda en su
+  estado "recomendados" (Pressable, no TextInput). En Búsqueda sí es un
+  TextInput real que abre teclado y filtra. Ya se intentó "arreglar" esto una
+  vez convirtiendo el de Feed en editable — era un regreso a un estado
+  incorrecto, no una mejora; si algo similar se propone de nuevo, es la señal
+  de que se está confundiendo con Búsqueda.
+- **Búsqueda tiene tres estados, no tres pantallas separadas en producción**:
+  "recomendados" (sin query — lo que ves al tocar el tab Buscar o "Ver todo"
+  desde el Feed), "con resultados" (chips de filtro activo + contador), y
+  "sin resultados" (mismo componente, otro estado). Mismo patrón para
+  Categoría: 2 estados (con resultados / sin resultados), un solo componente.
 - **`anon` no tiene ni un solo grant en el proyecto remoto** — todo está
   concedido a `authenticated`. Esto significa que el Feed no puede renderizar
-  nada antes del login: el auth gating (qué pantalla se muestra según haya o
-  no sesión activa) es el siguiente trabajo pendiente, no un detalle
-  posterior. Ver sección 8.
+  nada antes del login: el auth gating decide qué pantalla se muestra según
+  haya o no sesión activa (ya implementado, ver sección 8).
 
 ---
 
@@ -295,25 +313,35 @@ Toast de éxito · Loading / skeleton
 
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
-- Ve **pantalla por pantalla**, no "constrúyeme la app" — con 39 pantallas,
-  pedir todo junto es la forma más segura de que algo se desvíe del diseño.
+- Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
+  app" — con 41 pantallas, pedir todo junto es la forma más segura de que
+  algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
-  prueba fiel al frame del HTML, después la conexión a Supabase con RLS.
-- Si vas a agregar una pantalla que no existe en `relevo-app.html`
-  (por ejemplo, para un caso de uso nuevo), constrúyela ahí primero.
+  prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
+  el patrón que ya siguieron Onboarding y Explorar (sección 8b) — antes de
+  empezar el siguiente grupo, revisa esa sección para no reconstruir
+  componentes que ya existen (`ProductCard`, `SheetScreen`, `Field`,
+  `ConfirmModal`, etc.).
+- Si vas a agregar una pantalla o estado que no existe en `relevo-app.html`
+  (por ejemplo, un caso borde nuevo), constrúyelo ahí primero.
 - **Para cualquier trabajo de esquema/RLS/backend, usa Plan Mode y aprueba
   por fases chicas**, no un plan que cubra varias tablas o varios flujos a la
   vez. El esquema actual pasó por 5 rondas de revisión de plan antes de
-  ejecutarse — cada ronda encontró un hueco de seguridad real (grants sin
-  policy que los respalde, `ON DELETE CASCADE` borrando evidencia de
-  moderación, un `UPDATE` que podía reapuntar una calificación). Ninguno de
-  esos huecos era visible con solo "que compile" — se necesitó revisión
-  deliberada antes de aprobar.
+  ejecutarse — cada ronda encontró un hueco de seguridad real. Ninguno era
+  visible con solo "que compile" — se necesitó revisión deliberada.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario — varios bugs de esta fase (grants inútiles por
-  `pg_default_acl`, un `permission denied` en un trigger, un segfault
-  reproducible) solo aparecieron corriendo la suite con privilegios reales.
+  `postgres`/superusuario.
+- **Para bugs de UI que dependen de interacción real (teclado, gestos, touch),
+  el simulador headless de Claude Code no siempre puede confirmarlos** — no
+  dispara `keyboardDidShow` ni simula touch. Cuando reporte "no pude
+  verificarlo, pero el patrón es el estándar", trátalo como pendiente real de
+  que tú lo confirmes con tus propios dedos, no como hecho.
+- **Ojo con navegación anidada y `presentation` de Stack** (ver sección 9):
+  una ruta con `presentation:'transparentModal'` declarada en un Stack
+  anidado no funciona si el Stack padre ya presenta esa ruta como card
+  opaca — la presentación se declara en el Stack que de verdad ejecuta la
+  transición, no en el que "parece" dueño de la ruta.
 
 ---
 
@@ -359,47 +387,91 @@ y solo al final las convenciones genéricas de los skills.
 - 6 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
   con RLS + regresión de 42 aserciones pasando.
 - Seed de datos de referencia (12 categorías, Tec de Monterrey / campus
-  Monterrey) aplicado en remoto vía `db push --include-seed` (el CLI no lo
-  hace automático — `db push` empuja migraciones, no datos; los seeds solo
-  corren en `db start`/`db reset` locales). `seed.sql` es idempotente
-  (`on conflict do nothing`) porque un seed remoto sí se puede volver a
-  correr, a diferencia del local que siempre parte de una base limpia.
+  Monterrey) aplicado en remoto vía `db push --include-seed`. `seed.sql` es
+  idempotente (`on conflict do nothing`).
 - Cliente conectado: `@supabase/supabase-js` con sesión cifrada
   (`src/lib/supabase.ts`, patrón `LargeSecureStore` — AES-256 vía
   `expo-crypto`, llave en `expo-secure-store`, ciphertext en AsyncStorage
-  porque `SecureStore` rechaza payloads >~2KB y una sesión completa los
-  excede). `detectSessionInUrl: false` porque no hay URL de navegador que
-  parsear en React Native.
+  porque `SecureStore` rechaza payloads >~2KB). `detectSessionInUrl: false`
+  porque no hay URL de navegador que parsear en React Native.
 - Tipos de TypeScript generados del esquema real (`src/lib/database.types.ts`,
   `npm run gen:types`) — solo `schema public`, `private` queda fuera a
   propósito.
 - Variables de entorno: `.env.local` (real, ignorado) + `.env.example`
-  (commiteado, vacío) — `EXPO_PUBLIC_SUPABASE_URL` y
-  `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
-- **Auth gating cableado**: `SessionProvider` (`src/lib/session.tsx`) escucha
-  `onAuthStateChange` y lee el perfil de `public.users`; el splash decide entre
-  carrusel / login / completar perfil / Feed, y `(tabs)/_layout.tsx` impide
-  entrar al Feed con el perfil a medias. Registro passwordless por OTP,
-  contraseña fijada en "Completar perfil" (ver §5).
+  (commiteado, vacío).
+- **Auth gating cableado end-to-end y confirmado con una cuenta real de Tec
+  de Monterrey**: `SessionProvider` (`src/lib/session.tsx`) escucha
+  `onAuthStateChange` y lee el perfil de `public.users`; el splash decide
+  entre carrusel / login / completar perfil / Feed; `(tabs)/_layout.tsx`
+  impide entrar al Feed con el perfil a medias. Registro passwordless por
+  OTP, contraseña fijada en "Completar perfil". Probado de punta a punta:
+  correo institucional real → código de 6 dígitos → perfil → cerrar sesión →
+  volver a entrar con `signInWithPassword`.
   - **Ojo con `onAuthStateChange`**: su callback es síncrono a propósito.
     Cualquier llamada async ahí dentro provoca un deadlock conocido de
-    supabase-js que cuelga la siguiente llamada del cliente, venga de donde
-    venga. La lectura del perfil vive en un efecto aparte, fuera del lock.
-  - **Nunca `select('*')` sobre `public.users`**: `correo` está fuera del grant
-    de select, y pedir `*` hace fallar la query entera con `42501` en vez de
-    devolverla sin esa columna. Lista las columnas.
+    supabase-js que cuelga la siguiente llamada del cliente. La lectura del
+    perfil vive en un efecto aparte, fuera del lock.
+  - **Nunca `select('*')` sobre `public.users`**: `correo` está fuera del
+    grant de select, y pedir `*` hace fallar la query entera con `42501` en
+    vez de devolverla sin esa columna. Lista las columnas.
+- **Plantilla de correo OTP aplicada y confirmada funcional** en el dashboard
+  remoto (Auth → Email Templates → Magic Link, con `{{ .Token }}`) y
+  versionada en `supabase/templates/magic_link.html` para que `supabase
+  start` local también la use. Ver la nota de SMTP/cuarentena en sección 1.
 
 **Pendiente, en este orden de prioridad:**
-1. **Paso manual en el dashboard remoto** (bloquea probar el registro de punta
-   a punta): *Auth → Email Templates → Magic Link* tiene que incluir
-   `{{ .Token }}`, o Supabase manda un magic link en vez del código de 6
-   dígitos que espera la pantalla "Código de verificación". La versión local
-   ya está versionada en `supabase/templates/magic_link.html`.
-2. Bucket de Storage + políticas para `listing_photos.storage_url` — el
+1. Bucket de Storage + políticas para `listing_photos.storage_url` — el
    esquema ya asume su existencia, pero `config.toml` no lo tiene configurado.
-3. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
+2. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
    deja los datos listos (`listing_contacts`, `favorites`), pero no hay
    función que dispare la notificación todavía.
+3. Conectar el grupo Explorar a datos reales (hoy usa mocks, ver 8b) —
+   listings, favorites, listing_contacts, la RPC de vistas.
+
+---
+
+## 8b. Estado de implementación del frontend (por grupo)
+
+**Onboarding — construido y conectado a Supabase real.** Las 13 pantallas
+existen como código, con auth gating real (ver sección 8). Sin conectar
+todavía, fuera de alcance por decisión explícita: `recuperar-password.tsx`
+(necesita deep linking), `expo-notifications` real (el botón solo navega),
+`expo-image-picker` para la foto de perfil, íconos nativos de los 4 triggers
+de `NativeTabs` (siguen siendo solo texto).
+
+**Explorar — construido con datos de prueba, sin conectar a Supabase
+todavía.** Las 11 pantallas existen como código (7 archivos de ruta, algunos
+cubren varios estados: Categoría 2 estados, Búsqueda 3 estados, Detalle 2
+estados comprador/vendedor). Estado compartido entre pantallas (campus
+elegido, filtros activos, favoritos) vive en `src/lib/explorar-state.tsx` —
+los filtros de precio/categoría/condición ya filtran de verdad sobre el
+arreglo mock, no son decorativos, así que conectar Supabase después es
+reemplazar la fuente de datos, no la lógica de filtrado.
+
+Componentes reusables ya construidos aquí (no los reconstruyas):
+`ProductCard`, `CategoryTile`, `PageHeader`, `EmptyState`,
+`SegmentedControl`, `Chip`, `ActiveFilterChip`, `SheetScreen`,
+`RoundIconButton`, más los íconos de categorías. `SheetScreen` es una
+pantalla de Stack con `presentation:'transparentModal'` **declarada en el
+Stack raíz** (`src/app/selector-campus.tsx`, `src/app/filtros.tsx` — no
+dentro de `(explorar)/`, ver el gotcha de sección 9) — es distinto de
+`CampusBottomSheet.tsx` (un `Modal` de RN real, usado solo por Completar
+perfil en Onboarding); no unificar ambos, sirven casos de uso distintos ya
+documentados en sección 5.
+
+Botones inertes a propósito (llevan a grupos sin construir): Compartir,
+Reportar, menú kebab, "Marcar como vendida", "Editar publicación" en
+Detalle. El botón de WhatsApp SÍ es funcional de verdad (`Linking.openURL`),
+aunque todavía con teléfono mock, no con el insert real a
+`listing_contacts`.
+
+**Cuenta, Confianza, Publicar, Notificaciones, Sistema — no construidos
+todavía**, salvo piezas puntuales ya hechas de paso: `ConfirmModal` (genérico,
+usado hoy solo por "Confirmar cerrar sesión") y `DangerButton` ya existen en
+`src/components/`, listos para reusarse cuando se conecte "Confirmar
+eliminar" en Editar publicación. El placeholder de `(tabs)/perfil.tsx` solo
+tiene el afordance de cerrar sesión — el resto de la pantalla Perfil
+(avatar, stats, menú) no se ha construido.
 
 ---
 
@@ -409,11 +481,9 @@ y solo al final las convenciones genéricas de los skills.
   `revoke all` explícito primero.** Supabase otorga privilegios por default
   sobre cada tabla nueva de `public` a `anon`/`authenticated`/`service_role`.
   Un `grant select (columnas_seguras)` es puramente aditivo — no retira nada
-  ya concedido. La primera corrida de la suite de RLS confirmó esto en carne
-  propia: `correo` se leyó sin problema pese al grant "restringido". Cada
-  bloque de grants en las migraciones lleva ahora un comentario explicando
-  esto — **cualquier tabla nueva necesita el mismo patrón: revocar primero,
-  otorgar después.**
+  ya concedido. Cada bloque de grants en las migraciones lleva ahora un
+  comentario explicando esto — **cualquier tabla nueva necesita el mismo
+  patrón: revocar primero, otorgar después.**
 - **Un `policy` no puede invocar una función `SECURITY DEFINER` sin que el rol
   invocante tenga `USAGE`/`EXECUTE` sobre ella** — aunque la función "corra
   con privilegios elevados", Postgres exige el permiso de invocación al rol
@@ -422,19 +492,21 @@ y solo al final las convenciones genéricas de los skills.
   para el detalle completo): una policy que referencia una función
   `SECURITY DEFINER` sin privilegio de ejecución, cuyo rechazo se captura
   dentro de un bloque `EXCEPTION` de PL/pgSQL, tumba el engine de Postgres
-  local con `SIGSEGV` — no da un `permission denied` limpio. Es la razón por
-  la que `authenticated` tiene `USAGE`/`EXECUTE` sobre `is_active_user()` y
-  `can_rate()`: no por necesidad funcional del camino feliz (se probó que las
-  escrituras legítimas funcionan sin ese grant), sino porque sin él, cualquier
-  función futura en plpgsql que envuelva un insert/update en un bloque
-  `EXCEPTION` (el patrón normal de manejo de errores) puede volver a
-  dispararlo. **No lo "endurezcas" quitando esos grants sin releer
-  `KNOWN_ISSUES.md` primero** — la suite de regresión tiene aserciones
-  dedicadas que fallan con mensaje legible si alguien lo intenta.
+  local con `SIGSEGV`. Es la razón por la que `authenticated` tiene
+  `USAGE`/`EXECUTE` sobre `is_active_user()` y `can_rate()` — no lo
+  "endurezcas" quitando esos grants sin releer `KNOWN_ISSUES.md` primero.
 - **Desde el 30 de mayo de 2026, Supabase ya no expone tablas nuevas al Data
-  API por defecto.** Las tablas actuales ya tienen sus `grant` explícitos en
-  las migraciones; cualquier tabla que se agregue después necesita el suyo
-  propio o será invisible para el cliente aunque RLS esté bien configurado.
-- **`supabase db push` no aplica `seed.sql`.** Solo `db start` (primera vez) y
-  `db reset` lo corren, y ambos son locales. Para sembrar datos de referencia
-  en remoto, usa `db push --include-seed` explícitamente.
+  API por defecto.** Cualquier tabla que se agregue después necesita su
+  `grant` propio o será invisible para el cliente aunque RLS esté bien
+  configurado.
+- **`supabase db push` no aplica `seed.sql`.** Solo `db start`/`db reset`
+  locales lo corren. Para sembrar datos de referencia en remoto, usa
+  `db push --include-seed` explícitamente.
+- **`presentation:'transparentModal'` de un Stack anidado no funciona si el
+  Stack padre ya presenta esa ruta como card opaca.** El navegador que de
+  verdad ejecuta el `push` (a menudo el Stack raíz, no el Stack del grupo
+  donde vive el archivo) es el que decide cómo se presenta la transición.
+  Una hoja/modal transparente debe declararse en el Stack que realmente
+  monta esa ruta — moverla de un grupo anidado a una ruta de nivel raíz
+  (como se hizo con `selector-campus.tsx`/`filtros.tsx`) resuelve esto sin
+  tener que migrar a un `Modal` de RN.
