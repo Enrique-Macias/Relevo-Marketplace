@@ -216,7 +216,7 @@ correr esta suite antes de comitear.
 
 ---
 
-## 4. Inventario completo de pantallas (39)
+## 4. Inventario completo de pantallas (40)
 
 Cada pantalla abajo corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -224,10 +224,11 @@ usa el filtro visual del prototipo (Onboarding / Explorar / Publicar / Cuenta /
 Confianza / Notificaciones / Sistema). Úsalo también para organizar carpetas de
 rutas en el código (ej. `app/(onboarding)/`, `app/(explorar)/`, etc.).
 
-### Onboarding (11)
+### Onboarding (12)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
 Código de verificación · Completar perfil · Selector de universidad ·
-Permiso de notificaciones · Iniciar sesión · Recuperar contraseña
+Selector de campus (onboarding) · Permiso de notificaciones ·
+Iniciar sesión · Recuperar contraseña
 
 ### Explorar (11)
 Feed · Selector de campus · Categoría · Categoría sin resultados ·
