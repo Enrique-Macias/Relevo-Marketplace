@@ -20,6 +20,13 @@ export const Colors = {
   goldTint: '#F7ECD6', // literal en el CSS
   slate: '#5B6B78',
   slateTint: '#E3E9EC', // literal en el CSS
+  // Gris de placeholder. No es una variable :root del prototipo — está escrito
+  // a mano en cada regla que lo usa (.text-field::placeholder, .search-field
+  // input::placeholder, el span vacío de .select-field, y .auth-terms).
+  placeholder: '#A8A29A',
+  // Paper con alfa sobre el gradiente del splash (.splash-tag, .splash-dot).
+  paper65: 'rgba(243,240,234,0.65)',
+  paper50: 'rgba(243,240,234,0.5)',
 } as const;
 
 export const Fonts = {
@@ -35,6 +42,30 @@ export const FontWeights = {
   medium: '500',
   semibold: '600',
 } as const;
+
+/**
+ * En CSS una familia y un peso son dos ejes independientes: `font-family:Inter`
+ * + `font-weight:600` resuelve solo. React Native no funciona así — cada cara
+ * se registra por separado en `useFonts()` de `src/app/_layout.tsx`, y la clave
+ * que se le pasa ahí ES el nombre de familia que RN conoce. Pedir
+ * `fontFamily:'Inter'` con `fontWeight:'600'` no matchea ninguna cara
+ * registrada: el texto cae silenciosamente al font del sistema.
+ *
+ * Por eso los roles de abajo emiten el nombre de la cara ya resuelto
+ * (`Inter_600SemiBold`) y NO llevan `fontWeight` — en Android un peso encima de
+ * una cara que ya es semibold provoca bold sintético. `Fonts` y `FontWeights`
+ * siguen siendo los tokens documentales; este helper es el único puente.
+ */
+const FACE_SUFFIX = {
+  [FontWeights.regular]: 'Regular',
+  [FontWeights.medium]: 'Medium',
+  [FontWeights.semibold]: 'SemiBold',
+} as const;
+
+type Weight = (typeof FontWeights)[keyof typeof FontWeights];
+
+const face = (family: (typeof Fonts)[keyof typeof Fonts], weight: Weight) =>
+  `${family}_${weight}${FACE_SUFFIX[weight]}` as const;
 
 // Radios reales observados en el CSS (agrupados por los valores que de verdad se repiten)
 export const Radii = {
@@ -58,53 +89,62 @@ export const ScreenPadding = 20;
  * cada rol toma el tamaño/peso/line-height exacto de la(s) clase(s) CSS que
  * lo usan — roles con el mismo valor numérico se dejan separados cuando el
  * prototipo los trata como cosas semánticamente distintas.
+ *
+ * Ojo con `lineHeight`: en CSS los valores del prototipo son multiplicadores
+ * sin unidad (`line-height:1.6`), pero React Native lo interpreta en puntos
+ * absolutos. Aquí ya van multiplicados por su fontSize — el ratio original
+ * queda anotado al lado para poder rastrearlo al CSS.
  */
 export const Typography = {
   // Fraunces — display: wordmark, precios, headlines de onboarding/auth
-  splash: { fontFamily: Fonts.display, fontSize: 26, fontWeight: FontWeights.semibold }, // .splash-word
+  splash: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 26 }, // .splash-word
   heroHeadline: {
-    fontFamily: Fonts.display,
+    fontFamily: face(Fonts.display, FontWeights.medium),
     fontSize: 24,
-    fontWeight: FontWeights.medium,
-    lineHeight: 1.15,
+    lineHeight: 27.6, // 24 × 1.15
   }, // .hero-headline
-  wordmark: { fontFamily: Fonts.display, fontSize: 24, fontWeight: FontWeights.semibold }, // .wordmark
-  headline: { fontFamily: Fonts.display, fontSize: 22, fontWeight: FontWeights.medium }, // .auth-headline, .onboard-headline
-  otp: { fontFamily: Fonts.display, fontSize: 20, fontWeight: FontWeights.semibold }, // .otp-box
-  priceLarge: { fontFamily: Fonts.display, fontSize: 28, fontWeight: FontWeights.semibold }, // .detail-price
-  price: { fontFamily: Fonts.display, fontSize: 19, fontWeight: FontWeights.semibold }, // .price (card), .stat-num
-  emptyTitle: { fontFamily: Fonts.display, fontSize: 19, fontWeight: FontWeights.medium }, // .empty-title
-  modalTitle: { fontFamily: Fonts.display, fontSize: 17, fontWeight: FontWeights.medium }, // .modal-title
+  wordmark: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 24 }, // .wordmark
+  headline: { fontFamily: face(Fonts.display, FontWeights.medium), fontSize: 22 }, // .auth-headline, .onboard-headline
+  logoMark: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 22 }, // .auth-logo span
+  otp: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 20 }, // .otp-box
+  priceLarge: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 28 }, // .detail-price, .splash-logo span
+  price: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 19 }, // .price (card), .stat-num
+  emptyTitle: { fontFamily: face(Fonts.display, FontWeights.medium), fontSize: 19 }, // .empty-title
+  modalTitle: { fontFamily: face(Fonts.display, FontWeights.medium), fontSize: 17 }, // .modal-title
 
   // Inter — body: todo lo demás
-  pageHeading: { fontFamily: Fonts.body, fontSize: 19, fontWeight: FontWeights.semibold }, // .page-heading
-  profileName: { fontFamily: Fonts.body, fontSize: 17, fontWeight: FontWeights.semibold }, // .profile-name
-  sheetTitle: { fontFamily: Fonts.body, fontSize: 16, fontWeight: FontWeights.semibold }, // .sheet-title
-  detailTitle: { fontFamily: Fonts.body, fontSize: 16, fontWeight: FontWeights.semibold }, // .detail-title
-  sectionTitle: { fontFamily: Fonts.body, fontSize: 15, fontWeight: FontWeights.semibold }, // .section-title, .form-title
-  buttonPrimary: { fontFamily: Fonts.body, fontSize: 14.5, fontWeight: FontWeights.semibold }, // .primary-btn
-  buttonWhatsapp: { fontFamily: Fonts.body, fontSize: 14, fontWeight: FontWeights.semibold }, // .whatsapp-btn
-  input: { fontFamily: Fonts.body, fontSize: 14, fontWeight: FontWeights.regular }, // .text-field, .textarea-field, .select-field
-  emphasis: { fontFamily: Fonts.body, fontSize: 13.5, fontWeight: FontWeights.semibold }, // .detail-section-title, .seller-name, .ghost-btn, .list-row-name
-  rowLabel: { fontFamily: Fonts.body, fontSize: 13.5, fontWeight: FontWeights.medium }, // .menu-label, .status-row-text, .radio-label
+  pageHeading: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 19 }, // .page-heading
+  profileName: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 17 }, // .profile-name
+  sheetTitle: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 16 }, // .sheet-title
+  detailTitle: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 16 }, // .detail-title
+  sectionTitle: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 15 }, // .section-title, .form-title
+  buttonPrimary: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 14.5 }, // .primary-btn
+  buttonWhatsapp: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 14 }, // .whatsapp-btn
+  input: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 14 }, // .text-field, .textarea-field, .select-field
+  emphasis: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 13.5 }, // .detail-section-title, .seller-name, .ghost-btn, .list-row-name
+  rowLabel: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 13.5 }, // .menu-label, .status-row-text, .radio-label
   paragraph: {
-    fontFamily: Fonts.body,
+    fontFamily: face(Fonts.body, FontWeights.regular),
     fontSize: 13.5,
-    fontWeight: FontWeights.regular,
-    lineHeight: 1.6,
+    lineHeight: 21.6, // 13.5 × 1.6
   }, // .detail-desc, .onboard-sub
-  bodyStrong: { fontFamily: Fonts.body, fontSize: 13, fontWeight: FontWeights.medium }, // .title (card), .chip, .toast-text
+  bodyStrong: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 13 }, // .title (card), .chip, .toast-text
   auth: {
-    fontFamily: Fonts.body,
+    fontFamily: face(Fonts.body, FontWeights.regular),
     fontSize: 13,
-    fontWeight: FontWeights.regular,
-    lineHeight: 1.55,
+    lineHeight: 20.15, // 13 × 1.55
   }, // .auth-sub, .empty-sub
-  label: { fontFamily: Fonts.body, fontSize: 12.5, fontWeight: FontWeights.semibold }, // .field-label, .section-link, .notif-title
-  labelMuted: { fontFamily: Fonts.body, fontSize: 12.5, fontWeight: FontWeights.medium }, // .segment
-  meta: { fontFamily: Fonts.body, fontSize: 12.5, fontWeight: FontWeights.regular }, // .results-count, .detail-meta, .auth-link, .splash-tag
-  caption: { fontFamily: Fonts.body, fontSize: 11, fontWeight: FontWeights.semibold }, // .cat-label, .hero-eyebrow
-  metaLight: { fontFamily: Fonts.body, fontSize: 11, fontWeight: FontWeights.regular }, // .meta (product card)
-  heroStat: { fontFamily: Fonts.body, fontSize: 11.5, fontWeight: FontWeights.medium }, // .hero-stat (chip del hero del Feed)
-  tabLabel: { fontFamily: Fonts.body, fontSize: 10, fontWeight: FontWeights.medium }, // .tab
+  label: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 12.5 }, // .field-label, .section-link, .notif-title, .onboard-skip
+  labelMuted: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 12.5 }, // .segment
+  meta: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 12.5 }, // .results-count, .detail-meta, .auth-link, .splash-tag
+  rowSub: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 11.5 }, // .list-row-sub, .buyer-time
+  heroStat: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 11.5 }, // .hero-stat (chip del hero del Feed)
+  caption: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 11 }, // .cat-label, .hero-eyebrow
+  metaLight: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 11 }, // .meta (product card)
+  terms: {
+    fontFamily: face(Fonts.body, FontWeights.regular),
+    fontSize: 11,
+    lineHeight: 16.5, // 11 × 1.5
+  }, // .auth-terms
+  tabLabel: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 10 }, // .tab
 } as const;
