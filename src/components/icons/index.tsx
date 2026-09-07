@@ -1,8 +1,9 @@
 /**
- * Iconos del grupo Onboarding, transcritos literalmente de los `<svg>` inline de
- * `design/relevo-app.html`. Cada `d`, `cx`, `r` y `stroke-width` de abajo está
- * copiado del frame correspondiente — si alguno hay que cambiarlo, se cambia
- * primero en el prototipo (CLAUDE.md §0, regla 3).
+ * Iconos transcritos literalmente de los `<svg>` inline de
+ * `design/relevo-app.html` (originalmente solo Onboarding, ahora también
+ * Sistema). Cada `d`, `cx`, `r` y `stroke-width` de abajo está copiado del
+ * frame correspondiente — si alguno hay que cambiarlo, se cambia primero en
+ * el prototipo (CLAUDE.md §0, regla 3).
  *
  * Todos comparten `viewBox="0 0 24 24"` y `fill="none"`: son iconos de trazo,
  * el color entra por `stroke`. El tamaño (`size`) es el `width`/`height` que el
@@ -95,6 +96,24 @@ export function IconChevronLeft({ size, color }: IconProps) {
   );
 }
 
+// X de cerrar del `.sheet-header` (Filtros, Reportar publicación, Selector de
+// campus, y ahora el bottom sheet de campus de Completar perfil)
+export function IconClose({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+    >
+      <Path d="M6 6l12 12M18 6L6 18" />
+    </Svg>
+  );
+}
+
 // Chevron de los `.select-field` (Universidad / Campus)
 export function IconChevronDown({ size, color }: IconProps) {
   return (
@@ -138,6 +157,24 @@ export function IconBell({ size, color }: IconProps) {
     >
       <Path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
       <Path d="M13.7 21a2 2 0 01-3.4 0" />
+    </Svg>
+  );
+}
+
+// "Confirmar cerrar sesión" (sistema) — el ícono dentro de `.modal-icon`
+export function IconLogout({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
     </Svg>
   );
 }

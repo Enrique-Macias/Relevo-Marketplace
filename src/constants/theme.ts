@@ -137,6 +137,11 @@ export const Typography = {
   label: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 12.5 }, // .field-label, .section-link, .notif-title, .onboard-skip
   labelMuted: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 12.5 }, // .segment
   meta: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 12.5 }, // .results-count, .detail-meta, .auth-link, .splash-tag
+  modalSub: {
+    fontFamily: face(Fonts.body, FontWeights.regular),
+    fontSize: 12.5,
+    lineHeight: 19.375, // 12.5 × 1.55
+  }, // .modal-sub — mismo tamaño que `meta`, pero con line-height propio
   rowSub: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 11.5 }, // .list-row-sub, .buyer-time
   heroStat: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 11.5 }, // .hero-stat (chip del hero del Feed)
   caption: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 11 }, // .cat-label, .hero-eyebrow

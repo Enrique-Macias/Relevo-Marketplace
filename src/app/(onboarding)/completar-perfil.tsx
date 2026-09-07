@@ -5,6 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { AuthBody, AuthHeadline, AuthSub, AuthTerms } from '@/components/AuthBody';
 import { PrimaryButton } from '@/components/Buttons';
+import { CampusBottomSheet } from '@/components/CampusBottomSheet';
 import { Field, SelectField } from '@/components/Field';
 import { IconCamera, IconPlus } from '@/components/icons';
 import { Screen } from '@/components/Screen';
@@ -25,6 +26,7 @@ export default function CompletarPerfilScreen() {
     setNombre,
     universidad,
     campus,
+    setCampus,
     password,
     setPassword,
     passwordConfirm,
@@ -33,6 +35,7 @@ export default function CompletarPerfilScreen() {
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [campusSheetVisible, setCampusSheetVisible] = useState(false);
 
   const passwordOk = password.length >= MIN_PASSWORD && password === passwordConfirm;
   const puedeGuardar =
@@ -79,8 +82,9 @@ export default function CompletarPerfilScreen() {
   };
 
   return (
-    <Screen>
-      <StatusBar style="dark" />
+    <>
+      <Screen>
+        <StatusBar style="dark" />
       <AuthBody>
         {/* El frame le mete `style="margin-bottom:6px"` encima de los 9px de la clase. */}
         <AuthHeadline style={styles.headline}>Cuéntanos de ti</AuthHeadline>
@@ -115,12 +119,15 @@ export default function CompletarPerfilScreen() {
           El campus depende de la universidad: `campus.universidad_id` es FK, así
           que sin universidad elegida no hay lista que mostrar. El cambio de
           universidad limpia el campus en el borrador (ver `_layout.tsx`).
+          Se presenta como bottom sheet, no pantalla completa — ver
+          CampusBottomSheet.tsx y el frame "Completar perfil (selector de
+          campus)" en relevo-app.html.
         */}
         <SelectField
           label="Campus"
           value={campus?.nombre}
           placeholder="Selecciona tu campus"
-          onPress={() => router.push('/selector-campus')}
+          onPress={() => setCampusSheetVisible(true)}
           disabled={universidad === null || guardando}
         />
         <Field
@@ -153,8 +160,17 @@ export default function CompletarPerfilScreen() {
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
-      </AuthBody>
-    </Screen>
+        </AuthBody>
+      </Screen>
+
+      <CampusBottomSheet
+        visible={campusSheetVisible}
+        universidadId={universidad?.id ?? null}
+        selectedId={campus?.id ?? null}
+        onSelect={setCampus}
+        onClose={() => setCampusSheetVisible(false)}
+      />
+    </>
   );
 }
 

@@ -227,8 +227,8 @@ rutas en el código (ej. `app/(onboarding)/`, `app/(explorar)/`, etc.).
 ### Onboarding (13)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
 Código de verificación · Completar perfil ·
-Completar perfil (estado inicial) · Selector de universidad ·
-Selector de campus (onboarding) · Permiso de notificaciones ·
+Completar perfil (estado inicial) · Completar perfil (selector de campus) ·
+Selector de universidad · Permiso de notificaciones ·
 Iniciar sesión · Recuperar contraseña
 
 ### Explorar (11)
@@ -400,20 +400,6 @@ y solo al final las convenciones genéricas de los skills.
 3. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
    deja los datos listos (`listing_contacts`, `favorites`), pero no hay
    función que dispare la notificación todavía.
-
-**Backlog menor** (ninguno bloquea nada hoy — se anota explícitamente para que
-no se pierda entre las docenas de detalles de esta sesión):
-- `recuperar-password.tsx` sin conectar a `resetPasswordForEmail` — la
-  pantalla existe y navega, pero no dispara el correo real. Necesita
-  resolver deep linking primero (capturar en la app el link de vuelta que
-  manda el correo).
-- `expo-notifications` sin instalar — el botón "Activar notificaciones" del
-  onboarding solo navega, no pide permiso real al sistema operativo. Distinto
-  del pendiente #3 de arriba: ese es el lado servidor (Edge Function que
-  dispara el push); esto es el registro del device y el permiso en el
-  cliente.
-- `expo-image-picker` para la foto de perfil — el círculo de "Completar
-  perfil" es decorativo: no abre la galería ni sube nada a Storage.
 
 ---
 
