@@ -240,7 +240,7 @@ listings
   estado (activa/pausada/vendida), vistas_count
 
 listing_photos
-  id, listing_id → listings, storage_url, orden
+  id, listing_id → listings, storage_path, orden
 
 categories
   id, nombre           -- Libros, Electrónica, Muebles, Ropa, Deportes,

@@ -133,21 +133,21 @@ export type Database = {
           id: number
           listing_id: number
           orden: number
-          storage_url: string
+          storage_path: string
         }
         Insert: {
           created_at?: string
           id?: never
           listing_id: number
           orden?: number
-          storage_url: string
+          storage_path: string
         }
         Update: {
           created_at?: string
           id?: never
           listing_id?: number
           orden?: number
-          storage_url?: string
+          storage_path?: string
         }
         Relationships: [
           {

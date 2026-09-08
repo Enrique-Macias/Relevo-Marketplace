@@ -40,7 +40,7 @@ const SELECT_DETALLE = `
   id, titulo, descripcion, precio, condicion, estado, vistas_count, created_at,
   categoria_id, user_id,
   campus:campus(id, nombre, ciudad),
-  fotos:listing_photos(storage_url, orden),
+  fotos:listing_photos(storage_path, orden),
   ${VENDEDOR}
 `;
 
@@ -59,6 +59,12 @@ export type ListingDetalle = ListingCard & {
   descripcion: string | null;
   estado: 'activa' | 'pausada' | 'vendida';
   vistasCount: number;
+  /**
+   * RUTAS dentro del bucket privado `listing-photos` (`{listing_id}/{uuid}.jpg`),
+   * no URLs: en un bucket privado no existe una URL pública. Ordenadas por
+   * `listing_photos.orden`. Convertirlas en algo pintable es trabajo del
+   * componente de imagen, no de la capa de datos.
+   */
   fotos: string[];
   vendedor: {
     id: string;
@@ -213,7 +219,7 @@ export async function fetchListingById(id: number): Promise<ListingDetalle | nul
     fotos: (row.fotos ?? [])
       .slice()
       .sort((a: any, b: any) => a.orden - b.orden)
-      .map((f: any) => f.storage_url),
+      .map((f: any) => f.storage_path),
     vendedor: {
       id: row.vendedor.id,
       nombre: row.vendedor.nombre,

@@ -311,12 +311,12 @@ select pg_temp.assert(
 \echo ''
 \echo '== T9 — tope de 5 fotos por publicación =='
 select pg_temp.as_user(:B::uuid,
-  format('insert into public.listing_photos (listing_id, storage_url, orden) values
+  format('insert into public.listing_photos (listing_id, storage_path, orden) values
           (%1$s,''u0'',0),(%1$s,''u1'',1),(%1$s,''u2'',2),(%1$s,''u3'',3),(%1$s,''u4'',4)',
          (select pausada from t_ids)));
 
 select pg_temp.expect_error(:B::uuid,
-  format('insert into public.listing_photos (listing_id, storage_url, orden)
+  format('insert into public.listing_photos (listing_id, storage_path, orden)
           values (%s, ''u5'', 5)', (select pausada from t_ids)),
   'la sexta foto es rechazada por el trigger');
 
