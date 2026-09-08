@@ -140,8 +140,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Aplicado en 8 migraciones (`supabase/migrations/`) contra el proyecto remoto,
-con RLS activo y probado en las 10 tablas. Este es el esquema **real**, no
+Aplicado en 10 migraciones (`supabase/migrations/`) contra el proyecto remoto,
+con RLS activo y probado en las 10 tablas más el bucket de Storage. Este es el esquema **real**, no
 solo la intención original.
 
 ```
@@ -175,8 +175,9 @@ listings
     (to_tsvector('spanish', titulo || ' ' || coalesce(descripcion,''))) stored
     -- columna generada + índice GIN `listings_busqueda_idx` sobre ELLA. Ver abajo.
 listing_photos
-  id, listing_id, storage_url, orden (0-4, único por listing — tope de 5 fotos
-  enforced con trigger)
+  id, listing_id, storage_path, orden (0-4, único por listing — tope de 5 fotos
+  enforced con trigger). `storage_path` es una RUTA dentro del bucket privado
+  `listing-photos` (`{listing_id}/{uuid}.jpg`), NO una URL — ver abajo.
 
 -- Interacción
 favorites        (user_id, listing_id) — privados, nadie ve favoritos ajenos
@@ -259,17 +260,36 @@ lo que hace que la búsqueda funcione — la suite lo vigila (T13), porque
 visible en la app. Escribirla es imposible por definición: Postgres rechaza
 cualquier escritura sobre una columna generada, sin importar los grants.
 
+**El bucket `listing-photos` es privado, y eso NO es una preferencia.** Es lo
+único que hace real la regla de que las fotos de una publicación pausada solo las
+vea su dueño: un bucket público salta el control de acceso en lectura y las
+policies solo gobernarían la escritura. Cuatro policies sobre `storage.objects`
+(`20260908000446`) espejean a las de la tabla: lectura con el criterio de
+`listings_select`, escritura con el de `listing_photos_write_own` más
+`is_active_user()`. **La carpeta del objeto es la llave de autorización** —
+`private.listing_id_from_object_name()` la traduce a un `listing_id` con un
+`case` (no un `and`, que el planner puede reordenar y haría reventar el cast con
+`22P02` ante una ruta arbitraria).
+
+Matiz que conviene saber antes de "limpiar" esa policy: en la de lectura, la
+condición `estado <> 'pausada'` es **redundante** — las expresiones de policy se
+evalúan como el rol invocante, así que el `exists` sobre `public.listings` ya
+viene filtrado por `listings_select`. Medido: quitarla no cambia el
+comportamiento. Lo portante es el `exists`. Se conserva por legibilidad y por si
+algún día alguien afloja `listings_select`, pero no es el candado.
+
 **Funciones `SECURITY DEFINER`** viven en el esquema `private` (nunca en
 `public`) excepto DOS, que sí deben ser invocables por PostgREST desde el
 cliente: `increment_listing_view` y `listing_favorites_count` (eran una sola
 hasta que Detalle necesitó el conteo de favoritos; si algún día hay una
 tercera, revisa primero si de verdad la invoca el cliente o si va en `private`).
 `authenticated` tiene `USAGE` sobre `private` + `EXECUTE` acotado
-solo a `is_active_user()` y `can_rate()` — las otras cuatro funciones internas
-siguen revocadas. Ver sección 9 sobre por qué ese `USAGE` existe (no es lo que
+a las TRES que se invocan desde policies — `is_active_user()`, `can_rate()` y
+`listing_id_from_object_name()` — mientras las otras cuatro, que solo disparan
+por trigger, siguen revocadas. Ver sección 9 sobre por qué ese `USAGE` existe (no es lo que
 originalmente se pensó).
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 53 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 64 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -279,7 +299,10 @@ sección — una de sus aserciones usaba la cuenta `:C`, que T8 borra a propósi
 al probar que un reporte sobrevive al borrado de su objetivo, así que pasaba por
 la razón equivocada. Ese mismo hallazgo obligó a que T11b sembrara su propia
 publicación en vez de reutilizar `t_ids`, que T8 también borra. De ahí a **53**
-con las 7 de la búsqueda por tsvector (T13), sembrada igual de autocontenida.
+con las 7 de la búsqueda por tsvector (T13), sembrada igual de autocontenida, y a
+**64** con las 11 del bucket de Storage (T14, también autocontenida: siembra su
+propio bucket y usa a `:A`, el único que sigue activo y sin publicaciones a esa
+altura del archivo).
 **Moraleja para secciones nuevas: no reutilices fixtures de secciones
 anteriores** — a media suite hay filas y cuentas ya borradas a propósito.
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
@@ -488,20 +511,33 @@ y solo al final las convenciones genéricas de los skills.
   una tsquery vacía, así que el bug de "buscar `*` te devuelve el catálogo
   entero" quedó cerrado por el motor y se pudieron borrar del cliente el
   `escapaBusqueda()` de dos capas y su corto circuito.
+- **Bucket de Storage `listing-photos` con RLS** (migraciones `20260908000445`
+  y `20260908000446`). Bucket **privado**, declarado en `config.toml` y aplicado a
+  remoto con `supabase seed buckets --linked`; 4 policies sobre `storage.objects`;
+  la columna pasó de `storage_url` a **`storage_path`** porque en un bucket
+  privado se guarda la ruta del objeto, no una URL. Verificado con 11 aserciones
+  nuevas en la suite (T14) **y** con `scripts/probe-storage.mjs`, que ejercita el
+  Storage API sobre HTTP. Los dos con control negativo: se rompieron las policies
+  a propósito y ambos fallaron donde debían.
+  - **`scripts/probe-storage.mjs` no es un script desechable.** Cubre lo que la
+    suite SQL no puede: `DELETE` (el trigger `storage.protect_delete` de Supabase
+    aborta todo borrado por SQL antes de que la RLS opine, así que una aserción
+    ahí pasaría con la policy borrada) y `move` (el `with_check` de UPDATE, sin el
+    cual un dueño puede renombrar su objeto hacia la carpeta de otro — medido:
+    devuelve **HTTP 200**).
+  - **Todavía no se sube ni se pinta ninguna foto.** `listing_photos` sigue vacía
+    y Detalle/ProductCard siguen con el placeholder de ícono tintado. Conectar
+    Publicar es la tarea siguiente.
 - **Grupo Explorar conectado a datos reales** (7ª migración incluida:
   `listing_favorites_count`). Los mocks `src/constants/mock/{listings,campus,
   categorias}.ts` ya no existen; la capa de datos vive en `src/lib/listings.ts`,
   `src/lib/categorias.ts` y `src/lib/favoritos.ts`. Ver §8b.
 
 **Pendiente, en este orden de prioridad:**
-1. Bucket de Storage + políticas para `listing_photos.storage_url` — el
-   esquema ya asume su existencia, pero `config.toml` no lo tiene configurado.
-   Mientras tanto `listing_photos` viene vacío y Detalle/ProductCard pintan el
-   placeholder de ícono de categoría tintado que el frame ya define.
-2. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
+1. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
    deja los datos listos (`listing_contacts`, `favorites`), pero no hay
    función que dispare la notificación todavía.
-3. **Columna `telefono` en `public.users` + su captura.** El botón "Contactar
+2. **Columna `telefono` en `public.users` + su captura.** El botón "Contactar
    por WhatsApp" abre un `wa.me` con un número placeholder, porque no hay de
    dónde sacar el real: no existe la columna
    (`20260906000438_users_profiles.sql`), `docs/product-spec.md` §Modelo de
@@ -513,6 +549,18 @@ y solo al final las convenciones genéricas de los skills.
 
 **Deuda consciente — con disparador de revisión, no "algún día":**
 
+- **El tope de 5 fotos NO aplica en Storage.** Lo impone el trigger
+  `enforce_photo_limit()` sobre `listing_photos`; las policies de
+  `storage.objects` solo validan de quién es la carpeta. Un dueño podría subir N
+  objetos a su propia carpeta sin filas que los acompañen — no rompe nada
+  visible, pero paga almacenamiento. **Revisar cuando:** se conecte Publicar, que
+  es donde la subida deja de ser hipotética.
+- **Borrar una publicación no borra sus fotos de Storage.** El
+  `on delete cascade` limpia las filas de `listing_photos`, no los archivos, que
+  quedan huérfanos. **Revisar cuando:** se construya "Confirmar eliminar" en
+  Editar publicación. **Fix:** Edge Function o cron — no un trigger de SQL,
+  porque borrar la fila de `storage.objects` no borra el archivo del backend de
+  objetos (y de hecho `storage.protect_delete` ni siquiera deja borrarla).
 - **La búsqueda de texto es por palabra completa (websearch/tsvector), no por
   prefijo** — teclear parcialmente puede mostrar "No encontramos" brevemente
   antes de completar la palabra (medido: `calc` no encuentra "Cálculo";
@@ -630,6 +678,15 @@ Detalle. El botón de WhatsApp sí registra de verdad en `listing_contacts`
 antes de abrir el deep link; lo único mock que le queda es el número, y por la
 razón documentada en §8 (pendiente 3), no por descuido.
 
+**Fotos: la infraestructura existe, la UI no.** El bucket y sus policies están
+en remoto (§8), pero no hay componente que pinte una foto — hoy no existe un solo
+`<Image>` en `src/`. Cuando se construya `ListingPhoto` (envoltura de
+`expo-image`, punto único de contacto para poder cambiar de patrón barato):
+**confirmar el soporte de headers HTTP en un Android real es requisito para dar
+esa tarea por cerrada, no un extra.** Por la regla de la sección 6, el simulador
+headless no cuenta como prueba, y todo el patrón de lectura depende de que ese
+header llegue.
+
 **Cuenta, Confianza, Publicar, Notificaciones — no construidos todavía**
 (ojo: la pantalla *Favoritos* es del grupo Cuenta, así que sigue siendo un
 placeholder aunque el *toggle* de favorito ya funcione en todo Explorar).
@@ -692,6 +749,46 @@ tiene el afordance de cerrar sesión — el resto de la pantalla Perfil
   cualquier cliente. Antes de dar un índice por bueno, confírmalo con
   `explain (analyze)` **y con suficientes filas**: con pocos datos el planner
   elige seq scan por costo y el plan no prueba nada en ninguna dirección.
+- **`postgres` no es dueño de `storage.objects` y aun así puede politiquearla.**
+  La dueña es `supabase_storage_admin` y `postgres` ni siquiera es miembro de ese
+  rol, así que `create policy` debería fallar con 42501 "must be owner of table
+  objects". No falla porque `supautils.policy_grants` lista `storage.objects` para
+  `postgres` — verificado en `pg_settings` en local **y** en remoto. Por eso las
+  policies de Storage viven en una migración versionada normal y no hay que
+  crearlas a mano en el Dashboard. Si algún día una migración de Storage sí
+  revienta con 42501, ese ajuste es lo primero que hay que mirar.
+- **Un bucket no viaja por `supabase db push`.** Buckets y objetos son FILAS de
+  las tablas de `storage`, no esquema. Se declaran en `config.toml` y se aplican a
+  remoto con `supabase seed buckets --linked`. En local los crea `supabase start`
+  y también `db reset` (lo imprime: "Creating Storage bucket: …"), así que ahí no
+  hay paso extra.
+- **Las fotos se leen por el endpoint autenticado, NO por signed URLs, y no es
+  una preferencia de estilo.** Una signed URL evalúa la RLS **al firmar, no al
+  servir**: el token lleva el permiso adentro. O sea que una URL firmada antes de
+  que el vendedor pausara su publicación **sigue entregando la foto** hasta que
+  caduque, y los propios docs de Supabase lo dicen sin rodeos — *"revoking or
+  expiring a token does not purge its CDN cache entry… if you need to cut off
+  access, delete the object"*. Eso rompe exactamente la regla que motivó hacer el
+  bucket privado. Con
+  `GET /storage/v1/object/authenticated/listing-photos/<path>` + `Authorization:
+  Bearer <access_token>`, la policy se re-evalúa en **cada** request y pausar
+  surte efecto de inmediato.
+  Migrar a signed URLs se ve como una simplificación —los docs incluso las llaman
+  *"the primary way"* para buckets privados— y **no es equivalente**: es un cambio
+  de semántica de seguridad disfrazado de refactor, del mismo tipo que el
+  reemplazo del comodín de búsqueda de más arriba. Si alguien lo propone, la
+  pregunta no es "¿se ve igual?" sino "¿cuándo se evalúa el permiso?".
+  Consecuencia obligatoria: **el componente de imagen tiene que ser `expo-image`**
+  (ya es dependencia), no el `<Image>` de React Native — ese documenta `headers`
+  pero arrastra bugs abiertos en Android/Fresco, varios reportando que funcionan
+  en la arquitectura vieja y no en la nueva, y este proyecto corre RN 0.86 con New
+  Architecture.
+- **No se puede borrar de `storage.objects` por SQL, ni siquiera como
+  `postgres`.** El trigger `storage.protect_delete` aborta con *"Direct deletion
+  from storage tables is not allowed. Use the Storage API instead."* y se dispara
+  **antes** que la RLS. Consecuencia para las pruebas: una aserción de DELETE
+  escrita en SQL pasaría con la policy borrada — por la razón equivocada. Esa
+  cobertura tiene que vivir en `scripts/probe-storage.mjs`, contra el API HTTP.
 - **`presentation:'transparentModal'` de un Stack anidado no funciona si el
   Stack padre ya presenta esa ruta como card opaca.** El navegador que de
   verdad ejecuta el `push` (a menudo el Stack raíz, no el Stack del grupo

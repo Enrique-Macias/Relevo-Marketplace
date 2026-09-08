@@ -488,6 +488,144 @@ select pg_temp.assert(
 
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T14 — bucket privado `listing-photos` (RLS de storage.objects) =='
+-- Autocontenida, mismo criterio que T11b y T13: siembra lo suyo y no reutiliza
+-- t_ids, porque T8 ya borró filas a propósito y T10 dejó suspendido a :B.
+-- Aquí el dueño activo es :A, que hasta este punto del archivo no posee nada.
+--
+-- QUÉ CUBRE Y QUÉ NO: esto prueba las POLICIES. Que el servicio de Storage las
+-- aplique de punta a punta sobre HTTP lo prueba scripts/probe-storage.mjs, que
+-- habla con el API real en vez de insertar en storage.objects por SQL.
+
+-- El bucket es una fila, no esquema: ninguna migración lo crea. `supabase start`
+-- y `db reset` lo levantan desde config.toml, pero la suite no depende de eso
+-- para poder correr en una base que venga de otro lado.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('listing-photos', 'listing-photos', false, 5242880,
+        array['image/jpeg','image/png','image/webp'])
+on conflict (id) do nothing;
+
+-- Segundo bucket, solo para el control negativo del guard `bucket_id`.
+insert into storage.buckets (id, name, public)
+values ('otro-bucket', 'otro-bucket', false)
+on conflict (id) do nothing;
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values
+  (:A::uuid, 1, 1, 1, 'RLS Fotos activa',      50, 'nuevo', 'activa'),
+  (:A::uuid, 1, 1, 1, 'RLS Fotos pausada',     50, 'nuevo', 'pausada'),
+  (:B::uuid, 1, 1, 1, 'RLS Fotos suspendido',  50, 'nuevo', 'activa');
+
+create temp table t_obj as
+select
+  (select id from public.listings where titulo = 'RLS Fotos activa')     as activa,
+  (select id from public.listings where titulo = 'RLS Fotos pausada')    as pausada,
+  (select id from public.listings where titulo = 'RLS Fotos suspendido') as suspendido;
+
+-- --- El parser de ruta -------------------------------------------------------
+-- Estas dos aserciones son la razón por la que el helper usa `case` y no un
+-- `and` suelto: el nombre del objeto es entrada arbitraria. Si alguien lo
+-- "simplifica" a `(storage.foldername(name))[1]::bigint`, esto revienta con
+-- 22P02 en vez de devolver null, y la policy pasa de rechazar a fallar.
+-- OJO: esto NO se puede probar solo con expect_error sobre el insert — ese
+-- helper acepta CUALQUIER error, así que un 22P02 lo daría por bueno y la
+-- prueba pasaría por la razón equivocada.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A::uuid,
+    'select (private.listing_id_from_object_name(''basura/x.jpg'') is null
+         and private.listing_id_from_object_name(''foto.jpg'') is null
+         and private.listing_id_from_object_name(''99999999999999999999999999/x.jpg'') is null)::int') = 1,
+  'una ruta no numérica, sin carpeta, o de más de 18 dígitos devuelve null sin error de cast');
+
+select pg_temp.assert(
+  pg_temp.as_user_int(:A::uuid,
+    format('select private.listing_id_from_object_name(''%s/uuid.jpg'')',
+           (select activa from t_obj))) = (select activa from t_obj),
+  'una ruta bien formada resuelve al listing_id de su carpeta');
+
+-- --- Escritura ---------------------------------------------------------------
+select pg_temp.as_user(:A::uuid,
+  format('insert into storage.objects (bucket_id, name) values (''listing-photos'', ''%s/foto.jpg'')',
+         (select activa from t_obj)));
+select pg_temp.assert(
+  (select count(*) from storage.objects where name = (select activa from t_obj) || '/foto.jpg') = 1,
+  'A, dueño y activo, sube una foto a la carpeta de su publicación');
+
+select pg_temp.expect_error(:B::uuid,
+  format('insert into storage.objects (bucket_id, name) values (''listing-photos'', ''%s/intruso.jpg'')',
+         (select activa from t_obj)),
+  'B no puede subir a la carpeta de una publicación de A');
+
+select pg_temp.expect_error(:A::uuid,
+  format('insert into storage.objects (bucket_id, name) values (''listing-photos'', ''%s/ajena.jpg'')',
+         (select suspendido from t_obj)),
+  'A no puede subir a la carpeta de una publicación ajena');
+
+select pg_temp.expect_error(:A::uuid,
+  'insert into storage.objects (bucket_id, name) values (''listing-photos'', ''basura/x.jpg'')',
+  'una ruta sin carpeta de listing es rechazada por la policy');
+
+-- Control negativo del guard `bucket_id`: MISMA ruta, que en listing-photos sí
+-- está permitida, pero en otro bucket. Sin ese guard, estas policies estarían
+-- concediendo acceso a todo bucket que se agregue después.
+select pg_temp.expect_error(:A::uuid,
+  format('insert into storage.objects (bucket_id, name) values (''otro-bucket'', ''%s/foto.jpg'')',
+         (select activa from t_obj)),
+  'la misma ruta en otro bucket no queda cubierta por estas policies');
+
+-- B sigue suspendido desde T10. Es dueño de 'RLS Fotos suspendido', así que lo
+-- único que lo detiene es is_active_user(). Si alguien lo quita "porque la tabla
+-- ya lo valida", el suspendido quedaría bloqueado en listing_photos pero libre
+-- de escribir en Storage, que es la mitad que cuesta dinero.
+select pg_temp.expect_error(:B::uuid,
+  format('insert into storage.objects (bucket_id, name) values (''listing-photos'', ''%s/suspendido.jpg'')',
+         (select suspendido from t_obj)),
+  'un suspendido no puede subir fotos ni a su propia publicación');
+
+-- --- Lectura -----------------------------------------------------------------
+-- B está suspendido y aun así lee: la policy de SELECT no lleva is_active_user()
+-- a propósito (tabla de decisión, CLAUDE.md §3 — un suspendido conserva la
+-- lectura del catálogo). Si alguien se la agrega "por endurecer", falla aquí.
+select pg_temp.assert(
+  pg_temp.as_user_int(:B::uuid,
+    format('select count(*) from storage.objects where name = ''%s/foto.jpg''',
+           (select activa from t_obj))) = 1,
+  'cualquier authenticated lee la foto de una publicación activa');
+
+select pg_temp.as_user(:A::uuid,
+  format('insert into storage.objects (bucket_id, name) values (''listing-photos'', ''%s/oculta.jpg'')',
+         (select pausada from t_obj)));
+
+-- ESTA es la aserción que justifica que el bucket sea privado. Si alguien lo
+-- pone público, o migra la lectura a signed URLs (que evalúan la RLS al firmar y
+-- no al servir), esta regla deja de cumplirse en la app aunque la policy siga
+-- intacta. Ver la nota de CLAUDE.md §9.
+select pg_temp.assert(
+  pg_temp.as_user_int(:B::uuid,
+    format('select count(*) from storage.objects where name = ''%s/oculta.jpg''',
+           (select pausada from t_obj))) = 0,
+  'un ajeno NO ve la foto de una publicación pausada');
+
+select pg_temp.assert(
+  pg_temp.as_user_int(:A::uuid,
+    format('select count(*) from storage.objects where name = ''%s/oculta.jpg''',
+           (select pausada from t_obj))) = 1,
+  'su dueño SÍ ve la foto de su publicación pausada');
+
+-- --- Borrado: NO se puede probar aquí, y el motivo importa --------------------
+-- storage.objects tiene un trigger propio de Supabase (storage.protect_delete)
+-- que aborta CUALQUIER delete por SQL directo con "Direct deletion from storage
+-- tables is not allowed. Use the Storage API instead." Se dispara antes que la
+-- RLS, así que una aserción aquí probaría el trigger de Supabase, no nuestra
+-- policy: pasaría igual de bonito con listing_photos_objects_delete_own borrada.
+--
+-- Esa es justamente una prueba que pasa por la razón equivocada, así que la
+-- cobertura de DELETE vive en scripts/probe-storage.mjs, que va por el Storage
+-- API y sí ejercita la policy.
+
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges
@@ -504,8 +642,10 @@ select pg_temp.assert(
 
 select pg_temp.assert(
   has_function_privilege('authenticated', 'private.is_active_user()', 'execute')
-  and has_function_privilege('authenticated', 'private.can_rate(uuid,bigint)', 'execute'),
-  'authenticated puede ejecutar las 2 funciones invocadas desde policies');
+  and has_function_privilege('authenticated', 'private.can_rate(uuid,bigint)', 'execute')
+  and has_function_privilege('authenticated',
+        'private.listing_id_from_object_name(text)', 'execute'),
+  'authenticated puede ejecutar las 3 funciones invocadas desde policies');
 
 -- Estas cuatro sí son de seguridad: solo disparan por trigger y nadie debe poder
 -- invocarlas. Postgres verifica EXECUTE al crear el trigger, no al dispararlo.

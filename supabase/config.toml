@@ -111,12 +111,25 @@ enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
-# Uncomment to configure local storage buckets
-# [storage.buckets.images]
-# public = false
-# file_size_limit = "50MiB"
-# allowed_mime_types = ["image/png", "image/jpeg"]
-# objects_path = "./images"
+# Fotos de las publicaciones (RF-05, hasta 5 por publicación).
+#
+# OJO: un bucket NO es esquema, es una fila de storage.buckets. `supabase db push`
+# NO lo crea en remoto. Este bloque lo crea en local al hacer `supabase start`, y
+# en el proyecto remoto con `supabase seed buckets --linked`. `supabase db reset`
+# borra la fila: hay que re-correr `supabase seed buckets --local` después.
+#
+# public = false NO es una preferencia: es lo único que hace real la regla de que
+# las fotos de una publicación pausada solo las vea su dueño. Un bucket público
+# salta el control de acceso en lectura y cualquiera con la URL vería el archivo;
+# las policies de storage.objects (20260908000446) solo gobernarían la escritura.
+#
+# El límite de tamaño y los mime types los aplica el servicio de Storage antes de
+# escribir, no el cliente: son defensa real contra una subida hostil, no
+# validación cosmética. El tope de 5 MiB cabe bajo el file_size_limit global.
+[storage.buckets.listing-photos]
+public = false
+file_size_limit = "5MiB"
+allowed_mime_types = ["image/jpeg", "image/png", "image/webp"]
 
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
