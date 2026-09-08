@@ -1,22 +1,24 @@
 /** Búsqueda — 3 estados: recomendados (sin query/filtros) / resultados / sin resultados. */
 
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ActiveFilterChip } from '@/components/ActiveFilterChip';
-import { EmptyState } from '@/components/EmptyState';
 import { GhostButton } from '@/components/Buttons';
+import { EmptyState } from '@/components/EmptyState';
+import { ErrorState } from '@/components/ErrorState';
 import { IconFilterSliders, IconSearch } from '@/components/icons';
 import { SearchField } from '@/components/ListRow';
 import { ProductCard } from '@/components/ProductCard';
 import { Screen } from '@/components/Screen';
 import { SectionHead } from '@/components/SectionHead';
-import { getCategoria } from '@/constants/mock/categorias';
-import { LISTINGS } from '@/constants/mock/listings';
+import { SkeletonGrid } from '@/components/Skeleton';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
 import { chunkRows } from '@/lib/grid';
+import { useListings } from '@/lib/listings';
+import { useDebounce } from '@/lib/use-debounce';
 
 const CONDICION_LABEL: Record<string, string> = {
   nuevo: 'Nuevo',
@@ -28,76 +30,80 @@ const CONDICION_LABEL: Record<string, string> = {
 export default function BuscarScreen() {
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [query, setQuery] = useState(q ?? '');
-  const { filtros, setFiltros, limpiarFiltros, campusSeleccionado, favoritos, toggleFavorito } =
-    useExplorarState();
+  const queryDiferida = useDebounce(query);
+  const {
+    filtros,
+    setFiltros,
+    limpiarFiltros,
+    campusSeleccionado,
+    favoritos,
+    toggleFavorito,
+    getCategoria,
+  } = useExplorarState();
 
   const hayFiltrosActivos = !!(filtros.categoriaId || filtros.condicion || filtros.precioMin || filtros.precioMax);
-  const modoRecomendados = query.trim() === '' && !hayFiltrosActivos;
+  const modoRecomendados = queryDiferida.trim() === '' && !hayFiltrosActivos;
 
-  const resultados = useMemo(() => {
-    if (modoRecomendados) return LISTINGS.slice(0, 4);
+  const { items, estado, total, cargandoMas, loadMore, reintentar } = useListings(
+    campusSeleccionado
+      ? modoRecomendados
+        ? { campusId: campusSeleccionado.id, orden: 'recientes' as const, limit: 4 }
+        : {
+            campusId: campusSeleccionado.id,
+            q: queryDiferida,
+            categoriaId: filtros.categoriaId,
+            precioMin: filtros.precioMin ? Number(filtros.precioMin) : undefined,
+            precioMax: filtros.precioMax ? Number(filtros.precioMax) : undefined,
+            condicion: filtros.condicion,
+            orden: filtros.orden,
+            withCount: true,
+          }
+      : null
+  );
 
-    const q2 = query.trim().toLowerCase();
-    const min = filtros.precioMin ? Number(filtros.precioMin) : undefined;
-    const max = filtros.precioMax ? Number(filtros.precioMax) : undefined;
+  const cargando = estado === 'loading' || !campusSeleccionado;
 
-    const filtrados = LISTINGS.filter((l) => {
-      if (q2 && !l.titulo.toLowerCase().includes(q2)) return false;
-      if (filtros.categoriaId && l.categoriaId !== filtros.categoriaId) return false;
-      if (filtros.condicion && l.condicion !== filtros.condicion) return false;
-      if (min !== undefined && !Number.isNaN(min) && l.precio < min) return false;
-      if (max !== undefined && !Number.isNaN(max) && l.precio > max) return false;
-      return true;
-    });
-
-    return [...filtrados].sort((a, b) => {
-      switch (filtros.orden) {
-        case 'precio_asc':
-          return a.precio - b.precio;
-        case 'precio_desc':
-          return b.precio - a.precio;
-        // El mock no tiene rating por publicación — se usa `vendedor.ventas`
-        // como proxy razonable de "mejor calificados".
-        case 'mejor_calificados':
-          return b.vendedor.ventas - a.vendedor.ventas;
-        case 'recientes':
-        default:
-          return b.createdAt.getTime() - a.createdAt.getTime();
-      }
-    });
-  }, [modoRecomendados, query, filtros]);
+  const buscador = (
+    <View style={styles.searchRow}>
+      <SearchField
+        placeholder="Busca libros, electrónica, muebles…"
+        value={query}
+        onChangeText={setQuery}
+        containerStyle={styles.searchFieldFlex}
+      />
+      <Pressable style={styles.filterBtn} onPress={() => router.push('/filtros')} accessibilityRole="button">
+        <IconFilterSliders size={16} color="#F3F0EA" />
+      </Pressable>
+    </View>
+  );
 
   if (modoRecomendados) {
     return (
       <Screen>
-        <View style={styles.searchRow}>
-          <SearchField
-            placeholder="Busca libros, electrónica, muebles…"
-            value={query}
-            onChangeText={setQuery}
-            containerStyle={styles.searchFieldFlex}
-          />
-          <Pressable style={styles.filterBtn} onPress={() => router.push('/filtros')} accessibilityRole="button">
-            <IconFilterSliders size={16} color="#F3F0EA" />
-          </Pressable>
-        </View>
+        {buscador}
         <SectionHead title="Recomendado para ti" />
-        <View style={styles.grid}>
-          {chunkRows(resultados, 2).map((row, i) => (
-            <View key={i} style={styles.gridRow}>
-              {row.map((listing) => (
-                <ProductCard
-                  key={listing.id}
-                  listing={listing}
-                  favorito={favoritos.has(listing.id)}
-                  onToggleFavorito={() => toggleFavorito(listing.id)}
-                  onPress={() => router.push(`/detalle/${listing.id}`)}
-                />
-              ))}
-              {row.length < 2 ? <View style={styles.padCell} /> : null}
-            </View>
-          ))}
-        </View>
+        {estado === 'error' ? (
+          <ErrorState onRetry={reintentar} />
+        ) : cargando ? (
+          <SkeletonGrid tarjetas={4} style={styles.skeleton} />
+        ) : (
+          <View style={styles.grid}>
+            {chunkRows(items, 2).map((row, i) => (
+              <View key={i} style={styles.gridRow}>
+                {row.map((listing) => (
+                  <ProductCard
+                    key={listing.id}
+                    listing={listing}
+                    favorito={favoritos.has(listing.id)}
+                    onToggleFavorito={() => toggleFavorito(listing.id)}
+                    onPress={() => router.push(`/detalle/${listing.id}`)}
+                  />
+                ))}
+                {row.length < 2 ? <View style={styles.padCell} /> : null}
+              </View>
+            ))}
+          </View>
+        )}
       </Screen>
     );
   }
@@ -106,7 +112,7 @@ export default function BuscarScreen() {
   if (filtros.categoriaId) {
     chips.push({
       key: 'cat',
-      label: getCategoria(filtros.categoriaId)?.nombre ?? filtros.categoriaId,
+      label: getCategoria(filtros.categoriaId)?.nombre ?? '',
       onRemove: () => setFiltros({ categoriaId: undefined }),
     });
   }
@@ -131,23 +137,17 @@ export default function BuscarScreen() {
   }
   chips.push({
     key: 'campus',
-    label: campusSeleccionado.nombre,
+    label: campusSeleccionado?.nombre ?? '',
     onRemove: () => router.push('/selector-campus'),
   });
 
+  // El total del filtro, no el de la página cargada: con scroll infinito,
+  // `items.length` solo diría cuántas van bajadas.
+  const conteo = total ?? items.length;
+
   return (
-    <Screen>
-      <View style={styles.searchRow}>
-        <SearchField
-          placeholder="Busca libros, electrónica, muebles…"
-          value={query}
-          onChangeText={setQuery}
-          containerStyle={styles.searchFieldFlex}
-        />
-        <Pressable style={styles.filterBtn} onPress={() => router.push('/filtros')} accessibilityRole="button">
-          <IconFilterSliders size={16} color="#F3F0EA" />
-        </Pressable>
-      </View>
+    <Screen onEndReached={loadMore}>
+      {buscador}
 
       <View style={styles.activeChips}>
         {chips.map((chip) => (
@@ -156,15 +156,19 @@ export default function BuscarScreen() {
       </View>
 
       <Text style={styles.resultsCount}>
-        {query.trim() !== ''
-          ? `${resultados.length} ${resultados.length === 1 ? 'resultado' : 'resultados'} para "${query}"`
-          : `${resultados.length} ${resultados.length === 1 ? 'resultado' : 'resultados'}`}
+        {queryDiferida.trim() !== ''
+          ? `${conteo} ${conteo === 1 ? 'resultado' : 'resultados'} para "${queryDiferida}"`
+          : `${conteo} ${conteo === 1 ? 'resultado' : 'resultados'}`}
       </Text>
 
-      {resultados.length === 0 ? (
+      {estado === 'error' ? (
+        <ErrorState onRetry={reintentar} />
+      ) : cargando ? (
+        <SkeletonGrid tarjetas={4} style={styles.skeleton} />
+      ) : items.length === 0 ? (
         <EmptyState
           icon={<IconSearch size={30} color={Colors.inkSoft} />}
-          title={query.trim() !== '' ? `No encontramos "${query}"` : 'No encontramos publicaciones'}
+          title={queryDiferida.trim() !== '' ? `No encontramos "${queryDiferida}"` : 'No encontramos publicaciones'}
           sub="Intenta con otras palabras o quita algunos filtros para ver más resultados."
           style={{ paddingTop: 50 }}
         >
@@ -178,7 +182,7 @@ export default function BuscarScreen() {
         </EmptyState>
       ) : (
         <View style={styles.grid}>
-          {chunkRows(resultados, 2).map((row, i) => (
+          {chunkRows(items, 2).map((row, i) => (
             <View key={i} style={styles.gridRow}>
               {row.map((listing) => (
                 <ProductCard
@@ -192,6 +196,7 @@ export default function BuscarScreen() {
               {row.length < 2 ? <View style={styles.padCell} /> : null}
             </View>
           ))}
+          {cargandoMas ? <SkeletonGrid tarjetas={2} style={styles.skeletonMas} /> : null}
         </View>
       )}
     </Screen>
@@ -246,5 +251,12 @@ const styles = StyleSheet.create({
   },
   padCell: {
     flex: 1,
+  },
+  skeleton: {
+    paddingTop: 12,
+    paddingBottom: 90,
+  },
+  skeletonMas: {
+    paddingHorizontal: 0,
   },
 });

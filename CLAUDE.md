@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 41 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 42 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -140,7 +140,7 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Aplicado en 6 migraciones (`supabase/migrations/`) contra el proyecto remoto,
+Aplicado en 8 migraciones (`supabase/migrations/`) contra el proyecto remoto,
 con RLS activo y probado en las 10 tablas. Este es el esquema **real**, no
 solo la intención original.
 
@@ -170,7 +170,10 @@ users
 listings
   id, user_id, categoria_id, universidad_id, campus_id, titulo, descripcion,
   precio numeric(10,2) >= 0, condicion, estado default 'activa',
-  vistas_count (solo vía RPC, ver abajo), created_at, updated_at
+  vistas_count (solo vía RPC, ver abajo), created_at, updated_at,
+  busqueda tsvector generated always as
+    (to_tsvector('spanish', titulo || ' ' || coalesce(descripcion,''))) stored
+    -- columna generada + índice GIN `listings_busqueda_idx` sobre ELLA. Ver abajo.
 listing_photos
   id, listing_id, storage_url, orden (0-4, único por listing — tope de 5 fotos
   enforced con trigger)
@@ -214,22 +217,78 @@ La columna en sí no es editable directo por el cliente (grant de columna) —
 sin eso, la RPC sería decorativa y cualquiera podría hacer
 `update listings set vistas_count = 99999`.
 
+**`favorites` no es contable ni por el dueño de la publicación** — su RLS es
+`user_id = auth.uid()`, así que el vendedor no puede hacer un `count` de los
+favoritos de su propia publicación (el stat que pide el frame "Detalle (vista
+vendedor)"). Ese número llega por `public.listing_favorites_count(id)`:
+
+- **Esquema `public`, no `private`** — y es la excepción, no la regla. Toda
+  función `SECURITY DEFINER` del proyecto vive en `private`; las únicas dos que
+  no son las que el cliente tiene que poder invocar por RPC vía PostgREST, y
+  esta es una (la otra es `increment_listing_view`).
+- **`SECURITY DEFINER`** porque tiene que ver filas de `favorites` que la RLS le
+  esconde al invocador — mismo motivo que `private.can_rate()`.
+- **Valida que el llamante SÍ sea el dueño** de la publicación, simétrica a
+  `increment_listing_view`, que valida que NO lo sea. Sin ese `exists`,
+  cualquier autenticado podría contar los favoritos de publicaciones ajenas.
+- **Devuelve `null` a quien no es el dueño**, no un error: así se mantiene como
+  función `sql` pura —`stable`, sin `plpgsql` ni bloque `EXCEPTION`— por la
+  cautela que impone `supabase/KNOWN_ISSUES.md`. `null` no se confunde con `0`
+  porque la UI solo pinta esa tarjeta al dueño.
+- Devuelve el conteo, **nunca quién**: los favoritos siguen siendo privados.
+
+**Búsqueda de texto (RF-10): columna generada, no índice de expresión.** El
+esquema original indexaba la *expresión*
+`to_tsvector('spanish', titulo || ' ' || coalesce(descripcion,''))`, pero el
+planner solo usa un índice de expresión cuando la consulta la REPITE, y
+PostgREST no sabe emitirla (`titulo=fts(spanish).x` produce
+`to_tsvector('spanish', titulo)`, que no machea). O sea: se pagaba en cada
+escritura y no lo usaba nadie. Materializando la misma expresión en la columna
+`busqueda`, el cliente filtra con `.textSearch('busqueda', q, {type:'websearch',
+config:'spanish'})` y el índice por fin sirve. **De paso arregla los acentos**:
+el diccionario snowball reduce `Cálculo` y `calculo` al mismo lexema `calcul`
+— con `ilike`, buscar "calculo" devolvía 0 sobre "Cálculo de Larson". No se
+usa la extensión `unaccent`; el diccionario ya lo hace.
+
+`busqueda` **no lleva grant propio y no es un olvido**: a diferencia de
+`update`, que en esta tabla sí está acotado por columna, `select` se otorgó a
+nivel tabla, y en Postgres eso cubre las columnas que se agreguen después.
+Filtrar por una columna exige SELECT sobre ella, así que ese grant heredado es
+lo que hace que la búsqueda funcione — la suite lo vigila (T13), porque
+"endurecerlo" a una lista explícita rompería la búsqueda sin ningún error
+visible en la app. Escribirla es imposible por definición: Postgres rechaza
+cualquier escritura sobre una columna generada, sin importar los grants.
+
 **Funciones `SECURITY DEFINER`** viven en el esquema `private` (nunca en
-`public`) excepto `increment_listing_view`, que sí debe ser invocable por
-PostgREST. `authenticated` tiene `USAGE` sobre `private` + `EXECUTE` acotado
+`public`) excepto DOS, que sí deben ser invocables por PostgREST desde el
+cliente: `increment_listing_view` y `listing_favorites_count` (eran una sola
+hasta que Detalle necesitó el conteo de favoritos; si algún día hay una
+tercera, revisa primero si de verdad la invoca el cliente o si va en `private`).
+`authenticated` tiene `USAGE` sobre `private` + `EXECUTE` acotado
 solo a `is_active_user()` y `can_rate()` — las otras cuatro funciones internas
 siguen revocadas. Ver sección 9 sobre por qué ese `USAGE` existe (no es lo que
 originalmente se pensó).
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 42 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 53 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
+
+Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
+qué: las 42 originales de la Fase 2 subieron a 47 con las de
+`listing_favorites_count` (T11b), y **bajaron a 46** al corregir esa misma
+sección — una de sus aserciones usaba la cuenta `:C`, que T8 borra a propósito
+al probar que un reporte sobrevive al borrado de su objetivo, así que pasaba por
+la razón equivocada. Ese mismo hallazgo obligó a que T11b sembrara su propia
+publicación en vez de reutilizar `t_ids`, que T8 también borra. De ahí a **53**
+con las 7 de la búsqueda por tsvector (T13), sembrada igual de autocontenida.
+**Moraleja para secciones nuevas: no reutilices fixtures de secciones
+anteriores** — a media suite hay filas y cuentas ya borradas a propósito.
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
 
 ---
 
-## 4. Inventario completo de pantallas (41)
+## 4. Inventario completo de pantallas (42)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -261,9 +320,9 @@ Reportar publicación · Calificar · ¿A quién le vendiste?
 ### Notificaciones (1)
 Notificaciones
 
-### Sistema (5)
+### Sistema (6)
 Confirmar eliminar · Confirmar cerrar sesión · Error de conexión ·
-Toast de éxito · Loading / skeleton
+Toast de éxito · Toast de error · Loading / skeleton
 
 ---
 
@@ -316,7 +375,7 @@ Toast de éxito · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 41 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 42 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -386,8 +445,8 @@ y solo al final las convenciones genéricas de los skills.
 ## 8. Estado de implementación del backend
 
 **Hecho:**
-- 6 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
-  con RLS + regresión de 42 aserciones pasando.
+- 8 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
+  con RLS + regresión de 53 aserciones pasando.
 - Seed de datos de referencia (12 categorías, Tec de Monterrey / campus
   Monterrey) aplicado en remoto vía `db push --include-seed`. `seed.sql` es
   idempotente (`on conflict do nothing`).
@@ -420,15 +479,67 @@ y solo al final las convenciones genéricas de los skills.
   remoto (Auth → Email Templates → Magic Link, con `{{ .Token }}`) y
   versionada en `supabase/templates/magic_link.html` para que `supabase
   start` local también la use. Ver la nota de SMTP/cuarentena en sección 1.
+- **Búsqueda de texto por tsvector** (migración `20260908000444`). Resolvió de
+  una sola vez las dos cosas: el índice GIN por fin se usa (medido con
+  `explain analyze` a 80 000 filas: Bitmap Index Scan, 0.9 ms, contra Seq Scan
+  de 67 ms con el `ilike` anterior) y desapareció el bug de acentos —
+  buscar "calculo" sobre "Cálculo de Larson" devolvía **0** resultados y ahora
+  devuelve los 3 esperados. De regalo, `websearch_to_tsquery` convierte `*` en
+  una tsquery vacía, así que el bug de "buscar `*` te devuelve el catálogo
+  entero" quedó cerrado por el motor y se pudieron borrar del cliente el
+  `escapaBusqueda()` de dos capas y su corto circuito.
+- **Grupo Explorar conectado a datos reales** (7ª migración incluida:
+  `listing_favorites_count`). Los mocks `src/constants/mock/{listings,campus,
+  categorias}.ts` ya no existen; la capa de datos vive en `src/lib/listings.ts`,
+  `src/lib/categorias.ts` y `src/lib/favoritos.ts`. Ver §8b.
 
 **Pendiente, en este orden de prioridad:**
 1. Bucket de Storage + políticas para `listing_photos.storage_url` — el
    esquema ya asume su existencia, pero `config.toml` no lo tiene configurado.
+   Mientras tanto `listing_photos` viene vacío y Detalle/ProductCard pintan el
+   placeholder de ícono de categoría tintado que el frame ya define.
 2. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
    deja los datos listos (`listing_contacts`, `favorites`), pero no hay
    función que dispare la notificación todavía.
-3. Conectar el grupo Explorar a datos reales (hoy usa mocks, ver 8b) —
-   listings, favorites, listing_contacts, la RPC de vistas.
+3. **Columna `telefono` en `public.users` + su captura.** El botón "Contactar
+   por WhatsApp" abre un `wa.me` con un número placeholder, porque no hay de
+   dónde sacar el real: no existe la columna
+   (`20260906000438_users_profiles.sql`), `docs/product-spec.md` §Modelo de
+   datos no la lista, y ningún frame de `relevo-app.html` la captura —
+   RF-13 y RF-05 la asumen sin definirla nunca. Resolverlo es migración +
+   frame nuevo en el diseño + campo en "Completar perfil" y "Editar perfil",
+   no una línea de código. El insert a `listing_contacts` (lo que de verdad
+   habilita RF-12) SÍ es real desde ya.
+
+**Deuda consciente — con disparador de revisión, no "algún día":**
+
+- **La búsqueda de texto es por palabra completa (websearch/tsvector), no por
+  prefijo** — teclear parcialmente puede mostrar "No encontramos" brevemente
+  antes de completar la palabra (medido: `calc` no encuentra "Cálculo";
+  `calcul` sí). Resolver con RPC dedicada (evaluada: una función que arme la
+  tsquery con `:*` en el último término, ya que `websearch_to_tsquery` no
+  soporta prefijos y `to_tsquery` crudo revienta con input arbitrario) **si se
+  vuelve un problema real de UX medido, no solo teórico**. **Disparador:** que
+  en pruebas con usuarios reales alguien se queje de esto, o abandone una
+  búsqueda a medio escribir.
+- **Scroll infinito sin virtualización.** Búsqueda y Categoría paginan dentro
+  del `ScrollView` de `Screen` (prop `onEndReached`), con el grid armado por
+  `chunkRows()`: todas las filas cargadas quedan montadas, sin el reciclaje de
+  vistas de `FlatList`/`FlashList`. **Revisar cuando:** una sesión típica pase
+  de ~5 páginas cargadas (≈100 tarjetas montadas), o antes si aparece jank
+  medible al hacer scroll en gama media — lo que llegue primero. **Fix:**
+  `FlatList` con `numColumns={2}` (o `FlashList`, cubierto por el skill
+  `vercel-react-native-skills`); cambia el contenedor, no el diseño —
+  `chunkRows()` desaparece a favor de `numColumns` y `Screen` deja de envolver
+  el grid en su `ScrollView` para esas dos pantallas.
+- **El log de contactos que falla se pierde.** Si el insert a
+  `listing_contacts` falla, WhatsApp se abre igual (no se le niega el contacto
+  al usuario por un fallo de log) y el usuario ve un toast de error, pero no
+  hay reintento: falta una cola de escrituras pendientes con persistencia
+  local que se vacíe al recuperar conexión. **Revisar cuando:** se construya
+  el grupo Confianza — es ahí, en "¿A quién le vendiste?", donde una fila
+  faltante deja de ser invisible y se vuelve un candidato ausente de la lista
+  que rompe RF-12.
 
 ---
 
@@ -441,19 +552,71 @@ todavía, fuera de alcance por decisión explícita: `recuperar-password.tsx`
 `expo-image-picker` para la foto de perfil, íconos nativos de los 4 triggers
 de `NativeTabs` (siguen siendo solo texto).
 
-**Explorar — construido con datos de prueba, sin conectar a Supabase
-todavía.** Las 11 pantallas existen como código (7 archivos de ruta, algunos
-cubren varios estados: Categoría 2 estados, Búsqueda 3 estados, Detalle 2
-estados comprador/vendedor). Estado compartido entre pantallas (campus
-elegido, filtros activos, favoritos) vive en `src/lib/explorar-state.tsx` —
-los filtros de precio/categoría/condición ya filtran de verdad sobre el
-arreglo mock, no son decorativos, así que conectar Supabase después es
-reemplazar la fuente de datos, no la lógica de filtrado.
+**Explorar — construido y conectado a Supabase real.** Las 11 pantallas
+existen como código (7 archivos de ruta, algunos cubren varios estados:
+Categoría 2 estados, Búsqueda 3 estados, Detalle 2 estados comprador/vendedor)
+y leen del proyecto remoto. `src/lib/explorar-state.tsx` sigue siendo el estado
+compartido, pero ahora guarda solo los *valores* (campus elegido, filtros,
+catálogo de categorías, set de favoritos): el filtrado dejó de recorrer un
+arreglo y es una query en `src/lib/listings.ts`.
+
+**Qué quedó conectado:** el catálogo de `listings` (con su join a `categories`,
+`campus` y `listing_photos`), las `categories` reales, el catálogo de `campus`
+filtrado por la universidad del perfil, `favorites` con optimistic update y
+rollback por id, el insert a `listing_contacts` en el botón de WhatsApp, la RPC
+`increment_listing_view` al abrir Detalle, `listing_favorites_count` para el
+stat del vendedor, y la búsqueda de texto completa por tsvector.
+
+**Mocks borrados:** `src/constants/mock/listings.ts` y
+`src/constants/mock/campus.ts` ya no existen. `src/constants/mock/categorias.ts`
+se disolvió en `src/lib/categorias.ts`: el slug y el ciclo de tintes no eran
+datos de prueba sino presentación derivada (la tabla real solo tiene
+`id, nombre`), así que sobrevivieron a la migración de mock a real.
+
+Detalles que no se ven en el diff:
+- **Los ids de Explorar son `number`**, no `string` — `listings.id` y
+  `categories.id` son `bigint`. Los params de `/detalle/[id]` y
+  `/categoria/[id]` llegan como string desde la ruta y se parsean con
+  `Number()`.
+- **Toda query que embeba el vendedor debe desambiguar la relación:**
+  `users!listings_user_id_fkey`. Hay dos caminos entre `listings` y `users` (la
+  FK directa y un many-to-many vía `favorites`), así que sin nombrarla PostgREST
+  responde `PGRST201` y la query entera falla. El `!inner` que va después no es
+  decorativo: habilita ordenar el resultado por `rating_promedio` del vendedor
+  ("Mejor calificados").
+- **Paginación híbrida, encapsulada en `fetchListings()`:** keyset con cursor
+  compuesto `(created_at, id)` para el orden "recientes" —que es append-heavy y
+  con `offset` mostraría tarjetas repetidas al entrar publicaciones nuevas
+  durante el scroll, además de caminar sobre `listings_feed_idx`— y `.range()`
+  para precio/rating, donde la llave de orden cambia y no hay índice compuesto
+  que la soporte. Las pantallas manejan un cursor opaco y no saben cuál corrió.
+- **El Feed no es lista infinita**: el frame es un grid de 6 con "Ver todo".
+  La paginación de RNF-01 vive en Búsqueda y Categoría.
+- **Favoritos con optimistic update y rollback por id.** La RLS de `favorites`
+  no tiene `is_active_user()` y solo compara `user_id = auth.uid()`, así que no
+  existe un rechazo por política para una escritura bien formada sobre la
+  propia fila: los únicos fallos son de transporte. Esperar confirmación en un
+  corazón que se toca desde un grid en scroll no compra nada. El insert va con
+  `ignoreDuplicates: true` porque `favorites` no tiene grant de UPDATE — un
+  upsert normal (`ON CONFLICT DO UPDATE`) fallaría con `42501`.
+- **La búsqueda NO escapa el término, y es deliberado.** Va por
+  `.textSearch('busqueda', q, {type:'websearch', config:'spanish'})` contra la
+  columna generada: `websearch_to_tsquery` está hecho para input crudo (nunca
+  lanza error de sintaxis), la coma ya no delimita nada porque es un filtro
+  suelto y no un `or=(...)`, y `*` se vuelve una tsquery vacía. Aquí vivió un
+  `escapaBusqueda()` de dos capas más un corto circuito para el asterisco;
+  ambos se borraron al migrar a tsvector. Si vuelves a ver un `replace` sobre
+  el término de búsqueda, es una regresión.
 
 Componentes reusables ya construidos aquí (no los reconstruyas):
 `ProductCard`, `CategoryTile`, `PageHeader`, `EmptyState`,
 `SegmentedControl`, `Chip`, `ActiveFilterChip`, `SheetScreen`,
-`RoundIconButton`, más los íconos de categorías. `SheetScreen` es una
+`RoundIconButton`, más los íconos de categorías. Al conectar datos reales se
+sumaron tres del grupo Sistema, transcritos de sus frames: `SkeletonGrid` /
+`SkeletonCatGrid`, `ErrorState` (con "Reintentar") y `Toast` (`ToastProvider`
+montado en el `_layout.tsx` raíz, con variantes de éxito y error). Se
+construyeron ahora porque conectar la red hace alcanzables por primera vez los
+estados de carga, fallo y aviso no bloqueante. `SheetScreen` es una
 pantalla de Stack con `presentation:'transparentModal'` **declarada en el
 Stack raíz** (`src/app/selector-campus.tsx`, `src/app/filtros.tsx` — no
 dentro de `(explorar)/`, ver el gotcha de sección 9) — es distinto de
@@ -463,12 +626,16 @@ documentados en sección 5.
 
 Botones inertes a propósito (llevan a grupos sin construir): Compartir,
 Reportar, menú kebab, "Marcar como vendida", "Editar publicación" en
-Detalle. El botón de WhatsApp SÍ es funcional de verdad (`Linking.openURL`),
-aunque todavía con teléfono mock, no con el insert real a
-`listing_contacts`.
+Detalle. El botón de WhatsApp sí registra de verdad en `listing_contacts`
+antes de abrir el deep link; lo único mock que le queda es el número, y por la
+razón documentada en §8 (pendiente 3), no por descuido.
 
-**Cuenta, Confianza, Publicar, Notificaciones, Sistema — no construidos
-todavía**, salvo piezas puntuales ya hechas de paso: `ConfirmModal` (genérico,
+**Cuenta, Confianza, Publicar, Notificaciones — no construidos todavía**
+(ojo: la pantalla *Favoritos* es del grupo Cuenta, así que sigue siendo un
+placeholder aunque el *toggle* de favorito ya funcione en todo Explorar).
+**Sistema** solo tiene las 3 piezas que Explorar necesitó (arriba); le faltan
+"Confirmar eliminar" y "Confirmar cerrar sesión" cableados. Salvo piezas
+puntuales ya hechas de paso: `ConfirmModal` (genérico,
 usado hoy solo por "Confirmar cerrar sesión") y `DangerButton` ya existen en
 `src/components/`, listos para reusarse cuando se conecte "Confirmar
 eliminar" en Editar publicación. El placeholder de `(tabs)/perfil.tsx` solo
@@ -504,6 +671,27 @@ tiene el afordance de cerrar sesión — el resto de la pantalla Perfil
 - **`supabase db push` no aplica `seed.sql`.** Solo `db start`/`db reset`
   locales lo corren. Para sembrar datos de referencia en remoto, usa
   `db push --include-seed` explícitamente.
+- **Reemplazar un carácter especial por uno "inocente" no es lo mismo que
+  quitarlo.** Si el reemplazo es un carácter común en los datos reales, el bug
+  sobrevive con el mismo síntoma exacto y parece que el arreglo no se aplicó.
+  Pasó con un comodín de búsqueda sustituido por un espacio: como
+  prácticamente todo texto contiene un espacio, el patrón seguía casando con
+  todo el catálogo — idéntico al problema original. La forma de detectarlo es
+  preguntarse *"¿qué tan frecuente es el carácter de reemplazo en los datos?"*,
+  no *"¿queda el carácter peligroso?"*. Y cuando no existe reemplazo seguro
+  —el vacío suele ser igual de malo—, la respuesta correcta no es maquillar la
+  entrada sino no construir la consulta.
+- **Un índice de expresión solo lo usa el planner si la consulta repite esa
+  expresión literalmente.** No basta con que sea "equivalente": si el cliente
+  —PostgREST, un ORM, quien sea— no puede emitir esa expresión exacta, el
+  índice nunca se elige y queda como peso muerto que se paga en cada
+  `insert`/`update` sin dar nada a cambio. Y no avisa: las consultas siguen
+  devolviendo resultados correctos, solo que por seq scan. La solución es
+  materializar la expresión en una **columna generada** (`generated always as
+  (…) stored`) e indexar la columna, que sí es referenciable por nombre desde
+  cualquier cliente. Antes de dar un índice por bueno, confírmalo con
+  `explain (analyze)` **y con suficientes filas**: con pocos datos el planner
+  elige seq scan por costo y el plan no prueba nada en ninguna dirección.
 - **`presentation:'transparentModal'` de un Stack anidado no funciona si el
   Stack padre ya presenta esa ruta como card opaca.** El navegador que de
   verdad ejecuta el `push` (a menudo el Stack raíz, no el Stack del grupo

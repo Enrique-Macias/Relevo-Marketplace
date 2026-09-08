@@ -1,11 +1,21 @@
-import { Fraunces_400Regular, Fraunces_500Medium, Fraunces_600SemiBold } from '@expo-google-fonts/fraunces';
-import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, useFonts } from '@expo-google-fonts/inter';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import {
+  Fraunces_400Regular,
+  Fraunces_500Medium,
+  Fraunces_600SemiBold,
+} from "@expo-google-fonts/fraunces";
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  useFonts,
+} from "@expo-google-fonts/inter";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect } from "react";
 
-import { ExplorarStateProvider } from '@/lib/explorar-state';
-import { SessionProvider } from '@/lib/session';
+import { ToastProvider } from "@/components/Toast";
+import { ExplorarStateProvider } from "@/lib/explorar-state";
+import { SessionProvider } from "@/lib/session";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -34,16 +44,23 @@ export default function RootLayout() {
     // (tabs) y las pantallas de auth leen del mismo estado de sesión.
     <SessionProvider>
       <ExplorarStateProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(onboarding)" />
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="(explorar)" />
-          <Stack.Screen name="(publicar)" />
-          <Stack.Screen name="(cuenta)" />
-          <Stack.Screen name="(confianza)" />
-          <Stack.Screen name="(notificaciones)" />
-          <Stack.Screen name="(sistema)" options={{ presentation: 'modal' }} />
-          {/*
+        {/* El toast va POR ENCIMA del Stack, no dentro de una pantalla: es un
+            overlay absoluto que debe sobrevivir a la navegación (el de RF-13 se
+            dispara justo antes de que WhatsApp tome el foco). */}
+        <ToastProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(onboarding)" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="(explorar)" />
+            <Stack.Screen name="(publicar)" />
+            <Stack.Screen name="(cuenta)" />
+            <Stack.Screen name="(confianza)" />
+            <Stack.Screen name="(notificaciones)" />
+            <Stack.Screen
+              name="(sistema)"
+              options={{ presentation: "modal" }}
+            />
+            {/*
             Selector de campus y Filtros son hojas (bottom sheet) que deben
             dejar ver la pantalla de origen (Feed/Búsqueda/Categoría) detrás
             con un backdrop semitransparente — para eso sirve `SheetScreen`.
@@ -62,15 +79,22 @@ export default function RootLayout() {
             que ya usa `(sistema)` arriba — el stack que de verdad hace el
             push es el que sabe que debe ser transparente.
           */}
-          <Stack.Screen
-            name="selector-campus"
-            options={{ presentation: 'transparentModal', animation: 'slide_from_bottom' }}
-          />
-          <Stack.Screen
-            name="filtros"
-            options={{ presentation: 'transparentModal', animation: 'slide_from_bottom' }}
-          />
-        </Stack>
+            <Stack.Screen
+              name="selector-campus"
+              options={{
+                presentation: "transparentModal",
+                animation: "slide_from_bottom",
+              }}
+            />
+            <Stack.Screen
+              name="filtros"
+              options={{
+                presentation: "transparentModal",
+                animation: "slide_from_bottom",
+              }}
+            />
+          </Stack>
+        </ToastProvider>
       </ExplorarStateProvider>
     </SessionProvider>
   );

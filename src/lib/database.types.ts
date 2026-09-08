@@ -161,6 +161,7 @@ export type Database = {
       }
       listings: {
         Row: {
+          busqueda: unknown
           campus_id: number
           categoria_id: number
           condicion: Database["public"]["Enums"]["listing_condition"]
@@ -176,6 +177,7 @@ export type Database = {
           vistas_count: number
         }
         Insert: {
+          busqueda?: unknown
           campus_id: number
           categoria_id: number
           condicion: Database["public"]["Enums"]["listing_condition"]
@@ -191,6 +193,7 @@ export type Database = {
           vistas_count?: number
         }
         Update: {
+          busqueda?: unknown
           campus_id?: number
           categoria_id?: number
           condicion?: Database["public"]["Enums"]["listing_condition"]
@@ -429,6 +432,10 @@ export type Database = {
       increment_listing_view: {
         Args: { p_listing_id: number }
         Returns: undefined
+      }
+      listing_favorites_count: {
+        Args: { p_listing_id: number }
+        Returns: number
       }
     }
     Enums: {

@@ -6,7 +6,6 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { GhostButton, PrimaryButton } from '@/components/Buttons';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { SheetScreen } from '@/components/SheetScreen';
-import { CATEGORIAS } from '@/constants/mock/categorias';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { type Condicion, type Orden, useExplorarState } from '@/lib/explorar-state';
 
@@ -24,7 +23,7 @@ const ORDEN_OPTIONS = [
 ];
 
 export default function FiltrosScreen() {
-  const { filtros, setFiltros, limpiarFiltros } = useExplorarState();
+  const { filtros, setFiltros, limpiarFiltros, categorias } = useExplorarState();
 
   return (
     <SheetScreen
@@ -40,11 +39,13 @@ export default function FiltrosScreen() {
         </>
       }
     >
+      {/* `SegmentedControl` trabaja con strings; el id real es bigint, así que
+          se serializa en la opción y se parsea de vuelta al elegir. */}
       <SegmentedControl
         label="Categoría"
-        options={CATEGORIAS.map((c) => ({ value: c.id, label: c.nombre }))}
-        value={filtros.categoriaId}
-        onChange={(v) => setFiltros({ categoriaId: v })}
+        options={categorias.map((c) => ({ value: String(c.id), label: c.nombre }))}
+        value={filtros.categoriaId === undefined ? undefined : String(filtros.categoriaId)}
+        onChange={(v) => setFiltros({ categoriaId: Number(v) })}
       />
 
       <View style={styles.field}>

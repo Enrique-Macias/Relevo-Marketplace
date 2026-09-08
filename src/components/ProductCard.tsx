@@ -4,10 +4,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { CategoryIcon } from '@/components/icons/categories';
 import { IconHeart, IconMapPin } from '@/components/icons';
-import { getCategoria } from '@/constants/mock/categorias';
-import type { Listing } from '@/constants/mock/listings';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { useExplorarState } from '@/lib/explorar-state';
 import { formatPrecio, formatRelativo } from '@/lib/format';
+import type { ListingCard } from '@/lib/listings';
 
 const TINT_BG: Record<string, string> = {
   brick: Colors.brickTint,
@@ -29,13 +29,16 @@ const CONDICION_LABEL: Record<string, string> = {
 };
 
 type ProductCardProps = {
-  listing: Listing;
+  listing: ListingCard;
   onPress: () => void;
   favorito: boolean;
   onToggleFavorito: () => void;
 };
 
 export function ProductCard({ listing, onPress, favorito, onToggleFavorito }: ProductCardProps) {
+  // El slug y el tinte son presentación derivada del catálogo cargado, no
+  // columnas de `listings` — ver `src/lib/categorias.ts`.
+  const { getCategoria } = useExplorarState();
   const categoria = getCategoria(listing.categoriaId);
   const tint = categoria?.tint ?? 'brick';
   const badgeLabel = CONDICION_LABEL[listing.condicion];
@@ -43,7 +46,7 @@ export function ProductCard({ listing, onPress, favorito, onToggleFavorito }: Pr
   return (
     <Pressable style={styles.card} onPress={onPress}>
       <View style={[styles.thumb, { backgroundColor: TINT_BG[tint] }]}>
-        <CategoryIcon categoriaId={listing.categoriaId} size={34} color={TINT_FG[tint]} />
+        <CategoryIcon categoriaId={categoria?.slug ?? ''} size={34} color={TINT_FG[tint]} />
         {badgeLabel ? (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{badgeLabel}</Text>
@@ -62,11 +65,11 @@ export function ProductCard({ listing, onPress, favorito, onToggleFavorito }: Pr
         <View style={styles.meta}>
           <IconMapPin size={10} color={Colors.inkSoft} />
           <Text style={[styles.metaText, styles.metaCampus]} numberOfLines={1}>
-            {listing.campus}
+            {listing.campusNombre}
           </Text>
           <Text style={styles.metaSep}>·</Text>
           <Text style={styles.metaText} numberOfLines={1}>
-            {formatRelativo(listing.createdAt)}
+            {formatRelativo(new Date(listing.createdAt))}
           </Text>
         </View>
       </View>

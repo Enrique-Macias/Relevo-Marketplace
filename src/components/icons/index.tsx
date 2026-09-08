@@ -365,3 +365,43 @@ export function IconDots3({ size, color }: IconProps) {
     </Svg>
   );
 }
+
+// Frame "Error de conexión" (grupo sistema) — `.empty-icon.error-icon`.
+// stroke-width 1.8 y solo stroke-linecap="round" (sin linejoin), tal cual el HTML.
+export function IconAlertCircle({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+    >
+      <Path d="M12 9v4" />
+      <Path d="M12 17h.01" />
+      <Circle cx={12} cy={12} r={9} />
+    </Svg>
+  );
+}
+
+// Frame "Toast de error" — va dentro del círculo de `.toast-icon.is-error`, así
+// que no lleva el círculo propio: el fondo del contenedor ya lo es. Mismo
+// stroke-width 3 que la palomita del toast de éxito.
+export function IconExclamation({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={3}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M12 8v5M12 17h.01" />
+    </Svg>
+  );
+}

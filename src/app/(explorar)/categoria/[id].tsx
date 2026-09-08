@@ -1,23 +1,25 @@
 /** Categoría (+ sin resultados) — publicaciones de una categoría, con búsqueda y orden. */
 
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { PrimaryButton } from '@/components/Buttons';
 import { Chip } from '@/components/Chip';
 import { EmptyState } from '@/components/EmptyState';
+import { ErrorState } from '@/components/ErrorState';
 import { IconFilterSliders, IconSearch } from '@/components/icons';
 import { SearchField } from '@/components/ListRow';
 import { PageHeader } from '@/components/PageHeader';
 import { ProductCard } from '@/components/ProductCard';
 import { RoundIconButton } from '@/components/RoundIconButton';
 import { Screen } from '@/components/Screen';
-import { getCategoria } from '@/constants/mock/categorias';
-import { getListingsByCategoria } from '@/constants/mock/listings';
+import { SkeletonGrid } from '@/components/Skeleton';
 import { Colors, ScreenPadding, Typography } from '@/constants/theme';
+import { useDebounce } from '@/lib/use-debounce';
 import { useExplorarState } from '@/lib/explorar-state';
 import { chunkRows } from '@/lib/grid';
+import { useListings } from '@/lib/listings';
 
 const ORDEN_CHIPS = [
   { value: 'recientes', label: 'Recientes' },
@@ -27,44 +29,42 @@ const ORDEN_CHIPS = [
 ] as const;
 
 export default function CategoriaScreen() {
+  // El param llega como string desde la ruta; el id real es bigint.
   const { id } = useLocalSearchParams<{ id: string }>();
-  const categoria = getCategoria(id);
+  const categoriaId = Number(id);
   const [query, setQuery] = useState('');
-  const { filtros, setFiltros, campusSeleccionado, favoritos, toggleFavorito } = useExplorarState();
+  const queryDiferida = useDebounce(query);
+  const { filtros, setFiltros, campusSeleccionado, favoritos, toggleFavorito, getCategoria } =
+    useExplorarState();
 
-  const resultados = useMemo(() => {
-    const q2 = query.trim().toLowerCase();
-    const min = filtros.precioMin ? Number(filtros.precioMin) : undefined;
-    const max = filtros.precioMax ? Number(filtros.precioMax) : undefined;
+  const categoria = getCategoria(categoriaId);
 
-    const filtrados = getListingsByCategoria(id).filter((l) => {
-      if (q2 && !l.titulo.toLowerCase().includes(q2)) return false;
-      if (filtros.condicion && l.condicion !== filtros.condicion) return false;
-      if (min !== undefined && !Number.isNaN(min) && l.precio < min) return false;
-      if (max !== undefined && !Number.isNaN(max) && l.precio > max) return false;
-      return true;
-    });
+  // Misma semántica que tenía el filtrado sobre el mock: la categoría la fija
+  // la ruta (no el filtro), y precio/condición/orden salen del contexto.
+  const { items, estado, total, cargandoMas, loadMore, reintentar } = useListings(
+    campusSeleccionado
+      ? {
+          campusId: campusSeleccionado.id,
+          categoriaId,
+          q: queryDiferida,
+          precioMin: filtros.precioMin ? Number(filtros.precioMin) : undefined,
+          precioMax: filtros.precioMax ? Number(filtros.precioMax) : undefined,
+          condicion: filtros.condicion,
+          orden: filtros.orden,
+          withCount: true,
+        }
+      : null
+  );
 
-    return [...filtrados].sort((a, b) => {
-      switch (filtros.orden) {
-        case 'precio_asc':
-          return a.precio - b.precio;
-        case 'precio_desc':
-          return b.precio - a.precio;
-        case 'mejor_calificados':
-          return b.vendedor.ventas - a.vendedor.ventas;
-        case 'recientes':
-        default:
-          return b.createdAt.getTime() - a.createdAt.getTime();
-      }
-    });
-  }, [id, query, filtros]);
+  const cargando = estado === 'loading' || !campusSeleccionado;
+  const conteo = total ?? items.length;
 
   return (
     <Screen
+      onEndReached={loadMore}
       header={
         <PageHeader
-          title={categoria?.nombre ?? id}
+          title={categoria?.nombre ?? ''}
           trailing={
             <RoundIconButton variant="bordered" onPress={() => router.push('/filtros')}>
               <IconFilterSliders size={15} color={Colors.ink} />
@@ -82,8 +82,8 @@ export default function CategoriaScreen() {
       </View>
 
       <Text style={styles.resultsCount}>
-        {resultados.length} {resultados.length === 1 ? 'publicación' : 'publicaciones'} en{' '}
-        {campusSeleccionado.nombre}
+        {conteo} {conteo === 1 ? 'publicación' : 'publicaciones'} en{' '}
+        {campusSeleccionado?.nombre ?? ''}
       </Text>
 
       <ScrollView
@@ -102,12 +102,16 @@ export default function CategoriaScreen() {
         ))}
       </ScrollView>
 
-      {resultados.length === 0 ? (
+      {estado === 'error' ? (
+        <ErrorState onRetry={reintentar} />
+      ) : cargando ? (
+        <SkeletonGrid tarjetas={4} style={styles.skeleton} />
+      ) : items.length === 0 ? (
         <EmptyState
           icon={<IconSearch size={30} color={Colors.inkSoft} />}
           title={
-            query.trim() !== ''
-              ? `No encontramos "${query}" en ${categoria?.nombre ?? ''}`
+            queryDiferida.trim() !== ''
+              ? `No encontramos "${queryDiferida}" en ${categoria?.nombre ?? ''}`
               : `No encontramos publicaciones en ${categoria?.nombre ?? ''}`
           }
           sub="Nadie ha publicado eso en esta categoría todavía. Prueba buscando en todo el catálogo."
@@ -119,7 +123,7 @@ export default function CategoriaScreen() {
         </EmptyState>
       ) : (
         <View style={styles.grid}>
-          {chunkRows(resultados, 2).map((row, i) => (
+          {chunkRows(items, 2).map((row, i) => (
             <View key={i} style={styles.gridRow}>
               {row.map((listing) => (
                 <ProductCard
@@ -133,6 +137,7 @@ export default function CategoriaScreen() {
               {row.length < 2 ? <View style={styles.padCell} /> : null}
             </View>
           ))}
+          {cargandoMas ? <SkeletonGrid tarjetas={2} style={styles.skeletonMas} /> : null}
         </View>
       )}
     </Screen>
@@ -178,5 +183,13 @@ const styles = StyleSheet.create({
   },
   padCell: {
     flex: 1,
+  },
+  skeleton: {
+    paddingTop: 12,
+    paddingBottom: 90,
+  },
+  // Ya va dentro de `grid`, que aporta el padding horizontal y el inferior.
+  skeletonMas: {
+    paddingHorizontal: 0,
   },
 });

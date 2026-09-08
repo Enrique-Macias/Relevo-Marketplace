@@ -768,6 +768,9 @@
     display:flex; align-items:center; justify-content:center;
   }
   .toast-text{font-size:13px; font-weight:500;}
+  /* Variante de error del toast: mismo card, solo cambia el círculo del icono
+     a --brick, que es el color de error que ya usa .error-icon. */
+  .toast-icon.is-error{background:var(--brick);}
 
   /* Error state */
   .error-icon{background:var(--brick-tint);}
@@ -3401,6 +3404,47 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
           </div>
           <span class="toast-text">Cambios guardados</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aviso no bloqueante de fallo. Existe porque el tap en "Contactar por
+       WhatsApp" registra una fila en listing_contacts (RF-13) que después
+       alimenta "¿A quién le vendiste?" (RF-12): si ese registro falla, WhatsApp
+       se abre igual — no se le niega el contacto al usuario por un fallo de
+       log — pero el usuario tiene que enterarse de que la app no llevó
+       registro. Mismo card que el toast de éxito; solo cambia el círculo del
+       icono a --brick. -->
+  <div class="phone-block" data-cat="sistema">
+    <div class="phone-label">Toast de error</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="detail-body" style="padding-top:18px;">
+          <div class="detail-price">$280</div>
+          <div class="detail-title">Cálculo de Larson, 9a edición</div>
+          <div class="detail-meta">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.6"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span>Tec de Monterrey</span>
+            <span style="color:var(--line);">·</span>
+            <span>hace 2h</span>
+          </div>
+        </div>
+
+        <div class="toast">
+          <div class="toast-icon is-error">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5M12 17h.01"/></svg>
+          </div>
+          <span class="toast-text">No pudimos registrar el contacto</span>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 /** Detalle de publicación — 2 estados: vista comprador / vista vendedor. */
 
 import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -17,13 +18,22 @@ import {
   IconShare,
   IconWhatsapp,
 } from '@/components/icons';
+import { ErrorState } from '@/components/ErrorState';
 import { RoundIconButton } from '@/components/RoundIconButton';
 import { Screen } from '@/components/Screen';
-import { getCategoria } from '@/constants/mock/categorias';
-import { getListingById, USUARIO_ACTUAL } from '@/constants/mock/listings';
+import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
-import { formatPrecio, formatRelativo } from '@/lib/format';
+import { formatPrecio, formatRelativo, iniciales } from '@/lib/format';
+import {
+  fetchListingById,
+  fetchStatsPropias,
+  fetchVentasVendedor,
+  incrementListingView,
+  registrarContacto,
+  type ListingDetalle,
+} from '@/lib/listings';
+import { useSession } from '@/lib/session';
 
 const CONDICION_LABEL: Record<string, string> = {
   nuevo: 'Nuevo',
@@ -48,21 +58,167 @@ const TINT_FG: Record<string, string> = {
 
 export default function DetalleScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const listing = getListingById(id);
+  const listingId = Number(id);
   const insets = useSafeAreaInsets();
-  const { favoritos, toggleFavorito } = useExplorarState();
+  const { favoritos, toggleFavorito, getCategoria } = useExplorarState();
+  const { session } = useSession();
+  const { mostrar } = useToast();
 
-  if (!listing) return null;
+  const [listing, setListing] = useState<ListingDetalle | null>(null);
+  // De qué publicación es lo que tenemos cargado (o falló). Comparado contra
+  // `listingId` da el estado sin necesidad de un setState sincrónico dentro del
+  // efecto para "volver a loading" — mismo idioma que `perfilCargadoPara` en
+  // `src/lib/session.tsx`.
+  const [cargadoPara, setCargadoPara] = useState<number | null>(null);
+  const [errorPara, setErrorPara] = useState<number | null>(null);
+  const [ventas, setVentas] = useState(0);
+  const [stats, setStats] = useState({ contactos: 0, favoritos: 0 });
+  const [recargas, setRecargas] = useState(0);
+
+  const userId = session?.user.id ?? null;
+  const isOwner = !!listing && !!userId && listing.userId === userId;
+  // Una ruta con id no numérico es un error derivado del param, no un estado
+  // que haya que asentar con setState desde un efecto.
+  const idValido = !Number.isNaN(listingId);
+
+  useEffect(() => {
+    if (!idValido) return;
+
+    let vigente = true;
+
+    fetchListingById(listingId)
+      .then((data) => {
+        if (!vigente) return;
+        setListing(data);
+        setCargadoPara(listingId);
+      })
+      .catch((e) => {
+        if (!vigente) return;
+        console.warn('[detalle] no se pudo leer la publicación:', e?.message ?? e);
+        setErrorPara(listingId);
+      });
+
+    return () => {
+      vigente = false;
+    };
+  }, [listingId, recargas, idValido]);
+
+  const estado: 'loading' | 'ready' | 'error' =
+    errorPara === listingId ? 'error' : cargadoPara === listingId ? 'ready' : 'loading';
+
+  /**
+   * Vistas (RF-09). Una sola vez por publicación abierta: el `ref` es lo que
+   * evita que el doble montaje de desarrollo cuente dos veces.
+   *
+   * NO lleva `if (!isOwner)`. La exclusión del dueño ya vive dentro de la
+   * función (`user_id is distinct from auth.uid()`, migración 20260906000442) y
+   * repetirla aquí sería lógica de autorización duplicada en el cliente, que es
+   * justo lo que prohíbe CLAUDE.md §0 regla 7. Tampoco se hace `await`: que la
+   * pantalla pinte no depende del contador.
+   */
+  const vistaContada = useRef<number | null>(null);
+  useEffect(() => {
+    if (!idValido || vistaContada.current === listingId) return;
+    vistaContada.current = listingId;
+    void incrementListingView(listingId).catch((e) =>
+      console.warn('[detalle] no se pudo contar la vista:', e?.message ?? e)
+    );
+  }, [listingId, idValido]);
+
+  // Datos secundarios: los del vendedor si soy comprador, los stats si soy dueño.
+  useEffect(() => {
+    if (!listing) return;
+
+    let vigente = true;
+    if (isOwner) {
+      fetchStatsPropias(listing.id)
+        .then((s) => vigente && setStats(s))
+        .catch((e) => console.warn('[detalle] no se pudieron leer los stats:', e?.message ?? e));
+    } else {
+      fetchVentasVendedor(listing.vendedor.id)
+        .then((n) => vigente && setVentas(n))
+        .catch((e) => console.warn('[detalle] no se pudieron contar las ventas:', e?.message ?? e));
+    }
+
+    return () => {
+      vigente = false;
+    };
+  }, [listing, isOwner]);
+
+  /**
+   * RF-13. El registro va PRIMERO y con `await`, pero su fallo no cancela el
+   * contacto: negarle al usuario abrir WhatsApp por un fallo de log sería peor
+   * que perder la fila. Ahora bien, esa fila no es cosmética — alimenta
+   * "¿A quién le vendiste?" y de ahí las calificaciones (RF-12) — así que el
+   * fallo se le dice al usuario con un toast, además de quedar en consola con
+   * los ids para poder correlacionarlo con los logs del proyecto.
+   */
+  async function contactarPorWhatsapp() {
+    if (!listing) return;
+
+    if (userId) {
+      try {
+        await registrarContacto(listing.id, userId);
+      } catch (e: any) {
+        console.warn(
+          `[contacto] falló el registro — listing_id=${listing.id} user_id=${userId} ` +
+            `code=${e?.code ?? '?'} message=${e?.message ?? e}`
+        );
+        mostrar('No pudimos registrar el contacto', 'error');
+      }
+    }
+
+    // TODO(teléfono real): este número es un placeholder — el deep link no
+    // llega al vendedor de verdad. No es un olvido, es un hueco del modelo de
+    // datos, ya investigado:
+    //   · `public.users` no tiene columna de teléfono
+    //     (supabase/migrations/20260906000438_users_profiles.sql).
+    //   · `docs/product-spec.md` §Modelo de datos tampoco la lista: RF-13
+    //     ("botón que abre WhatsApp con el vendedor") y RF-05 la asumen, pero
+    //     ninguna la define.
+    //   · Ningún frame de `design/relevo-app.html` la captura — ni "Completar
+    //     perfil" ni "Editar perfil" tienen ese campo.
+    // O sea: resolverlo necesita migración + frame nuevo en el diseño + campo
+    // en Onboarding, no solo cambiar esta línea. Anotado en CLAUDE.md §8 y en
+    // product-spec.md como pendiente formal.
+    const telefono = '528111234567';
+    void Linking.openURL(
+      `https://wa.me/${telefono}?text=${encodeURIComponent(
+        `Hola, vi tu publicación "${listing.titulo}" en Relevo`
+      )}`
+    );
+  }
+
+  if (!idValido || estado === 'error') {
+    return (
+      <Screen>
+        <ErrorState
+          onRetry={() => {
+            setErrorPara(null);
+            setRecargas((n) => n + 1);
+          }}
+          title="No pudimos abrir la publicación"
+          sub="Revisa tu conexión e intenta de nuevo."
+        />
+      </Screen>
+    );
+  }
+
+  // Sin skeleton propio: el frame no tiene uno para Detalle y no se inventa.
+  if (estado === 'loading' || !listing) return null;
 
   const categoria = getCategoria(listing.categoriaId);
   const tint = categoria?.tint ?? 'brick';
-  const isOwner = listing.vendedor.id === USUARIO_ACTUAL.id;
   const favorito = favoritos.has(listing.id);
+  const createdAt = new Date(listing.createdAt);
 
   return (
     <Screen contentStyle={{ paddingBottom: insets.bottom + 90 }}>
       <View style={[styles.photo, { backgroundColor: TINT_BG[tint] }]}>
-        <CategoryIcon categoriaId={listing.categoriaId} size={64} color={TINT_FG[tint]} />
+        {/* El bucket de Storage sigue pendiente (CLAUDE.md §8), así que
+            `listing_photos` viene vacío: se conserva el placeholder de ícono de
+            categoría tintado que ya definía el frame para ese caso. */}
+        <CategoryIcon categoriaId={categoria?.slug ?? ''} size={64} color={TINT_FG[tint]} />
 
         <View style={styles.nav}>
           <RoundIconButton onPress={() => router.back()}>
@@ -91,11 +247,11 @@ export default function DetalleScreen() {
           <Text style={styles.badgeText}>{CONDICION_LABEL[listing.condicion]}</Text>
         </View>
 
+        {/* Un punto por foto real; con el bucket pendiente eso es siempre 1. */}
         <View style={styles.dots}>
-          <View style={[styles.dot, styles.dotActive]} />
-          <View style={styles.dot} />
-          <View style={styles.dot} />
-          <View style={styles.dot} />
+          {Array.from({ length: Math.max(listing.fotos.length, 1) }).map((_, i) => (
+            <View key={i} style={[styles.dot, i === 0 && styles.dotActive]} />
+          ))}
         </View>
       </View>
 
@@ -104,9 +260,9 @@ export default function DetalleScreen() {
         <Text style={styles.title}>{listing.titulo}</Text>
         <View style={styles.meta}>
           <IconMapPin size={12} color={Colors.inkSoft} />
-          <Text style={styles.metaText}>{listing.campus}</Text>
+          <Text style={styles.metaText}>{listing.campusNombre}</Text>
           <Text style={styles.metaSep}>·</Text>
-          <Text style={styles.metaText}>{formatRelativo(listing.createdAt)}</Text>
+          <Text style={styles.metaText}>{formatRelativo(createdAt)}</Text>
           <Text style={styles.metaSep}>·</Text>
           <Text style={styles.metaText}>{listing.vistasCount} vistas</Text>
         </View>
@@ -115,19 +271,21 @@ export default function DetalleScreen() {
           // pendiente: "Perfil público" es otro grupo sin construir
           <View style={styles.sellerCard}>
             <View style={styles.sellerAvatar}>
-              <Text style={styles.sellerAvatarText}>{listing.vendedor.iniciales}</Text>
+              <Text style={styles.sellerAvatarText}>{iniciales(listing.vendedor.nombre)}</Text>
             </View>
             <View style={styles.sellerInfo}>
               <View style={styles.sellerNameRow}>
-                <Text style={styles.sellerName}>{listing.vendedor.nombre}</Text>
-                {listing.vendedor.verificado ? (
-                  <View style={styles.verifiedTick}>
-                    <IconCheck size={8} color={Colors.paper} />
-                  </View>
-                ) : null}
+                <Text style={styles.sellerName}>{listing.vendedor.nombre ?? ''}</Text>
+                {/* La palomita significa "verificado por correo institucional",
+                    y toda fila de public.users llegó ahí pasando por el OTP:
+                    no hay un usuario no verificado que mostrar. */}
+                <View style={styles.verifiedTick}>
+                  <IconCheck size={8} color={Colors.paper} />
+                </View>
               </View>
               <Text style={styles.sellerSub}>
-                {listing.vendedor.carrera} · {listing.vendedor.ventas} ventas
+                {listing.vendedor.carrera ? `${listing.vendedor.carrera} · ` : ''}
+                {ventas} {ventas === 1 ? 'venta' : 'ventas'}
               </Text>
             </View>
             <IconChevronRight size={16} color={Colors.inkSoft} />
@@ -138,12 +296,16 @@ export default function DetalleScreen() {
               <Text style={styles.statNum}>{listing.vistasCount}</Text>
               <Text style={styles.statLabel}>Vistas</Text>
             </View>
+            {/* Favoritos llega por RPC, no por query: la RLS de `favorites` es
+                `user_id = auth.uid()`, así que ni el dueño de la publicación
+                puede contarlos con un select. Ver la migración
+                20260908000443. */}
             <View style={styles.statCard}>
-              <Text style={styles.statNum}>{listing.favoritosCount}</Text>
+              <Text style={styles.statNum}>{stats.favoritos}</Text>
               <Text style={styles.statLabel}>Favoritos</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statNum}>{listing.contactosCount}</Text>
+              <Text style={styles.statNum}>{stats.contactos}</Text>
               <Text style={styles.statLabel}>Contactos</Text>
             </View>
           </View>
@@ -151,14 +313,14 @@ export default function DetalleScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Descripción</Text>
-          <Text style={styles.desc}>{listing.descripcion}</Text>
+          <Text style={styles.desc}>{listing.descripcion ?? ''}</Text>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Detalles</Text>
           <View style={styles.specRow}>
             <Text style={styles.specKey}>Categoría</Text>
-            <Text style={styles.specVal}>{categoria?.nombre ?? listing.categoriaId}</Text>
+            <Text style={styles.specVal}>{categoria?.nombre ?? ''}</Text>
           </View>
           <View style={styles.specRow}>
             <Text style={styles.specKey}>Condición</Text>
@@ -166,11 +328,11 @@ export default function DetalleScreen() {
           </View>
           <View style={styles.specRow}>
             <Text style={styles.specKey}>Zona de entrega</Text>
-            <Text style={styles.specVal}>{listing.campus}</Text>
+            <Text style={styles.specVal}>{listing.campusNombre}</Text>
           </View>
           <View style={[styles.specRow, styles.specRowLast]}>
             <Text style={styles.specKey}>Publicado</Text>
-            <Text style={styles.specVal}>{formatRelativo(listing.createdAt)}</Text>
+            <Text style={styles.specVal}>{formatRelativo(createdAt)}</Text>
           </View>
         </View>
       </View>
@@ -187,13 +349,7 @@ export default function DetalleScreen() {
             </Pressable>
             <Pressable
               style={styles.whatsappBtn}
-              onPress={() =>
-                Linking.openURL(
-                  `https://wa.me/528111234567?text=${encodeURIComponent(
-                    `Hola, vi tu publicación "${listing.titulo}" en Relevo`
-                  )}`
-                )
-              }
+              onPress={() => void contactarPorWhatsapp()}
               accessibilityRole="button"
             >
               <IconWhatsapp size={17} color={Colors.paper} />

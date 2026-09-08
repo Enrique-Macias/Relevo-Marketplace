@@ -6,20 +6,31 @@ import { StyleSheet, View } from 'react-native';
 import { CategoryTile } from '@/components/CategoryTile';
 import { PageHeader } from '@/components/PageHeader';
 import { Screen } from '@/components/Screen';
-import { CATEGORIAS } from '@/constants/mock/categorias';
+import { SkeletonCatGrid } from '@/components/Skeleton';
 import { ScreenPadding } from '@/constants/theme';
+import { useExplorarState } from '@/lib/explorar-state';
 import { chunkRows } from '@/lib/grid';
 
 export default function CategoriasScreen() {
+  const { categorias, categoriasListas } = useExplorarState();
+
+  if (!categoriasListas) {
+    return (
+      <Screen header={<PageHeader title="Categorías" />} contentStyle={styles.content}>
+        <SkeletonCatGrid filas={4} columnas={3} />
+      </Screen>
+    );
+  }
+
   return (
     <Screen header={<PageHeader title="Categorías" />} contentStyle={styles.content}>
       <View style={styles.grid}>
-        {chunkRows(CATEGORIAS, 3).map((row, i) => (
+        {chunkRows(categorias, 3).map((row, i) => (
           <View key={i} style={styles.row}>
             {row.map((categoria) => (
               <CategoryTile
                 key={categoria.id}
-                categoriaId={categoria.id}
+                slug={categoria.slug}
                 nombre={categoria.nombre}
                 onPress={() => router.push(`/categoria/${categoria.id}`)}
               />

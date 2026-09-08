@@ -214,6 +214,18 @@ Moderación: Supabase Studio, uso directo del equipo
 users
   id, correo, nombre, foto_url, universidad_id, campus_id,
   carrera, rating_promedio, estado (activo/suspendido)
+  -- HUECO CONOCIDO: falta el teléfono. RF-13 pide un botón que abra WhatsApp
+  --   "con el vendedor", pero ninguna entidad de este modelo guarda un número,
+  --   y ningún frame de /design/relevo-app.html lo captura ("Completar perfil"
+  --   y "Editar perfil" no tienen ese campo). El esquema implementado tampoco
+  --   lo tiene. Mientras no se defina, el deep link de la app usa un número
+  --   placeholder — el registro en listing_contacts, que es lo que habilita
+  --   RF-12, sí es real. Cerrarlo requiere las tres cosas a la vez: columna
+  --   `telefono`, frame de captura en el diseño, y campo en el onboarding.
+  --   Decidir también su privacidad frente a RNF-05, que dice explícitamente
+  --   "no exponer correo/teléfono públicamente sin consentimiento explícito":
+  --   el número solo debería viajar al abrir WhatsApp, no en el select del
+  --   perfil público.
 
 universidades
   id, nombre           -- Tec de Monterrey, UANL, UDEM, U-ERRE, UVM…

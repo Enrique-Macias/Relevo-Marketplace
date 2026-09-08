@@ -10,7 +10,16 @@
  */
 
 import { createContext, useContext, useRef } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type ViewStyle,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors } from '@/constants/theme';
@@ -35,10 +44,33 @@ type ScreenProps = {
   /** Contenido fijo por encima del área scrolleable — en el HTML es hermano de `.screen`, no hijo (ej. `.form-header`). */
   header?: React.ReactNode;
   contentStyle?: ViewStyle;
+  /**
+   * Scroll infinito: se dispara al acercarse al final del contenido. El hook
+   * que lo recibe (`useListings.loadMore`) ya ignora llamadas mientras hay una
+   * página en vuelo, así que no hace falta debounce aquí.
+   *
+   * DEUDA CONSCIENTE — esto NO virtualiza. El grid usa `chunkRows()` dentro de
+   * este ScrollView, así que todas las filas cargadas quedan montadas: no hay
+   * reciclaje de vistas como el de FlatList/FlashList. Ver CLAUDE.md §8 para el
+   * disparador concreto de cuándo migrar.
+   */
+  onEndReached?: () => void;
 };
 
-export function Screen({ children, scroll = true, header, contentStyle }: ScreenProps) {
+// Distancia al final a partir de la cual se pide la página siguiente: poco más
+// de una fila de tarjetas, para que la siguiente ya esté ahí al llegar.
+const UMBRAL_FIN = 400;
+
+export function Screen({ children, scroll = true, header, contentStyle, onEndReached }: ScreenProps) {
   const scrollRef = useRef<ScrollView>(null);
+
+  const handleScroll = onEndReached
+    ? ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+        const restante = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+        if (restante < UMBRAL_FIN) onEndReached();
+      }
+    : undefined;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -62,6 +94,8 @@ export function Screen({ children, scroll = true, header, contentStyle }: Screen
               style={styles.flex}
               contentContainerStyle={[styles.scrollContent, contentStyle]}
               keyboardShouldPersistTaps="handled"
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
             >
               {children}
             </ScrollView>

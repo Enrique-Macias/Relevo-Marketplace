@@ -6,24 +6,39 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
 
 import { CategoryTile } from '@/components/CategoryTile';
+import { ErrorState } from '@/components/ErrorState';
 import { IconBell, IconCampusFlag, IconChevronDown, IconFilterSliders, IconSearch } from '@/components/icons';
 import { ProductCard } from '@/components/ProductCard';
 import { Screen } from '@/components/Screen';
 import { SectionHead } from '@/components/SectionHead';
-import { CATEGORIAS_FEED, type Categoria } from '@/constants/mock/categorias';
-import { LISTINGS, USUARIO_ACTUAL } from '@/constants/mock/listings';
+import { SkeletonCatGrid, SkeletonGrid } from '@/components/Skeleton';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
+import { categoriasFeed } from '@/lib/categorias';
 import { useExplorarState } from '@/lib/explorar-state';
+import { iniciales } from '@/lib/format';
 import { chunkRows } from '@/lib/grid';
+import { useListings } from '@/lib/listings';
+import { useSession } from '@/lib/session';
 
-const RECOMENDADOS = LISTINGS.slice(0, 6);
-const CATEGORIAS_TILES: (Categoria | { id: 'otros'; nombre: 'Más' })[] = [
-  ...CATEGORIAS_FEED,
-  { id: 'otros', nombre: 'Más' },
-];
+// El tile de cierre del grid. `id: null` lo distingue de una categoría real:
+// no navega a `/categoria/<id>`, abre "Ver todas".
+const TILE_MAS = { id: null, slug: 'otros', nombre: 'Más' } as const;
 
 export default function InicioScreen() {
-  const { campusSeleccionado, favoritos, toggleFavorito } = useExplorarState();
+  const { profile } = useSession();
+  const { campusSeleccionado, categorias, categoriasListas, favoritos, toggleFavorito } =
+    useExplorarState();
+
+  // El Feed no es una lista infinita: el frame muestra un grid de 6 con
+  // "Ver todo" hacia Búsqueda, que es donde vive la paginación (RNF-01).
+  const { items, estado, reintentar } = useListings(
+    campusSeleccionado
+      ? { campusId: campusSeleccionado.id, orden: 'recientes' as const, limit: 6 }
+      : null
+  );
+
+  const tiles = [...categoriasFeed(categorias), TILE_MAS];
+  const cargando = estado === 'loading' || !campusSeleccionado;
 
   return (
     <Screen>
@@ -37,14 +52,14 @@ export default function InicioScreen() {
               <View style={styles.dot} />
             </Pressable>
             <Pressable style={styles.avatar} onPress={() => router.push('/perfil')} accessibilityRole="button">
-              <Text style={styles.avatarText}>{USUARIO_ACTUAL.iniciales}</Text>
+              <Text style={styles.avatarText}>{iniciales(profile?.nombre)}</Text>
             </Pressable>
           </View>
         </View>
 
         <Pressable style={styles.campusChip} onPress={() => router.push('/selector-campus')}>
           <IconCampusFlag size={14} color={Colors.brick} />
-          <Text style={styles.campusChipText}>{campusSeleccionado.nombre}</Text>
+          <Text style={styles.campusChipText}>{campusSeleccionado?.nombre ?? ''}</Text>
           <IconChevronDown size={13} color={Colors.inkSoft} />
         </Pressable>
 
@@ -104,43 +119,53 @@ export default function InicioScreen() {
         onPressLink={() => router.push('/categorias')}
         style={{ paddingTop: 20 }}
       />
-      <View style={styles.catGrid}>
-        {chunkRows(CATEGORIAS_TILES, 4).map((row, i) => (
-          <View key={i} style={styles.catGridRow}>
-            {row.map((categoria) => (
-              <CategoryTile
-                key={categoria.id}
-                categoriaId={categoria.id}
-                nombre={categoria.nombre}
-                onPress={() =>
-                  router.push(categoria.id === 'otros' ? '/categorias' : `/categoria/${categoria.id}`)
-                }
-              />
-            ))}
-            {Array.from({ length: 4 - row.length }).map((_, j) => (
-              <View key={`pad-${j}`} style={styles.padCell} />
-            ))}
-          </View>
-        ))}
-      </View>
+      {!categoriasListas ? (
+        <SkeletonCatGrid />
+      ) : (
+        <View style={styles.catGrid}>
+          {chunkRows(tiles, 4).map((row, i) => (
+            <View key={i} style={styles.catGridRow}>
+              {row.map((categoria) => (
+                <CategoryTile
+                  key={categoria.id ?? 'mas'}
+                  slug={categoria.slug}
+                  nombre={categoria.nombre}
+                  onPress={() =>
+                    router.push(categoria.id === null ? '/categorias' : `/categoria/${categoria.id}`)
+                  }
+                />
+              ))}
+              {Array.from({ length: 4 - row.length }).map((_, j) => (
+                <View key={`pad-${j}`} style={styles.padCell} />
+              ))}
+            </View>
+          ))}
+        </View>
+      )}
 
       <SectionHead title="Recomendado para ti" linkLabel="Ver todo" onPressLink={() => router.push('/buscar')} />
-      <View style={styles.grid}>
-        {chunkRows(RECOMENDADOS, 2).map((row, i) => (
-          <View key={i} style={styles.productGridRow}>
-            {row.map((listing) => (
-              <ProductCard
-                key={listing.id}
-                listing={listing}
-                favorito={favoritos.has(listing.id)}
-                onToggleFavorito={() => toggleFavorito(listing.id)}
-                onPress={() => router.push(`/detalle/${listing.id}`)}
-              />
-            ))}
-            {row.length < 2 ? <View style={styles.padCell} /> : null}
-          </View>
-        ))}
-      </View>
+      {estado === 'error' ? (
+        <ErrorState onRetry={reintentar} style={styles.errorState} />
+      ) : cargando ? (
+        <SkeletonGrid tarjetas={6} style={styles.skeletonGrid} />
+      ) : (
+        <View style={styles.grid}>
+          {chunkRows(items, 2).map((row, i) => (
+            <View key={i} style={styles.productGridRow}>
+              {row.map((listing) => (
+                <ProductCard
+                  key={listing.id}
+                  listing={listing}
+                  favorito={favoritos.has(listing.id)}
+                  onToggleFavorito={() => toggleFavorito(listing.id)}
+                  onPress={() => router.push(`/detalle/${listing.id}`)}
+                />
+              ))}
+              {row.length < 2 ? <View style={styles.padCell} /> : null}
+            </View>
+          ))}
+        </View>
+      )}
     </Screen>
   );
 }
@@ -302,5 +327,14 @@ const styles = StyleSheet.create({
   },
   padCell: {
     flex: 1,
+  },
+  errorState: {
+    paddingTop: 30,
+    paddingBottom: 90,
+  },
+  // Mismo colchón inferior que `grid`, para que el tab bar no tape la última
+  // fila mientras carga.
+  skeletonGrid: {
+    paddingBottom: 90,
   },
 });

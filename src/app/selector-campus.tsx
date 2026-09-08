@@ -7,18 +7,31 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { IconLocationCrosshair } from '@/components/icons';
 import { ListRow, SearchField } from '@/components/ListRow';
 import { SheetScreen } from '@/components/SheetScreen';
-import { CAMPUS } from '@/constants/mock/campus';
 import { Colors, Typography } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
 
 export default function SelectorCampusScreen() {
   const [busqueda, setBusqueda] = useState('');
-  const { campusSeleccionado, setCampusSeleccionado } = useExplorarState();
+  const { campusSeleccionado, campusDisponibles, setCampusSeleccionado } = useExplorarState();
 
   const q = busqueda.trim().toLowerCase();
   const filtrado = q
-    ? CAMPUS.filter((c) => c.nombre.toLowerCase().includes(q) || c.ciudad.toLowerCase().includes(q))
-    : CAMPUS;
+    ? campusDisponibles.filter(
+        (c) => c.nombre.toLowerCase().includes(q) || c.ciudad.toLowerCase().includes(q)
+      )
+    : campusDisponibles;
+
+  /**
+   * El frame agrupa las filas bajo un rótulo de ciudad ("Campus en Monterrey").
+   * Con datos reales la ciudad vive en cada campus, así que el rótulo se deriva
+   * agrupando por `ciudad` en vez de estar escrito a mano: una universidad con
+   * campus en varias ciudades produce varias secciones, y la del Tec —único
+   * campus sembrado hoy— produce exactamente la sección del frame.
+   */
+  const ciudades = filtrado.reduce<Record<string, typeof filtrado>>((acc, campus) => {
+    (acc[campus.ciudad] ??= []).push(campus);
+    return acc;
+  }, {});
 
   return (
     <SheetScreen title="Elige tu campus">
@@ -32,20 +45,30 @@ export default function SelectorCampusScreen() {
         <Text style={styles.locText}>Detectar campus más cercano</Text>
       </Pressable>
 
-      <Text style={styles.sectionLabel}>Campus en Monterrey</Text>
-      {filtrado.map((campus, i) => (
-        <ListRow
-          key={campus.id}
-          name={campus.nombre}
-          sub={campus.ciudad}
-          selected={campus.id === campusSeleccionado.id}
-          last={i === filtrado.length - 1}
-          onPress={() => {
-            setCampusSeleccionado(campus);
-            router.back();
-          }}
-        />
+      {Object.entries(ciudades).map(([ciudad, lista]) => (
+        <View key={ciudad}>
+          <Text style={styles.sectionLabel}>Campus en {ciudad}</Text>
+          {lista.map((campus, i) => (
+            <ListRow
+              key={campus.id}
+              name={campus.nombre}
+              sub={campus.ciudad}
+              selected={campus.id === campusSeleccionado?.id}
+              last={i === lista.length - 1}
+              onPress={() => {
+                setCampusSeleccionado(campus);
+                router.back();
+              }}
+            />
+          ))}
+        </View>
       ))}
+
+      {/* Solo alcanzable escribiendo en el buscador: el perfil siempre tiene
+          campus, así que `campusDisponibles` nunca llega vacío. */}
+      {filtrado.length === 0 ? (
+        <Text style={styles.sinResultados}>No encontramos ese campus.</Text>
+      ) : null}
     </SheetScreen>
   );
 }
@@ -70,5 +93,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.44,
     paddingTop: 16,
     paddingBottom: 4,
+  },
+  sinResultados: {
+    ...Typography.meta,
+    color: Colors.inkSoft,
+    paddingTop: 20,
+    textAlign: 'center',
   },
 });

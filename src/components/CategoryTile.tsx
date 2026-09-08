@@ -6,16 +6,18 @@ import { CategoryIcon } from '@/components/icons/categories';
 import { Colors, Radii, Typography } from '@/constants/theme';
 
 type CategoryTileProps = {
-  categoriaId: string;
+  /** Slug de presentación (`libros`, `arte-y-manualidades`), no el id de la BD:
+      es la llave del ícono en `icons/categories.tsx`. Ver `src/lib/categorias.ts`. */
+  slug: string;
   nombre: string;
   onPress: () => void;
 };
 
-export function CategoryTile({ categoriaId, nombre, onPress }: CategoryTileProps) {
+export function CategoryTile({ slug, nombre, onPress }: CategoryTileProps) {
   return (
     <Pressable style={styles.item} onPress={onPress}>
       <View style={styles.icon}>
-        <CategoryIcon categoriaId={categoriaId} size={20} color={Colors.ink} />
+        <CategoryIcon categoriaId={slug} size={20} color={Colors.ink} />
       </View>
       <Text style={styles.label} numberOfLines={2}>
         {nombre}

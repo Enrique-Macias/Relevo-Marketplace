@@ -10,12 +10,14 @@ type EmptyStateProps = {
   sub: string;
   children?: React.ReactNode;
   style?: ViewStyle;
+  /** `.error-icon` cambia el fondo del círculo a `--brick-tint`. Ver `ErrorState`. */
+  iconStyle?: ViewStyle;
 };
 
-export function EmptyState({ icon, title, sub, children, style }: EmptyStateProps) {
+export function EmptyState({ icon, title, sub, children, style, iconStyle }: EmptyStateProps) {
   return (
     <View style={[styles.state, style]}>
-      <View style={styles.icon}>{icon}</View>
+      <View style={[styles.icon, iconStyle]}>{icon}</View>
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.sub}>{sub}</Text>
       {children ? <View style={styles.actions}>{children}</View> : null}

@@ -2,9 +2,17 @@
 -- Relevo — suite de regresión de RLS, grants y triggers.
 --
 -- Cómo correrla:
---     supabase db reset && supabase test db
---   o directamente:
---     psql "$DATABASE_URL" -f supabase/tests/rls.sql
+--     supabase db reset
+--     docker exec -i $(docker ps --filter name=supabase_db_relevo-marketplace \
+--       --format '{{.ID}}') psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
+--       < supabase/tests/rls.sql
+--
+-- NO uses `supabase test db`: ese comando corre las pruebas bajo un harness
+-- pgTAP y termina en "Result: FAIL / No plan found in TAP output" AUNQUE TODAS
+-- las aserciones hayan pasado — esta suite no emite TAP, emite `raise notice`.
+-- Ese FAIL es del harness, no del esquema, y confunde de verdad: se ven 46
+-- líneas "ok —" seguidas de un FAIL. Corriéndola por psql, el código de salida
+-- sí es el real (0 = todo bien).
 --
 -- Falla ruidosamente: cada aserción levanta una excepción si no se cumple, y
 -- ON_ERROR_STOP corta a la primera. Si el script termina imprimiendo
@@ -357,6 +365,129 @@ select pg_temp.assert(
 
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T11b — conteo de favoritos: solo lo ve el dueño de la publicación =='
+-- La tarjeta de stats de "Detalle (vista vendedor)" necesita este número, pero
+-- la RLS de favorites se lo esconde al vendedor. listing_favorites_count() lo
+-- devuelve sin exponer QUIÉN dio favorito — y solo al dueño.
+--
+-- OJO CON REUSAR t_ids AQUÍ: para este punto del archivo, `t_ids.activa` ya no
+-- existe — T8 la borra a propósito, probando que un reporte sobrevive al
+-- borrado de su objetivo. Y `:C` tampoco: T8 borra esa cuenta de auth.users.
+-- Por eso esta sección se siembra su propia publicación, como hacen las
+-- fixtures del inicio: directo, no vía as_user, porque `listings_insert_own`
+-- exige is_active_user() y B quedó suspendido en T10.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values (:B::uuid, 1, 1, 1, 'RLS Favoritos contables', 99, 'nuevo', 'activa');
+
+create temp table t_fav as
+select (select id from public.listings where titulo = 'RLS Favoritos contables') as listing;
+
+-- A sigue activo y no es dueño de nada: es quien da el favorito.
+select pg_temp.as_user(:A::uuid,
+  format('insert into public.favorites (user_id, listing_id) values (%L, %s)',
+         :A::uuid, (select listing from t_fav)));
+
+-- B está suspendido desde T10, y aun así lee el conteo de SU publicación: leer
+-- es de las cosas que un suspendido conserva (tabla de decisión, CLAUDE.md §3),
+-- y la función no lleva is_active_user() a propósito. Si alguien se lo agrega
+-- "por endurecer", esta aserción es la que lo caza.
+select pg_temp.assert(
+  pg_temp.as_user_int(:B::uuid,
+    format('select public.listing_favorites_count(%s)', (select listing from t_fav))) = 1,
+  'B, dueño de la publicación, recibe el conteo real (1)');
+
+-- Camino negativo — lo que de verdad importa: sin el `exists` de la función,
+-- esta devolvería 1 y filtraría un agregado de una publicación ajena. A es el
+-- caso más estricto posible: ni siendo quien dio el favorito puede contarlos.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A::uuid,
+    format('select public.listing_favorites_count(%s)', (select listing from t_fav))) is null,
+  'A, que NO es dueño, recibe null aunque él mismo dio el favorito');
+
+select pg_temp.assert(
+  pg_temp.as_user_int(:B::uuid,
+    'select public.listing_favorites_count(-1)') is null,
+  'una publicación inexistente devuelve null, no 0');
+
+-- ---------------------------------------------------------------------------
+\echo ''
+\echo '== T13 — búsqueda de texto (columna generada `busqueda`) =='
+-- Autocontenida, mismo criterio que T11b: siembra su propia fila y no reutiliza
+-- t_ids, que T8 ya borró. Se inserta directo (no vía as_user) porque B quedó
+-- suspendido en T10 y listings_insert_own exige is_active_user().
+--
+-- El título lleva acento A PROPÓSITO: la razón de existir de esta migración es
+-- que `ilike '%calculo%'` devolvía 0 sobre "Cálculo de Larson", y el usuario
+-- teclea sin acento. Si alguien cambia la config del to_tsvector a 'simple' o
+-- 'english', el stemmer deja de plegar el acento y ESTA es la prueba que falla.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, descripcion, precio, condicion, estado)
+values (:B::uuid, 1, 1, 1, 'RLS Cálculo de Larson, 9a edición',
+        'Sin subrayados ni marcas', 280, 'como_nuevo', 'activa');
+
+create temp table t_fts as
+select (select id from public.listings
+         where titulo = 'RLS Cálculo de Larson, 9a edición') as listing;
+
+-- El bug real, no la sintaxis: buscar SIN acento tiene que encontrarlo.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A::uuid,
+    format('select count(*) from public.listings
+             where id = %s and busqueda @@ websearch_to_tsquery(''spanish'', ''calculo'')',
+           (select listing from t_fts))) = 1,
+  'buscar "calculo" SIN acento encuentra "Cálculo" (el bug que motivó la migración)');
+
+select pg_temp.assert(
+  pg_temp.as_user_int(:A::uuid,
+    format('select count(*) from public.listings
+             where id = %s and busqueda @@ websearch_to_tsquery(''spanish'', ''Cálculo'')',
+           (select listing from t_fts))) = 1,
+  'buscar "Cálculo" CON acento lo encuentra igual');
+
+-- La descripción también entra al vector, no solo el título (RF-10).
+select pg_temp.assert(
+  pg_temp.as_user_int(:A::uuid,
+    format('select count(*) from public.listings
+             where id = %s and busqueda @@ websearch_to_tsquery(''spanish'', ''subrayados'')',
+           (select listing from t_fts))) = 1,
+  'un término que solo vive en la descripción también casa');
+
+-- `*` produce una tsquery vacía, que no casa con nada. Es lo que reemplaza al
+-- corto circuito que el cliente tenía cuando la búsqueda era por ilike.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A::uuid,
+    format('select count(*) from public.listings
+             where id = %s and busqueda @@ websearch_to_tsquery(''spanish'', ''*'')',
+           (select listing from t_fts))) = 0,
+  'un término de solo comodines no devuelve nada (tsquery vacía)');
+
+-- Candado sobre el grant HEREDADO: `select` en listings se otorgó a nivel
+-- tabla, así que cubre esta columna nueva sin grant propio. Filtrar por una
+-- columna exige SELECT sobre ella; si alguien "endurece" el grant a una lista
+-- explícita, la app deja de encontrar cosas sin ningún error visible, y esta
+-- aserción es lo que lo convierte en una falla ruidosa.
+select pg_temp.assert(
+  has_column_privilege('authenticated', 'public.listings', 'busqueda', 'select'),
+  'authenticated puede leer/filtrar la columna busqueda (grant heredado de tabla)');
+
+-- Columna generada: Postgres la rechaza por sí mismo, sin depender de grants.
+select pg_temp.expect_error(:A::uuid,
+  format('update public.listings set busqueda = null where id = %s',
+         (select listing from t_fts)),
+  'nadie puede escribir busqueda (columna generada)');
+
+-- Sin el índice la búsqueda sigue funcionando, solo que por seq scan: se
+-- degradaría en silencio justo el motivo de performance de esta migración.
+select pg_temp.assert(
+  exists (select 1 from pg_indexes
+           where schemaname = 'public' and tablename = 'listings'
+             and indexname = 'listings_busqueda_idx'
+             and indexdef like '%USING gin (busqueda)%'),
+  'el índice GIN apunta a la columna busqueda, no a la expresión vieja');
+
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges
@@ -393,6 +524,11 @@ select pg_temp.assert(
   has_function_privilege('authenticated', 'public.increment_listing_view(bigint)', 'execute')
   and not has_function_privilege('anon', 'public.increment_listing_view(bigint)', 'execute'),
   'la RPC de vistas es ejecutable por authenticated y no por anon');
+
+select pg_temp.assert(
+  has_function_privilege('authenticated', 'public.listing_favorites_count(bigint)', 'execute')
+  and not has_function_privilege('anon', 'public.listing_favorites_count(bigint)', 'execute'),
+  'la RPC de conteo de favoritos es ejecutable por authenticated y no por anon');
 
 select pg_temp.assert(
   not exists (select 1 from information_schema.column_privileges
