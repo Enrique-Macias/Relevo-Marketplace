@@ -95,7 +95,7 @@ vez validado.
 
 ### Publicaciones (listings)
 - **RF-05** Crear publicación con título, descripción, categoría, precio,
-  condición, hasta N fotos y zona de entrega.
+  condición, hasta 5 fotos y zona de entrega.
 - **RF-06** Editar y eliminar publicación propia.
 - **RF-07** Marcar publicación como "vendida" sin borrar el historial.
 - **RF-08** Estados de publicación: activa, pausada, vendida.
@@ -293,7 +293,7 @@ reports
   corazón del MVP; RF-12 a RF-17 en una iteración muy cercana.
 - Diseñar wireframes de las pantallas clave: feed, detalle de publicación,
   publicar artículo, perfil. **✅ Hecho — ver `/design/relevo-app.html`,
-  39 pantallas cubriendo el flujo completo más estados de sistema.**
+  42 pantallas cubriendo el flujo completo más estados de sistema.**
 - Configurar proyecto Supabase (Auth + esquema de BD + políticas RLS) y
   proyecto Expo en paralelo.
 - Reclutar manualmente los primeros 20–30 vendedores del campus piloto antes
