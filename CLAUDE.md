@@ -512,13 +512,28 @@ y solo al final las convenciones genéricas de los skills.
   entero" quedó cerrado por el motor y se pudieron borrar del cliente el
   `escapaBusqueda()` de dos capas y su corto circuito.
 - **Bucket de Storage `listing-photos` con RLS** (migraciones `20260908000445`
-  y `20260908000446`). Bucket **privado**, declarado en `config.toml` y aplicado a
-  remoto con `supabase seed buckets --linked`; 4 policies sobre `storage.objects`;
-  la columna pasó de `storage_url` a **`storage_path`** porque en un bucket
-  privado se guarda la ruta del objeto, no una URL. Verificado con 11 aserciones
-  nuevas en la suite (T14) **y** con `scripts/probe-storage.mjs`, que ejercita el
-  Storage API sobre HTTP. Los dos con control negativo: se rompieron las policies
-  a propósito y ambos fallaron donde debían.
+  y `20260908000446`). Cuatro piezas:
+  - **El bucket**: `listing-photos`, **privado**, `file_size_limit` de **5 MiB**,
+    `allowed_mime_types` `image/jpeg`, `image/png`, `image/webp`. Declarado en
+    `config.toml` y aplicado a remoto con `supabase seed buckets --linked`. El
+    límite y los mime types los aplica el servicio de Storage antes de escribir,
+    no el cliente: son defensa real, no validación cosmética.
+  - **La columna**: `storage_url` → **`storage_path`**, porque en un bucket
+    privado se guarda la ruta del objeto (`{listing_id}/{uuid}.ext`), no una URL.
+  - **El helper**: `private.listing_id_from_object_name(text)`, que traduce la
+    carpeta del objeto a un `listing_id` — la carpeta es la llave de
+    autorización, y esa función es lo único que las policies leen del nombre.
+  - **Las 4 policies sobre `storage.objects`**, espejo de las de la tabla:
+    `listing_photos_objects_select` con el mismo criterio que **`listings_select`**
+    (todas salvo las pausadas, que solo ve su dueño), y las de
+    `insert`/`update`/`delete` con el de **`listing_photos_write_own`** (solo el
+    dueño del listing) más `is_active_user()`, porque un suspendido no puede
+    tocar sus fotos.
+
+  Verificado con 11 aserciones nuevas en la suite (T14) **y** con
+  `scripts/probe-storage.mjs`, que ejercita el Storage API sobre HTTP. Los dos
+  con control negativo: se rompieron las policies a propósito y ambos fallaron
+  donde debían.
   - **`scripts/probe-storage.mjs` no es un script desechable.** Cubre lo que la
     suite SQL no puede: `DELETE` (el trigger `storage.protect_delete` de Supabase
     aborta todo borrado por SQL antes de que la RLS opine, así que una aserción
