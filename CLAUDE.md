@@ -70,6 +70,7 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
 | App móvil | React Native + Expo (Router, SDK 57) | Un solo código para iOS/Android, builds sin Mac vía EAS Build |
 | Backend / BD | Supabase (Postgres), proyecto remoto `ukxfnydfhmryrzhdqkvj`, región Ohio (us-east-2) | Auth + BD relacional + Storage + Row Level Security, sin backend custom |
 | Cliente BD | `@supabase/supabase-js` (versión fijada, sin `^`) | Ver sección 8 para el wrapper (`src/lib/supabase.ts`) y por qué usa `expo-crypto` en vez de `react-native-get-random-values` |
+| Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | Expo Notifications | Integración directa, disparadas desde Supabase Edge Functions (pendiente, sección 8) |
 | Admin / moderación | Supabase Studio | Panel de reportes y suspensión de usuarios/publicaciones, sin desarrollo adicional |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
@@ -883,6 +884,23 @@ Detalles que no se ven en el diff:
   la del set final completo, así que las escribe `guardarFotos()` de un golpe.
   Se fue con eso `insertarFoto()`, que quedó sin usar. Si vuelves a ver un
   insert por foto en `subirPendientes()`, es esa regresión.
+- **Las fotos se NORMALIZAN al elegirlas**, en `normalizar()`
+  (`src/lib/foto-picker.ts`): siempre re-encode a JPEG `compress: 0.8`, y resize
+  solo si el lado mayor pasa de 1600 px. Sin esto, cualquier screenshot (PNG de
+  6+ MB) falla siempre contra el tope de 5 MiB del bucket — ver §9, el `quality`
+  del picker no comprime PNG. Va **al elegir y no al subir** por lo mismo que el
+  filtro de formato ("con la foto todavía a la vista y pudiendo elegir otra"), y
+  así se paga una vez por foto y no en cada reintento.
+  - **El orden es filtrar-formato → normalizar, no al revés.** Invertirlo
+    dejaría `formatoSoportado()` muerto (el manipulator convertiría un TIFF a
+    JPEG), y si el manipulator falla justo con ese formato exótico caeríamos a
+    la URI original y subiríamos algo que el bucket rechaza, con el error lejos
+    de su causa.
+  - Si el manipulator falla se conserva la URI original en vez de descartar la
+    foto: puede que ya fuera lo bastante chica, y abajo está la red del punto
+    siguiente.
+  - **1600 px** sale del diseño: el frame mide 375 pt y el hero de Detalle es a
+    ancho completo → 1125 px en 3x.
 - **`subirFoto()` distingue el fallo DETERMINISTA del transitorio**, y
   `subirConReintento()` ya no reintenta el primero. Se detecta con
   `StorageApiError.code === 'EntityTooLarge'` —el campo que la propia librería
@@ -1130,6 +1148,29 @@ publicación como en Mis publicaciones.
   Con `.compatible`, iOS entrega una representación JPEG,
   `registeredTypeIdentifiers.first` pasa a `public.jpeg`, cae en el `default` y
   sale `.jpg`. Es iOS-only; en Android se ignora.
+- **`quality` tampoco comprime un PNG — hermano del punto anterior, otra rama
+  del mismo `switch`.** El `quality: 0.8` del picker llevaba un comentario
+  afirmando que servía "para no acercarse al tope de 5 MiB". Es falso para
+  cualquier PNG, y por eso **todo screenshot de iPhone fallaba siempre** con
+  `EntityTooLarge` (medido en producción: 6,598,919 bytes contra un tope de
+  5 MiB). En `ios/ImageUtils.swift:130-132`:
+
+  ```swift
+  case UTType.png.identifier:
+    let data = image.pngData()   // sin parámetro de compresión
+    return (data, ".png")
+  ```
+
+  `options.quality` solo se aplica en la rama `default`, vía
+  `image.jpegData(compressionQuality:)`. Un PNG sale sin tocar, a resolución
+  completa.
+  El corolario que importa más allá de este bug: **`allowed_mime_types` protege
+  el TIPO, pero el TAMAÑO no lo protege nadie del lado del cliente** — el
+  servicio de Storage lo rechaza y punto. Por eso la normalización a JPEG de
+  `normalizar()` (`src/lib/foto-picker.ts`) no es una optimización: es lo único
+  que hace publicable un screenshot. Y por eso el picker ahora va con
+  `quality: 1` — comprimir dos veces la misma foto no gana nada, y con
+  `quality >= 1.0` esa rama `default` devuelve `rawData` sin re-codificar.
 - **El bucket valida el `content-type` DECLARADO, no los bytes.** Medido contra
   el Storage API local con bytes HEIC reales: declarados `image/heic` →
   **HTTP 400**; los MISMOS bytes declarados `image/jpeg` → **HTTP 200**. O sea
