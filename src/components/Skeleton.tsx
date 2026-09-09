@@ -81,6 +81,33 @@ export function SkeletonGrid({ tarjetas = 4, style }: { tarjetas?: number; style
   );
 }
 
+/**
+ * La lista plana de "Mis publicaciones" mientras carga: `.mine-row` sin
+ * contenido.
+ *
+ * Existe en vez de reusar `SkeletonGrid` porque el esqueleto tiene que
+ * anticipar la forma de lo que viene — un grid de dos columnas donde luego
+ * aparecen filas horizontales produce un salto de layout justo al terminar de
+ * cargar. Las piezas y sus medidas son las mismas del frame "Loading /
+ * skeleton": lo único distinto es cómo se acomodan.
+ */
+export function SkeletonRows({ filas = 4, style }: { filas?: number; style?: ViewStyle }) {
+  return (
+    <View style={[styles.rows, style]}>
+      {Array.from({ length: filas }).map((_, i) => (
+        <View key={i} style={styles.row}>
+          <SkeletonPiece style={styles.skRowThumb} />
+          <View style={styles.rowInfo}>
+            <SkeletonPiece style={[styles.skLine, styles.skPrice]} />
+            <SkeletonPiece style={[styles.skLine, styles.skTitle]} />
+            <SkeletonPiece style={[styles.skLine, styles.skMeta]} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   // .skeleton{border-radius:8px;} — el gradiente se traduce a color base + pulso.
   piece: {
@@ -123,6 +150,26 @@ const styles = StyleSheet.create({
   grid: {
     gap: 12,
     paddingHorizontal: ScreenPadding,
+  },
+  // .mine-list / .mine-row de "Mis publicaciones", sin la línea inferior: entre
+  // bloques grises un separador no aporta y sí ensucia.
+  rows: {
+    paddingHorizontal: ScreenPadding,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 13,
+  },
+  // .mine-thumb{width:76px; height:76px; border-radius:14px;}
+  skRowThumb: {
+    width: 76,
+    height: 76,
+    borderRadius: Radii.lg,
+  },
+  rowInfo: {
+    flex: 1,
   },
   gridRow: {
     flexDirection: 'row',

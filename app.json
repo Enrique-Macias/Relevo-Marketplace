@@ -33,7 +33,13 @@
           "imageWidth": 76
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Relevo usa tus fotos para que puedas ilustrar las publicaciones que pones en venta."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

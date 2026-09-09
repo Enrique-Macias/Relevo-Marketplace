@@ -19,6 +19,7 @@ import {
   IconWhatsapp,
 } from '@/components/icons';
 import { ErrorState } from '@/components/ErrorState';
+import { ListingPhoto } from '@/components/ListingPhoto';
 import { RoundIconButton } from '@/components/RoundIconButton';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
@@ -215,10 +216,17 @@ export default function DetalleScreen() {
   return (
     <Screen contentStyle={{ paddingBottom: insets.bottom + 90 }}>
       <View style={[styles.photo, { backgroundColor: TINT_BG[tint] }]}>
-        {/* El bucket de Storage sigue pendiente (CLAUDE.md §8), así que
-            `listing_photos` viene vacío: se conserva el placeholder de ícono de
-            categoría tintado que ya definía el frame para ese caso. */}
-        <CategoryIcon categoriaId={categoria?.slug ?? ''} size={64} color={TINT_FG[tint]} />
+        {/* La primera foto de la publicación (`fotos` ya viene ordenada por
+            `orden`). El frame no dibuja carrusel, así que se pinta solo la
+            portada y no se inventa uno. El ícono de categoría tintado, que
+            hasta ahora era el placeholder principal, quedó como fallback para
+            publicaciones sin fotos. */}
+        <ListingPhoto
+          path={listing.fotos[0] ?? null}
+          fallback={<CategoryIcon categoriaId={categoria?.slug ?? ''} size={64} color={TINT_FG[tint]} />}
+          style={styles.fotoHero}
+          accessibilityLabel={listing.titulo}
+        />
 
         <View style={styles.nav}>
           <RoundIconButton onPress={() => router.back()}>
@@ -360,7 +368,11 @@ export default function DetalleScreen() {
           <>
             {/* pendiente: flujo real vive en (publicar)/(confianza) */}
             <GhostButton label="Marcar como vendida" onPress={() => {}} style={styles.flexBtn} />
-            <PrimaryButton label="Editar publicación" onPress={() => {}} style={styles.editBtn} />
+            <PrimaryButton
+              label="Editar publicación"
+              onPress={() => router.push(`/(publicar)/editar/${listing.id}`)}
+              style={styles.editBtn}
+            />
           </>
         )}
       </View>
@@ -374,6 +386,15 @@ const styles = StyleSheet.create({
     height: 340,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Ocupa el hero completo y queda POR DEBAJO de `.nav`, que es absoluto y se
+  // declara después en el JSX.
+  fotoHero: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   nav: {
     position: 'absolute',

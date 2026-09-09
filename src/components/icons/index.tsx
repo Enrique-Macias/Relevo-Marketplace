@@ -10,7 +10,7 @@
  * frame le da a cada uso, no una escala propia.
  */
 
-import { Circle, Path, Svg } from 'react-native-svg';
+import { Circle, Path, Rect, Svg } from 'react-native-svg';
 
 import { Colors } from '@/constants/theme';
 
@@ -402,6 +402,94 @@ export function IconExclamation({ size, color }: IconProps) {
       strokeLinejoin="round"
     >
       <Path d="M12 8v5M12 17h.01" />
+    </Svg>
+  );
+}
+
+// `.status-row-icon` de "Pausar publicación" (frame "Editar publicación"):
+// dos barras redondeadas. Es rect+rect en el HTML, no un path.
+export function IconPause({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8}>
+      <Rect x={6} y={4} width={4} height={16} rx={1} />
+      <Rect x={14} y={4} width={4} height={16} rx={1} />
+    </Svg>
+  );
+}
+
+// Etiqueta de precio — el `.menu-icon` de "Mis publicaciones" en el frame
+// Perfil. El punto del agujero va como `Path` de un solo trazo con
+// strokeLinecap="round", no como `Circle`: es como lo dibuja el HTML.
+export function IconTag({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0l-7.2-7.2a2 2 0 01-.6-1.4V4a1 1 0 011-1h8a2 2 0 011.4.6l7.4 7.4a2 2 0 010 2.8z" />
+      <Path d="M7.5 7.5h.01" />
+    </Svg>
+  );
+}
+
+// Lápiz de "Editar" — el `.menu-icon` de "Editar perfil" en el frame Perfil y
+// el `.status-row-icon` de "Editar publicación" en la hoja de acciones.
+export function IconPencil({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" />
+    </Svg>
+  );
+}
+
+// `.status-row-icon` de "Reactivar publicación" (hoja de acciones de "Mis
+// publicaciones"): el reverso de `IconPause`, mismo peso de trazo y misma caja.
+export function IconPlay({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinejoin="round"
+    >
+      <Path d="M7 4l12 8-12 8V4z" />
+    </Svg>
+  );
+}
+
+// `.status-row-icon` de "Eliminar publicación", y el mismo bote va en el
+// `.modal-icon` de "Confirmar eliminar".
+export function IconTrash({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6" />
     </Svg>
   );
 }

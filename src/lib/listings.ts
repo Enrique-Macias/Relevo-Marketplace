@@ -30,9 +30,28 @@ export type Orden = 'recientes' | 'precio_asc' | 'precio_desc' | 'mejor_califica
  */
 const VENDEDOR = 'vendedor:users!listings_user_id_fkey!inner(id, nombre, carrera, rating_promedio)';
 
+/**
+ * OJO — este embed NO lleva `!inner`, al revés que `VENDEDOR`.
+ *
+ * Un `!inner` filtra las filas PADRE. En `VENDEDOR` eso es lo que se quiere
+ * (habilita ordenar por `vendedor(rating_promedio)` y todo listing tiene
+ * vendedor). Aquí haría desaparecer del feed toda publicación sin foto — las
+ * creadas antes de que existiera la subida, y cualquiera dada de alta desde
+ * Studio. Sin `!inner` el embed devuelve `[]` y `ListingPhoto` cae a su
+ * fallback.
+ *
+ * La foto se acota a UNA con `.order`/`.limit` por `referencedTable` en
+ * `fetchListings()`, no con un `.eq('fotos.orden', 0)`: `orden` puede tener
+ * huecos en cuanto alguien borre su primera foto desde Editar, y entonces un
+ * filtro por 0 dejaría la tarjeta sin imagen aunque la publicación sí tenga
+ * fotos. "La de menor orden" es la regla correcta.
+ */
+const FOTO_PORTADA = 'fotos:listing_photos(storage_path, orden)';
+
 const SELECT_CARD = `
   id, titulo, precio, condicion, created_at, categoria_id, user_id,
   campus:campus(id, nombre, ciudad),
+  ${FOTO_PORTADA},
   ${VENDEDOR}
 `;
 
@@ -53,6 +72,11 @@ export type ListingCard = {
   categoriaId: number;
   userId: string;
   campusNombre: string;
+  /**
+   * RUTA de la foto de portada dentro del bucket privado, o `null` si la
+   * publicación no tiene ninguna. No es una URL — ver `ListingDetalle.fotos`.
+   */
+  fotoPath: string | null;
 };
 
 export type ListingDetalle = ListingCard & {
@@ -72,6 +96,25 @@ export type ListingDetalle = ListingCard & {
     carrera: string | null;
     ratingPromedio: number;
   };
+};
+
+/**
+ * Una publicación PROPIA, tal como la pinta "Mis publicaciones".
+ *
+ * Tres campos más que `ListingCard`, y ninguno es de adorno:
+ *  - `estado`: es la razón de ser de la pantalla. El Feed filtra
+ *    `estado = 'activa'`, así que una pausada solo se ve aquí.
+ *  - `vistasCount`: la línea `.mine-meta` del frame lo pinta. Viene en la misma
+ *    fila y está dentro del `grant select` de la tabla (solo el UPDATE lo
+ *    excluye), así que no cuesta una query aparte.
+ *  - `fotos`: TODAS las rutas, no solo la portada. Eliminar necesita cada una,
+ *    porque los objetos de Storage hay que borrarlos ANTES que el listing (ver
+ *    `borrarListing`), y para entonces ya no habría de dónde leerlas.
+ */
+export type MiListing = ListingCard & {
+  estado: 'activa' | 'pausada' | 'vendida';
+  vistasCount: number;
+  fotos: string[];
 };
 
 /**
@@ -114,6 +157,10 @@ function mapCard(row: any): ListingCard {
     categoriaId: row.categoria_id,
     userId: row.user_id,
     campusNombre: row.campus?.nombre ?? '',
+    // `fotos` viene ya acotado a 1 por el `.limit(referencedTable)` de
+    // `fetchListings`. `fetchListingById` usa otro select y no pasa por aquí
+    // para las fotos: ahí se leen todas.
+    fotoPath: row.fotos?.[0]?.storage_path ?? null,
   };
 }
 
@@ -126,6 +173,23 @@ export async function fetchListings(p: FetchListingsParams): Promise<ListingsPag
     .select(SELECT_CARD, p.withCount ? { count: 'exact' } : undefined)
     .eq('campus_id', p.campusId)
     .eq('estado', 'activa');
+
+  /**
+   * Acota el embed de fotos a la de menor `orden` — la portada de la tarjeta.
+   *
+   * ESTO NO TOCA LA PAGINACIÓN, que es lo que importa aquí: `referencedTable`
+   * hace que PostgREST emita `fotos.order=…` y `fotos.limit=1`, que aplican
+   * DENTRO de la subconsulta lateral del embed, una por fila padre ya
+   * seleccionada. El `order`/`limit`/`range` y el predicado keyset de nivel
+   * superior (más abajo) siguen decidiendo el conjunto exactamente igual que
+   * antes, y `items.length === limit` sigue siendo un test válido de "hay más"
+   * porque un embed devuelve un arreglo anidado por listing, no filas
+   * multiplicadas — que es justo lo que sí haría un join plano contra
+   * `listing_photos`.
+   */
+  query = query
+    .order('orden', { referencedTable: 'fotos', ascending: true })
+    .limit(1, { referencedTable: 'fotos' });
 
   if (p.categoriaId !== undefined) query = query.eq('categoria_id', p.categoriaId);
   if (p.condicion) query = query.eq('condicion', p.condicion);
@@ -211,21 +275,141 @@ export async function fetchListingById(id: number): Promise<ListingDetalle | nul
   if (!data) return null;
 
   const row = data as any;
+  // Aquí el embed NO viene acotado ni ordenado por el servidor (eso solo pasa
+  // en `fetchListings`, que pide una sola foto): Detalle las quiere todas, así
+  // que el orden se aplica en cliente y `fotoPath` se recalcula sobre la lista
+  // ya ordenada — el que trae `mapCard` sería el primero que devolvió Postgres,
+  // que no tiene por qué ser el de menor `orden`.
+  const fotos: string[] = (row.fotos ?? [])
+    .slice()
+    .sort((a: any, b: any) => a.orden - b.orden)
+    .map((f: any) => f.storage_path);
+
   return {
     ...mapCard(row),
+    fotoPath: fotos[0] ?? null,
     descripcion: row.descripcion,
     estado: row.estado,
     vistasCount: row.vistas_count,
-    fotos: (row.fotos ?? [])
-      .slice()
-      .sort((a: any, b: any) => a.orden - b.orden)
-      .map((f: any) => f.storage_path),
+    fotos,
     vendedor: {
       id: row.vendedor.id,
       nombre: row.vendedor.nombre,
       carrera: row.vendedor.carrera,
       ratingPromedio: Number(row.vendedor.rating_promedio),
     },
+  };
+}
+
+/**
+ * Lo que necesita el formulario de Editar.
+ *
+ * No hay un select propio: `fetchListingById` ya trae todo (incluidas las fotos
+ * ordenadas) y su RLS es la correcta —`listings_select` deja al dueño ver su
+ * publicación aunque esté pausada—. El alias existe para que la pantalla diga
+ * qué está pidiendo y para tener dónde colgar esta nota si algún día divergen.
+ */
+export const fetchListingParaEditar = fetchListingById;
+
+/**
+ * OJO — este select NO embebe al vendedor, al revés que `SELECT_CARD`.
+ *
+ * Todas estas filas son mías, así que el dato no aporta nada; de paso el
+ * `PGRST201` de la doble relación `listings↔users` (la FK directa y el
+ * many-to-many vía `favorites`) ni se plantea aquí, y no hace falta la
+ * desambiguación `users!listings_user_id_fkey`.
+ *
+ * El embed de fotos tampoco se acota: `fetchListings()` lo limita a 1 porque la
+ * tarjeta solo pinta la portada, pero aquí se necesitan TODAS las rutas para el
+ * borrado. Son ≤5 por publicación (`enforce_photo_limit()`), así que el costo es
+ * despreciable. Sin `!inner`, igual que allá: una publicación con 0 fotos es
+ * justo la que esta pantalla existe para rescatar.
+ */
+const SELECT_MIAS = `
+  id, titulo, precio, condicion, estado, vistas_count, created_at,
+  categoria_id, user_id,
+  campus:campus(id, nombre, ciudad),
+  fotos:listing_photos(storage_path, orden)
+`;
+
+export type MisListingsPage = {
+  items: MiListing[];
+  nextCursor: ListingsCursor | null;
+};
+
+export type FetchMisListingsParams = {
+  userId: string;
+  /** El chip de filtro. Sin él, las tres. */
+  estado?: 'activa' | 'pausada' | 'vendida';
+  limit?: number;
+  cursor?: ListingsCursor | null;
+};
+
+/**
+ * Las publicaciones del usuario, en TODOS sus estados (RF-06/RF-08).
+ *
+ * No hay filtro de campus —son mías las vea desde donde las vea— ni de estado
+ * salvo el que pida el chip. Que las pausadas aparezcan no es una excepción que
+ * haya que codificar: `listings_select` ya deja al dueño ver las suyas
+ * (`estado <> 'pausada' or user_id = auth.uid()`), así que el `.eq('user_id')`
+ * de abajo es el filtro de la CONSULTA, y la RLS el candado — no se duplica una
+ * regla de autorización en el cliente (CLAUDE.md §0 regla 7).
+ *
+ * Paginación keyset con el mismo cursor compuesto `(created_at, id)` del orden
+ * "recientes" de `fetchListings()`: es la misma lista append-heavy, y publicar
+ * algo nuevo mientras se hace scroll no debe repetir filas.
+ */
+export async function fetchMisListings(p: FetchMisListingsParams): Promise<MisListingsPage> {
+  const limit = p.limit ?? PAGE_SIZE;
+
+  let query = supabase.from('listings').select(SELECT_MIAS).eq('user_id', p.userId);
+
+  if (p.estado) query = query.eq('estado', p.estado);
+
+  const c = p.cursor;
+  if (c && c.tipo === 'keyset') {
+    query = query.or(
+      `created_at.lt."${c.createdAt}",and(created_at.eq."${c.createdAt}",id.lt.${c.id})`
+    );
+  }
+
+  query = query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(limit);
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const items = (data ?? []).map(mapMia);
+  const ultimo = items[items.length - 1];
+
+  return {
+    items,
+    nextCursor:
+      items.length === limit && ultimo
+        ? { tipo: 'keyset', createdAt: ultimo.createdAt, id: ultimo.id }
+        : null,
+  };
+}
+
+function mapMia(row: any): MiListing {
+  // El embed NO viene ordenado por el servidor (eso solo se pide en
+  // `fetchListings`), así que se ordena aquí y `fotoPath` se recalcula sobre la
+  // lista ya ordenada — el de `mapCard` sería el primero que devolvió Postgres,
+  // que no tiene por qué ser el de menor `orden`. Mismo criterio que
+  // `fetchListingById`.
+  const fotos: string[] = (row.fotos ?? [])
+    .slice()
+    .sort((a: any, b: any) => a.orden - b.orden)
+    .map((f: any) => f.storage_path);
+
+  return {
+    ...mapCard(row),
+    fotoPath: fotos[0] ?? null,
+    estado: row.estado,
+    vistasCount: row.vistas_count,
+    fotos,
   };
 }
 
@@ -284,6 +468,143 @@ export async function registrarContacto(listingId: number, userId: string): Prom
   const { error } = await supabase
     .from('listing_contacts')
     .insert({ listing_id: listingId, user_id: userId });
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// Escrituras — grupo Publicar (RF-05, RF-06, RF-08)
+// ---------------------------------------------------------------------------
+
+/**
+ * Los campos que el formulario de Publicar/Editar realmente controla.
+ *
+ * NO incluye `user_id`, `vistas_count`, `created_at` ni `updated_at`, y eso es
+ * el contrato con la base, no una omisión: el `grant update` de columna de la
+ * migración 20260906000439 los deja fuera a propósito (no se transfiere una
+ * publicación, el dueño no infla sus vistas, las fechas las mantiene el
+ * trigger). Mandar cualquiera de ellos —aunque sea con el mismo valor que ya
+ * tienen— rechaza el statement COMPLETO con 42501, no lo ignora. Es la misma
+ * trampa que ya documenta `(onboarding)/completar-perfil.tsx` para `users`.
+ */
+export type ListingInput = {
+  titulo: string;
+  descripcion: string | null;
+  precio: number;
+  categoriaId: number;
+  condicion: Condicion;
+  universidadId: number;
+  campusId: number;
+};
+
+function aFila(input: ListingInput) {
+  return {
+    titulo: input.titulo,
+    descripcion: input.descripcion,
+    precio: input.precio,
+    categoria_id: input.categoriaId,
+    condicion: input.condicion,
+    universidad_id: input.universidadId,
+    campus_id: input.campusId,
+  };
+}
+
+/**
+ * Crea la publicación y devuelve su id.
+ *
+ * El id se necesita de vuelta y con `await` — no es un detalle de comodidad:
+ * la carpeta de Storage ES `{listing_id}/`, y
+ * `listing_photos_objects_insert_own` exige que ese listing exista y sea del
+ * invocante. O sea que **no hay forma de subir una foto antes de esta línea**.
+ *
+ * `estado` no se manda: cae al default `'activa'` de la columna.
+ *
+ * `user_id` SÍ se manda, y viene por parámetro en vez de leerse aquí de la
+ * sesión. `listings` tiene el insert concedido a nivel de tabla (no por
+ * columna) y `user_id` es NOT NULL sin default, así que ponerlo es obligación
+ * del cliente. Que la policy `listings_insert_own` exija
+ * `user_id = auth.uid()` no lo rellena: solo rechaza la fila si no coincide —
+ * es la red de seguridad, no la fuente del valor.
+ */
+export async function crearListing(input: ListingInput, userId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('listings')
+    .insert({ ...aFila(input), user_id: userId })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return data.id;
+}
+
+/** RF-06. Solo columnas del grant de update — ver la nota de `ListingInput`. */
+export async function actualizarListing(id: number, input: ListingInput): Promise<void> {
+  const { error } = await supabase.from('listings').update(aFila(input)).eq('id', id);
+  if (error) throw error;
+}
+
+/** RF-08. Aparte de `actualizarListing` porque el toggle de "Pausar" no toca el formulario. */
+export async function cambiarEstadoListing(
+  id: number,
+  estado: 'activa' | 'pausada' | 'vendida'
+): Promise<void> {
+  const { error } = await supabase.from('listings').update({ estado }).eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * RF-06. Las filas de `listing_photos` se van solas por `on delete cascade`;
+ * los ARCHIVOS no. Quien llama debe borrarlos ANTES con `borrarFotos()` —
+ * ver la nota de orden en `src/lib/storage.ts`.
+ */
+export async function borrarListing(id: number): Promise<void> {
+  const { error } = await supabase.from('listings').delete().eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Reescribe el set completo de fotos de una publicación, renumerando `orden`
+ * de 0 a n-1.
+ *
+ * POR QUÉ `delete` + `insert` Y NO UN `upsert`, que es lo que uno escribiría
+ * primero: `enforce_photo_limit()` es un trigger BEFORE INSERT, y en Postgres
+ * un `insert … on conflict do update` dispara igual los triggers BEFORE INSERT
+ * antes de detectar el conflicto. Con 5 fotos ya guardadas, el trigger vería
+ * `count = 5 >= 5` y reventaría con "no puede tener más de 5 fotos" al intentar
+ * EDITAR una publicación que simplemente está llena. El delete previo deja el
+ * contador en 0 y el insert lo sube 0→n≤5 sin acercarse al tope. De paso evita
+ * las colisiones con `unique (listing_id, orden)` que tendría cualquier
+ * renumeración en sitio.
+ *
+ * El costo: entre el delete y el insert la publicación queda sin fotos. Por eso
+ * quien llama solo debe invocarla si el set CAMBIÓ (ver `guardar()` en
+ * `editar/[id].tsx`) — editar solo el precio no pasa por aquí. Si el insert
+ * falla, los archivos siguen en Storage y las filas no: se reporta y el usuario
+ * reintenta desde el mismo formulario, que todavía tiene los paths en estado.
+ */
+export async function guardarFotos(listingId: number, paths: string[]): Promise<void> {
+  const { error: eBorrado } = await supabase
+    .from('listing_photos')
+    .delete()
+    .eq('listing_id', listingId);
+  if (eBorrado) throw eBorrado;
+
+  if (paths.length === 0) return;
+
+  const { error: eInsert } = await supabase
+    .from('listing_photos')
+    .insert(paths.map((storage_path, orden) => ({ listing_id: listingId, storage_path, orden })));
+  if (eInsert) throw eInsert;
+}
+
+/** Inserta UNA foto en su posición. Usado por el alta, que sube de a una. */
+export async function insertarFoto(
+  listingId: number,
+  storagePath: string,
+  orden: number
+): Promise<void> {
+  const { error } = await supabase
+    .from('listing_photos')
+    .insert({ listing_id: listingId, storage_path: storagePath, orden });
   if (error) throw error;
 }
 
@@ -398,4 +719,93 @@ export function useListings(params: FetchListingsParams | null) {
   const reintentar = useCallback(() => setRecargas((n) => n + 1), []);
 
   return { items, estado, total, cargandoMas, loadMore, reintentar };
+}
+
+/**
+ * Lo mismo, pero para "Mis publicaciones": sin filtros de catálogo, con el
+ * estado como único parámetro y siempre keyset.
+ *
+ * Es un hook aparte y no un caso más de `useListings` porque la consulta de
+ * abajo es otra (`fetchMisListings`, sin embed de vendedor y con TODAS las
+ * fotos), y porque este sí expone su `setItems`: la pantalla necesita mover
+ * filas sin recargar —pausar de forma optimista, sacar la que dejó de cumplir el
+ * chip, quitar la que se borró—. `useListings` no lo expone porque en Explorar
+ * nada de eso ocurre; aquí es el modo normal de operar.
+ */
+export function useMisListings(userId: string | null, estadoFiltro?: 'activa' | 'pausada' | 'vendida') {
+  const [items, setItems] = useState<MiListing[]>([]);
+  const [cursor, setCursor] = useState<ListingsCursor | null>(null);
+  const [estado, setEstado] = useState<EstadoLista>('loading');
+  const [cargandoMas, setCargandoMas] = useState(false);
+  const [recargas, setRecargas] = useState(0);
+
+  const enVuelo = useRef(false);
+
+  /**
+   * Reseteo AL CAMBIAR DE LISTA, hecho en render y no dentro del efecto.
+   *
+   * `useListings` (arriba) limpia su estado en la primera línea del efecto, que
+   * es lo mismo en la práctica pero dispara un render extra con la lista vieja
+   * todavía pintada bajo el filtro nuevo. Este es el patrón que React documenta
+   * para "ajustar estado cuando cambia una prop": compararlo contra el valor
+   * anterior durante el render y corregirlo ahí mismo, antes de pintar nada.
+   * React reintenta el render de inmediato, sin llegar a la pantalla.
+   */
+  const key = `${userId ?? ''}|${estadoFiltro ?? ''}|${recargas}`;
+  const [keyPintada, setKeyPintada] = useState(key);
+  if (key !== keyPintada) {
+    setKeyPintada(key);
+    setItems([]);
+    setCursor(null);
+    setEstado('loading');
+  }
+
+  useEffect(() => {
+    if (!userId) return;
+
+    let vigente = true;
+
+    fetchMisListings({ userId, estado: estadoFiltro })
+      .then((page) => {
+        if (!vigente) return;
+        setItems(page.items);
+        setCursor(page.nextCursor);
+        setEstado('ready');
+      })
+      .catch((e: any) => {
+        if (!vigente) return;
+        console.warn('[mis-listings] falló la carga:', e?.message ?? e);
+        setEstado('error');
+      });
+
+    return () => {
+      vigente = false;
+    };
+  }, [userId, estadoFiltro, recargas]);
+
+  const loadMore = useCallback(() => {
+    if (!userId || !cursor || enVuelo.current) return;
+
+    enVuelo.current = true;
+    setCargandoMas(true);
+    const filtroPedido = estadoFiltro;
+
+    fetchMisListings({ userId, estado: estadoFiltro, cursor })
+      .then((page) => {
+        // Si el chip cambió mientras la página venía en camino, el efecto de
+        // arriba ya reseteó la lista: descartar en vez de mezclar dos filtros.
+        if (filtroPedido !== estadoFiltro) return;
+        setItems((prev) => [...prev, ...page.items]);
+        setCursor(page.nextCursor);
+      })
+      .catch((e: any) => console.warn('[mis-listings] falló la página siguiente:', e?.message ?? e))
+      .finally(() => {
+        enVuelo.current = false;
+        setCargandoMas(false);
+      });
+  }, [userId, cursor, estadoFiltro]);
+
+  const recargar = useCallback(() => setRecargas((n) => n + 1), []);
+
+  return { items, setItems, estado, cargandoMas, hayMas: cursor !== null, loadMore, recargar };
 }

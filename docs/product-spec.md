@@ -95,10 +95,20 @@ vez validado.
 
 ### Publicaciones (listings)
 - **RF-05** Crear publicación con título, descripción, categoría, precio,
-  condición, hasta 5 fotos y zona de entrega.
-- **RF-06** Editar y eliminar publicación propia.
+  condición, hasta 5 fotos y zona de entrega. **✅ Implementado** — pantalla
+  "Publicar". La app exige al menos 1 foto (decisión de producto; el esquema no
+  la obliga). La zona de entrega sale del campus del perfil, no se elige.
+- **RF-06** Editar y eliminar publicación propia. **✅ Implementado** —
+  "Editar publicación", incluidos agregar/quitar fotos dentro del tope de 5 y
+  el borrado con confirmación (que borra también los archivos de Storage).
 - **RF-07** Marcar publicación como "vendida" sin borrar el historial.
+  **⏳ Pendiente** — el estado existe en la BD y la fila de "Marcar como
+  vendida" está en la UI, pero inerte: dispara el flujo "¿A quién le vendiste?"
+  del grupo Confianza, que no está construido. Cablearla como un update suelto
+  rompería RF-12.
 - **RF-08** Estados de publicación: activa, pausada, vendida.
+  **⏳ Parcial** — activa/pausada ya se alternan desde "Editar publicación";
+  vendida depende de RF-07.
 
 ### Descubrimiento
 - **RF-09** Catálogo/feed principal, ordenado por más reciente.

@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { CategoryIcon } from '@/components/icons/categories';
 import { IconHeart, IconMapPin } from '@/components/icons';
+import { ListingPhoto } from '@/components/ListingPhoto';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
 import { formatPrecio, formatRelativo } from '@/lib/format';
@@ -46,7 +47,16 @@ export function ProductCard({ listing, onPress, favorito, onToggleFavorito }: Pr
   return (
     <Pressable style={styles.card} onPress={onPress}>
       <View style={[styles.thumb, { backgroundColor: TINT_BG[tint] }]}>
-        <CategoryIcon categoriaId={categoria?.slug ?? ''} size={34} color={TINT_FG[tint]} />
+        {/* La foto real de la publicación. El ícono de categoría tintado —que
+            hasta ahora ERA la imagen de la tarjeta— quedó como fallback: se ve
+            cuando la publicación no tiene fotos (las creadas antes de que
+            existiera la subida, o dadas de alta desde Studio). */}
+        <ListingPhoto
+          path={listing.fotoPath}
+          fallback={<CategoryIcon categoriaId={categoria?.slug ?? ''} size={34} color={TINT_FG[tint]} />}
+          style={styles.foto}
+          accessibilityLabel={listing.titulo}
+        />
         {badgeLabel ? (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{badgeLabel}</Text>
@@ -91,6 +101,15 @@ const styles = StyleSheet.create({
     aspectRatio: 4 / 5,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // La foto ocupa toda la miniatura y queda POR DEBAJO del badge de condición y
+  // del corazón, que ya son `position:absolute` y se declaran después.
+  foto: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   badge: {
     position: 'absolute',

@@ -509,7 +509,24 @@
   .form-title{font-family:var(--font-body), sans-serif; font-weight:600; font-size:15px; color:var(--ink);}
   .form-body{padding:18px 20px 100px;}
   .photo-row{display:flex; gap:10px; margin-bottom:22px;}
-  .photo-thumb{width:76px; height:76px; border-radius:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center;}
+  .photo-thumb{width:76px; height:76px; border-radius:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center; position:relative;}
+  /* Quitar una foto ya subida (Publicar / Editar publicación). Mismo lenguaje
+     que .cam-badge sobre .photo-upload-circle —badge circular anclado a una
+     esquina, con borde del color del fondo para despegarlo de la miniatura—
+     pero neutro en vez de --brick: quitar una foto es una acción de edición
+     ordinaria, no la acción primaria de la pantalla. */
+  .photo-remove{
+    position:absolute; top:-6px; right:-6px;
+    width:20px; height:20px; border-radius:50%;
+    background:rgba(34,31,28,0.55); border:2px solid var(--paper);
+    display:flex; align-items:center; justify-content:center;
+  }
+  /* Contador del tope de 5 (RF-05). Va como par del .field-label en su misma
+     fila: sin él, el límite solo se manifiesta cuando el .photo-add desaparece
+     sin explicación. */
+  .field-label-row{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:7px;}
+  .field-label-row .field-label{margin-bottom:0;}
+  .photo-count{font-size:11.5px; color:var(--ink-soft);}
   .photo-add{width:76px; height:76px; border-radius:14px; border:1.5px dashed var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; flex-shrink:0; color:var(--ink-soft); font-size:9.5px; font-weight:500;}
   .textarea-field{width:100%; min-height:84px; resize:none; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px; font-size:14px; color:var(--ink); font-family:inherit; line-height:1.5;}
   .textarea-field::placeholder{color:#A8A29A;}
@@ -768,6 +785,25 @@
     display:flex; align-items:center; justify-content:center;
   }
   .toast-text{font-size:13px; font-weight:500;}
+  /* Aviso PERSISTENTE dentro del flujo — hermano del toast, no una variante:
+     el toast flota sobre la pantalla y se va solo a los 4s, y hay avisos que el
+     usuario tiene que poder leer con calma porque traen una acción asociada
+     (hoy: "faltaron fotos" en Publicación creada). Toma el ícono circular del
+     toast y su tamaño de texto, pero sobre --card y sin sombra ni position
+     absolute: ocupa su lugar en la columna, no tapa nada. */
+  .notice{
+    width:100%;
+    background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:12px 14px;
+    display:flex; align-items:center; gap:10px;
+    text-align:left; margin-bottom:24px;
+  }
+  .notice-icon{
+    width:20px; height:20px; border-radius:50%; flex-shrink:0;
+    background:var(--brick);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .notice-text{font-size:12.5px; color:var(--ink-soft); line-height:1.45;}
   /* Variante de error del toast: mismo card, solo cambia el círculo del icono
      a --brick, que es el color de error que ya usa .error-icon. */
   .toast-icon.is-error{background:var(--brick);}
@@ -782,6 +818,30 @@
   .buyer-info{flex:1; min-width:0;}
   .buyer-name{font-size:13.5px; font-weight:600; color:var(--ink);}
   .buyer-time{font-size:11.5px; color:var(--ink-soft); margin-top:2px;}
+
+  /* My listings (cuenta) — lista plana de publicaciones propias.
+     No hay un solo valor nuevo aquí: es la geometría de .buyer-row (padding
+     13/0, gap 12, línea inferior) con la miniatura de .photo-thumb (76px,
+     radio 14) y la tipografía de .price / .title / .meta de la tarjeta de
+     producto, en disposición horizontal. La lista existe porque el Feed filtra
+     estado='activa': sin ella, una publicación pausada —o una que quedó sin
+     fotos— es inalcanzable. */
+  .mine-list{padding:6px 20px 100px;}
+  .mine-row{display:flex; align-items:center; gap:12px; padding:13px 0; border-bottom:1px solid var(--line);}
+  .mine-row:last-child{border-bottom:none;}
+  .mine-thumb{width:76px; height:76px; border-radius:14px; flex-shrink:0; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center;}
+  .mine-info{flex:1; min-width:0;}
+  .mine-price{font-family:var(--font-display), serif; font-weight:600; font-size:19px; color:var(--ink); line-height:1;}
+  .mine-title{font-size:13px; font-weight:500; color:var(--ink); margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .mine-meta{display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ink-soft); margin-top:6px;}
+  .mine-meta .sep{color:var(--line);}
+  /* Sin modificador (pausada / vendida) hereda --ink-soft: apagado ES el
+     significado. --forest para activa es el mismo "ok" de .toggle.on; --brick
+     solo para "Sin fotos", que es el caso que motiva esta pantalla. Nada de
+     --gold: ahí es acento decorativo de categorías, no estado. */
+  .mine-state{font-weight:600;}
+  .mine-state.activa{color:var(--forest);}
+  .mine-state.warn{color:var(--brick);}
 
   /* Splash screen */
   .splash-screen{
@@ -1520,9 +1580,16 @@
       </div>
       <div class="screen">
         <div class="form-body">
+          <div class="field-label-row">
+            <label class="field-label">Fotos</label>
+            <span class="photo-count">1/5</span>
+          </div>
           <div class="photo-row">
             <div class="photo-thumb" style="background:var(--brick-tint);">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              <div class="photo-remove">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </div>
             </div>
             <div class="photo-add">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -1570,9 +1637,12 @@
             <textarea class="textarea-field" placeholder="Cuenta el estado del artículo, si tiene detalles, por qué lo vendes…"></textarea>
           </div>
 
+          <!-- Deshabilitado: la zona de entrega es el campus del perfil, no una
+               elección de esta pantalla. Usa el estado compartido
+               `.select-field.disabled`, que ya existía anticipando este uso. -->
           <div class="field" style="margin-bottom:0;">
             <label class="field-label">Zona de entrega</label>
-            <div class="select-field">
+            <div class="select-field disabled">
               <span>Tec de Monterrey</span>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </div>
@@ -1653,6 +1723,16 @@
         </div>
 
         <div class="menu-list">
+          <!-- "Mis publicaciones" también vive arriba como .section-head con
+               "Ver todas", pero ese es un atajo a las 2 más recientes. Esta fila
+               es la entrada a la LISTA COMPLETA, que es donde aparecen las
+               pausadas y las vendidas — las que el grid de arriba no muestra
+               porque no caben en dos tarjetas. -->
+          <div class="menu-row">
+            <div class="menu-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0l-7.2-7.2a2 2 0 01-.6-1.4V4a1 1 0 011-1h8a2 2 0 011.4.6l7.4 7.4a2 2 0 010 2.8z"/><path d="M7.5 7.5h.01"/></svg></div>
+            <div class="menu-label">Mis publicaciones</div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
           <div class="menu-row">
             <div class="menu-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></div>
             <div class="menu-label">Editar perfil</div>
@@ -3023,9 +3103,16 @@
       </div>
       <div class="screen">
         <div class="form-body" style="padding-bottom:16px;">
+          <div class="field-label-row">
+            <label class="field-label">Fotos</label>
+            <span class="photo-count">1/5</span>
+          </div>
           <div class="photo-row">
             <div class="photo-thumb" style="background:var(--brick-tint);">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              <div class="photo-remove">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </div>
             </div>
             <div class="photo-add">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -3041,9 +3128,47 @@
             <label class="field-label">Precio</label>
             <input class="text-field" type="text" value="$ 280">
           </div>
-          <div class="field" style="margin-bottom:0;">
+
+          <!-- Categoría y condición: mismo `.segmented` que "Publicar", en el
+               mismo orden de campos. Son columnas del grant de update de
+               listings, así que se pueden cambiar después de publicar; el frame
+               no las tenía y eso hacía ver la edición como más limitada de lo
+               que el modelo de datos permite. -->
+          <div class="field">
+            <label class="field-label">Categoría</label>
+            <div class="segmented">
+              <div class="segment active">Libros</div>
+              <div class="segment">Electrónica</div>
+              <div class="segment">Muebles</div>
+              <div class="segment">Ropa</div>
+              <div class="segment">Deportes</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Condición</label>
+            <div class="segmented">
+              <div class="segment">Nuevo</div>
+              <div class="segment">Como nuevo</div>
+              <div class="segment active">Buen estado</div>
+              <div class="segment">Usado</div>
+            </div>
+          </div>
+
+          <div class="field">
             <label class="field-label">Descripción</label>
             <textarea class="textarea-field">Libro de cálculo diferencial e integral, 9a edición. Sin subrayados ni marcas, pasta en buen estado.</textarea>
+          </div>
+
+          <!-- La zona de entrega sale del perfil y no se elige aquí: se pinta
+               con el estado deshabilitado compartido (.select-field.disabled),
+               igual que en "Publicar". -->
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Zona de entrega</label>
+            <div class="select-field disabled">
+              <span>Tec de Monterrey</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
           </div>
         </div>
 
@@ -3200,6 +3325,227 @@
     </div>
   </div>
 
+  <!-- Mis publicaciones — la lista de lo propio. Existe porque el Feed filtra
+       estado='activa': sin ella, pausar una publicación desde "Editar" la vuelve
+       inalcanzable, y lo mismo pasa con una que quedó sin fotos por un fallo de
+       subida. La fila es .buyer-row con la miniatura de .photo-thumb; la
+       miniatura pinta la foto real de la publicación y cae al ícono de categoría
+       tintado cuando no tiene ninguna (mismo fallback que .card en el Feed), así
+       que en este mockup estático las cuatro se ven como ícono. -->
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Mis publicaciones</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="page-heading">Mis publicaciones</div>
+      </div>
+      <div class="screen">
+        <div class="chips">
+          <div class="chip active">Todas</div>
+          <div class="chip">Activas</div>
+          <div class="chip">Pausadas</div>
+          <div class="chip">Vendidas</div>
+        </div>
+
+        <div class="mine-list">
+          <div class="mine-row">
+            <div class="mine-thumb" style="background:var(--brick-tint);">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="mine-info">
+              <div class="mine-price">$280</div>
+              <div class="mine-title">Cálculo de Larson, 9a edición</div>
+              <div class="mine-meta">
+                <span class="mine-state activa">Activa</span>
+                <span class="sep">·</span>
+                <span>24 vistas</span>
+                <span class="sep">·</span>
+                <span>hace 2d</span>
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--ink-soft)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+
+          <div class="mine-row">
+            <div class="mine-thumb" style="background:var(--forest-tint);">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1.6"><circle cx="5.5" cy="17" r="3.5"/><circle cx="18.5" cy="17" r="3.5"/><path d="M5.5 17l4-9h5l4 9M9 8h6"/></svg>
+            </div>
+            <div class="mine-info">
+              <div class="mine-price">$1,450</div>
+              <div class="mine-title">Bici urbana rodada 28</div>
+              <div class="mine-meta">
+                <span class="mine-state">Pausada</span>
+                <span class="sep">·</span>
+                <span>8 vistas</span>
+                <span class="sep">·</span>
+                <span>hace 5d</span>
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--ink-soft)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+
+          <!-- El caso que motiva la pantalla: activa pero sin una sola foto,
+               porque la subida falló después de crear la publicación. Desde el
+               Feed se ve como una tarjeta con el ícono de categoría y nada más
+               la delata; aquí "Sin fotos" en --brick sí la señala. -->
+          <div class="mine-row">
+            <div class="mine-thumb" style="background:var(--gold-tint);">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.6"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+            </div>
+            <div class="mine-info">
+              <div class="mine-price">$650</div>
+              <div class="mine-title">Escritorio plegable</div>
+              <div class="mine-meta">
+                <span class="mine-state warn">Sin fotos</span>
+                <span class="sep">·</span>
+                <span class="mine-state activa">Activa</span>
+                <span class="sep">·</span>
+                <span>hace 1d</span>
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--ink-soft)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+
+          <div class="mine-row">
+            <div class="mine-thumb" style="background:var(--slate-tint);">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+              <!-- .sold-badge, el mismo overlay que ya usa el grid del frame Perfil -->
+              <div class="sold-badge">Vendido</div>
+            </div>
+            <div class="mine-info">
+              <div class="mine-price">$3,200</div>
+              <div class="mine-title">Monitor Dell 24" IPS</div>
+              <div class="mine-meta">
+                <span class="mine-state">Vendida</span>
+                <span class="sep">·</span>
+                <span>41 vistas</span>
+                <span class="sep">·</span>
+                <span>hace 12d</span>
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--ink-soft)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Mis publicaciones vacío</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="page-heading">Mis publicaciones</div>
+      </div>
+      <div class="screen">
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 9v6M9 12h6"/></svg>
+          </div>
+          <div class="empty-title">Aún no has publicado nada</div>
+          <div class="empty-sub">Lo que ya no usas le sirve a alguien de tu campus. Publicar toma menos de un minuto.</div>
+          <div class="empty-actions">
+            <button class="primary-btn" style="margin-top:0;">Publicar algo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Acciones de una fila. Es la MISMA .status-section de "Editar publicación"
+       (mismo .status-row, mismo .status-row-icon de 34px, misma fila danger),
+       movida a una hoja: no hay lenguaje visual nuevo, solo otro contenedor.
+       El label de la primera fila depende del estado —"Reactivar" si está
+       pausada, "Pausar" si está activa— y desaparece cuando ya está vendida. -->
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Mis publicaciones (acciones)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="page-heading">Mis publicaciones</div>
+      </div>
+      <div class="screen">
+        <div class="mine-list">
+          <div class="mine-row">
+            <div class="mine-thumb" style="background:var(--forest-tint);">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1.6"><circle cx="5.5" cy="17" r="3.5"/><circle cx="18.5" cy="17" r="3.5"/><path d="M5.5 17l4-9h5l4 9M9 8h6"/></svg>
+            </div>
+            <div class="mine-info">
+              <div class="mine-price">$1,450</div>
+              <div class="mine-title">Bici urbana rodada 28</div>
+              <div class="mine-meta">
+                <span class="mine-state">Pausada</span>
+                <span class="sep">·</span>
+                <span>8 vistas</span>
+                <span class="sep">·</span>
+                <span>hace 5d</span>
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--ink-soft)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+        </div>
+
+        <div class="modal-backdrop" style="align-items:flex-end; padding:0;">
+          <div class="sheet-card">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+              <div class="sheet-title">Bici urbana rodada 28</div>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </div>
+            <div class="status-section" style="padding:6px 20px 24px;">
+              <div class="status-row">
+                <div class="status-row-label">
+                  <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M7 4l12 8-12 8V4z"/></svg></div>
+                  <span class="status-row-text">Reactivar publicación</span>
+                </div>
+              </div>
+              <div class="status-row">
+                <div class="status-row-label">
+                  <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></div>
+                  <span class="status-row-text">Editar publicación</span>
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+              </div>
+              <div class="status-row">
+                <div class="status-row-label">
+                  <div class="status-row-icon" style="color:var(--brick);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg></div>
+                  <span class="status-row-text danger">Eliminar publicación</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="phone-block" data-cat="publicar">
     <div class="phone-label">Publicación creada</div>
     <div class="device">
@@ -3222,6 +3568,48 @@
           <div class="empty-actions">
             <button class="primary-btn" style="margin-top:0;">Ver mi publicación</button>
             <div class="ghost-btn">Volver al inicio</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Segundo estado del MISMO componente, no una pantalla aparte (mismo patrón
+       que Categoría o Búsqueda). Existe porque la subida de fotos ocurre después
+       de crear la publicación: si alguna falla, la publicación SÍ queda activa y
+       el usuario tiene que enterarse de forma persistente —no con un toast que
+       se va a los 4s— y con la acción que lo arregla a un tap. Por eso el
+       .ghost-btn cambia de destino: aquí lleva a Editar, no al inicio. -->
+  <div class="phone-block" data-cat="publicar">
+    <div class="phone-label">Publicación creada (fotos faltantes)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="empty-state" style="padding-top:90px;">
+          <div class="empty-icon success">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <div class="empty-title">¡Tu publicación ya está activa!</div>
+          <div class="empty-sub" style="margin-bottom:14px;">"Cálculo de Larson, 9a edición" ya es visible para estudiantes de Tec de Monterrey.</div>
+          <!-- .notice reutiliza el lenguaje del toast de error (círculo --brick
+               con signo de admiración) pero anclado en el flujo, no flotando. -->
+          <div class="notice">
+            <div class="notice-icon">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
+            </div>
+            <div class="notice-text">2 de 4 fotos no se subieron. Puedes agregarlas ahora.</div>
+          </div>
+          <div class="empty-actions">
+            <button class="primary-btn" style="margin-top:0;">Ver mi publicación</button>
+            <div class="ghost-btn">Agregar fotos faltantes</div>
           </div>
         </div>
       </div>

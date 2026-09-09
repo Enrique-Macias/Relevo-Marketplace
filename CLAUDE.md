@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 42 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 46 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -311,7 +311,7 @@ correr esta suite antes de comitear.
 
 ---
 
-## 4. Inventario completo de pantallas (42)
+## 4. Inventario completo de pantallas (46)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -331,11 +331,13 @@ Ver todas (categorías) · Búsqueda (recomendados) · Búsqueda ·
 Búsqueda sin resultados · Filtros · Detalle de publicación ·
 Detalle (vista vendedor)
 
-### Publicar (3)
-Publicar · Editar publicación · Publicación creada
+### Publicar (4)
+Publicar · Editar publicación · Publicación creada ·
+Publicación creada (fotos faltantes)
 
-### Cuenta (5)
-Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío
+### Cuenta (8)
+Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío ·
+Mis publicaciones · Mis publicaciones vacío · Mis publicaciones (acciones)
 
 ### Confianza (3)
 Reportar publicación · Calificar · ¿A quién le vendiste?
@@ -398,7 +400,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 42 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 46 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -468,8 +470,9 @@ y solo al final las convenciones genéricas de los skills.
 ## 8. Estado de implementación del backend
 
 **Hecho:**
-- 8 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
-  con RLS + regresión de 53 aserciones pasando.
+- 10 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
+  con RLS + regresión de 64 aserciones pasando. (§3 es la cuenta buena: esta
+  línea se había quedado en 8/53, de antes del bucket de Storage.)
 - Seed de datos de referencia (12 categorías, Tec de Monterrey / campus
   Monterrey) aplicado en remoto vía `db push --include-seed`. `seed.sql` es
   idempotente (`on conflict do nothing`).
@@ -540,15 +543,34 @@ y solo al final las convenciones genéricas de los skills.
     ahí pasaría con la policy borrada) y `move` (el `with_check` de UPDATE, sin el
     cual un dueño puede renombrar su objeto hacia la carpeta de otro — medido:
     devuelve **HTTP 200**).
-  - **Todavía no se sube ni se pinta ninguna foto.** `listing_photos` sigue vacía
-    y Detalle/ProductCard siguen con el placeholder de ícono tintado. Conectar
-    Publicar es la tarea siguiente.
+  - **Ya se sube y se pinta.** El grupo Publicar escribe en `listing_photos` y
+    `ListingPhoto` las lee por el endpoint autenticado — ver §8b.
 - **Grupo Explorar conectado a datos reales** (7ª migración incluida:
   `listing_favorites_count`). Los mocks `src/constants/mock/{listings,campus,
   categorias}.ts` ya no existen; la capa de datos vive en `src/lib/listings.ts`,
   `src/lib/categorias.ts` y `src/lib/favoritos.ts`. Ver §8b.
 
+- **"Mis publicaciones" construida y conectada** — cierra el callejón sin salida
+  que había creado conectar Publicar (se podía pausar desde Editar y después la
+  publicación no era alcanzable desde ninguna parte). `fetchMisListings()` /
+  `useMisListings()` en `src/lib/listings.ts`, pantalla en
+  `(cuenta)/mis-publicaciones.tsx`, entrada por un `.menu-row` en Perfil. Ver
+  §8b. **Esto desbloquea el modelo atómico de publicación (pendiente 0).**
+
 **Pendiente, en este orden de prioridad:**
+0. **Migrar "Publicar" al modelo atómico** (crear como `pausada`, subir todas
+   las fotos, activar solo si todas suben con éxito) — reemplaza el modelo
+   actual de "publica ya, recupera fotos después" descrito en la subsección
+   "Publicar" de §8b, incluyendo el aviso persistente de "Publicación creada
+   (fotos faltantes)", que queda deprecado en cuanto esto se implemente.
+   **Decisión cerrada, y su bloqueo ya se levantó:** el argumento original para
+   descartar el atómico —un listing atascado en `pausada` sería inalcanzable—
+   dejó de aplicar cuando se construyó "Mis publicaciones", que es justo la
+   pantalla donde se recupera. El argumento a favor del modelo actual (evitar
+   bloquear la publicación por fallos de subida frecuentes) también perdió
+   fuerza: el fallo real era el bug de HEIC en el picker (ya corregido, ver
+   sección 9), no mala conexión — así que los fallos de subida vuelven a ser el
+   caso raro, no el común. **Ya no depende de nada: se puede empezar.**
 1. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
    deja los datos listos (`listing_contacts`, `favorites`), pero no hay
    función que dispare la notificación todavía.
@@ -564,18 +586,29 @@ y solo al final las convenciones genéricas de los skills.
 
 **Deuda consciente — con disparador de revisión, no "algún día":**
 
-- **El tope de 5 fotos NO aplica en Storage.** Lo impone el trigger
+- **El tope de 5 fotos SIGUE sin aplicar en Storage** — el disparador se cumplió
+  (se conectó Publicar) y esto es lo que quedó. Lo impone el trigger
   `enforce_photo_limit()` sobre `listing_photos`; las policies de
-  `storage.objects` solo validan de quién es la carpeta. Un dueño podría subir N
-  objetos a su propia carpeta sin filas que los acompañen — no rompe nada
-  visible, pero paga almacenamiento. **Revisar cuando:** se conecte Publicar, que
-  es donde la subida deja de ser hipotética.
-- **Borrar una publicación no borra sus fotos de Storage.** El
-  `on delete cascade` limpia las filas de `listing_photos`, no los archivos, que
-  quedan huérfanos. **Revisar cuando:** se construya "Confirmar eliminar" en
-  Editar publicación. **Fix:** Edge Function o cron — no un trigger de SQL,
-  porque borrar la fila de `storage.objects` no borra el archivo del backend de
-  objetos (y de hecho `storage.protect_delete` ni siquiera deja borrarla).
+  `storage.objects` solo validan de quién es la carpeta. Lo que sí cambió: el
+  cliente es hoy el único camino de subida y respeta el tope en tres puntos
+  (`elegirFotos()` recorta a los disponibles, `PhotoRow` esconde el `.photo-add`
+  al llegar a 5, `agregarFotos()` hace `slice(0, MAX_FOTOS)`), y cuando el
+  insert de la fila falla se borra el objeto recién subido. O sea que la app no
+  genera huérfanos por este camino. Lo que queda expuesto es un cliente hostil
+  llamando al Storage API directo: puede llenar su propia carpeta sin filas.
+  **Revisar cuando:** el costo de almacenamiento aparezca en la factura, o se
+  abra la API a terceros. **Fix:** contar objetos en la policy de insert, o un
+  cron de barrido.
+- ~~**Borrar una publicación no borra sus fotos de Storage.**~~ **CERRADA** al
+  construir "Confirmar eliminar" en Editar publicación. No hizo falta la Edge
+  Function que se había previsto: el cliente borra los objetos **antes** de
+  borrar el listing, y ese orden es obligatorio, no una preferencia —
+  `listing_photos_objects_delete_own` exige que el listing EXISTA para autorizar
+  el borrado del objeto, así que al revés los archivos quedan huérfanos *y* sin
+  forma de borrarlos. Mismo criterio en Editar al quitar una foto. **Lo que
+  sigue abierto:** si el `borrarFotos()` falla (es best-effort, para no dejar al
+  usuario sin poder borrar su publicación) los archivos quedan huérfanos igual;
+  eso sí necesitaría un barrido, y es el mismo cron del punto anterior.
 - **La búsqueda de texto es por palabra completa (websearch/tsvector), no por
   prefijo** — teclear parcialmente puede mostrar "No encontramos" brevemente
   antes de completar la palabra (medido: `calc` no encuentra "Cálculo";
@@ -687,32 +720,135 @@ dentro de `(explorar)/`, ver el gotcha de sección 9) — es distinto de
 perfil en Onboarding); no unificar ambos, sirven casos de uso distintos ya
 documentados en sección 5.
 
+Del grupo Publicar se sumaron: **`ListingPhoto`** (arriba), **`PhotoRow`**
+(`.photo-row`/`.photo-thumb`/`.photo-add`/`.photo-remove`, con el contador
+`N/5`) y **`ListingFormFields`**, que es EL formulario de publicación —
+"Publicar" y "Editar publicación" lo comparten porque, tras actualizar el
+diseño, tienen los mismos campos en el mismo orden. `FormHeader` creció con
+`leading` (`'back'`/`'close'`) y `trailing` (la acción "Guardar" en `--brick`);
+`EmptyState` creció con `subStyle` y `belowSub` (el slot entre el subtítulo y
+los CTAs, que usa el `.notice` de "Publicación creada (fotos faltantes)" —
+`children` cae dentro de `.empty-actions` y ahí un aviso se leería como un
+botón más).
+
 Botones inertes a propósito (llevan a grupos sin construir): Compartir,
-Reportar, menú kebab, "Marcar como vendida", "Editar publicación" en
-Detalle. El botón de WhatsApp sí registra de verdad en `listing_contacts`
-antes de abrir el deep link; lo único mock que le queda es el número, y por la
-razón documentada en §8 (pendiente 3), no por descuido.
+Reportar, menú kebab y "Marcar como vendida". **"Editar publicación" en
+Detalle ya NO es inerte** — navega a `(publicar)/editar/[id]`. El botón de
+WhatsApp sí registra de verdad en `listing_contacts` antes de abrir el deep
+link; lo único mock que le queda es el número, y por la razón documentada en §8
+(pendiente 3), no por descuido.
 
-**Fotos: la infraestructura existe, la UI no.** El bucket y sus policies están
-en remoto (§8), pero no hay componente que pinte una foto — hoy no existe un solo
-`<Image>` en `src/`. Cuando se construya `ListingPhoto` (envoltura de
-`expo-image`, punto único de contacto para poder cambiar de patrón barato):
-**confirmar el soporte de headers HTTP en un Android real es requisito para dar
-esa tarea por cerrada, no un extra.** Por la regla de la sección 6, el simulador
-headless no cuenta como prueba, y todo el patrón de lectura depende de que ese
-header llegue.
+**Fotos: construidas, con UN pendiente de dispositivo real.**
+`src/components/ListingPhoto.tsx` es el punto ÚNICO de contacto con el bucket
+privado — envoltura de `expo-image` que arma
+`GET /storage/v1/object/authenticated/listing-photos/<path>` con
+`Authorization: Bearer <access_token>` leído de `useSession()`. Todo lo que
+pinte una foto pasa por ahí (`ProductCard`, Detalle, `PhotoRow`).
 
-**Cuenta, Confianza, Publicar, Notificaciones — no construidos todavía**
-(ojo: la pantalla *Favoritos* es del grupo Cuenta, así que sigue siendo un
-placeholder aunque el *toggle* de favorito ya funcione en todo Explorar).
-**Sistema** solo tiene las 3 piezas que Explorar necesitó (arriba); le faltan
-"Confirmar eliminar" y "Confirmar cerrar sesión" cableados. Salvo piezas
-puntuales ya hechas de paso: `ConfirmModal` (genérico,
-usado hoy solo por "Confirmar cerrar sesión") y `DangerButton` ya existen en
-`src/components/`, listos para reusarse cuando se conecte "Confirmar
-eliminar" en Editar publicación. El placeholder de `(tabs)/perfil.tsx` solo
-tiene el afordance de cerrar sesión — el resto de la pantalla Perfil
-(avatar, stats, menú) no se ha construido.
+**Ojo con lo que esto cambió en Explorar, que estaba dado por cerrado:**
+`ProductCard` y Detalle **ya no usan el ícono de categoría tintado como imagen
+principal** — pasó a ser el `fallback` de `ListingPhoto`, y solo se ve cuando la
+publicación no tiene `storage_path` (las creadas antes de que existiera la
+subida, o dadas de alta desde Studio). No lo "restaures" creyendo que la foto
+sobra.
+
+**PENDIENTE REAL, no un extra:** confirmar que el header `Authorization` de
+`expo-image` llegue en un **Android real**. Por la regla de la sección 6 el
+simulador headless no cuenta como prueba, y todo el patrón de lectura depende de
+ese header. Si no llegara, la respuesta NO es migrar a signed URLs: eso es un
+cambio de semántica de seguridad disfrazado de refactor (§9).
+
+**Publicar — construido y conectado a Supabase real, modelo de subida en
+transición (ver §8 pendiente 1).** Las 4 pantallas (`nueva.tsx`, `creada.tsx`
+con sus 2 estados, `editar/[id].tsx`) escriben contra el proyecto remoto. La
+capa de datos: `src/lib/storage.ts` (subida, borrado y URL autenticada),
+`src/lib/publicar.ts` (la orquestación y su orden de llamadas),
+`src/lib/listing-form.ts` (estado + validación compartida) y
+`src/lib/foto-picker.ts`.
+
+Detalles que no se ven en el diff:
+
+- **No se puede subir una foto antes de crear el listing, y no es una decisión
+  de UX.** La carpeta del objeto ES `{listing_id}/`, y
+  `listing_photos_objects_insert_own` exige que ese listing exista y sea del
+  invocante. Cualquier diseño de "subo mientras el usuario llena el formulario"
+  choca con la policy. Por simetría, Editar también difiere al Guardar: subir al
+  elegir y salir sin guardar dejaría objetos huérfanos que nadie ve ni limpia.
+  Esto sigue aplicando igual bajo el modelo atómico.
+- **Comportamiento ACTUAL, a reemplazar (pendiente 1 de §8): un fallo parcial
+  de fotos NO hace rollback del listing.** Borrarlo perdería lo que el usuario
+  escribió y ni siquiera limpiaría los archivos ya subidos (el cascade se
+  lleva las filas, no los objetos). La publicación queda activa y "Publicación
+  creada" lo dice en su variante con `.notice`, cuya acción secundaria lleva a
+  Editar. El aviso es persistente a propósito: un toast de 4s se va mientras
+  se lee y no deja acción. **Esto deja de ser el comportamiento correcto en
+  cuanto se implemente el modelo atómico** — el listing se crea como `pausada`
+  y solo pasa a `activa` si todas las fotos suben, así que este camino (activa
+  con fotos faltantes) no debería volver a ocurrir por esta vía. No borrar
+  esta nota hasta confirmar que el modelo atómico está en producción; sirve
+  de referencia de qué se está reemplazando y por qué.
+- **`guardarFotos()` hace delete + insert, nunca un upsert.**
+  `enforce_photo_limit()` es un trigger BEFORE INSERT y dispara también en la
+  rama `ON CONFLICT DO UPDATE`, así que un upsert sobre una publicación con 5
+  fotos reventaría al EDITARLA. Solo corre si el set de fotos cambió: esa
+  reescritura deja la publicación sin fotos entre el delete y el insert, y
+  editar solo el precio no debe pagar ese riesgo.
+- **El cuerpo del upload es un `ArrayBuffer` con `contentType` explícito.**
+  Verificado contra `node_modules`: el `File` de `expo-file-system` declara
+  `implements Blob` pero no pasa el `instanceof Blob` de storage-js
+  (`dist/index.cjs:622`), y el `contentType` por default de esa librería es
+  `text/plain;charset=UTF-8`, que el bucket rechaza. Sin esa línea no funciona
+  ninguna subida.
+- **La entrada a Publicar es el FAB de Perfil**, la única que define el diseño
+  (§0.6: el tab bar tiene 4 ítems, sin "+" central). **Vive en
+  `(tabs)/_layout.tsx` como hermano de `<NativeTabs>`, NO dentro de
+  `perfil.tsx`** — ahí se pintaba pero no recibía el toque; ver el gotcha de §9
+  antes de "acercarlo a su pantalla". El layout decide mostrarlo solo cuando
+  `usePathname() === '/perfil'`. El resto de la pantalla Perfil sigue siendo
+  placeholder.
+- **"Marcar como vendida" sigue inerte** en Editar: dispara "¿A quién le
+  vendiste?" del grupo Confianza. Cablearla como un update suelto a `'vendida'`
+  saltándose ese paso rompería RF-12.
+
+**Cuenta — 3 de 8 pantallas, las de "Mis publicaciones", construidas y
+conectadas.** Se hicieron por necesidad, no por avanzar el grupo: conectar
+Publicar dejó la app en un estado donde pausar una publicación la volvía
+inalcanzable (el Feed filtra `estado = 'activa'`), y lo mismo pasaba con una que
+quedaba sin fotos por un fallo de subida.
+
+- **`(cuenta)/mis-publicaciones.tsx`** cubre los 3 frames: la lista, su vacío y
+  la hoja de acciones. Lee con `useMisListings()` (`src/lib/listings.ts`), que es
+  hermano de `useListings` pero con su propia query: **sin embed de vendedor**
+  —todas las filas son mías, así que el `PGRST201` de la doble relación ni se
+  plantea— y con **todas** las fotos, no solo la portada.
+- **Ese `fotos: string[]` completo no es de más.** Eliminar tiene que borrar los
+  objetos ANTES que el listing (`listing_photos_objects_delete_own` exige que el
+  listing exista para autorizar el borrado), y para entonces ya no hay de dónde
+  leer las rutas. Es la misma secuencia de `editar/[id].tsx`.
+- **La hoja de acciones es un `Modal` de RN, no un `SheetScreen`**, y por la
+  misma razón: necesita el objeto de la fila en la mano, no params
+  serializables. Es el caso de `CampusBottomSheet`, no el de `filtros.tsx`.
+- **`useMisListings` resetea su estado en RENDER, no dentro del efecto**
+  (compara una `key` contra la anterior). `useListings` lo hace en el efecto;
+  los dos funcionan, pero la variante en render evita un frame con la lista
+  vieja bajo el filtro nuevo — y es además la única que pasa la regla
+  `react-hooks/set-state-in-effect` del linter.
+- **`StatusRow` dejó de ser local de `editar/[id].tsx`** y vive en
+  `src/components/StatusRow.tsx`: la hoja es literalmente la `.status-section`
+  de ese frame en otro contenedor. `Toggle` sí se quedó allá.
+- `SkeletonRows` (nuevo, en `Skeleton.tsx`) es el esqueleto de una lista plana —
+  `SkeletonGrid` habría anticipado una forma que no es la que llega.
+
+Lo que sigue siendo placeholder de Perfil: avatar, stats y el resto del
+`.menu-list`. Hoy tiene dos afordances reales (cerrar sesión y "Mis
+publicaciones") más el FAB de publicar.
+
+**Confianza y Notificaciones — no construidos todavía.** Del grupo Cuenta
+tampoco lo están *Favoritos* (sigue siendo placeholder aunque el toggle de
+favorito ya funcione en todo Explorar), *Editar perfil* ni *Perfil público*.
+**Sistema** tiene las 3 piezas que Explorar necesitó (arriba) más "Confirmar
+eliminar", cableado con `ConfirmModal` + `DangerButton` tanto en Editar
+publicación como en Mis publicaciones.
 
 ---
 
@@ -804,6 +940,67 @@ tiene el afordance de cerrar sesión — el resto de la pantalla Perfil
   **antes** que la RLS. Consecuencia para las pruebas: una aserción de DELETE
   escrita en SQL pasaría con la policy borrada — por la razón equivocada. Esa
   cobertura tiene que vivir en `scripts/probe-storage.mjs`, contra el API HTTP.
+- **`expo-image-picker` entrega HEIC crudo por default, y su propio JSDoc dice
+  lo contrario.** Las fotos de la cámara del iPhone son HEIC; el bucket solo
+  acepta jpeg/png/webp. Sin `preferredAssetRepresentationMode: 'compatible'`,
+  elegir una foto tomada con el teléfono falla de dos formas (vistas en
+  dispositivo real): `FailedToReadImageException: Cannot load representation of
+  type public.heic` al leerla, o —si sí se lee— llega con `mimeType:
+  image/heic` y Storage la rechaza. **Corregido** (§8, deja de ser el motivo
+  dominante de fallos de subida — ver pendiente 1).
+  Lo que hay que saber antes de "simplificar" esto:
+  · El default REAL es `.current` (`ios/ImagePickerOptions.swift:44`), que
+    significa literalmente "evita transcodificar". El JSDoc de
+    `ImagePicker.types.d.ts` afirma que es `Automatic`: **está mal, y gana el
+    código**.
+  · **`quality` NO convierte el formato.** `ios/ImageUtils.swift`,
+    `readDataAndFileExtension()`, tiene una rama explícita
+    `case UTType.heic.identifier: return (rawData, ".heic")` — el HEIC sale tal
+    cual sin importar el `quality`, que solo actúa en la rama `default`. Si ves
+    un comentario diciendo que `quality` fuerza JPEG, es falso: ya estuvo
+    escrito aquí y este bug es lo que lo desmintió.
+  Con `.compatible`, iOS entrega una representación JPEG,
+  `registeredTypeIdentifiers.first` pasa a `public.jpeg`, cae en el `default` y
+  sale `.jpg`. Es iOS-only; en Android se ignora.
+- **El bucket valida el `content-type` DECLARADO, no los bytes.** Medido contra
+  el Storage API local con bytes HEIC reales: declarados `image/heic` →
+  **HTTP 400**; los MISMOS bytes declarados `image/jpeg` → **HTTP 200**. O sea
+  que `allowed_mime_types` protege contra un cliente honesto que manda un
+  formato no soportado, pero no detecta uno que se equivoque de etiqueta. Por
+  eso `mimeDe()` en `src/lib/storage.ts` nombra explícitamente las extensiones
+  que conoce y no soporta (`heic`, `heif`, `tiff`, `avif`, `gif`, `bmp`) en vez
+  de caer a `image/jpeg` para todo lo desconocido: ese fallback "inocente"
+  guardaría bytes HEIC bajo un tipo que miente, Android no los podría pintar, y
+  el error aparecería lejísimos de su causa.
+- **Un elemento visualmente sobre `NativeTabs` puede no recibir touch si vive
+  dentro del contenido de una pantalla del Tabs en vez de como hermano del
+  navegador.** Pasó con el FAB de "Publicar": se pintaba perfectamente sobre el
+  tab bar y no respondía a un solo toque. No es un problema de `zIndex` ni de
+  `elevation`, y **subir el `bottom` no lo arregla** — solo aleja el botón de la
+  zona muerta sin explicar nada.
+  El mecanismo, leído en el código y no deducido: `NativeTabs` monta un
+  `Tabs.Host` de react-native-screens, cuyo contenedor nativo en Android
+  (`TabsContainer.kt`) es un `FrameLayout` que hace, en este orden,
+  `addView(contentView)` y `addView(bottomNavigationView)`. El hit-testing de un
+  `FrameLayout` recorre sus hijos en orden INVERSO, así que todo toque dentro
+  del rectángulo del tab bar lo reclama el tab bar antes de que el contenido lo
+  vea. `elevation`/`zIndex` de RN solo ordenan hermanos DENTRO del subárbol de
+  RN, y el tab bar nativo no es uno de ellos — por eso se puede ganar el dibujo
+  y perder el toque a la vez. En iOS el reparto es equivalente
+  (`UITabBarController` con la barra como hermana de la vista del hijo).
+  **La solución es dónde vive el componente, no cuánto mide su offset**: va como
+  hermano del navegador en `(tabs)/_layout.tsx`
+  (`<View><NativeTabs/>{...}<Fab/></View>`), que sí lo deja en la misma
+  jerarquía de RN que el host y después de él. Envolver el navegador en un
+  `View` no le molesta a Expo Router: la ruta se arma desde el sistema de
+  archivos y los `Trigger`, no desde la posición del navegador en el JSX.
+  Dos cosas que se investigaron y NO sirven aquí: `NativeTabs.BottomAccessory`
+  es **iOS 26+** y es la barra accesoria de `UITabBarController` (un mini
+  reproductor), no un FAB ni algo multiplataforma; y `useBottomTabBarHeight()`
+  existe pero es del navegador de tabs en JS de react-navigation, no de
+  `NativeTabs` — este no expone su altura a JS, así que despejar la barra exige
+  constantes por plataforma (ver `src/components/PublicarFab.tsx`). La doc
+  oficial de Expo no cubre el caso.
 - **`presentation:'transparentModal'` de un Stack anidado no funciona si el
   Stack padre ya presenta esa ruta como card opaca.** El navegador que de
   verdad ejecuta el `push` (a menudo el Stack raíz, no el Stack del grupo

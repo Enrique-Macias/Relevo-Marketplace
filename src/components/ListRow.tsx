@@ -3,22 +3,66 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, TextInput, View, type ViewStyle } from 'react-native';
 
-import { IconChevronLeft, IconSearch } from '@/components/icons';
+import { IconChevronLeft, IconClose, IconSearch } from '@/components/icons';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
+
+type FormHeaderProps = {
+  title: string;
+  /**
+   * Glifo de salida. Los dos selectores y "Editar publicación" usan el chevron
+   * (`'back'`, el default); "Publicar" usa la X, porque cerrar un formulario
+   * nuevo no es "volver a la pantalla anterior en una jerarquía" sino
+   * abandonarlo — es la distinción que hace el prototipo.
+   */
+  leading?: 'back' | 'close';
+  onLeadingPress?: () => void;
+  /**
+   * Acción de la derecha ("Guardar" en `--brick`). Sin ella se pinta el spacer
+   * de 16px del prototipo, que es lo que centra el título.
+   */
+  trailing?: { label: string; onPress: () => void; disabled?: boolean };
+};
 
 /**
  * `.form-header`. En el HTML es hermano de `.screen`, no hijo — o sea que NO
  * scrollea con la lista. Se pasa por la prop `header` de `Screen`.
  */
-export function FormHeader({ title }: { title: string }) {
+export function FormHeader({
+  title,
+  leading = 'back',
+  onLeadingPress,
+  trailing,
+}: FormHeaderProps) {
   return (
     <View style={styles.formHeader}>
-      <Pressable onPress={() => router.back()} accessibilityRole="button" hitSlop={12}>
-        <IconChevronLeft size={16} color={Colors.ink} />
+      <Pressable
+        onPress={onLeadingPress ?? (() => router.back())}
+        accessibilityRole="button"
+        hitSlop={12}
+      >
+        {leading === 'close' ? (
+          <IconClose size={18} color={Colors.ink} />
+        ) : (
+          <IconChevronLeft size={16} color={Colors.ink} />
+        )}
       </Pressable>
       <Text style={styles.formTitle}>{title}</Text>
-      {/* El prototipo cierra con un span de 16px que balancea el chevron y centra el título. */}
-      <View style={styles.headerSpacer} />
+      {trailing ? (
+        <Pressable
+          onPress={trailing.disabled ? undefined : trailing.onPress}
+          disabled={trailing.disabled}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: trailing.disabled }}
+          hitSlop={12}
+        >
+          <Text style={[styles.formAction, trailing.disabled && styles.formActionDisabled]}>
+            {trailing.label}
+          </Text>
+        </Pressable>
+      ) : (
+        // El prototipo cierra con un span de 16px que balancea el chevron y centra el título.
+        <View style={styles.headerSpacer} />
+      )}
     </View>
   );
 }
@@ -119,6 +163,18 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 16,
+  },
+  // El `<span style="font-size:13px; font-weight:600; color:var(--brick)">Guardar</span>
+  // de los frames de Publicar / Editar publicación. 13px/600 no coincide con
+  // ningún rol de `Typography` existente (`label` es 12.5/600, `emphasis`
+  // 13.5/600), así que se declara aquí en vez de forzar el parecido.
+  formAction: {
+    fontFamily: Typography.label.fontFamily,
+    fontSize: 13,
+    color: Colors.brick,
+  },
+  formActionDisabled: {
+    opacity: 0.45,
   },
   // .search-field{display:flex; align-items:center; gap:8px; background:var(--card);
   //   border:1px solid var(--line); border-radius:14px; padding:11px 14px;}

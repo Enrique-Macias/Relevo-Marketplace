@@ -1,6 +1,6 @@
 /** `.empty-state` + `.empty-icon` + `.empty-title` + `.empty-sub` + `.empty-actions`. */
 
-import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { StyleSheet, Text, View, type TextStyle, type ViewStyle } from 'react-native';
 
 import { Colors, Radii, Typography } from '@/constants/theme';
 
@@ -12,14 +12,33 @@ type EmptyStateProps = {
   style?: ViewStyle;
   /** `.error-icon` cambia el fondo del círculo a `--brick-tint`. Ver `ErrorState`. */
   iconStyle?: ViewStyle;
+  /** Para ajustar el margen del `.empty-sub` cuando algo se intercala debajo. */
+  subStyle?: TextStyle;
+  /**
+   * Contenido entre el subtítulo y los botones. Existe porque `children` cae
+   * dentro de `.empty-actions`, que es la columna de CTAs con su propio gap:
+   * un aviso metido ahí se leería como un botón más. Hoy lo usa el `.notice`
+   * de "Publicación creada (fotos faltantes)".
+   */
+  belowSub?: React.ReactNode;
 };
 
-export function EmptyState({ icon, title, sub, children, style, iconStyle }: EmptyStateProps) {
+export function EmptyState({
+  icon,
+  title,
+  sub,
+  children,
+  style,
+  iconStyle,
+  subStyle,
+  belowSub,
+}: EmptyStateProps) {
   return (
     <View style={[styles.state, style]}>
       <View style={[styles.icon, iconStyle]}>{icon}</View>
       <Text style={styles.title}>{title}</Text>
-      <Text style={styles.sub}>{sub}</Text>
+      <Text style={[styles.sub, subStyle]}>{sub}</Text>
+      {belowSub}
       {children ? <View style={styles.actions}>{children}</View> : null}
     </View>
   );
