@@ -29,19 +29,22 @@ import { Colors, ScreenPadding } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
 import { elegirFotos, PermisoDenegadoError } from '@/lib/foto-picker';
 import { useListingForm } from '@/lib/listing-form';
-import { finalizarPublicacion, publicarListing, type ProgresoFoto } from '@/lib/publicar';
+import {
+  componerAviso,
+  esDeterminista,
+  fallosDe,
+  finalizarPublicacion,
+  publicarListing,
+  type ProgresoFoto,
+} from '@/lib/publicar';
 import { useSession } from '@/lib/session';
 import { MAX_FOTOS } from '@/lib/storage';
 
 /**
- * Los tres estados del frame. Un estado explícito y no dos booleanos sueltos:
- * "subiendo" y "error" son mutuamente excluyentes, y cada uno trae su propio
- * dato (el progreso, el texto del aviso) que no tiene sentido fuera de él.
+ * Ya no hay estado `error`: "hay error" se DERIVA de las fotos (§ el aviso, más
+ * abajo). Lo único que hace falta guardar es si hay una subida en curso.
  */
-type Fase =
-  | { t: 'form' }
-  | { t: 'subiendo'; progreso: ProgresoFoto | null }
-  | { t: 'error'; texto: string };
+type Fase = { t: 'form' } | { t: 'subiendo'; progreso: ProgresoFoto | null };
 
 export default function PublicarScreen() {
   const insets = useSafeAreaInsets();
@@ -59,6 +62,8 @@ export default function PublicarScreen() {
    * huérfana `pausada` por cada intento fallido.
    */
   const [listingId, setListingId] = useState<number | null>(null);
+  /** El fallo que NO cuelga de ninguna foto: `guardarFotos()` o la activación. */
+  const [falloGeneral, setFalloGeneral] = useState(false);
 
   const userId = session?.user.id ?? null;
   // La zona de entrega es el campus DEL PERFIL, no el que el usuario tenga
@@ -69,10 +74,26 @@ export default function PublicarScreen() {
   const listoParaGuardar =
     form.puedeGuardar && userId !== null && profile?.universidad_id != null && campus != null;
 
-  // El formulario se congela en cuanto la publicación existe en la base: seguir
-  // editando el texto en pantalla lo desincronizaría de lo ya guardado, y en el
-  // estado de error los campos que se ven son los que la publicación YA tiene.
-  const ocupado = fase.t !== 'form';
+  const subiendo = fase.t === 'subiendo';
+
+  /**
+   * TODO ESTO SE DERIVA EN CADA RENDER, no se guarda.
+   *
+   * Es lo que hace que quitar una foto recomponga el aviso al instante y con las
+   * posiciones al día: si el usuario quita la foto 2, la que era 4 pasa a ser 3
+   * y el texto lo dice. Un texto congelado en estado seguiría nombrando una foto
+   * que ya no está.
+   */
+  const fallos = fallosDe(form.fotos);
+  const aviso = componerAviso(fallos, falloGeneral);
+  const hayDeterminista = fallos.some((f) => esDeterminista(f.motivo));
+  const hayTransitorio = fallos.some((f) => !esDeterminista(f.motivo)) || falloGeneral;
+
+  // La publicación ya existe en la base con este texto y `finalizarPublicacion`
+  // no lo reescribe, así que editarlo aquí se perdería en silencio. Las FOTOS sí
+  // se pueden tocar mientras no haya una subida en curso — es la única salida
+  // para un fallo determinista.
+  const textoCongelado = listingId !== null || subiendo;
 
   async function agregarFoto() {
     try {
@@ -101,6 +122,7 @@ export default function PublicarScreen() {
     if (!listoParaGuardar) return;
 
     setFase({ t: 'subiendo', progreso: null });
+    setFalloGeneral(false);
     const onProgreso = (progreso: ProgresoFoto) => setFase({ t: 'subiendo', progreso });
 
     try {
@@ -117,20 +139,13 @@ export default function PublicarScreen() {
             })
           : await finalizarPublicacion({ listingId, fotos: form.fotos, onProgreso });
 
-      // Siempre, aun con fallidas: las que sí subieron pasan a ser 'storage' y
-      // el próximo intento se las salta. Esto ES el reintento parcial.
+      // Siempre: las que subieron pasan a 'storage' y las que fallaron quedan
+      // marcadas con su motivo. De aquí sale el aviso en el próximo render.
       form.setFotos(resultado.fotos);
+      setFalloGeneral(resultado.falloGeneral);
+      setFase({ t: 'form' });
 
-      if (resultado.fallidas.length > 0) {
-        const n = resultado.fallidas.length;
-        setFase({
-          t: 'error',
-          texto:
-            `${n} de ${resultado.totalFotos} ${n === 1 ? 'foto no se subió' : 'fotos no se subieron'}. ` +
-            'Tu publicación quedó en pausa.',
-        });
-        return;
-      }
+      if (resultado.falloGeneral || fallosDe(resultado.fotos).length > 0) return;
 
       // `replace` y no `push`: el formulario ya se envió, y "atrás" desde la
       // confirmación no debe devolver a una pantalla que volvería a publicar.
@@ -139,23 +154,12 @@ export default function PublicarScreen() {
         params: { id: String(resultado.listingId) },
       });
     } catch (e: any) {
-      console.warn('[publicar] no se pudo publicar:', e?.message ?? e);
-
-      if (listingId === null) {
-        // Falló el insert del listing: no se tocó Storage, no hay nada que
-        // recuperar, y el formulario sigue completo. Vuelve al estado inicial.
-        mostrar('No pudimos publicar tu artículo. Intenta de nuevo.', 'error');
-        setFase({ t: 'form' });
-        return;
-      }
-
-      // La publicación ya existe: reventó `guardarFotos` o la activación. El
-      // mismo "Reintentar" los resuelve, porque `finalizarPublicacion` es
-      // idempotente.
-      setFase({
-        t: 'error',
-        texto: 'No pudimos terminar de publicar. Tu publicación quedó en pausa.',
-      });
+      // Solo llega aquí si falló `crearListing`: `finalizarPublicacion` no
+      // propaga (devuelve `falloGeneral`). No se tocó Storage, no hay nada que
+      // recuperar, y el formulario sigue completo.
+      console.warn('[publicar] no se pudo crear la publicación:', e?.message ?? e);
+      mostrar('No pudimos publicar tu artículo. Intenta de nuevo.', 'error');
+      setFase({ t: 'form' });
     }
   }
 
@@ -171,7 +175,7 @@ export default function PublicarScreen() {
             trailing={{
               label: 'Guardar',
               onPress: publicar,
-              disabled: !listoParaGuardar || ocupado,
+              disabled: !listoParaGuardar || subiendo || (hayDeterminista && !hayTransitorio),
             }}
           />
         }
@@ -184,7 +188,8 @@ export default function PublicarScreen() {
           categorias={categorias}
           zonaEntrega={campus?.nombre}
           onAgregarFoto={agregarFoto}
-          disabled={ocupado}
+          disabled={textoCongelado}
+          fotosDisabled={subiendo}
         />
       </Screen>
 
@@ -195,19 +200,24 @@ export default function PublicarScreen() {
             formulario: lo que informa y lo que se hace al respecto son lo
             mismo. Su margin-bottom se anula porque el gap del .sticky-cta ya
             separa (`.sticky-cta .notice{margin-bottom:0;}`). */}
-        {fase.t === 'error' ? <Notice text={fase.texto} style={styles.notice} /> : null}
+        {aviso ? <Notice text={aviso} style={styles.notice} /> : null}
 
+        {/*
+          La etiqueta y el `disabled` salen del MISMO par de baldes que el
+          aviso, así que texto y botón no se pueden contradecir:
+           · hay algo transitorio → "Reintentar", y al tocarlo las deterministas
+             se saltan sin red;
+           · solo deterministas → no hay nada que reintentar, así que el botón
+             se apaga hasta que el usuario quite la foto. Quitarla lo vuelve a
+             encender en el mismo render en que desaparece del aviso.
+        */}
         <PrimaryButton
           label={
-            fase.t === 'subiendo'
-              ? 'Subiendo imágenes'
-              : fase.t === 'error'
-                ? 'Reintentar'
-                : 'Publicar artículo'
+            subiendo ? 'Subiendo imágenes' : hayTransitorio ? 'Reintentar' : 'Publicar artículo'
           }
-          busy={fase.t === 'subiendo'}
+          busy={subiendo}
           onPress={publicar}
-          disabled={!listoParaGuardar}
+          disabled={!listoParaGuardar || (hayDeterminista && !hayTransitorio)}
           style={styles.cta}
         />
       </View>

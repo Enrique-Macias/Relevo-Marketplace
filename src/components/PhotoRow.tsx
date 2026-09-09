@@ -20,12 +20,44 @@ import { MAX_FOTOS } from '@/lib/storage';
 
 /** Una foto ya en el bucket: se identifica por su `listing_photos.storage_path`. */
 export type FotoSubida = { origen: 'storage'; path: string };
-/** Una foto recién elegida del carrete: solo existe como URI local hasta el guardado. */
-export type FotoElegida = { origen: 'local'; uri: string; mimeType?: string | null };
+
+/**
+ * Por qué no subió una foto.
+ *
+ * `tamaño` y `formato` son DETERMINISTAS: el archivo no cambia entre intentos,
+ * así que reintentarlos es gastar red a sabiendas. `transporte` es lo único que
+ * un reintento puede resolver. Esa distinción es la que decide si la pantalla
+ * ofrece "Reintentar" o pide quitar la foto — ver `fallosDe()` en
+ * `src/lib/publicar.ts`.
+ */
+export type MotivoFallo = 'tamaño' | 'formato' | 'transporte';
+
+/**
+ * Una foto recién elegida del carrete: solo existe como URI local hasta el
+ * guardado.
+ *
+ * `fallo` lo escribe `subirPendientes()` en cada pasada. Vive AQUÍ y no en el
+ * estado de la pantalla a propósito: así el aviso se deriva de `form.fotos` en
+ * cada render y las posiciones que nombra son siempre las actuales — si el
+ * usuario quita la foto 2, la que era 4 pasa a ser 3 y el texto lo refleja solo.
+ * Un texto guardado en estado seguiría nombrando fotos ya quitadas.
+ */
+export type FotoElegida = {
+  origen: 'local';
+  uri: string;
+  mimeType?: string | null;
+  fallo?: MotivoFallo;
+};
 
 export type FotoEnEdicion = FotoSubida | FotoElegida;
 
-/** Llave estable para el `key` de React y para comparar sets entre renders. */
+/**
+ * Llave estable para el `key` de React y para comparar sets entre renders.
+ *
+ * NO incluye `fallo`, y es deliberado: marcar una foto no es editar el set, así
+ * que la miniatura no debe remontarse ni `fotosCambiaron` debe dispararse en
+ * "Editar publicación".
+ */
 export function idFoto(foto: FotoEnEdicion): string {
   return foto.origen === 'storage' ? `s:${foto.path}` : `l:${foto.uri}`;
 }

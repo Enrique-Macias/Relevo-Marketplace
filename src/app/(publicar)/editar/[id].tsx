@@ -32,7 +32,7 @@ import {
   fetchListingParaEditar,
   type ListingDetalle,
 } from '@/lib/listings';
-import { guardarEdicion, type ProgresoFoto } from '@/lib/publicar';
+import { componerAviso, fallosDe, guardarEdicion, type ProgresoFoto } from '@/lib/publicar';
 import { useSession } from '@/lib/session';
 import { borrarFotos, MAX_FOTOS } from '@/lib/storage';
 
@@ -230,13 +230,24 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
         resultado.fotos.filter((f) => f.origen === 'storage').map((f) => f.path)
       );
 
-      if (resultado.fallidas.length > 0) {
+      /*
+        Mismo texto compuesto que usa "Publicar" (`componerAviso`), pero aquí va
+        en un toast y no en un `.notice`, así que se calcula UNA vez al terminar
+        el intento en vez de en cada render: no hay nada persistente que mantener
+        al día.
+
+        Consecuencia asumida: el botón "Guardar" del header NO se deshabilita
+        aunque el fallo sea determinista. Un botón apagado sin un aviso
+        permanente al lado que explique por qué sería un misterio, y darle a esta
+        pantalla un aviso persistente exige un frame nuevo (CLAUDE.md §0 regla
+        4). Volver a tocarlo re-muestra el toast y no gasta red: las fotos
+        marcadas se saltan igual.
+      */
+      const aviso = componerAviso(fallosDe(resultado.fotos), resultado.falloGeneral);
+      if (aviso) {
         // No se navega: el usuario se queda en el formulario, que sigue siendo
         // el lugar donde puede volver a intentarlo.
-        mostrar(
-          `Se guardó, pero ${resultado.fallidas.length} de ${resultado.totalFotos} fotos no se subieron`,
-          'error'
-        );
+        mostrar(aviso, 'error');
         setGuardando(false);
         setProgreso(null);
         return;

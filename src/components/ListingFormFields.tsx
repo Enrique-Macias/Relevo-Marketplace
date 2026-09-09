@@ -23,8 +23,19 @@ type ListingFormFieldsProps = {
   /** Nombre del campus del perfil — el valor inerte de "Zona de entrega". */
   zonaEntrega: string | undefined;
   onAgregarFoto: () => void;
-  /** Congela todo el formulario mientras se guarda. */
+  /** Congela los campos del formulario mientras se guarda. */
   disabled?: boolean;
+  /**
+   * Congela SOLO la fila de fotos. Cae a `disabled` si no se pasa.
+   *
+   * Existe porque las dos mitades se congelan por razones distintas y esas
+   * razones dejaron de coincidir: la fila de fotos se congela mientras hay una
+   * subida en curso (quitar una a media subida rompería el orden), y los campos
+   * de texto mientras la publicación ya exista en la base con ese texto. Tras un
+   * fallo de subida lo segundo sigue siendo cierto y lo primero no — y ahí el
+   * usuario NECESITA poder quitar la foto que no se puede subir.
+   */
+  fotosDisabled?: boolean;
 };
 
 export function ListingFormFields({
@@ -33,6 +44,7 @@ export function ListingFormFields({
   zonaEntrega,
   onAgregarFoto,
   disabled = false,
+  fotosDisabled = disabled,
 }: ListingFormFieldsProps) {
   return (
     <View style={styles.body}>
@@ -40,7 +52,7 @@ export function ListingFormFields({
         fotos={form.fotos}
         onAgregar={onAgregarFoto}
         onQuitar={form.quitarFoto}
-        disabled={disabled}
+        disabled={fotosDisabled}
       />
 
       <Field

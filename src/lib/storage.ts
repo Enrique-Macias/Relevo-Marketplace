@@ -28,6 +28,17 @@ export const BUCKET = 'listing-photos';
 export const MAX_FOTOS = 5;
 
 /**
+ * El `file_size_limit` del bucket (`config.toml:131`), en bytes.
+ *
+ * No se valida contra esto antes de subir —el servicio de Storage lo aplica
+ * igual, y duplicar el límite en el cliente sería una segunda fuente de verdad
+ * que se desincroniza en cuanto alguien cambie `config.toml`. Está aquí para
+ * poder DECIRLE al usuario cuál es el tope cuando Storage rechaza, en vez de
+ * dejarlo adivinando.
+ */
+export const MAX_BYTES = 5 * 1024 * 1024;
+
+/**
  * Los mismos tres de `allowed_mime_types` en `config.toml`. El servicio de
  * Storage los aplica antes de escribir — esta lista no los reemplaza, sirve
  * para poder decirle al usuario qué pasó en vez de mostrarle un 400 opaco.
@@ -49,6 +60,22 @@ export class FormatoNoSoportadoError extends Error {
   constructor(readonly mime: string) {
     super(`Formato no soportado: ${mime}`);
     this.name = 'FormatoNoSoportadoError';
+  }
+}
+
+/**
+ * El bucket rechazó la foto por tamaño.
+ *
+ * Hermano de `FormatoNoSoportadoError`, y por la misma razón: es un fallo
+ * DETERMINISTA. El archivo pesa lo mismo en el segundo intento, así que
+ * reintentarlo solo gasta red y le alarga la espera al usuario — medido en
+ * producción, un incidente de 6 toques generó 12 requests porque el reintento
+ * automático no distinguía este caso del de una conexión caída.
+ */
+export class FotoDemasiadoGrandeError extends Error {
+  constructor() {
+    super('La foto excede el tamaño máximo del bucket');
+    this.name = 'FotoDemasiadoGrandeError';
   }
 }
 
@@ -111,6 +138,17 @@ function rutaFoto(listingId: number, ext: string): string {
  * `headers["content-type"] = options.contentType`, y el default de
  * `DEFAULT_FILE_OPTIONS` es `text/plain;charset=UTF-8`, que el bucket rechaza
  * por su `allowed_mime_types`. Sin esta línea, ninguna subida funciona.
+ *
+ * SOBRE EL ERROR DE TAMAÑO — se traduce a `FotoDemasiadoGrandeError` mirando
+ * `code`, no el mensaje. `StorageApiError.code` viene del body de la respuesta
+ * (`@supabase/storage-js@2.115.0`, `index.cjs:327`) y su propio `.d.ts` dice
+ * para qué es: *"Use this to branch on the specific error rather than parsing
+ * the message"* (`index.d.cts:37-47`). El `message` además llega en inglés.
+ * El body real, capturado con curl contra el bucket:
+ * `{"statusCode":"413","error":"Payload too large","message":"The object
+ * exceeded the maximum allowed size","code":"EntityTooLarge"}` — ojo con el
+ * 413: al cliente le llega como HTTP 400, así que el status no sirve para
+ * distinguirlo de cualquier otro rechazo.
  */
 export async function subirFoto(listingId: number, foto: FotoLocal): Promise<string> {
   const mime = mimeDe(foto);
@@ -127,7 +165,13 @@ export async function subirFoto(listingId: number, foto: FotoLocal): Promise<str
     // error visible en vez de en una foto ajena pisada en silencio.
     upsert: false,
   });
-  if (error) throw error;
+
+  if (error) {
+    if ((error as { code?: string }).code === 'EntityTooLarge') {
+      throw new FotoDemasiadoGrandeError();
+    }
+    throw error;
+  }
 
   return path;
 }

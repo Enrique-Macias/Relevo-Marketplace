@@ -641,6 +641,14 @@ y solo al final las convenciones genéricas de los skills.
   terceros, o aparezca en el feed una publicación sin fotos que no vino de la
   app. **Fix:** ese trigger + voltear el default a `'pausada'` + reescribir las
   4 fixtures.
+- **El reintento solo distingue DOS errores deterministas**, `EntityTooLarge` y
+  el formato no soportado. La regla más amplia —"no reintentar ningún 4xx"— se
+  evaluó y se descartó: un 401 puede ser un token en refresco, o sea
+  transitorio, y reintentarlo es lo correcto. **Revisar cuando:** aparezca en
+  los logs un 4xx determinista que no sea de tamaño ni de formato (un
+  `AccessDenied` por suspensión a media subida, por ejemplo). **Fix:** mover el
+  criterio de una lista de errores conocidos a "reintentar solo
+  `StorageUnknownError` y 5xx".
 - **Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila.** El
   alta atómica escribe las filas de un golpe al final, así que entre las subidas
   y ese insert hay una ventana. El reintento la cierra (el formulario conserva
@@ -875,9 +883,39 @@ Detalles que no se ven en el diff:
   la del set final completo, así que las escribe `guardarFotos()` de un golpe.
   Se fue con eso `insertarFoto()`, que quedó sin usar. Si vuelves a ver un
   insert por foto en `subirPendientes()`, es esa regresión.
-- **El formulario se congela también en el estado de ERROR**, no solo mientras
-  sube: la publicación ya existe en la base, así que seguir editando el texto en
-  pantalla lo desincronizaría de lo guardado.
+- **`subirFoto()` distingue el fallo DETERMINISTA del transitorio**, y
+  `subirConReintento()` ya no reintenta el primero. Se detecta con
+  `StorageApiError.code === 'EntityTooLarge'` —el campo que la propia librería
+  documenta para esto, no el `message`, que viene en inglés— y se traduce a
+  `FotoDemasiadoGrandeError`, hermano de `FormatoNoSoportadoError`. Antes de
+  esto, un incidente real de 6 toques generó **12 requests**: el reintento
+  automático duplicaba cada intento condenado.
+- **El motivo se marca EN la foto** (`FotoElegida.fallo`), no en el estado de la
+  pantalla, y de ahí sale todo lo demás:
+  - `subirPendientes()` **salta** las marcadas como deterministas: se reportan
+    con su motivo sin tocar la red. Sin eso, el caso mixto —una foto muy grande
+    y otra caída por conexión— reintroduce el desperdicio, porque "Reintentar"
+    es legítimo por la segunda y arrastraría a la primera.
+  - El aviso y el CTA se **derivan en cada render** de `form.fotos`
+    (`fallosDe()` + `componerAviso()`), nunca se guardan. Es lo que hace que
+    quitar la foto culpable recomponga el texto al instante **y renumere**: si
+    se quita la foto 2, la que era 4 pasa a ser 3. Un texto guardado en estado
+    seguiría nombrando fotos ya quitadas, con las posiciones corridas.
+  - `idFoto()` no incluye `fallo`, así que marcar no remonta miniaturas ni
+    dispara `fotosCambiaron` en Editar: anotar no es editar el set.
+- **`finalizarPublicacion()` no propaga el fallo de `guardarFotos()` ni el de la
+  activación: los devuelve en `falloGeneral`.** Tiene un solo camino de retorno a
+  propósito. Como `guardarFotos()` corre ANTES del early return (tiene que, o
+  quedan huérfanos), una excepción ahí se llevaba el resultado entero — y con él
+  las marcas de las fotos que ya se sabían malas: el usuario veía solo el
+  genérico y cada "Reintentar" volvía a subir la foto condenada.
+- **El congelado está partido, y las dos mitades no comparten razón.**
+  `PhotoRow` se congela solo mientras hay una subida en curso (quitar una foto a
+  media subida rompe el orden); los campos de texto, mientras
+  `listingId !== null` (la publicación ya existe en la base con ese texto y
+  `finalizarPublicacion` no lo reescribe). Tras un fallo lo segundo sigue siendo
+  cierto y lo primero no — y ahí el usuario NECESITA poder quitar la foto. De
+  ahí el prop `fotosDisabled` de `ListingFormFields`.
 - **`guardarFotos()` hace delete + insert, nunca un upsert.**
   `enforce_photo_limit()` es un trigger BEFORE INSERT y dispara también en la
   rama `ON CONFLICT DO UPDATE`, así que un upsert sobre una publicación con 5
@@ -897,6 +935,15 @@ Detalles que no se ven en el diff:
   antes de "acercarlo a su pantalla". El layout decide mostrarlo solo cuando
   `usePathname() === '/perfil'`. El resto de la pantalla Perfil sigue siendo
   placeholder.
+- **Asimetría declarada en Editar, no olvido:** su aviso es un toast (mismo
+  `componerAviso()`, calculado una vez al terminar el intento en vez de en cada
+  render), y por eso ahí el botón "Guardar" **no** se deshabilita en el caso
+  determinista, a diferencia de Publicar. Un botón apagado sin un aviso
+  permanente al lado que explique por qué sería un misterio, y darle a Editar un
+  aviso persistente exige un frame nuevo (§0 regla 4). Volver a tocarlo
+  re-muestra el toast y no gasta red: las marcadas se saltan igual.
+  **Revisar cuando:** alguien reporte no entender por qué su publicación no
+  guarda.
 - **"Marcar como vendida" sigue inerte** en Editar: dispara "¿A quién le
   vendiste?" del grupo Confianza. Cablearla como un update suelto a `'vendida'`
   saltándose ese paso rompería RF-12.
