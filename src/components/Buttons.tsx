@@ -2,32 +2,50 @@
 
 import { Pressable, StyleSheet, Text, type ViewStyle } from 'react-native';
 
+import { BlinkingDots } from '@/components/BlinkingDots';
 import { Colors, Radii, Typography } from '@/constants/theme';
 
+/**
+ * `busy` y `disabled` son DOS COSAS DISTINTAS y por eso son dos props, no un
+ * booleano con dos nombres:
+ *
+ *  · `disabled` (`.primary-btn.disabled`, opacidad 0.45) dice "todavía no
+ *    puedes" — el formulario está incompleto.
+ *  · `busy` (`.primary-btn.is-busy`) dice "está pasando". Va a COLOR PLENO a
+ *    propósito: bajarlo a 0.45 apagaría justo los puntos que comunican el
+ *    avance. Tampoco responde al toque, pero eso lo resuelve el
+ *    comportamiento, no la opacidad.
+ */
 export function PrimaryButton({
   label,
   onPress,
   style,
   disabled = false,
+  busy = false,
 }: {
   label: string;
   onPress: () => void;
   style?: ViewStyle;
   disabled?: boolean;
+  busy?: boolean;
 }) {
+  const inerte = disabled || busy;
+
   return (
     <Pressable
       style={({ pressed }) => [
         styles.primary,
-        pressed && !disabled && styles.pressed,
+        busy && styles.primaryBusy,
+        pressed && !inerte && styles.pressed,
         disabled && styles.disabled,
         style,
       ]}
-      onPress={disabled ? undefined : onPress}
-      disabled={disabled}
+      onPress={inerte ? undefined : onPress}
+      disabled={inerte}
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled: inerte, busy }}
     >
+      {busy ? <BlinkingDots style={styles.busyDots} /> : null}
       <Text style={styles.primaryLabel}>{label}</Text>
     </Pressable>
   );
@@ -97,6 +115,17 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     marginTop: 4,
     alignItems: 'center',
+  },
+  // .primary-btn.is-busy{display:flex; align-items:center; justify-content:center; gap:9px;}
+  primaryBusy: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 9,
+  },
+  // .primary-btn.is-busy .splash-dots{margin-top:0;} — el margen del Splash solo
+  // servía bajo el wordmark.
+  busyDots: {
+    marginTop: 0,
   },
   primaryLabel: {
     ...Typography.buttonPrimary,

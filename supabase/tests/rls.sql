@@ -626,6 +626,69 @@ select pg_temp.assert(
 
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T15 — una publicación no se activa sin fotos =='
+-- Autocontenida, mismo criterio que T11b, T13 y T14: siembra lo suyo. El dueño
+-- es :A, el único que sigue activo a esta altura del archivo (:B quedó
+-- suspendido en T10 y :C borrado en T8), y no reutiliza los listings de T14
+-- porque esa sección ya les colgó objetos de Storage.
+--
+-- QUÉ PROTEGE: el modelo atómico del alta garantiza que *Publicar* nunca active
+-- una publicación con fotos incompletas, pero REACTIVAR —desde "Mis
+-- publicaciones" o desde el toggle de "Editar publicación"— no validaba nada.
+-- El candado es el trigger, no el guard del cliente (CLAUDE.md §0 regla 7).
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values
+  (:A::uuid, 1, 1, 1, 'RLS Activación pausada', 10, 'nuevo', 'pausada'),
+  (:A::uuid, 1, 1, 1, 'RLS Activación vieja',   10, 'nuevo', 'activa');
+
+create temp table t_act as
+select
+  (select id from public.listings where titulo = 'RLS Activación pausada') as pausada,
+  (select id from public.listings where titulo = 'RLS Activación vieja')   as vieja;
+
+select pg_temp.expect_error(:A::uuid,
+  format('update public.listings set estado = ''activa'' where id = %s',
+         (select pausada from t_act)),
+  'ni el dueño puede activar una publicación sin fotos');
+
+-- Con una foto, la misma operación pasa. Sin esta aserción el trigger podría
+-- estar rechazando SIEMPRE y la de arriba seguiría en verde.
+select pg_temp.as_user(:A::uuid,
+  format('insert into public.listing_photos (listing_id, storage_path, orden)
+          values (%s, ''%s/foto.jpg'', 0)',
+         (select pausada from t_act), (select pausada from t_act)));
+
+select pg_temp.as_user(:A::uuid,
+  format('update public.listings set estado = ''activa'' where id = %s',
+         (select pausada from t_act)));
+
+select pg_temp.assert(
+  (select estado from public.listings where id = (select pausada from t_act)) = 'activa',
+  'con al menos una foto, el dueño sí activa su publicación');
+
+-- EL CONTROL QUE PROTEGE LAS FILAS VIEJAS. En remoto hay publicaciones `activa`
+-- con 0 fotos (creadas antes de que existiera la subida, o dadas de alta desde
+-- Studio). El trigger lleva `when (old.estado is distinct from new.estado ...)`
+-- justamente para no tocarlas: sin ese `when`, editarle el precio a una de ellas
+-- fallaría sin que nada explique por qué.
+--
+-- OJO: si alguien quita el `when`, la suite falla ANTES de llegar aquí — muere
+-- en T5, porque increment_listing_view() actualiza vistas_count y el trigger se
+-- le dispara encima. Esta aserción igual se queda: es la que nombra el caso, y
+-- T5 seguiría en verde si algún día esa RPC dejara de tocar `listings`.
+select pg_temp.as_user(:A::uuid,
+  format('update public.listings set titulo = ''RLS Activación vieja editada'' where id = %s',
+         (select vieja from t_act)));
+
+select pg_temp.assert(
+  (select titulo from public.listings where id = (select vieja from t_act))
+    = 'RLS Activación vieja editada',
+  'una publicación activa SIN fotos sigue siendo editable (el `when` no dispara)');
+
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges
@@ -647,14 +710,16 @@ select pg_temp.assert(
         'private.listing_id_from_object_name(text)', 'execute'),
   'authenticated puede ejecutar las 3 funciones invocadas desde policies');
 
--- Estas cuatro sí son de seguridad: solo disparan por trigger y nadie debe poder
+-- Estas cinco sí son de seguridad: solo disparan por trigger y nadie debe poder
 -- invocarlas. Postgres verifica EXECUTE al crear el trigger, no al dispararlo.
 select pg_temp.assert(
   not has_function_privilege('authenticated', 'private.handle_new_user()', 'execute')
   and not has_function_privilege('authenticated', 'private.enforce_photo_limit()', 'execute')
   and not has_function_privilege('authenticated', 'private.recalc_rating_promedio()', 'execute')
-  and not has_function_privilege('authenticated', 'private.capture_report_snapshot()', 'execute'),
-  'las 4 funciones que solo disparan por trigger siguen revocadas');
+  and not has_function_privilege('authenticated', 'private.capture_report_snapshot()', 'execute')
+  and not has_function_privilege('authenticated',
+        'private.enforce_activation_has_photos()', 'execute'),
+  'las 5 funciones que solo disparan por trigger siguen revocadas');
 
 select pg_temp.assert(
   not has_schema_privilege('anon', 'private', 'usage'),

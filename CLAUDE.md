@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 46 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 47 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -140,7 +140,7 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Aplicado en 10 migraciones (`supabase/migrations/`) contra el proyecto remoto,
+Aplicado en 11 migraciones (`supabase/migrations/`) contra el proyecto remoto,
 con RLS activo y probado en las 10 tablas más el bucket de Storage. Este es el esquema **real**, no
 solo la intención original.
 
@@ -278,6 +278,30 @@ viene filtrado por `listings_select`. Medido: quitarla no cambia el
 comportamiento. Lo portante es el `exists`. Se conserva por legibilidad y por si
 algún día alguien afloja `listings_select`, pero no es el candado.
 
+**Una publicación no pasa a `activa` sin al menos una foto** — trigger
+`listings_enforce_activation_has_photos` (`20260909000447`), que llama a
+`private.enforce_activation_has_photos()`. Existe porque el alta atómica (§8b)
+deja publicaciones `pausada` con 0 fotos cuando la subida falla, y las dos rutas
+de reactivación ("Mis publicaciones" y el toggle de "Editar publicación") las
+volvían `activa` sin validar nada — justo el estado que el modelo atómico existe
+para impedir. Tres cosas que conviene saber antes de tocarlo:
+
+- **El `when (old.estado is distinct from new.estado and new.estado = 'activa')`
+  no es una optimización, es lo que lo hace viable.** Medido quitándolo: la suite
+  ni llega a T15, revienta en T5 porque `increment_listing_view()` hace un
+  `update listings set vistas_count = …` y el trigger se le dispara encima. O
+  sea que sin el `when`, **abrir el Detalle** de cualquier publicación sin fotos
+  fallaría. Además protege las filas viejas de remoto (`activa` con 0 fotos,
+  creadas antes de que existiera la subida o desde Studio), que si no serían
+  ineditables.
+- **Solo cubre UPDATE.** Un insert directo con `estado='activa'` y 0 fotos sigue
+  siendo posible — deuda consciente documentada en §8, con su disparador y su
+  fix. No es que no se pueda: es que cerrarlo cuesta reescribir 4 bloques de
+  fixtures de la suite y voltear el default de la columna.
+- El guard equivalente en el cliente (§8b) **no es lógica de autorización
+  duplicada**: el candado es este trigger, el cliente solo traduce su
+  `raise exception` a un toast con salida.
+
 **Funciones `SECURITY DEFINER`** viven en el esquema `private` (nunca en
 `public`) excepto DOS, que sí deben ser invocables por PostgREST desde el
 cliente: `increment_listing_view` y `listing_favorites_count` (eran una sola
@@ -285,11 +309,11 @@ hasta que Detalle necesitó el conteo de favoritos; si algún día hay una
 tercera, revisa primero si de verdad la invoca el cliente o si va en `private`).
 `authenticated` tiene `USAGE` sobre `private` + `EXECUTE` acotado
 a las TRES que se invocan desde policies — `is_active_user()`, `can_rate()` y
-`listing_id_from_object_name()` — mientras las otras cuatro, que solo disparan
+`listing_id_from_object_name()` — mientras las otras cinco, que solo disparan
 por trigger, siguen revocadas. Ver sección 9 sobre por qué ese `USAGE` existe (no es lo que
 originalmente se pensó).
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 64 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 67 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -302,7 +326,11 @@ publicación en vez de reutilizar `t_ids`, que T8 también borra. De ahí a **53
 con las 7 de la búsqueda por tsvector (T13), sembrada igual de autocontenida, y a
 **64** con las 11 del bucket de Storage (T14, también autocontenida: siembra su
 propio bucket y usa a `:A`, el único que sigue activo y sin publicaciones a esa
-altura del archivo).
+altura del archivo). Y a **67** con las 3 del trigger de activación (T15, que
+siembra sus propias dos publicaciones y también usa a `:A`) — la cuarta que iba
+a tener, la del EXECUTE revocado, terminó sumada a la invariante de grants de
+T12, que es donde vive ese tipo de aserción, así que ahí se pasó de 4 funciones
+vigiladas a 5 sin cambiar la cuenta.
 **Moraleja para secciones nuevas: no reutilices fixtures de secciones
 anteriores** — a media suite hay filas y cuentas ya borradas a propósito.
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
@@ -311,7 +339,7 @@ correr esta suite antes de comitear.
 
 ---
 
-## 4. Inventario completo de pantallas (46)
+## 4. Inventario completo de pantallas (47)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -331,9 +359,9 @@ Ver todas (categorías) · Búsqueda (recomendados) · Búsqueda ·
 Búsqueda sin resultados · Filtros · Detalle de publicación ·
 Detalle (vista vendedor)
 
-### Publicar (4)
-Publicar · Editar publicación · Publicación creada ·
-Publicación creada (fotos faltantes)
+### Publicar (5)
+Publicar · Publicar (subiendo imágenes) · Publicar (error de subida) ·
+Editar publicación · Publicación creada
 
 ### Cuenta (8)
 Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío ·
@@ -400,7 +428,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 46 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 47 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -470,9 +498,10 @@ y solo al final las convenciones genéricas de los skills.
 ## 8. Estado de implementación del backend
 
 **Hecho:**
-- 10 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
-  con RLS + regresión de 64 aserciones pasando. (§3 es la cuenta buena: esta
-  línea se había quedado en 8/53, de antes del bucket de Storage.)
+- 11 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
+  con RLS + regresión de 67 aserciones pasando. (§3 es la cuenta buena: esta
+  línea ya se quedó atrás dos veces —en 8/53 y en 10/64—, así que si no
+  coinciden, la de §3 gana.)
 - Seed de datos de referencia (12 categorías, Tec de Monterrey / campus
   Monterrey) aplicado en remoto vía `db push --include-seed`. `seed.sql` es
   idempotente (`on conflict do nothing`).
@@ -555,22 +584,32 @@ y solo al final las convenciones genéricas de los skills.
   publicación no era alcanzable desde ninguna parte). `fetchMisListings()` /
   `useMisListings()` en `src/lib/listings.ts`, pantalla en
   `(cuenta)/mis-publicaciones.tsx`, entrada por un `.menu-row` en Perfil. Ver
-  §8b. **Esto desbloquea el modelo atómico de publicación (pendiente 0).**
+  §8b. Es también lo que desbloqueó el modelo atómico de publicación.
+
+- **"Publicar" migrado al modelo ATÓMICO** — la publicación se crea `pausada`,
+  suben todas sus fotos, y solo si TODAS suben pasa a `activa`. Reemplaza al
+  modelo de "publica ya, recupera fotos después", en el que un fallo parcial
+  dejaba la publicación visible con menos fotos de las que el usuario eligió.
+  Cuatro consecuencias que no son opcionales:
+  - **El aviso persistente de "Publicación creada (fotos faltantes)" se
+    ELIMINÓ**, no se dejó apagado: el camino que lo justificaba —activa con
+    fotos incompletas— ya no existe. Se fueron con él su frame en
+    `relevo-app.html`, el segundo estado de `creada.tsx`, sus params de ruta
+    (`fallidas`/`total`) y las props `belowSub`/`subStyle` de `EmptyState`, que
+    quedaban sin ningún consumidor. El `.notice` no se borró: se mudó al
+    `.sticky-cta` de Publicar, que es donde ahora hay una acción que lo
+    resuelve.
+  - **El fallo se resuelve SIN salir de Publicar**, con "Reintentar", que sube
+    solo lo que faltó. Dos frames nuevos en el diseño: "Publicar (subiendo
+    imágenes)" y "Publicar (error de subida)".
+  - **`guardarFotos()` corre también cuando alguna foto falló**, y eso no es
+    prolijidad: sin esas filas, los objetos que sí subieron quedarían
+    invisibles para "Mis publicaciones" —que lee `listing_photos` para saber
+    qué borrar— y abandonar la pantalla dejaría huérfanos permanentes.
+  - **Lo respalda un trigger en la base**, no solo el cliente: ver §3
+    (`listings_enforce_activation_has_photos`).
 
 **Pendiente, en este orden de prioridad:**
-0. **Migrar "Publicar" al modelo atómico** (crear como `pausada`, subir todas
-   las fotos, activar solo si todas suben con éxito) — reemplaza el modelo
-   actual de "publica ya, recupera fotos después" descrito en la subsección
-   "Publicar" de §8b, incluyendo el aviso persistente de "Publicación creada
-   (fotos faltantes)", que queda deprecado en cuanto esto se implemente.
-   **Decisión cerrada, y su bloqueo ya se levantó:** el argumento original para
-   descartar el atómico —un listing atascado en `pausada` sería inalcanzable—
-   dejó de aplicar cuando se construyó "Mis publicaciones", que es justo la
-   pantalla donde se recupera. El argumento a favor del modelo actual (evitar
-   bloquear la publicación por fallos de subida frecuentes) también perdió
-   fuerza: el fallo real era el bug de HEIC en el picker (ya corregido, ver
-   sección 9), no mala conexión — así que los fallos de subida vuelven a ser el
-   caso raro, no el común. **Ya no depende de nada: se puede empezar.**
 1. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
    deja los datos listos (`listing_contacts`, `favorites`), pero no hay
    función que dispare la notificación todavía.
@@ -586,15 +625,39 @@ y solo al final las convenciones genéricas de los skills.
 
 **Deuda consciente — con disparador de revisión, no "algún día":**
 
+- **Un insert directo con `estado='activa'` y 0 fotos sigue siendo posible.** El
+  trigger `listings_enforce_activation_has_photos` (§3) solo cubre UPDATE. Es
+  hermano exacto del punto de abajo: el cliente ya no toma ese camino (toda
+  publicación nace `pausada`), así que lo expuesto es Studio, `service_role` o
+  quien pegue al API directo — y es calidad de dato, no seguridad: un
+  autenticado que lo haga solo se ensucia su propia publicación.
+  **No es que no se pueda** —un `before insert` con el mismo
+  `when (new.estado = 'activa')` sería viable y no tocaría el flujo real—, es
+  que hoy no se paga: la suite siembra 6 listings `activa` directo en 4 bloques
+  de fixtures load-bearing (T11b, T13, T14 y las del inicio), y rehacerlos las
+  acopla a `listing_photos` sin relación con lo que prueban; además `estado` es
+  `not null default 'activa'`, así que el trigger reventaría cualquier insert
+  que omita la columna, Studio incluido. **Revisar cuando:** se abra la API a
+  terceros, o aparezca en el feed una publicación sin fotos que no vino de la
+  app. **Fix:** ese trigger + voltear el default a `'pausada'` + reescribir las
+  4 fixtures.
+- **Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila.** El
+  alta atómica escribe las filas de un golpe al final, así que entre las subidas
+  y ese insert hay una ventana. El reintento la cierra (el formulario conserva
+  los paths), pero si el usuario abandona ahí, los archivos quedan huérfanos.
+  Es el caso raro del caso raro: `guardarFotos` fallando, no una foto. **Es el
+  mismo cron de barrido del punto de abajo**, no una deuda aparte.
 - **El tope de 5 fotos SIGUE sin aplicar en Storage** — el disparador se cumplió
   (se conectó Publicar) y esto es lo que quedó. Lo impone el trigger
   `enforce_photo_limit()` sobre `listing_photos`; las policies de
   `storage.objects` solo validan de quién es la carpeta. Lo que sí cambió: el
   cliente es hoy el único camino de subida y respeta el tope en tres puntos
   (`elegirFotos()` recorta a los disponibles, `PhotoRow` esconde el `.photo-add`
-  al llegar a 5, `agregarFotos()` hace `slice(0, MAX_FOTOS)`), y cuando el
-  insert de la fila falla se borra el objeto recién subido. O sea que la app no
-  genera huérfanos por este camino. Lo que queda expuesto es un cliente hostil
+  al llegar a 5, `agregarFotos()` hace `slice(0, MAX_FOTOS)`). O sea que la app
+  no genera huérfanos por este camino — salvo la ventana del punto de arriba,
+  que antes se cerraba borrando el objeto cuando fallaba su fila, y dejó de
+  poder hacerse cuando las filas pasaron a escribirse todas juntas al final
+  (ver `subirPendientes()`). Lo que queda expuesto es un cliente hostil
   llamando al Storage API directo: puede llenar su propia carpeta sin filas.
   **Revisar cuando:** el costo de almacenamiento aparezca en la factura, o se
   abra la API a terceros. **Fix:** contar objetos en la policy de insert, o un
@@ -725,18 +788,30 @@ Del grupo Publicar se sumaron: **`ListingPhoto`** (arriba), **`PhotoRow`**
 `N/5`) y **`ListingFormFields`**, que es EL formulario de publicación —
 "Publicar" y "Editar publicación" lo comparten porque, tras actualizar el
 diseño, tienen los mismos campos en el mismo orden. `FormHeader` creció con
-`leading` (`'back'`/`'close'`) y `trailing` (la acción "Guardar" en `--brick`);
-`EmptyState` creció con `subStyle` y `belowSub` (el slot entre el subtítulo y
-los CTAs, que usa el `.notice` de "Publicación creada (fotos faltantes)" —
-`children` cae dentro de `.empty-actions` y ahí un aviso se leería como un
-botón más).
+`leading` (`'back'`/`'close'`) y `trailing` (la acción "Guardar" en `--brick`).
+
+Al migrar al modelo atómico se sumaron dos más, ambos por EXTRACCIÓN y no
+escritos de cero:
+- **`Notice`** (`.notice`) — el aviso persistente, sacado tal cual de
+  `creada.tsx`. Es hermano del `Toast`, no una variante: el toast se va a los 4s
+  y este trae una acción, así que irse mientras se lee es justo lo que no debe
+  hacer.
+- **`BlinkingDots`** (`.splash-dots`) — los 3 puntos que ya vivían dentro de
+  `(onboarding)/splash.tsx`. Son el ÚNICO indicador de espera del sistema de
+  diseño, así que el botón "Subiendo imágenes" los reusa en vez de estrenar un
+  spinner. Que funcionen sobre `--brick` no es suerte: `.splash-dot` es
+  `--paper` al 50%, el mismo color del texto de `.primary-btn`.
+
+Y **`PrimaryButton` creció con `busy`**, que NO es `disabled` con otro nombre:
+`disabled` (0.45) dice "todavía no puedes", `busy` dice "está pasando" y va a
+color pleno — bajarlo apagaría los puntos que comunican el avance.
 
 Botones inertes a propósito (llevan a grupos sin construir): Compartir,
 Reportar, menú kebab y "Marcar como vendida". **"Editar publicación" en
 Detalle ya NO es inerte** — navega a `(publicar)/editar/[id]`. El botón de
 WhatsApp sí registra de verdad en `listing_contacts` antes de abrir el deep
 link; lo único mock que le queda es el número, y por la razón documentada en §8
-(pendiente 3), no por descuido.
+(pendiente 2), no por descuido.
 
 **Fotos: construidas, con UN pendiente de dispositivo real.**
 `src/components/ListingPhoto.tsx` es el punto ÚNICO de contacto con el bucket
@@ -758,11 +833,11 @@ simulador headless no cuenta como prueba, y todo el patrón de lectura depende d
 ese header. Si no llegara, la respuesta NO es migrar a signed URLs: eso es un
 cambio de semántica de seguridad disfrazado de refactor (§9).
 
-**Publicar — construido y conectado a Supabase real, modelo de subida en
-transición (ver §8 pendiente 1).** Las 4 pantallas (`nueva.tsx`, `creada.tsx`
-con sus 2 estados, `editar/[id].tsx`) escriben contra el proyecto remoto. La
-capa de datos: `src/lib/storage.ts` (subida, borrado y URL autenticada),
-`src/lib/publicar.ts` (la orquestación y su orden de llamadas),
+**Publicar — construido, conectado y ATÓMICO.** Las 5 pantallas viven en 3
+archivos de ruta: `nueva.tsx` cubre los 3 estados de Publicar (formulario,
+subiendo, error de subida), más `creada.tsx` —hoy de un solo estado— y
+`editar/[id].tsx`. La capa de datos: `src/lib/storage.ts` (subida, borrado y URL
+autenticada), `src/lib/publicar.ts` (la orquestación y su orden de llamadas),
 `src/lib/listing-form.ts` (estado + validación compartida) y
 `src/lib/foto-picker.ts`.
 
@@ -775,18 +850,34 @@ Detalles que no se ven en el diff:
   choca con la policy. Por simetría, Editar también difiere al Guardar: subir al
   elegir y salir sin guardar dejaría objetos huérfanos que nadie ve ni limpia.
   Esto sigue aplicando igual bajo el modelo atómico.
-- **Comportamiento ACTUAL, a reemplazar (pendiente 1 de §8): un fallo parcial
-  de fotos NO hace rollback del listing.** Borrarlo perdería lo que el usuario
-  escribió y ni siquiera limpiaría los archivos ya subidos (el cascade se
-  lleva las filas, no los objetos). La publicación queda activa y "Publicación
-  creada" lo dice en su variante con `.notice`, cuya acción secundaria lleva a
-  Editar. El aviso es persistente a propósito: un toast de 4s se va mientras
-  se lee y no deja acción. **Esto deja de ser el comportamiento correcto en
-  cuanto se implemente el modelo atómico** — el listing se crea como `pausada`
-  y solo pasa a `activa` si todas las fotos suben, así que este camino (activa
-  con fotos faltantes) no debería volver a ocurrir por esta vía. No borrar
-  esta nota hasta confirmar que el modelo atómico está en producción; sirve
-  de referencia de qué se está reemplazando y por qué.
+- **Un fallo de fotos NO hace rollback del listing, y tampoco lo activa.** La
+  publicación se queda `pausada` con lo que sí subió, y el usuario reintenta
+  desde la misma pantalla. Borrarla sería peor de las dos maneras: perdería lo
+  que escribió y ni siquiera limpiaría los archivos ya subidos (el cascade se
+  lleva las filas, no los objetos). Si abandona en ese estado, la recupera desde
+  "Mis publicaciones" — esa pantalla es la que hizo viable este modelo.
+- **Publicar y Reintentar son la MISMA función**, y lo único que las distingue
+  es si `nueva.tsx` ya tiene un `listingId` en estado. Por eso
+  `publicarListing()` avisa el id por `onListingCreado` ANTES de subir y no al
+  devolver: al devolver ya sería tarde justo en el caso que lo necesita, y cada
+  reintento crearía una publicación `pausada` huérfana más.
+- **`finalizarPublicacion()` es idempotente a propósito.** Reintentar no es un
+  camino aparte: es volver a llamarla. Las fotos ya subidas se saltan solas
+  (`subirPendientes` ignora las de origen `'storage'`), el delete+insert de
+  `guardarFotos` se repite sin daño y activar dos veces da lo mismo. Eso cubre
+  también los fallos que NO son de subida — si revienta `guardarFotos` o la
+  activación, el mismo botón los resuelve.
+- **El alta ya no inserta las filas de `listing_photos` de a una**, y no es un
+  refactor cosmético: numerar `orden` por foto colisiona en cuanto hay un
+  reintento parcial. Si de 3 fotos falla la 2ª, las que quedaron toman `orden` 0
+  y 1; al reintentar, la foto 2 se insertaría con `orden = 1`, ya tomado, y
+  revienta contra `unique (listing_id, orden)`. La única numeración correcta es
+  la del set final completo, así que las escribe `guardarFotos()` de un golpe.
+  Se fue con eso `insertarFoto()`, que quedó sin usar. Si vuelves a ver un
+  insert por foto en `subirPendientes()`, es esa regresión.
+- **El formulario se congela también en el estado de ERROR**, no solo mientras
+  sube: la publicación ya existe en la base, así que seguir editando el texto en
+  pantalla lo desincronizaría de lo guardado.
 - **`guardarFotos()` hace delete + insert, nunca un upsert.**
   `enforce_photo_limit()` es un trigger BEFORE INSERT y dispara también en la
   rama `ON CONFLICT DO UPDATE`, así que un upsert sobre una publicación con 5
@@ -814,7 +905,9 @@ Detalles que no se ven en el diff:
 conectadas.** Se hicieron por necesidad, no por avanzar el grupo: conectar
 Publicar dejó la app en un estado donde pausar una publicación la volvía
 inalcanzable (el Feed filtra `estado = 'activa'`), y lo mismo pasaba con una que
-quedaba sin fotos por un fallo de subida.
+quedaba sin fotos por un fallo de subida. Eso último dejó de ser un accidente y
+pasó a ser el diseño: el modelo atómico DEPENDE de esta pantalla, porque una
+publicación que se queda `pausada` por un fallo de subida se recupera aquí.
 
 - **`(cuenta)/mis-publicaciones.tsx`** cubre los 3 frames: la lista, su vacío y
   la hoja de acciones. Lee con `useMisListings()` (`src/lib/listings.ts`), que es
@@ -838,6 +931,20 @@ quedaba sin fotos por un fallo de subida.
 - **`StatusRow` dejó de ser local de `editar/[id].tsx`** y vive en
   `src/components/StatusRow.tsx`: la hoja es literalmente la `.status-section`
   de ese frame en otro contenedor. `Toggle` sí se quedó allá.
+- **Reactivar valida que haya al menos una foto, en las DOS rutas** (la hoja de
+  acciones aquí y el toggle de `editar/[id].tsx`). El candado real es el trigger
+  de §3; estos `if` no lo duplican, traducen su `raise exception` a un toast con
+  salida — en "Mis publicaciones", además, abre Editar, que es donde se arregla.
+  El caso es real desde el modelo atómico: una subida que falla entera deja la
+  publicación `pausada` con 0 fotos. El guard sale ANTES del optimistic update,
+  o la fila parpadearía a "Activa" y volvería.
+- **En Editar, ese guard lee `fotosGuardadas`, un estado que se sincroniza tras
+  cada guardado** — no `listing.fotos` (el prop, congelado al abrir la
+  pantalla) ni `form.fotos` (lo que hay en el formulario sin guardar todavía).
+  El toggle escribe directo a la base sin pasar por "Guardar", así que una foto
+  recién elegida no existe todavía para el trigger; y tras un guardado con
+  éxito parcial la pantalla no navega, así que `listing.fotos` deja de
+  reflejar lo que hay en la base mientras la sesión de edición sigue abierta.
 - `SkeletonRows` (nuevo, en `Skeleton.tsx`) es el esqueleto de una lista plana —
   `SkeletonGrid` habría anticipado una forma que no es la que llega.
 

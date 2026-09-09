@@ -122,6 +122,25 @@ export default function MisPublicacionesScreen() {
    */
   async function alternarPausa(item: MiListing) {
     const nuevo: EstadoListing = item.estado === 'pausada' ? 'activa' : 'pausada';
+
+    /**
+     * El candado real es el trigger `listings_enforce_activation_has_photos`,
+     * no este `if` (CLAUDE.md §0 regla 7). Esto no lo duplica: lo TRADUCE, para
+     * que el usuario no reciba el `raise exception` crudo de Postgres en un
+     * toast, y para que la salida esté a un tap.
+     *
+     * El caso es real desde el modelo atómico: si la subida falla entera, la
+     * publicación queda `pausada` con 0 fotos, y esta pantalla es justo donde se
+     * la vuelve a encontrar. Se sale ANTES del optimistic update para que la
+     * fila no parpadee a "Activa" y vuelva.
+     */
+    if (nuevo === 'activa' && item.fotos.length === 0) {
+      setAcciones(null);
+      mostrar('Agrega al menos una foto para reactivarla', 'error');
+      router.push(`/(publicar)/editar/${item.id}`);
+      return;
+    }
+
     setAcciones(null);
     setItems((prev) => prev.map((l) => (l.id === item.id ? { ...l, estado: nuevo } : l)));
 

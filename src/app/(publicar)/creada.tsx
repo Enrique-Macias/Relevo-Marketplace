@@ -1,46 +1,36 @@
 /**
- * Frames "Publicación creada" y "Publicación creada (fotos faltantes)" — un
- * solo componente con dos estados, como Categoría o Búsqueda.
+ * Frame "Publicación creada".
  *
- * El segundo estado no es decorativo: la subida de fotos ocurre DESPUÉS de
- * crear la publicación (no puede ser antes, ver `publicarListing`), así que un
- * fallo parcial deja la publicación activa con menos fotos de las que el
- * usuario eligió. Enterarse por un toast de 4s no alcanza —se va mientras uno
- * lo lee, y no deja acción— así que el aviso vive aquí, fijo, con el botón que
- * lo arregla.
+ * Tuvo un segundo estado —"Publicación creada (fotos faltantes)", con un
+ * `.notice` persistente y un CTA que llevaba a Editar— y ya no lo tiene: bajo el
+ * modelo atómico, llegar aquí SIGNIFICA que todas las fotos subieron y que la
+ * publicación quedó activa. El camino "activa con fotos incompletas" dejó de
+ * existir, así que su aviso no se quedó apagado por si acaso: se borró, junto
+ * con su frame en `design/relevo-app.html`. Un fallo de subida ahora se resuelve
+ * sin salir de "Publicar" (ver `nueva.tsx`), y el `.notice` se mudó allá.
  */
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { GhostButton, PrimaryButton } from '@/components/Buttons';
 import { EmptyState } from '@/components/EmptyState';
-import { IconCheck, IconExclamation } from '@/components/icons';
+import { IconCheck } from '@/components/icons';
 import { Screen } from '@/components/Screen';
-import { Colors, Radii, Typography } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 import { fetchUniversidades } from '@/lib/catalogos';
 import { fetchListingById } from '@/lib/listings';
 import { useSession } from '@/lib/session';
 
 export default function PublicacionCreadaScreen() {
-  const { id, fallidas, total } = useLocalSearchParams<{
-    id: string;
-    fallidas?: string;
-    total?: string;
-  }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const listingId = Number(id);
   const { profile } = useSession();
 
   const [titulo, setTitulo] = useState<string | null>(null);
   const [universidad, setUniversidad] = useState<string | null>(null);
-
-  // Posiciones 1-based de las fotos que no subieron. Se pasan por param en vez
-  // de recalcularse: solo el flujo que acaba de publicar sabe cuáles eran.
-  const posicionesFallidas = (fallidas ?? '').split(',').filter(Boolean);
-  const totalFotos = Number(total ?? '0');
-  const hayFallidas = posicionesFallidas.length > 0;
 
   useEffect(() => {
     if (Number.isNaN(listingId)) return;
@@ -91,39 +81,13 @@ export default function PublicacionCreadaScreen() {
         style={styles.estado}
         title="¡Tu publicación ya está activa!"
         sub={sub}
-        subStyle={hayFallidas ? styles.subConAviso : undefined}
-        belowSub={
-          hayFallidas ? (
-            <View style={styles.notice}>
-              <View style={styles.noticeIcon}>
-                <IconExclamation size={11} color={Colors.paper} />
-              </View>
-              <Text style={styles.noticeText}>
-                {posicionesFallidas.length} de {totalFotos} fotos no se subieron. Puedes agregarlas
-                ahora.
-              </Text>
-            </View>
-          ) : null
-        }
       >
         <PrimaryButton
           label="Ver mi publicación"
           onPress={() => router.replace(`/detalle/${listingId}`)}
           style={styles.cta}
         />
-        {/*
-          La acción secundaria cambia con el estado: sin fotos faltantes lleva al
-          Feed, y con ellas al formulario que las arregla. Es lo que vuelve el
-          aviso accionable en vez de informativo.
-        */}
-        <GhostButton
-          label={hayFallidas ? 'Agregar fotos faltantes' : 'Volver al inicio'}
-          onPress={() =>
-            hayFallidas
-              ? router.replace(`/(publicar)/editar/${listingId}`)
-              : router.replace('/(tabs)')
-          }
-        />
+        <GhostButton label="Volver al inicio" onPress={() => router.replace('/(tabs)')} />
       </EmptyState>
     </Screen>
   );
@@ -138,40 +102,6 @@ const styles = StyleSheet.create({
   iconoExito: {
     backgroundColor: Colors.forestTint,
     borderWidth: 0,
-  },
-  subConAviso: {
-    marginBottom: 14,
-  },
-  // .notice{background:var(--card); border:1px solid var(--line); border-radius:14px;
-  //   padding:12px 14px; gap:10px; margin-bottom:24px;}
-  notice: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.line,
-    borderRadius: Radii.lg,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginBottom: 24,
-  },
-  noticeIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: Radii.full,
-    backgroundColor: Colors.brick,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // .notice-text{font-size:12.5px; color:var(--ink-soft); line-height:1.45;}
-  noticeText: {
-    ...Typography.meta,
-    color: Colors.inkSoft,
-    lineHeight: 18.125, // 12.5 × 1.45
-    flex: 1,
-    textAlign: 'left',
   },
   cta: {
     marginTop: 0,

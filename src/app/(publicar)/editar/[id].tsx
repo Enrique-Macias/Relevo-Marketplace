@@ -115,6 +115,16 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
   const [guardando, setGuardando] = useState(false);
   const [progreso, setProgreso] = useState<ProgresoFoto | null>(null);
   const [pausada, setPausada] = useState(listing.estado === 'pausada');
+  /**
+   * Los `storage_path` que la publicación tiene EN LA BASE ahora mismo.
+   *
+   * Arranca en `listing.fotos` pero no se queda ahí: tras un guardado con éxito
+   * parcial, la publicación se queda en pantalla (no navega) con un set de fotos
+   * distinto al que tenía al abrir, y `listing` no se vuelve a leer. El guard de
+   * reactivación de más abajo pregunta "¿tiene al menos una foto AHORA?", y sin
+   * este estado esa pregunta se contestaría con datos viejos.
+   */
+  const [fotosGuardadas, setFotosGuardadas] = useState<string[]>(listing.fotos);
   const [confirmandoBorrado, setConfirmandoBorrado] = useState(false);
   const [borrando, setBorrando] = useState(false);
 
@@ -192,6 +202,12 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
         onProgreso: setProgreso,
       });
 
+      // Lo que quedó realmente escrito, aunque alguna haya fallado.
+      form.setFotos(resultado.fotos);
+      setFotosGuardadas(
+        resultado.fotos.filter((f) => f.origen === 'storage').map((f) => f.path)
+      );
+
       if (resultado.fallidas.length > 0) {
         // No se navega: el usuario se queda en el formulario, que sigue siendo
         // el lugar donde puede volver a intentarlo.
@@ -216,6 +232,23 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
 
   async function alternarPausa() {
     const anterior = pausada;
+
+    /**
+     * Mismo guard que la hoja de "Mis publicaciones", y por lo mismo: el candado
+     * es el trigger `listings_enforce_activation_has_photos`, esto solo traduce
+     * su error. Aquí no hace falta navegar — ya estamos en el formulario que lo
+     * arregla.
+     *
+     * Se compara contra `fotosGuardadas` (lo que hay EN LA BASE) y no contra
+     * `form.fotos`: este toggle escribe directo sin pasar por "Guardar", así que
+     * una foto recién elegida todavía no existe para el trigger, y dejarla
+     * contar haría fallar el update.
+     */
+    if (anterior && fotosGuardadas.length === 0) {
+      mostrar('Agrega al menos una foto y guarda para reactivarla', 'error');
+      return;
+    }
+
     // Optimista, mismo criterio que el corazón de favoritos: una publicación
     // propia siempre pasa `listings_update_own`, así que el único fallo posible
     // es de transporte. Se revierte si ocurre.

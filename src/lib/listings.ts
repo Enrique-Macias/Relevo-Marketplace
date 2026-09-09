@@ -516,7 +516,11 @@ function aFila(input: ListingInput) {
  * `listing_photos_objects_insert_own` exige que ese listing exista y sea del
  * invocante. O sea que **no hay forma de subir una foto antes de esta línea**.
  *
- * `estado` no se manda: cae al default `'activa'` de la columna.
+ * `estado` SÍ se manda, explícito, y no cae al default `'activa'` de la
+ * columna: bajo el modelo atómico el alta lo crea `'pausada'` y solo lo activa
+ * cuando todas las fotos subieron (ver `publicarListing`). Dejarlo implícito
+ * haría que un cambio de default —o un lector distraído— decidiera algo que es
+ * la pieza central del flujo.
  *
  * `user_id` SÍ se manda, y viene por parámetro en vez de leerse aquí de la
  * sesión. `listings` tiene el insert concedido a nivel de tabla (no por
@@ -525,10 +529,14 @@ function aFila(input: ListingInput) {
  * `user_id = auth.uid()` no lo rellena: solo rechaza la fila si no coincide —
  * es la red de seguridad, no la fuente del valor.
  */
-export async function crearListing(input: ListingInput, userId: string): Promise<number> {
+export async function crearListing(
+  input: ListingInput,
+  userId: string,
+  estado: 'activa' | 'pausada'
+): Promise<number> {
   const { data, error } = await supabase
     .from('listings')
-    .insert({ ...aFila(input), user_id: userId })
+    .insert({ ...aFila(input), user_id: userId, estado })
     .select('id')
     .single();
 
@@ -542,7 +550,17 @@ export async function actualizarListing(id: number, input: ListingInput): Promis
   if (error) throw error;
 }
 
-/** RF-08. Aparte de `actualizarListing` porque el toggle de "Pausar" no toca el formulario. */
+/**
+ * RF-08. Aparte de `actualizarListing` porque el toggle de "Pausar" no toca el
+ * formulario.
+ *
+ * Pasar a `'activa'` puede FALLAR aunque la publicación sea tuya: el trigger
+ * `listings_enforce_activation_has_photos` rechaza activar una sin fotos. No es
+ * un caso hipotético — el alta atómica deja publicaciones `pausada` con 0 fotos
+ * cuando la subida falla entera. Quien llama debe anticiparlo (los dos toggles
+ * de reactivación lo hacen) para no mostrarle al usuario el `raise exception`
+ * crudo de Postgres.
+ */
 export async function cambiarEstadoListing(
   id: number,
   estado: 'activa' | 'pausada' | 'vendida'
@@ -575,11 +593,19 @@ export async function borrarListing(id: number): Promise<void> {
  * las colisiones con `unique (listing_id, orden)` que tendría cualquier
  * renumeración en sitio.
  *
- * El costo: entre el delete y el insert la publicación queda sin fotos. Por eso
+ * El costo: entre el delete y el insert la publicación queda sin fotos. En la
+ * EDICIÓN eso importa —la publicación puede estar activa y visible— así que
  * quien llama solo debe invocarla si el set CAMBIÓ (ver `guardar()` en
- * `editar/[id].tsx`) — editar solo el precio no pasa por aquí. Si el insert
- * falla, los archivos siguen en Storage y las filas no: se reporta y el usuario
- * reintenta desde el mismo formulario, que todavía tiene los paths en estado.
+ * `editar/[id].tsx`); editar solo el precio no pasa por aquí. En el ALTA no
+ * importa: la publicación todavía está `pausada` y nadie más que su dueño la ve.
+ *
+ * Es también la ÚNICA escritora de `listing_photos` en el alta, y eso no es
+ * casual: numerar `orden` de a una foto colisiona en cuanto hay un reintento
+ * parcial. Ver `subirPendientes()` en `src/lib/publicar.ts`.
+ *
+ * Si el insert falla, los archivos siguen en Storage y las filas no: se reporta
+ * y el usuario reintenta desde el mismo formulario, que todavía tiene los paths
+ * en estado.
  */
 export async function guardarFotos(listingId: number, paths: string[]): Promise<void> {
   const { error: eBorrado } = await supabase
@@ -594,18 +620,6 @@ export async function guardarFotos(listingId: number, paths: string[]): Promise<
     .from('listing_photos')
     .insert(paths.map((storage_path, orden) => ({ listing_id: listingId, storage_path, orden })));
   if (eInsert) throw eInsert;
-}
-
-/** Inserta UNA foto en su posición. Usado por el alta, que sube de a una. */
-export async function insertarFoto(
-  listingId: number,
-  storagePath: string,
-  orden: number
-): Promise<void> {
-  const { error } = await supabase
-    .from('listing_photos')
-    .insert({ listing_id: listingId, storage_path: storagePath, orden });
-  if (error) throw error;
 }
 
 // ---------------------------------------------------------------------------

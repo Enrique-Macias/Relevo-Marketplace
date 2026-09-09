@@ -466,6 +466,11 @@
     border-top:1px solid var(--line);
     display:flex; gap:10px;
   }
+  /* Apilada, para cuando el CTA lleva un aviso encima (hoy: el error de subida
+     de Publicar). El gap:10px de arriba ya hace de separación, por eso el
+     .notice entra sin su margin-bottom propio. */
+  .sticky-cta.stacked{flex-direction:column;}
+  .sticky-cta .notice{margin-bottom:0;}
   .fav-btn{
     width:48px; height:48px; border-radius:14px;
     background:var(--card); border:1px solid var(--line);
@@ -502,7 +507,20 @@
   .primary-btn.disabled,
   .ghost-btn.disabled,
   .select-field.disabled,
-  .text-field.disabled{ opacity:0.45; }
+  .text-field.disabled,
+  .textarea-field.disabled{ opacity:0.45; }
+
+  /* Estado OCUPADO — deliberadamente NO es .disabled, y la diferencia es de
+     significado: .disabled dice "todavía no puedes", .is-busy dice "está
+     pasando". Bajarlo a 0.45 apagaría justo el indicador que comunica el avance,
+     así que el botón se queda a color pleno; lo que no responde al toque lo
+     resuelve el comportamiento, no la opacidad.
+     El indicador es .splash-dots TAL CUAL, el único de espera que ya tiene el
+     proyecto: su rgba(243,240,234,0.5) es --paper al 50% y cae exacto sobre
+     --brick. Solo se le quita el margen que únicamente servía bajo el wordmark
+     del Splash. Nada de spinner nuevo. */
+  .primary-btn.is-busy{display:flex; align-items:center; justify-content:center; gap:9px;}
+  .primary-btn.is-busy .splash-dots{margin-top:0;}
 
   /* Create listing form */
   .form-header{display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--line); flex-shrink:0;}
@@ -788,9 +806,10 @@
   /* Aviso PERSISTENTE dentro del flujo — hermano del toast, no una variante:
      el toast flota sobre la pantalla y se va solo a los 4s, y hay avisos que el
      usuario tiene que poder leer con calma porque traen una acción asociada
-     (hoy: "faltaron fotos" en Publicación creada). Toma el ícono circular del
-     toast y su tamaño de texto, pero sobre --card y sin sombra ni position
-     absolute: ocupa su lugar en la columna, no tapa nada. */
+     (hoy: el error de subida en el .sticky-cta de Publicar, junto al botón
+     "Reintentar" que lo resuelve). Toma el ícono circular del toast y su tamaño
+     de texto, pero sobre --card y sin sombra ni position absolute: ocupa su
+     lugar en la columna, no tapa nada. */
   .notice{
     width:100%;
     background:var(--card); border:1px solid var(--line);
@@ -1651,6 +1670,211 @@
 
         <div class="sticky-cta">
           <button class="primary-btn" style="margin-top:0;">Publicar artículo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Estados 2 y 3 del MISMO componente que "Publicar", no pantallas aparte
+       (mismo patrón que Categoría o Búsqueda).
+
+       POR QUÉ EXISTEN: el alta es ATÓMICA. La publicación se crea `pausada`,
+       suben todas las fotos, y solo si TODAS suben pasa a `activa`. Eso vuelve
+       la subida un momento con duración —y con posibilidad de fallar— del que
+       el usuario tiene que enterarse SIN salir de la pantalla, porque es aquí
+       donde se reintenta. Antes esto no hacía falta: la publicación se activaba
+       de inmediato y el fallo se contaba después, en "Publicación creada
+       (fotos faltantes)", un frame que este modelo elimina.
+
+       El formulario se congela en ambos: la publicación YA existe en la base,
+       así que editar el texto en pantalla lo desincronizaría de lo guardado. -->
+  <div class="phone-block" data-cat="publicar">
+    <div class="phone-label">Publicar (subiendo imágenes)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        <div class="form-title">Nueva publicación</div>
+        <span style="font-size:13px; font-weight:600; color:var(--brick); opacity:0.45;">Guardar</span>
+      </div>
+      <div class="screen">
+        <div class="form-body">
+          <!-- Sin .photo-remove y sin .photo-add: la fila se congela mientras
+               sube. Quitar o agregar una foto a media subida rompería el orden
+               con el que se están escribiendo las filas de listing_photos. -->
+          <div class="field-label-row">
+            <label class="field-label">Fotos</label>
+            <span class="photo-count">2/5</span>
+          </div>
+          <div class="photo-row">
+            <div class="photo-thumb" style="background:var(--brick-tint);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="photo-thumb" style="background:var(--slate-tint);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Título</label>
+            <input class="text-field disabled" type="text" value="Cálculo de Larson, 9a edición" disabled>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Precio</label>
+            <input class="text-field disabled" type="text" value="$ 350" disabled>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Categoría</label>
+            <div class="segmented" style="opacity:0.45;">
+              <div class="segment active">Libros</div>
+              <div class="segment">Electrónica</div>
+              <div class="segment">Muebles</div>
+              <div class="segment">Ropa</div>
+              <div class="segment">Deportes</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Condición</label>
+            <div class="segmented" style="opacity:0.45;">
+              <div class="segment">Nuevo</div>
+              <div class="segment active">Como nuevo</div>
+              <div class="segment">Buen estado</div>
+              <div class="segment">Usado</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Descripción</label>
+            <textarea class="textarea-field disabled" disabled>Novena edición, sin subrayados ni marcas.</textarea>
+          </div>
+
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Zona de entrega</label>
+            <div class="select-field disabled">
+              <span>Tec de Monterrey</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="sticky-cta">
+          <button class="primary-btn is-busy" style="margin-top:0;">
+            <span class="splash-dots">
+              <span class="splash-dot"></span>
+              <span class="splash-dot"></span>
+              <span class="splash-dot"></span>
+            </span>
+            Subiendo imágenes
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="publicar">
+    <div class="phone-label">Publicar (error de subida)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        <div class="form-title">Nueva publicación</div>
+        <span style="font-size:13px; font-weight:600; color:var(--brick); opacity:0.45;">Guardar</span>
+      </div>
+      <div class="screen">
+        <div class="form-body">
+          <div class="field-label-row">
+            <label class="field-label">Fotos</label>
+            <span class="photo-count">2/5</span>
+          </div>
+          <div class="photo-row">
+            <div class="photo-thumb" style="background:var(--brick-tint);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="photo-thumb" style="background:var(--slate-tint);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Título</label>
+            <input class="text-field disabled" type="text" value="Cálculo de Larson, 9a edición" disabled>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Precio</label>
+            <input class="text-field disabled" type="text" value="$ 350" disabled>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Categoría</label>
+            <div class="segmented" style="opacity:0.45;">
+              <div class="segment active">Libros</div>
+              <div class="segment">Electrónica</div>
+              <div class="segment">Muebles</div>
+              <div class="segment">Ropa</div>
+              <div class="segment">Deportes</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Condición</label>
+            <div class="segmented" style="opacity:0.45;">
+              <div class="segment">Nuevo</div>
+              <div class="segment active">Como nuevo</div>
+              <div class="segment">Buen estado</div>
+              <div class="segment">Usado</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Descripción</label>
+            <textarea class="textarea-field disabled" disabled>Novena edición, sin subrayados ni marcas.</textarea>
+          </div>
+
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Zona de entrega</label>
+            <div class="select-field disabled">
+              <span>Tec de Monterrey</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- El .notice es el MISMO que vivía en "Publicación creada (fotos
+             faltantes)": no es una pieza nueva, es la misma mudada al lugar
+             donde ahora sí hay una acción que la resuelve. Va dentro del
+             .sticky-cta, pegado al botón, y no arriba del formulario, porque lo
+             que informa y lo que se hace al respecto son la misma cosa.
+             Que la publicación quede "en pausa" no es un detalle técnico
+             filtrado a la UI: es lo que le dice al usuario que no perdió su
+             trabajo si se va de aquí — la recupera desde Mis publicaciones. -->
+        <div class="sticky-cta stacked">
+          <div class="notice">
+            <div class="notice-icon">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
+            </div>
+            <div class="notice-text">1 de 2 fotos no se subió. Tu publicación quedó en pausa.</div>
+          </div>
+          <button class="primary-btn" style="margin-top:0;">Reintentar</button>
         </div>
       </div>
     </div>
@@ -3568,48 +3792,6 @@
           <div class="empty-actions">
             <button class="primary-btn" style="margin-top:0;">Ver mi publicación</button>
             <div class="ghost-btn">Volver al inicio</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Segundo estado del MISMO componente, no una pantalla aparte (mismo patrón
-       que Categoría o Búsqueda). Existe porque la subida de fotos ocurre después
-       de crear la publicación: si alguna falla, la publicación SÍ queda activa y
-       el usuario tiene que enterarse de forma persistente —no con un toast que
-       se va a los 4s— y con la acción que lo arregla a un tap. Por eso el
-       .ghost-btn cambia de destino: aquí lleva a Editar, no al inicio. -->
-  <div class="phone-block" data-cat="publicar">
-    <div class="phone-label">Publicación creada (fotos faltantes)</div>
-    <div class="device">
-      <div class="notch"></div>
-      <div class="statusbar">
-        <span>9:41</span>
-        <div class="icons">
-          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
-          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
-          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
-        </div>
-      </div>
-      <div class="screen">
-        <div class="empty-state" style="padding-top:90px;">
-          <div class="empty-icon success">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-          </div>
-          <div class="empty-title">¡Tu publicación ya está activa!</div>
-          <div class="empty-sub" style="margin-bottom:14px;">"Cálculo de Larson, 9a edición" ya es visible para estudiantes de Tec de Monterrey.</div>
-          <!-- .notice reutiliza el lenguaje del toast de error (círculo --brick
-               con signo de admiración) pero anclado en el flujo, no flotando. -->
-          <div class="notice">
-            <div class="notice-icon">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
-            </div>
-            <div class="notice-text">2 de 4 fotos no se subieron. Puedes agregarlas ahora.</div>
-          </div>
-          <div class="empty-actions">
-            <button class="primary-btn" style="margin-top:0;">Ver mi publicación</button>
-            <div class="ghost-btn">Agregar fotos faltantes</div>
           </div>
         </div>
       </div>
