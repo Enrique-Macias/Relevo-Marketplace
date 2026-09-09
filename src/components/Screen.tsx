@@ -18,6 +18,7 @@ import {
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type RefreshControlProps,
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -55,13 +56,22 @@ type ScreenProps = {
    * disparador concreto de cuándo migrar.
    */
   onEndReached?: () => void;
+  /** Pass-through al `refreshControl` del `ScrollView` interno (pull-to-refresh). */
+  refreshControl?: React.ReactElement<RefreshControlProps>;
 };
 
 // Distancia al final a partir de la cual se pide la página siguiente: poco más
 // de una fila de tarjetas, para que la siguiente ya esté ahí al llegar.
 const UMBRAL_FIN = 400;
 
-export function Screen({ children, scroll = true, header, contentStyle, onEndReached }: ScreenProps) {
+export function Screen({
+  children,
+  scroll = true,
+  header,
+  contentStyle,
+  onEndReached,
+  refreshControl,
+}: ScreenProps) {
   const scrollRef = useRef<ScrollView>(null);
 
   const handleScroll = onEndReached
@@ -96,6 +106,7 @@ export function Screen({ children, scroll = true, header, contentStyle, onEndRea
               keyboardShouldPersistTaps="handled"
               onScroll={handleScroll}
               scrollEventThrottle={16}
+              refreshControl={refreshControl}
             >
               {children}
             </ScrollView>

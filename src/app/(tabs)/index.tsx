@@ -2,7 +2,8 @@
 
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
 
 import { CategoryTile } from '@/components/CategoryTile';
@@ -12,6 +13,7 @@ import { ProductCard } from '@/components/ProductCard';
 import { Screen } from '@/components/Screen';
 import { SectionHead } from '@/components/SectionHead';
 import { SkeletonCatGrid, SkeletonGrid } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
 import { categoriasFeed } from '@/lib/categorias';
 import { useExplorarState } from '@/lib/explorar-state';
@@ -31,17 +33,44 @@ export default function InicioScreen() {
 
   // El Feed no es una lista infinita: el frame muestra un grid de 6 con
   // "Ver todo" hacia Búsqueda, que es donde vive la paginación (RNF-01).
-  const { items, estado, reintentar } = useListings(
+  const { items, estado, reintentar, refrescar } = useListings(
     campusSeleccionado
       ? { campusId: campusSeleccionado.id, orden: 'recientes' as const, limit: 6 }
       : null
   );
 
+  const { mostrar } = useToast();
+  const [refrescando, setRefrescando] = useState(false);
+
+  // Pull-to-refresh: solo re-pide el grid de "recientes" (CLAUDE.md §8b).
+  // Categorías y campus no se refrescan aquí — no cambian dentro de una
+  // sesión y no tienen refetch expuesto.
+  const onRefresh = useCallback(async () => {
+    setRefrescando(true);
+    try {
+      await refrescar();
+    } catch (e: any) {
+      console.warn('[feed] falló el refresh:', e?.message ?? e);
+      mostrar('No se pudo actualizar. Intenta de nuevo.', 'error');
+    } finally {
+      setRefrescando(false);
+    }
+  }, [refrescar, mostrar]);
+
   const tiles = [...categoriasFeed(categorias), TILE_MAS];
   const cargando = estado === 'loading' || !campusSeleccionado;
 
   return (
-    <Screen>
+    <Screen
+      refreshControl={
+        <RefreshControl
+          refreshing={refrescando}
+          onRefresh={onRefresh}
+          tintColor={Colors.brick}
+          colors={[Colors.brick]}
+        />
+      }
+    >
       <View style={styles.top}>
         <View style={styles.brandRow}>
           <Text style={styles.wordmark}>Relevo</Text>

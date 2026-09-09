@@ -767,6 +767,17 @@ Detalles que no se ven en el diff:
   corazón que se toca desde un grid en scroll no compra nada. El insert va con
   `ignoreDuplicates: true` porque `favorites` no tiene grant de UPDATE — un
   upsert normal (`ON CONFLICT DO UPDATE`) fallaría con `42501`.
+- **`refrescar()` es una función nueva y ADITIVA de `useListings`, no
+  reemplaza a `reintentar()`.** `reintentar()` vacía `items` a `[]` y pone
+  `estado` en `'loading'` — correcto para "Reintentar" tras un error, donde
+  tapar el contenido con el skeleton es lo que se quiere. Pull-to-refresh
+  necesita lo contrario: mantener el grid visible mientras refresca. Por eso
+  `refrescar()` pide la página 1 fresca y solo reemplaza
+  `items`/`cursor`/`total` al llegar, sin tocar `estado` (salvo devolverlo a
+  `'ready'` si veía un error previo). Hoy solo la usa el Feed
+  (`(tabs)/index.tsx`), vía el `refreshControl` de `Screen`. Categorías y
+  campus activo no se refrescan con el gesto — no cambian dentro de una
+  sesión y no tienen refetch expuesto hoy.
 - **La búsqueda NO escapa el término, y es deliberado.** Va por
   `.textSearch('busqueda', q, {type:'websearch', config:'spanish'})` contra la
   columna generada: `websearch_to_tsquery` está hecho para input crudo (nunca

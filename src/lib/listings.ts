@@ -763,7 +763,37 @@ export function useListings(params: FetchListingsParams | null) {
 
   const reintentar = useCallback(() => setRecargas((n) => n + 1), []);
 
-  return { items, estado, total, cargandoMas, loadMore, reintentar };
+  /**
+   * Refresco silencioso (pull-to-refresh): a diferencia de `reintentar`, NO
+   * vacía `items` ni pone `estado` en `'loading'` — el punto es mantener el
+   * grid visible mientras se pide la página 1 de nuevo. Ver CLAUDE.md §8b.
+   */
+  const refrescandoRef = useRef(false);
+
+  const refrescar = useCallback(async () => {
+    const p = paramsRef.current;
+    if (!p || refrescandoRef.current) return;
+
+    refrescandoRef.current = true;
+    const keyPedida = keyRef.current;
+
+    try {
+      const page = await fetchListings({ ...p, cursor: null });
+      // Mismo criterio que `loadMore`: si el filtro cambió mientras esto
+      // venía en camino, descartar en vez de pintar encima del nuevo.
+      if (keyRef.current !== keyPedida) return;
+      setItems(page.items);
+      setCursor(page.nextCursor);
+      setTotal(page.total);
+      // Si veníamos de un error, un refresh exitoso debe sacar la pantalla
+      // de ese estado — si no, el ErrorState seguiría tapando el grid nuevo.
+      setEstado('ready');
+    } finally {
+      refrescandoRef.current = false;
+    }
+  }, []);
+
+  return { items, estado, total, cargandoMas, loadMore, reintentar, refrescar };
 }
 
 /**
