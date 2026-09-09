@@ -829,10 +829,12 @@ quedaba sin fotos por un fallo de subida.
   misma razón: necesita el objeto de la fila en la mano, no params
   serializables. Es el caso de `CampusBottomSheet`, no el de `filtros.tsx`.
 - **`useMisListings` resetea su estado en RENDER, no dentro del efecto**
-  (compara una `key` contra la anterior). `useListings` lo hace en el efecto;
-  los dos funcionan, pero la variante en render evita un frame con la lista
-  vieja bajo el filtro nuevo — y es además la única que pasa la regla
-  `react-hooks/set-state-in-effect` del linter.
+  (compara una `key` contra la anterior) — mismo patrón que ya trae
+  `useListings`, alineado a este cuando se detectó la inconsistencia (ver
+  CLAUDE.md §9 sobre `set-state-in-effect`). Resetear en la primera línea del
+  efecto de carga es equivalente en el resultado final, pero deja pasar un
+  render con la lista VIEJA todavía pintada bajo el filtro/orden nuevo; hacerlo
+  en render lo evita.
 - **`StatusRow` dejó de ser local de `editar/[id].tsx`** y vive en
   `src/components/StatusRow.tsx`: la hoja es literalmente la `.status-section`
   de ese frame en otro contenedor. `Toggle` sí se quedó allá.
@@ -1009,3 +1011,18 @@ publicación como en Mis publicaciones.
   monta esa ruta — moverla de un grupo anidado a una ruta de nivel raíz
   (como se hizo con `selector-campus.tsx`/`filtros.tsx`) resuelve esto sin
   tener que migrar a un `Modal` de RN.
+- **La regla `react-hooks/set-state-in-effect` no detecta el patrón cuando el
+  guard lee un ref antes del `setState`.** Verificado con 4 variantes mínimas
+  linteadas una por una: un `if (!valor) return` sobre un `useState`/prop normal
+  SÍ se marca, y el mismo guard SÍ se marca si en cambio no hay ningún guard —
+  pero en cuanto el guard es `if (!miRef.current) return`, la regla deja de
+  reportar el `setState` que sigue, sin importar que el código sea
+  funcionalmente idéntico. El análisis estático no puede probar que una lectura
+  de ref sea determinista, así que renuncia a inferir que ese `setState` es
+  alcanzable, y no reporta nada — no es que el patrón esté bien, es que dejó de
+  poder verlo. Así pasó con `useListings` (`src/lib/listings.ts`): su guard leía
+  `paramsRef.current`, y por eso nunca se marcó a pesar de tener el mismo
+  reseteo-dentro-del-efecto que si se hubiera escrito `useMisListings` sin la
+  corrección. **No asumas que un hook que no marca la regla está libre de
+  esto** — pruébalo aislado (un archivo con variantes mínimas, linteado y
+  borrado) antes de concluir que hay una diferencia real de fondo.

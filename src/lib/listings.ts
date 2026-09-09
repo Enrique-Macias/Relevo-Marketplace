@@ -622,10 +622,10 @@ type EstadoLista = 'loading' | 'ready' | 'error';
  *
  * El "invalidar al cambiar de campus" no es un mecanismo aparte — es este
  * efecto: `campusId` forma parte de `key`, así que cambiarlo redispara el
- * efecto, cuya primera línea limpia `items` y el cursor. La bandera `vigente`
- * es lo que evita la carrera clásica: si el usuario cambia de campus mientras
- * la página anterior está en vuelo, esa respuesta llega y se descarta en vez de
- * pintarse encima de la nueva. Mismo patrón que `session.tsx`.
+ * efecto. La bandera `vigente` es lo que evita la carrera clásica: si el
+ * usuario cambia de campus mientras la página anterior está en vuelo, esa
+ * respuesta llega y se descarta en vez de pintarse encima de la nueva. Mismo
+ * patrón que `session.tsx`.
  */
 export function useListings(params: FetchListingsParams | null) {
   const [items, setItems] = useState<ListingCard[]>([]);
@@ -652,14 +652,45 @@ export function useListings(params: FetchListingsParams | null) {
   const enVuelo = useRef(false);
   const [recargas, setRecargas] = useState(0);
 
-  useEffect(() => {
-    if (!key || !paramsRef.current) return;
-
-    let vigente = true;
+  /**
+   * Reseteo AL CAMBIAR DE LISTA, hecho en render y no en la primera línea del
+   * efecto de carga — mismo patrón que `useMisListings`. Es equivalente en el
+   * resultado final, pero resetear dentro del efecto deja pasar un render con
+   * la lista VIEJA todavía pintada bajo el filtro/orden NUEVO: React ya pintó
+   * el render con `key` nueva antes de que el efecto llegue a limpiar el
+   * estado viejo. Comparar contra el valor anterior EN RENDER y corregirlo ahí
+   * mismo evita ese frame — es el patrón que React documenta para "ajustar
+   * estado cuando cambia una prop"; React reintenta antes de llegar a pintar.
+   *
+   * `recargas` entra en la comparación (no solo `key`) porque "Reintentar"
+   * debe resetear igual sin cambiar de filtro. Cuando `key` es `null` (params
+   * aún no listos, ej. campus sin resolver) NO se resetea: es el mismo
+   * bail-out silencioso que ya tenía el efecto — los items viejos se quedan
+   * hasta que haya params de nuevo, no se limpian a mitad de una transición
+   * sin destino.
+   *
+   * De regalo, esto es lo que hace que `react-hooks/set-state-in-effect` por
+   * fin marque este hook — antes NO lo marcaba a pesar de tener el mismo
+   * problema, por la razón que documenta CLAUDE.md §9: un guard que lee un ref
+   * (`paramsRef.current`) antes del `setState` hace que el análisis estático
+   * no pueda probar que sea alcanzable, y se rinde en vez de reportar. No era
+   * una diferencia real con `useMisListings` — era un falso negativo del
+   * linter, ya corregido aquí.
+   */
+  const clave = key !== null ? `${key}|${recargas}` : null;
+  const [clavePintada, setClavePintada] = useState(clave);
+  if (clave !== null && clave !== clavePintada) {
+    setClavePintada(clave);
     setItems([]);
     setCursor(null);
     setTotal(null);
     setEstado('loading');
+  }
+
+  useEffect(() => {
+    if (!key || !paramsRef.current) return;
+
+    let vigente = true;
 
     fetchListings({ ...paramsRef.current, cursor: null })
       .then((page) => {
