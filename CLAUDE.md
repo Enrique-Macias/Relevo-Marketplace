@@ -945,6 +945,18 @@ publicación que se queda `pausada` por un fallo de subida se recupera aquí.
   recién elegida no existe todavía para el trigger; y tras un guardado con
   éxito parcial la pantalla no navega, así que `listing.fotos` deja de
   reflejar lo que hay en la base mientras la sesión de edición sigue abierta.
+- **Ese mismo `fotosGuardadas` destapó dos bugs latentes, INDEPENDIENTES del
+  modelo atómico** — estaban ahí desde que "Editar" existe, y sencillamente
+  nunca eran alcanzables sin dos guardados en la misma sesión (el modelo atómico
+  no los causó, solo hizo evidente que hacía falta una fuente de verdad
+  sincronizada). Los dos comparaban o borraban contra `listing.fotos`, el prop
+  congelado al abrir la pantalla, en vez de lo que hay en la base ahora mismo:
+  `eliminar()` podía dejar huérfano en Storage cualquier foto agregada en la
+  sesión de edición actual, y `fotosCambiaron` (antes `firmaInicial`) podía
+  hacer que un segundo "Guardar" reescribiera `listing_photos` —con su ventana
+  sin fotos— aunque nadie hubiera tocado el set. Los tres puntos
+  (`pathsOriginales`, `eliminar()`, `fotosCambiaron`) usan ahora
+  `fotosGuardadas`/`firmaGuardada`.
 - `SkeletonRows` (nuevo, en `Skeleton.tsx`) es el esqueleto de una lista plana —
   `SkeletonGrid` habría anticipado una forma que no es la que llega.
 

@@ -121,8 +121,15 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
    * Arranca en `listing.fotos` pero no se queda ahí: tras un guardado con éxito
    * parcial, la publicación se queda en pantalla (no navega) con un set de fotos
    * distinto al que tenía al abrir, y `listing` no se vuelve a leer. El guard de
-   * reactivación de más abajo pregunta "¿tiene al menos una foto AHORA?", y sin
-   * este estado esa pregunta se contestaría con datos viejos.
+   * reactivación pregunta "¿tiene al menos una foto AHORA?", y sin este estado
+   * esa pregunta se contestaría con datos viejos.
+   *
+   * Por la misma razón alimenta ahora `pathsOriginales`, `eliminar()` y
+   * `fotosCambiaron`, que hasta aquí usaban `listing.fotos`/`fotosIniciales`
+   * (el prop, congelado al montar) y tenían el mismo problema sin que nada lo
+   * hubiera hecho visible todavía: dos guardados en la misma sesión de edición
+   * (el segundo, tras un éxito parcial del primero) bastan para desincronizarlos
+   * de lo que hay en la base.
    */
   const [fotosGuardadas, setFotosGuardadas] = useState<string[]>(listing.fotos);
   const [confirmandoBorrado, setConfirmandoBorrado] = useState(false);
@@ -150,8 +157,19 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
   // Solo si el set cambió se reescribe `listing_photos` — ver por qué importa
   // en `guardarEdicion()`: esa reescritura borra todas las filas antes de
   // reinsertarlas, y editar solo el precio no debe pagar ese riesgo.
-  const firmaInicial = useMemo(() => fotosIniciales.map(idFoto).join('|'), [fotosIniciales]);
-  const fotosCambiaron = form.firmaFotos !== firmaInicial;
+  //
+  // BUG QUE ESTO CORRIGE: comparaba contra `fotosIniciales` (derivado de
+  // `listing.fotos`, congelado al montar), no contra lo que hay en la base
+  // AHORA. Tras un guardado con éxito parcial la pantalla no navega, así que un
+  // segundo "Guardar" en la misma sesión —aunque nadie tocara las fotos— volvía
+  // a comparar contra el set viejo, veía una diferencia que ya no existía, y
+  // reescribía `listing_photos` sin necesidad (con la ventana sin fotos que eso
+  // implica, ver `guardarEdicion()`).
+  const firmaGuardada = useMemo(
+    () => fotosGuardadas.map((path) => idFoto({ origen: 'storage', path })).join('|'),
+    [fotosGuardadas]
+  );
+  const fotosCambiaron = form.firmaFotos !== firmaGuardada;
 
   /**
    * Guard de NAVEGACIÓN, no de autorización — la autorización sigue viviendo en
@@ -197,7 +215,11 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
         listingId: listing.id,
         input: form.aInput(universidadId, campusId),
         fotos: form.fotos,
-        pathsOriginales: listing.fotos,
+        // `fotosGuardadas`, no `listing.fotos`: mismo bug que `firmaGuardada`
+        // arriba. Con la lista congelada, un segundo guardado calcularía
+        // `sobrantes` contra fotos que YA se habían borrado en el primero e
+        // intentaría borrar objetos que ya no existen.
+        pathsOriginales: fotosGuardadas,
         fotosCambiaron,
         onProgreso: setProgreso,
       });
@@ -275,7 +297,12 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
   async function eliminar() {
     setBorrando(true);
     try {
-      await borrarFotos(listing.fotos);
+      // `fotosGuardadas`, no `listing.fotos`: si el usuario editó el set de
+      // fotos con éxito parcial y luego eliminó sin salir de la pantalla, la
+      // lista congelada del prop no incluiría las fotos agregadas en esa
+      // sesión — quedarían huérfanas en Storage, sin ninguna fila que las
+      // referencie para poder encontrarlas después.
+      await borrarFotos(fotosGuardadas);
       await borrarListing(listing.id);
       mostrar('Publicación eliminada');
       router.replace('/(tabs)');
