@@ -370,6 +370,23 @@
     display:flex; align-items:center; justify-content:center;
     flex-shrink:0;
   }
+  /* La pista de fotos va DEBAJO del chrome: .detail-nav, .detail-badge y
+     .detail-dots siguen siendo hermanos absolutos con z-index encima, así que
+     no viajan con el scroll horizontal. Una publicación tiene de 1 a 5 fotos
+     (MAX_FOTOS), y con una sola no se pintan dots. */
+  .detail-track{
+    position:absolute; inset:0;
+    display:flex;
+    overflow-x:auto; overflow-y:hidden;
+    scroll-snap-type:x mandatory;
+    scrollbar-width:none;
+  }
+  .detail-track::-webkit-scrollbar{display:none;}
+  .detail-slide{
+    flex:0 0 100%;
+    scroll-snap-align:center;
+    display:flex; align-items:center; justify-content:center;
+  }
   .detail-nav{
     position:absolute; top:16px; left:20px; right:20px;
     display:flex; justify-content:space-between; z-index:3;
@@ -383,6 +400,7 @@
   .detail-dots{
     position:absolute; bottom:14px; left:0; right:0;
     display:flex; justify-content:center; gap:5px;
+    z-index:3;
   }
   .detail-dots span{
     width:6px; height:6px; border-radius:50%;
@@ -391,10 +409,47 @@
   .detail-dots span.active{background:#fff; width:16px; border-radius:4px;}
   .detail-badge{
     position:absolute; bottom:34px; right:20px;
+    z-index:3;
     font-size:11px; font-weight:600;
     padding:5px 10px; border-radius:8px;
     background:rgba(255,255,255,0.92);
     color:var(--ink);
+  }
+
+  /* Visor de foto a pantalla completa (Detalle → tap en el carrusel).
+     Es overlay sobre la pantalla de Detalle, siguiendo la convención del
+     prototipo (último hijo de .screen, absolute inset:0), pero con contenedor
+     propio en vez de .modal-backdrop porque el fondo es opaco, no un scrim:
+     la foto se ve entera (contain), no recortada como en el hero.
+     El negro es #100E0C, el mismo que ya usan .device y .notch — no un color
+     nuevo. */
+  .photo-viewer{
+    position:absolute; inset:0; z-index:10;
+    background:#100E0C;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .viewer-track{
+    position:absolute; inset:0;
+    display:flex;
+    overflow-x:auto; overflow-y:hidden;
+    scroll-snap-type:x mandatory;
+    scrollbar-width:none;
+  }
+  .viewer-track::-webkit-scrollbar{display:none;}
+  .viewer-slide{
+    flex:0 0 100%;
+    scroll-snap-align:center;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .viewer-close{position:absolute; top:16px; left:20px; z-index:3;}
+  /* Estado del gesto de cierre, congelado a media altura para poder verlo en un
+     frame estático — mismo recurso que `.photo-add.is-busy` en "Publicar
+     (procesando fotos)". No es un estado en el que la app se quede: es lo que
+     se ve mientras el dedo arrastra hacia abajo, antes de soltar. */
+  .photo-viewer.is-dismissing{background:rgba(16,14,12,0.45);}
+  .photo-viewer.is-dismissing .viewer-track{
+    transform:translateY(90px) scale(0.92);
+    border-radius:20px; overflow:hidden;
   }
 
   .detail-body{padding:18px 20px 100px;}
@@ -1331,7 +1386,24 @@
             </div>
           </div>
           <div class="detail-badge">Como nuevo</div>
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+          <!-- Carrusel: una foto por .detail-slide, con snap horizontal. Tocar
+               cualquiera abre "Detalle (foto a pantalla completa)" EN ESA foto.
+               Los tintes distintos son solo del prototipo, para que al arrastrar
+               se vea que cambió de foto. -->
+          <div class="detail-track">
+            <div class="detail-slide" style="background:var(--brick-tint);">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="detail-slide" style="background:var(--gold-tint);">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="detail-slide" style="background:var(--forest-tint);">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="detail-slide" style="background:var(--slate-tint);">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+          </div>
           <div class="detail-dots">
             <span class="active"></span><span></span><span></span><span></span>
           </div>
@@ -1415,7 +1487,22 @@
             </div>
           </div>
           <div class="detail-badge">Como nuevo</div>
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+          <!-- Mismo carrusel que en la vista comprador: el hero es idéntico en
+               los dos estados, solo cambia el 2º botón de .nav-actions. -->
+          <div class="detail-track">
+            <div class="detail-slide" style="background:var(--brick-tint);">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="detail-slide" style="background:var(--gold-tint);">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="detail-slide" style="background:var(--forest-tint);">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="detail-slide" style="background:var(--slate-tint);">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+          </div>
           <div class="detail-dots">
             <span class="active"></span><span></span><span></span><span></span>
           </div>
@@ -1452,6 +1539,120 @@
         <div class="sticky-cta">
           <div class="ghost-btn">Marcar como vendida</div>
           <button class="primary-btn" style="margin-top:0; flex:1.2;">Editar publicación</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Detalle (foto a pantalla completa)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+
+      <div class="screen">
+        <!-- Fondo: la pantalla de Detalle sigue montada debajo. Se pinta solo el
+             hero para no repetir el frame entero. -->
+        <div class="detail-photo" style="background:var(--brick-tint);">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+        </div>
+        <div class="detail-body">
+          <div class="detail-price">$280</div>
+          <div class="detail-title">Cálculo de Larson, 9a edición</div>
+        </div>
+
+        <!--
+          El visor. Tres cosas que definen su comportamiento:
+          · Abre EN LA FOTO QUE SE TOCÓ, no en la primera — por eso el dot activo
+            aquí es el 3º y no el 1º.
+          · La foto va completa (contain), no recortada como en el hero: es la
+            razón de abrirlo.
+          · Se cierra de tres formas: la X, arrastrando hacia abajo (ver el frame
+            siguiente) y el botón atrás de Android.
+        -->
+        <div class="photo-viewer">
+          <!-- data-inicio="2" = abre en la foto 3 (la que se tocó en el hero),
+               no en la primera. Es el requisito, hecho visible: si arrastras
+               esta pista hacia la izquierda vuelves a las fotos 1 y 2. -->
+          <div class="viewer-track" data-inicio="2">
+            <div class="viewer-slide">
+              <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="viewer-slide">
+              <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="viewer-slide">
+              <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+            <div class="viewer-slide">
+              <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+          </div>
+          <div class="viewer-close">
+            <div class="round-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </div>
+          </div>
+          <div class="detail-dots">
+            <span></span><span></span><span class="active"></span><span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Detalle (foto — cerrando)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+
+      <div class="screen">
+        <div class="detail-photo" style="background:var(--brick-tint);">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+        </div>
+        <div class="detail-body">
+          <div class="detail-price">$280</div>
+          <div class="detail-title">Cálculo de Larson, 9a edición</div>
+        </div>
+
+        <!--
+          ESTADO TRANSITORIO, no una pantalla en la que la app se quede: es el
+          gesto de cierre congelado a media altura, porque un frame estático no
+          puede animarlo. Mismo recurso que `.photo-add.is-busy` en "Publicar
+          (procesando fotos)".
+          Al arrastrar hacia abajo, la foto sigue al dedo y se encoge, y el fondo
+          se vuelve translúcido dejando ver el Detalle que hay detrás — eso es lo
+          que le dice al usuario a dónde va a volver. Si suelta pasado el umbral,
+          cierra; si no, regresa a su sitio.
+          Nota: la X se mantiene visible durante el arrastre. No se esconde, para
+          que soltar a medio camino nunca deje al usuario sin salida evidente.
+        -->
+        <div class="photo-viewer is-dismissing">
+          <div class="viewer-track">
+            <div class="viewer-slide">
+              <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="1"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+          </div>
+          <div class="viewer-close">
+            <div class="round-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -4386,6 +4587,40 @@
   var phoneBlocks = document.querySelectorAll('.phone-block');
   var filterChips = document.querySelectorAll('.filter-chip');
   var filterCount = document.getElementById('filter-count');
+
+  /*
+    Carrusel de fotos del Detalle y del visor: mueve la clase `.active` al dot
+    que corresponde a la foto visible. Sin esto el prototipo seguiría mintiendo
+    igual que antes de existir el carrusel — puntos fijos en el primero — solo
+    que ahora además se podría hacer scroll, que es peor: parecería un bug.
+
+    En la app real esto NO se hace escuchando el scroll continuo, sino en
+    `onMomentumScrollEnd` del ScrollView, que solo reporta páginas asentadas.
+    Aquí se usa el scroll crudo porque el navegador no tiene ese evento; el
+    redondeo del índice da el mismo resultado visible.
+  */
+  document.querySelectorAll('.detail-track, .viewer-track').forEach(function(track){
+    // Los dots son hermanos del track, dentro del mismo contenedor posicionado
+    // (.detail-photo o .photo-viewer).
+    var dots = track.parentElement.querySelectorAll('.detail-dots span');
+    if (!dots.length) return;
+
+    track.addEventListener('scroll', function(){
+      var indice = Math.round(track.scrollLeft / track.clientWidth);
+      dots.forEach(function(dot, i){
+        dot.classList.toggle('active', i === indice);
+      });
+    });
+
+    // El visor abre en la foto que se tocó, no en la primera. `data-inicio` es
+    // el equivalente del `contentOffset` inicial del ScrollView en la app.
+    var inicio = parseInt(track.getAttribute('data-inicio') || '0', 10);
+    if (inicio > 0) {
+      // `clientWidth` ya es fiable aquí: el layout está resuelto para cuando
+      // corre este script, que va al final del body.
+      track.scrollLeft = inicio * track.clientWidth;
+    }
+  });
 
   function applyFilter(filter){
     var visible = 0;

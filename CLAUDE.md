@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 47 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 50 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -340,7 +340,7 @@ correr esta suite antes de comitear.
 
 ---
 
-## 4. Inventario completo de pantallas (47)
+## 4. Inventario completo de pantallas (50)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -354,15 +354,22 @@ Completar perfil (estado inicial) · Completar perfil (selector de campus) ·
 Selector de universidad · Permiso de notificaciones ·
 Iniciar sesión · Recuperar contraseña
 
-### Explorar (11)
+### Explorar (13)
 Feed · Selector de campus · Categoría · Categoría sin resultados ·
 Ver todas (categorías) · Búsqueda (recomendados) · Búsqueda ·
 Búsqueda sin resultados · Filtros · Detalle de publicación ·
-Detalle (vista vendedor)
+Detalle (vista vendedor) · Detalle (foto a pantalla completa) ·
+Detalle (foto — cerrando)
 
-### Publicar (5)
-Publicar · Publicar (subiendo imágenes) · Publicar (error de subida) ·
-Editar publicación · Publicación creada
+"Detalle (foto — cerrando)" es el gesto de cierre del visor congelado a media
+altura — un frame estático no puede animarlo. **Es documentación de un estado
+transitorio, no una pantalla en la que la app se quede**, igual que
+`.photo-add.is-busy` dentro de "Publicar (procesando fotos)"; se cuenta porque
+es un `phone-block` propio y el filtro del prototipo lo cuenta.
+
+### Publicar (6)
+Publicar · Publicar (procesando fotos) · Publicar (subiendo imágenes) ·
+Publicar (error de subida) · Editar publicación · Publicación creada
 
 ### Cuenta (8)
 Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío ·
@@ -429,7 +436,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 47 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 50 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -778,6 +785,58 @@ Detalles que no se ven en el diff:
   (`(tabs)/index.tsx`), vía el `refreshControl` de `Screen`. Categorías y
   campus activo no se refrescan con el gesto — no cambian dentro de una
   sesión y no tienen refetch expuesto hoy.
+- **El hero de Detalle es un CARRUSEL, y su visor a pantalla completa es un
+  `Modal`, no una ruta.** Las fotos siempre estuvieron completas en
+  `fetchListingById()` (`fotos: string[]`, ordenadas por `orden`); lo que
+  faltaba era la UI. `PhotoCarousel` es el mecanismo compartido y `PhotoDots`
+  los puntos; el chrome (`.detail-nav`, `.detail-badge`, los propios dots) vive
+  AFUERA, como hermanos absolutos, o viajaría con el scroll. Seis cosas que no
+  se ven en el diff:
+  - **El visor es `Modal` de RN por el mismo criterio que la hoja de acciones de
+    "Mis publicaciones" y `CampusBottomSheet`**: necesita el ARRAY de fotos y el
+    índice tocado en la mano, y una ruta solo recibe params serializables. De
+    paso esquiva el gotcha de §9 sobre `presentation` en Stacks anidados.
+  - **Lo monta `detalle/[id].tsx` de forma CONDICIONAL, no con un prop
+    `visible`.** Cada apertura tiene que ser un montaje nuevo o `indiceInicial`
+    no se re-aplica: `useState(indiceInicial)` solo lee su argumento al montar,
+    así que abrir en la foto 3 después de haber abierto en la 1 no habría hecho
+    nada.
+  - **`PhotoCarousel` NO guarda índice propio, a propósito.** El dueño
+    (`indiceFoto` en Detalle) es la única fuente de verdad; si el carrusel
+    tuviera el suyo, `irA()` tendría que reconciliar dos.
+  - **La sincronización hero ↔ visor es explícita, no emergente.** Son dos
+    `ScrollView` distintos: al cerrar el visor en la foto 4, el hero se quedaría
+    en la 1 si nadie hiciera nada. Por eso `onCerrar` devuelve el índice final y
+    Detalle hace `setIndiceFoto(i)` + `carruselRef.current?.irA(i)`. El `irA` va
+    sin animar y mientras el Modal todavía tapa, así que no hay tirón visible.
+    **Si alguien "simplifica" ese parámetro, rompe esto sin ningún error.**
+  - **`contentOffset` de ScrollView NO sirve para abrir en la foto tocada: es
+    iOS-only** (`ScrollView.d.ts:406`, dentro de `ScrollViewPropsIOS`, que abre
+    en la 336). En Android se habría ignorado en silencio y el visor siempre
+    habría abierto en la primera. Se usa `onContentSizeChange` + `scrollTo`, con
+    un guard de una sola vez.
+  - **El tamaño de página se MIDE con `onLayout`, no se asume.** El ancho sí
+    sería `useWindowDimensions().width` en los dos usos, pero el alto no (340 en
+    el hero, pantalla completa en el visor), y un `height:'100%'` por página
+    colapsa a 0 dentro del contenedor de contenido de un ScrollView.
+  - El gesto de cierre va con **`PanResponder` + `Animated`**, no con
+    gesture-handler: `react-native-gesture-handler` y `reanimated` están en
+    `package.json` pero no se usan en un solo archivo de `src/`. El reparto de
+    ejes es `|dy| > |dx| * 2 && |dy| > 8` — eso es lo que impide que el arrastre
+    vertical le robe el swipe horizontal entre fotos. **Y el cierre pasa por
+    estado (`cerrando`), no por un ref**: el `PanResponder` se crea una sola vez
+    y por clausura reportaría siempre `indiceInicial`; `react-hooks/refs`
+    además rechaza el ref.
+  - **Con 0 fotos el tap no abre nada** (ahí se ve el ícono de categoría de
+    fallback) y **con ≤1 foto no se pintan dots** — un indicador de paginación
+    de una sola página es ruido. Antes se pintaba uno solo
+    (`Math.max(fotos.length, 1)`), que era razonable cuando el hero no
+    scrolleaba.
+  - Se montan las N páginas de golpe, sin virtualizar: el tope es 5 fotos, ya
+    normalizadas por `normalizar()`, y `ListingPhoto` va con `cachePolicy="disk"`
+    (línea 81), así que el visor las lee de disco sin volver a bajarlas de la
+    red. Ojo: `"disk"` no es `"memory-disk"`, así que sí re-decodifica — si el
+    visor se siente lento al abrir, ese es el ajuste.
 - **La búsqueda NO escapa el término, y es deliberado.** Va por
   `.textSearch('busqueda', q, {type:'websearch', config:'spanish'})` contra la
   columna generada: `websearch_to_tsquery` está hecho para input crudo (nunca
@@ -790,7 +849,8 @@ Detalles que no se ven en el diff:
 Componentes reusables ya construidos aquí (no los reconstruyas):
 `ProductCard`, `CategoryTile`, `PageHeader`, `EmptyState`,
 `SegmentedControl`, `Chip`, `ActiveFilterChip`, `SheetScreen`,
-`RoundIconButton`, más los íconos de categorías. Al conectar datos reales se
+`RoundIconButton`, `PhotoCarousel`/`PhotoDots`, `PhotoViewer`,
+más los íconos de categorías. Al conectar datos reales se
 sumaron tres del grupo Sistema, transcritos de sus frames: `SkeletonGrid` /
 `SkeletonCatGrid`, `ErrorState` (con "Reintentar") y `Toast` (`ToastProvider`
 montado en el `_layout.tsx` raíz, con variantes de éxito y error). Se

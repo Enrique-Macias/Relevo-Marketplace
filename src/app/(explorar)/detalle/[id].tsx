@@ -19,7 +19,12 @@ import {
   IconWhatsapp,
 } from '@/components/icons';
 import { ErrorState } from '@/components/ErrorState';
-import { ListingPhoto } from '@/components/ListingPhoto';
+import {
+  PhotoCarousel,
+  PhotoDots,
+  type PhotoCarouselHandle,
+} from '@/components/PhotoCarousel';
+import { PhotoViewer } from '@/components/PhotoViewer';
 import { RoundIconButton } from '@/components/RoundIconButton';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
@@ -75,6 +80,18 @@ export default function DetalleScreen() {
   const [ventas, setVentas] = useState(0);
   const [stats, setStats] = useState({ contactos: 0, favoritos: 0 });
   const [recargas, setRecargas] = useState(0);
+
+  /**
+   * Carrusel del hero. `indiceFoto` es la ÚNICA fuente de verdad de en qué foto
+   * está: `PhotoCarousel` no guarda índice propio a propósito, justo para que
+   * `irA()` no tenga que reconciliar dos estados.
+   *
+   * `fotoAmpliada` es el índice con el que abre el visor, o `null` si está
+   * cerrado — y es también lo que lo monta y desmonta (ver `PhotoViewer`).
+   */
+  const [indiceFoto, setIndiceFoto] = useState(0);
+  const [fotoAmpliada, setFotoAmpliada] = useState<number | null>(null);
+  const carruselRef = useRef<PhotoCarouselHandle>(null);
 
   const userId = session?.user.id ?? null;
   const isOwner = !!listing && !!userId && listing.userId === userId;
@@ -214,169 +231,196 @@ export default function DetalleScreen() {
   const createdAt = new Date(listing.createdAt);
 
   return (
-    <Screen contentStyle={{ paddingBottom: insets.bottom + 90 }}>
-      <View style={[styles.photo, { backgroundColor: TINT_BG[tint] }]}>
-        {/* La primera foto de la publicación (`fotos` ya viene ordenada por
-            `orden`). El frame no dibuja carrusel, así que se pinta solo la
-            portada y no se inventa uno. El ícono de categoría tintado, que
-            hasta ahora era el placeholder principal, quedó como fallback para
-            publicaciones sin fotos. */}
-        <ListingPhoto
-          path={listing.fotos[0] ?? null}
-          fallback={<CategoryIcon categoriaId={categoria?.slug ?? ''} size={64} color={TINT_FG[tint]} />}
-          style={styles.fotoHero}
-          accessibilityLabel={listing.titulo}
-        />
+    <>
+      <Screen contentStyle={{ paddingBottom: insets.bottom + 90 }}>
+        <View style={[styles.photo, { backgroundColor: TINT_BG[tint] }]}>
+          {/* `.detail-track` — todas las fotos de la publicación (`fotos` ya viene
+              ordenada por `orden`), deslizables en horizontal. Va por DEBAJO de
+              `.nav`, `.badge` y los dots, que son absolutos y se declaran después
+              en el JSX para no viajar con el scroll.
 
-        <View style={styles.nav}>
-          <RoundIconButton onPress={() => router.back()}>
-            <IconChevronLeft size={16} color={Colors.ink} />
-          </RoundIconButton>
-          <View style={styles.navActions}>
-            {/* compartir: backlog, no hay flujo de share nativo definido aún */}
-            <RoundIconButton onPress={() => {}}>
-              <IconShare size={15} color={Colors.ink} />
+              El ícono de categoría tintado sigue siendo el fallback de las
+              publicaciones sin fotos, no el contenido principal. */}
+          <PhotoCarousel
+            ref={carruselRef}
+            fotos={listing.fotos}
+            onIndiceChange={setIndiceFoto}
+            contentFit="cover"
+            fallback={<CategoryIcon categoriaId={categoria?.slug ?? ''} size={64} color={TINT_FG[tint]} />}
+            // Sin fotos no hay nada que ampliar: ahí se ve el ícono de categoría,
+            // y abrir un visor a pantalla completa sobre él no significa nada.
+            onPressFoto={listing.fotos.length > 0 ? setFotoAmpliada : undefined}
+            style={StyleSheet.absoluteFill}
+          />
+
+          <View style={styles.nav}>
+            <RoundIconButton onPress={() => router.back()}>
+              <IconChevronLeft size={16} color={Colors.ink} />
             </RoundIconButton>
-            {isOwner ? (
-              // más opciones: pendiente de (publicar)/(confianza)
+            <View style={styles.navActions}>
+              {/* compartir: backlog, no hay flujo de share nativo definido aún */}
               <RoundIconButton onPress={() => {}}>
-                <IconKebab size={17} color={Colors.ink} />
+                <IconShare size={15} color={Colors.ink} />
               </RoundIconButton>
-            ) : (
-              // reportar: pendiente de (confianza)
-              <RoundIconButton onPress={() => {}}>
-                <IconFlag size={15} color={Colors.ink} />
-              </RoundIconButton>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{CONDICION_LABEL[listing.condicion]}</Text>
-        </View>
-
-        {/* Un punto por foto real; con el bucket pendiente eso es siempre 1. */}
-        <View style={styles.dots}>
-          {Array.from({ length: Math.max(listing.fotos.length, 1) }).map((_, i) => (
-            <View key={i} style={[styles.dot, i === 0 && styles.dotActive]} />
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.body}>
-        <Text style={styles.price}>{formatPrecio(listing.precio)}</Text>
-        <Text style={styles.title}>{listing.titulo}</Text>
-        <View style={styles.meta}>
-          <IconMapPin size={12} color={Colors.inkSoft} />
-          <Text style={styles.metaText}>{listing.campusNombre}</Text>
-          <Text style={styles.metaSep}>·</Text>
-          <Text style={styles.metaText}>{formatRelativo(createdAt)}</Text>
-          <Text style={styles.metaSep}>·</Text>
-          <Text style={styles.metaText}>{listing.vistasCount} vistas</Text>
-        </View>
-
-        {!isOwner ? (
-          // pendiente: "Perfil público" es otro grupo sin construir
-          <View style={styles.sellerCard}>
-            <View style={styles.sellerAvatar}>
-              <Text style={styles.sellerAvatarText}>{iniciales(listing.vendedor.nombre)}</Text>
+              {isOwner ? (
+                // más opciones: pendiente de (publicar)/(confianza)
+                <RoundIconButton onPress={() => {}}>
+                  <IconKebab size={17} color={Colors.ink} />
+                </RoundIconButton>
+              ) : (
+                // reportar: pendiente de (confianza)
+                <RoundIconButton onPress={() => {}}>
+                  <IconFlag size={15} color={Colors.ink} />
+                </RoundIconButton>
+              )}
             </View>
-            <View style={styles.sellerInfo}>
-              <View style={styles.sellerNameRow}>
-                <Text style={styles.sellerName}>{listing.vendedor.nombre ?? ''}</Text>
-                {/* La palomita significa "verificado por correo institucional",
-                    y toda fila de public.users llegó ahí pasando por el OTP:
-                    no hay un usuario no verificado que mostrar. */}
-                <View style={styles.verifiedTick}>
-                  <IconCheck size={8} color={Colors.paper} />
-                </View>
+          </View>
+
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{CONDICION_LABEL[listing.condicion]}</Text>
+          </View>
+
+          {/* Un punto por foto real, siguiendo al carrusel. Con 0 o 1 foto no se
+              pinta ninguno: `PhotoDots` se encarga. */}
+          <PhotoDots total={listing.fotos.length} activo={indiceFoto} />
+        </View>
+
+        <View style={styles.body}>
+          <Text style={styles.price}>{formatPrecio(listing.precio)}</Text>
+          <Text style={styles.title}>{listing.titulo}</Text>
+          <View style={styles.meta}>
+            <IconMapPin size={12} color={Colors.inkSoft} />
+            <Text style={styles.metaText}>{listing.campusNombre}</Text>
+            <Text style={styles.metaSep}>·</Text>
+            <Text style={styles.metaText}>{formatRelativo(createdAt)}</Text>
+            <Text style={styles.metaSep}>·</Text>
+            <Text style={styles.metaText}>{listing.vistasCount} vistas</Text>
+          </View>
+
+          {!isOwner ? (
+            // pendiente: "Perfil público" es otro grupo sin construir
+            <View style={styles.sellerCard}>
+              <View style={styles.sellerAvatar}>
+                <Text style={styles.sellerAvatarText}>{iniciales(listing.vendedor.nombre)}</Text>
               </View>
-              <Text style={styles.sellerSub}>
-                {listing.vendedor.carrera ? `${listing.vendedor.carrera} · ` : ''}
-                {ventas} {ventas === 1 ? 'venta' : 'ventas'}
-              </Text>
+              <View style={styles.sellerInfo}>
+                <View style={styles.sellerNameRow}>
+                  <Text style={styles.sellerName}>{listing.vendedor.nombre ?? ''}</Text>
+                  {/* La palomita significa "verificado por correo institucional",
+                      y toda fila de public.users llegó ahí pasando por el OTP:
+                      no hay un usuario no verificado que mostrar. */}
+                  <View style={styles.verifiedTick}>
+                    <IconCheck size={8} color={Colors.paper} />
+                  </View>
+                </View>
+                <Text style={styles.sellerSub}>
+                  {listing.vendedor.carrera ? `${listing.vendedor.carrera} · ` : ''}
+                  {ventas} {ventas === 1 ? 'venta' : 'ventas'}
+                </Text>
+              </View>
+              <IconChevronRight size={16} color={Colors.inkSoft} />
             </View>
-            <IconChevronRight size={16} color={Colors.inkSoft} />
-          </View>
-        ) : (
-          <View style={styles.statRow}>
-            <View style={styles.statCard}>
-              <Text style={styles.statNum}>{listing.vistasCount}</Text>
-              <Text style={styles.statLabel}>Vistas</Text>
+          ) : (
+            <View style={styles.statRow}>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{listing.vistasCount}</Text>
+                <Text style={styles.statLabel}>Vistas</Text>
+              </View>
+              {/* Favoritos llega por RPC, no por query: la RLS de `favorites` es
+                  `user_id = auth.uid()`, así que ni el dueño de la publicación
+                  puede contarlos con un select. Ver la migración
+                  20260908000443. */}
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{stats.favoritos}</Text>
+                <Text style={styles.statLabel}>Favoritos</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{stats.contactos}</Text>
+                <Text style={styles.statLabel}>Contactos</Text>
+              </View>
             </View>
-            {/* Favoritos llega por RPC, no por query: la RLS de `favorites` es
-                `user_id = auth.uid()`, así que ni el dueño de la publicación
-                puede contarlos con un select. Ver la migración
-                20260908000443. */}
-            <View style={styles.statCard}>
-              <Text style={styles.statNum}>{stats.favoritos}</Text>
-              <Text style={styles.statLabel}>Favoritos</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNum}>{stats.contactos}</Text>
-              <Text style={styles.statLabel}>Contactos</Text>
-            </View>
-          </View>
-        )}
+          )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Descripción</Text>
-          <Text style={styles.desc}>{listing.descripcion ?? ''}</Text>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Descripción</Text>
+            <Text style={styles.desc}>{listing.descripcion ?? ''}</Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Detalles</Text>
+            <View style={styles.specRow}>
+              <Text style={styles.specKey}>Categoría</Text>
+              <Text style={styles.specVal}>{categoria?.nombre ?? ''}</Text>
+            </View>
+            <View style={styles.specRow}>
+              <Text style={styles.specKey}>Condición</Text>
+              <Text style={styles.specVal}>{CONDICION_LABEL[listing.condicion]}</Text>
+            </View>
+            <View style={styles.specRow}>
+              <Text style={styles.specKey}>Zona de entrega</Text>
+              <Text style={styles.specVal}>{listing.campusNombre}</Text>
+            </View>
+            <View style={[styles.specRow, styles.specRowLast]}>
+              <Text style={styles.specKey}>Publicado</Text>
+              <Text style={styles.specVal}>{formatRelativo(createdAt)}</Text>
+            </View>
+          </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Detalles</Text>
-          <View style={styles.specRow}>
-            <Text style={styles.specKey}>Categoría</Text>
-            <Text style={styles.specVal}>{categoria?.nombre ?? ''}</Text>
-          </View>
-          <View style={styles.specRow}>
-            <Text style={styles.specKey}>Condición</Text>
-            <Text style={styles.specVal}>{CONDICION_LABEL[listing.condicion]}</Text>
-          </View>
-          <View style={styles.specRow}>
-            <Text style={styles.specKey}>Zona de entrega</Text>
-            <Text style={styles.specVal}>{listing.campusNombre}</Text>
-          </View>
-          <View style={[styles.specRow, styles.specRowLast]}>
-            <Text style={styles.specKey}>Publicado</Text>
-            <Text style={styles.specVal}>{formatRelativo(createdAt)}</Text>
-          </View>
+        <View style={[styles.cta, { paddingBottom: insets.bottom + 22 }]}>
+          {!isOwner ? (
+            <>
+              <Pressable
+                style={styles.favBtn}
+                onPress={() => toggleFavorito(listing.id)}
+                accessibilityRole="button"
+              >
+                <IconHeart size={18} color={favorito ? Colors.brick : Colors.ink} filled={favorito} />
+              </Pressable>
+              <Pressable
+                style={styles.whatsappBtn}
+                onPress={() => void contactarPorWhatsapp()}
+                accessibilityRole="button"
+              >
+                <IconWhatsapp size={17} color={Colors.paper} />
+                <Text style={styles.whatsappText}>Contactar por WhatsApp</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              {/* pendiente: flujo real vive en (publicar)/(confianza) */}
+              <GhostButton label="Marcar como vendida" onPress={() => {}} style={styles.flexBtn} />
+              <PrimaryButton
+                label="Editar publicación"
+                onPress={() => router.push(`/(publicar)/editar/${listing.id}`)}
+                style={styles.editBtn}
+              />
+            </>
+          )}
         </View>
-      </View>
 
-      <View style={[styles.cta, { paddingBottom: insets.bottom + 22 }]}>
-        {!isOwner ? (
-          <>
-            <Pressable
-              style={styles.favBtn}
-              onPress={() => toggleFavorito(listing.id)}
-              accessibilityRole="button"
-            >
-              <IconHeart size={18} color={favorito ? Colors.brick : Colors.ink} filled={favorito} />
-            </Pressable>
-            <Pressable
-              style={styles.whatsappBtn}
-              onPress={() => void contactarPorWhatsapp()}
-              accessibilityRole="button"
-            >
-              <IconWhatsapp size={17} color={Colors.paper} />
-              <Text style={styles.whatsappText}>Contactar por WhatsApp</Text>
-            </Pressable>
-          </>
-        ) : (
-          <>
-            {/* pendiente: flujo real vive en (publicar)/(confianza) */}
-            <GhostButton label="Marcar como vendida" onPress={() => {}} style={styles.flexBtn} />
-            <PrimaryButton
-              label="Editar publicación"
-              onPress={() => router.push(`/(publicar)/editar/${listing.id}`)}
-              style={styles.editBtn}
-            />
-          </>
-        )}
-      </View>
-    </Screen>
+      </Screen>
+      {/* Montaje condicional, no un prop `visible`: cada apertura tiene que ser
+          un montaje nuevo para que `indiceInicial` se aplique de verdad.
+
+          Al cerrar, las DOS mitades de la sincronización con el hero — los dots
+          y el scroll real. Son dos `ScrollView` distintos, así que sin esto el
+          hero se quedaría en la foto donde estaba antes de abrir el visor, y el
+          usuario vería la app olvidar lo que acaba de hacer. El `irA` va sin
+          animar y mientras el Modal todavía tapa: para cuando termina el fade,
+          el hero ya está en su sitio. */}
+      {fotoAmpliada !== null ? (
+        <PhotoViewer
+          fotos={listing.fotos}
+          indiceInicial={fotoAmpliada}
+          onCerrar={(indiceFinal) => {
+            setIndiceFoto(indiceFinal);
+            carruselRef.current?.irA(indiceFinal);
+            setFotoAmpliada(null);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -386,15 +430,6 @@ const styles = StyleSheet.create({
     height: 340,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  // Ocupa el hero completo y queda POR DEBAJO de `.nav`, que es absoluto y se
-  // declara después en el JSX.
-  fotoHero: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
   },
   nav: {
     position: 'absolute',
@@ -420,26 +455,6 @@ const styles = StyleSheet.create({
   badgeText: {
     ...Typography.caption,
     color: Colors.ink,
-  },
-  dots: {
-    position: 'absolute',
-    bottom: 14,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 5,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-  },
-  dotActive: {
-    width: 16,
-    borderRadius: 4,
-    backgroundColor: '#fff',
   },
   body: {
     paddingTop: 18,
