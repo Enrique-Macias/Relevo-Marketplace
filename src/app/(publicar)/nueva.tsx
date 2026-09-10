@@ -15,7 +15,7 @@
 
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -34,6 +34,7 @@ import {
   esDeterminista,
   fallosDe,
   finalizarPublicacion,
+  fotosParaGuardar,
   publicarListing,
   type ProgresoFoto,
 } from '@/lib/publicar';
@@ -95,10 +96,43 @@ export default function PublicarScreen() {
   // para un fallo determinista.
   const textoCongelado = listingId !== null || subiendo;
 
+  /**
+   * Ref, no estado: tiene que valer ANTES del primer `await`, sin esperar a
+   * un re-render. `.photo-add` ya se esconde mientras `procesandoFotos` es
+   * cierto, pero eso depende de que React ya haya repintado — un doble-tap
+   * dentro del mismo frame pasaría igual sin este guard síncrono.
+   */
+  const procesandoRef = useRef(false);
+
+  /**
+   * SÍ es estado (a diferencia del ref de arriba): esto necesita disparar un
+   * re-render, porque es lo único que cubre visualmente el hueco entre tocar
+   * "Agregar" y que exista el primer placeholder en `form.fotos`.
+   *
+   * Medido con datos reales: `launchImageLibraryAsync()` puede tardar varios
+   * segundos MÁS de lo esperado si iOS necesita descargar la foto elegida
+   * desde iCloud (no escala con la cantidad de fotos, es por foto y fuera de
+   * nuestro control) — y hasta que esa promesa resuelve, `form.fotos` no
+   * cambió en nada, así que el `procesando` derivado solo de
+   * `form.fotos.some(...)` (ListingFormFields) se queda en `false` todo ese
+   * rato. El síntoma real: la pantalla ya es visible y scrolleable apenas se
+   * confirma la selección en el picker nativo, pero "+" se ve tocable durante
+   * toda la espera aunque `agregarFoto()` ya esté bloqueado por el ref.
+   */
+  const [eligiendoFotos, setEligiendoFotos] = useState(false);
+
   async function agregarFoto() {
+    if (procesandoRef.current) return;
+    const disponibles = MAX_FOTOS - form.fotos.length;
+    if (disponibles <= 0) return;
+
+    procesandoRef.current = true;
+    setEligiendoFotos(true);
     try {
-      const { fotos, descartadas } = await elegirFotos(MAX_FOTOS - form.fotos.length);
-      form.agregarFotos(fotos);
+      const { descartadas } = await elegirFotos(disponibles, {
+        onPlaceholders: form.agregarPlaceholders,
+        onFotoLista: form.reemplazarPlaceholder,
+      });
       if (descartadas > 0) {
         mostrar(
           descartadas === 1
@@ -114,6 +148,9 @@ export default function PublicarScreen() {
       }
       console.warn('[publicar] no se pudo abrir el carrete:', e);
       mostrar('No pudimos abrir tus fotos', 'error');
+    } finally {
+      procesandoRef.current = false;
+      setEligiendoFotos(false);
     }
   }
 
@@ -131,13 +168,17 @@ export default function PublicarScreen() {
           ? await publicarListing({
               input: form.aInput(profile!.universidad_id!, campus!.id),
               userId: userId!,
-              fotos: form.fotos,
+              fotos: fotosParaGuardar(form.fotos),
               onProgreso,
               // Se guarda ANTES de subir, no al terminar: si la subida falla,
               // este id es lo único que hace posible el reintento.
               onListingCreado: setListingId,
             })
-          : await finalizarPublicacion({ listingId, fotos: form.fotos, onProgreso });
+          : await finalizarPublicacion({
+              listingId,
+              fotos: fotosParaGuardar(form.fotos),
+              onProgreso,
+            });
 
       // Siempre: las que subieron pasan a 'storage' y las que fallaron quedan
       // marcadas con su motivo. De aquí sale el aviso en el próximo render.
@@ -190,6 +231,7 @@ export default function PublicarScreen() {
           onAgregarFoto={agregarFoto}
           disabled={textoCongelado}
           fotosDisabled={subiendo}
+          eligiendoFotos={eligiendoFotos}
         />
       </Screen>
 

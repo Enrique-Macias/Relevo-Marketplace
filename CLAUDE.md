@@ -957,6 +957,119 @@ Detalles que no se ven en el diff:
   (`dist/index.cjs:622`), y el `contentType` por default de esa librería es
   `text/plain;charset=UTF-8`, que el bucket rechaza. Sin esa línea no funciona
   ninguna subida.
+- **`PhotoRow` tiene un tercer estado, `FotoProcesando`, para el momento entre
+  elegir una foto y que `normalizar()` termine con ella** — más urgente desde
+  que cada foto se re-encodea y a veces se redimensiona antes de aparecer:
+  elegir varias fotos grandes de golpe podía tardar segundos sin ninguna señal
+  de que algo estaba pasando. Nuevo frame en `relevo-app.html`: "Publicar
+  (procesando fotos)".
+  - **La miniatura muestra la foto real recién elegida** (la uri cruda del
+    picker, sin esperar a `normalizar()`), con un scrim (`rgba(34,31,28,0.55)`,
+    el mismo tono que ya usa `.photo-remove`) y `BlinkingDots`/`.splash-dots`
+    encima — el mismo indicador que ya usa el botón "Subiendo imágenes", no
+    un skeleton nuevo. Mostrar la foto real responde directo a "parece que no
+    se cargó": si se ve la foto, sí se cargó.
+  - **Es por foto individual, no por lote.** `elegirFotos()` dejó de resolver
+    un array una sola vez al final — ahora toma `callbacks.onPlaceholders`
+    (avisa, tras el filtro de formato, cuántas fotos van a procesarse) y
+    `onFotoLista` (avisa una por una, en cuanto CADA `normalizar()` termina).
+    Sin esto, aunque hubiera loading visual, las 5 miniaturas habrían
+    aparecido nítidas todas al mismo tiempo, tan tarde como la más lenta — que
+    es justo lo que pasaba antes de este cambio. El loop sigue siendo
+    secuencial (sin `Promise.all`, mismo motivo de siempre: pico de memoria).
+  - **La uri cruda del asset es la llave que conecta el placeholder con su
+    resultado** (`reemplazarPlaceholder` en `listing-form.ts`) — no hace falta
+    un id nuevo. No hay colisión posible porque `.photo-add` desaparece
+    mientras hay un lote en curso (prop `procesando` de `PhotoRow`, DERIVADO en
+    cada render de `form.fotos.some(origen === 'procesando')`, no un estado
+    aparte): no puede haber dos lotes generando la misma uri a la vez.
+  - **`puedeGuardar` (`listing-form.ts`) excluye cualquier foto `'procesando'`.**
+    Sin esto, tocar "Publicar artículo"/"Guardar" mientras una foto sigue
+    procesando le pasaría una `FotoProcesando` (sin `path`) a
+    `subirPendientes()`, que solo sabe tratar `'storage'`/`'local'`. De ahí
+    sale `FotoParaGuardar` (`PhotoRow.tsx`), el tipo angosto —sin
+    `'procesando'`— que ahora usan `subirConReintento`, `subirPendientes` y las
+    firmas de `publicarListing`/`finalizarPublicacion`/`guardarEdicion`.
+    `fallosDe` NO se angostó: se sigue llamando en cada render sobre
+    `form.fotos` (`FotoEnEdicion`) para derivar el aviso, incluso mientras hay
+    una foto procesando — su propio filtro (`origen === 'local' && fallo`) ya
+    la excluye sola, sin necesitar el tipo más estrecho.
+    `fotosParaGuardar()` (`publicar.ts`) es la función que hace el angostado en
+    el límite del módulo, en los dos únicos sitios que llaman a
+    `publicarListing`/`finalizarPublicacion`/`guardarEdicion`.
+    **VERIFICADO, no supuesto — hoy NO hay ningún camino de ejecución que la
+    haga lanzar**: `publicar()` (`nueva.tsx`) y `guardar()`
+    (`editar/[id].tsx`) vuelven a chequear `listoParaGuardar`/`puedeGuardar`
+    de forma síncrona en su propio primer renglón, y entre ese chequeo y la
+    llamada a `fotosParaGuardar(form.fotos)` no hay ningún `await` — es la
+    MISMA clausura, sobre el MISMO array de `form.fotos` (React no muta el
+    array de un render viejo), así que no existe secuencia de taps donde el
+    guard vea una cosa y la llamada de abajo vea otra. No es "red por si
+    `puedeGuardar` se saltara": hoy no se puede saltar.
+    **Entonces por qué existe**: `publicarListing`/`finalizarPublicacion`/
+    `guardarEdicion` necesitan `FotoParaGuardar[]`, y `form.fotos` es
+    `FotoEnEdicion[]` — ALGO tiene que angostar ese tipo en la frontera,
+    con o sin este chequeo. La alternativa era un `as FotoParaGuardar[]` mudo
+    en cada call site: mismo costo, cero protección si algún día alguien
+    inserta un `await` entre el guard y la llamada (reintroduciendo la
+    ventana que hoy no existe) o agrega un tercer call site sin el mismo
+    guard. Entre las dos formas de resolver un problema de tipos que había
+    que resolver de todos modos, se eligió la que falla alto en vez de la que
+    corrompe en silencio — no es validación agregada por si acaso sobre un
+    riesgo de hoy.
+  - **`agregarFoto()` (en `nueva.tsx` y `editar/[id].tsx`) gana un guard de
+    reentrada por `useRef`**, no por estado: tiene que valer ANTES del primer
+    `await`, sin esperar a un re-render. Un doble-tap muy rápido en "Agregar"
+    podría, si no, abrir el picker dos veces y generar dos lotes de
+    `elegirFotos()` superpuestos.
+  - **MEDIDO con datos reales (instrumentación temporal de 3 puntos en
+    `elegirFotos()`, `console.log` bajo `__DEV__`, YA RETIRADA del código —
+    esto es el resultado, no una nota de "sigue ahí"): el tiempo del picker
+    NO escala con la cantidad de fotos elegidas** — 1 foto: 5183ms; 4 fotos:
+    7224ms; 5 fotos: 5898ms en un intento y 13767ms en otro. Es altamente
+    variable por foto específica, consistente con que iOS esté descargando
+    esa foto desde iCloud si no estaba ya en el dispositivo — comportamiento
+    del sistema, fuera de control de la app; ni `normalizar()` ni el loop
+    pueden arreglarlo. El loop de `normalizar()` en sí (punto 3/3) y el tramo
+    resolve→`onPlaceholders` (punto 2/3, solo un `.filter()`) confirmaron NO
+    ser donde está el retraso. **Si hace falta volver a medir** (ej. tras un
+    cambio real al picker o a `normalizar()`), reinstalar los 3
+    `console.log` bajo `__DEV__` es rápido — no vale la pena dejarlos
+    permanentes por esa posibilidad.
+  - **De ahí, un segundo hueco de señal visual: `eligiendoFotos`.** El picker
+    puede tardar esos mismos varios segundos DESPUÉS de que el usuario ya
+    confirmó su selección y la pantalla de Publicar vuelve a ser visible —
+    hasta que `launchImageLibraryAsync()` resuelve, `form.fotos` no cambió en
+    nada, así que un `procesando` derivado solo de `form.fotos.some(...)` se
+    quedaba en `false` todo ese rato: "+" se veía tocable aunque
+    `agregarFoto()` ya estuviera bloqueado por el ref de arriba. Por eso
+    `nueva.tsx`/`editar/[id].tsx` ganaron `eligiendoFotos` — SÍ es estado (no
+    ref: tiene que disparar un re-render), cierto desde el tap hasta el
+    `finally` de `agregarFoto()`.
+  - **RESUELTO: `PhotoRow` tiene un CUARTO estado en el slot de `.photo-add`,
+    no solo mostrar/esconder.** `eligiendoFotos` se pasa TAL CUAL a `PhotoRow`
+    (`ListingFormFields` ya no combina nada — se movió adentro, ver abajo por
+    qué), que distingue tres casos con datos que ya tiene todos:
+    - `fotos.some(origen === 'procesando')` (ya hay placeholder) → `.photo-add`
+      sigue escondido del todo, sin reemplazo — el estado ya aprobado, sin
+      cambios.
+    - si NO hay placeholder pero `eligiendoFotos` es cierto (el picker sigue
+      resolviendo, `fotos` no cambió en nada todavía) → el slot 76×76 con
+      borde punteado se queda, pero con `BlinkingDots` centrado en vez del
+      ícono "+" y el texto "Agregar". Frame: variante renderizada de verdad
+      (no solo comentada) dentro de "Publicar (procesando fotos)", separada
+      por un borde punteado y etiquetada "Variante (doc, no es parte del
+      flujo)" — ver `.photo-add.is-busy` en `relevo-app.html`.
+    - ninguno de los dos → el `.photo-add` normal, tocable.
+    **El tile de espera es un `View`, no un `Pressable`** — sin `onPress` ni
+    `accessibilityRole="button"`. `procesandoRef` ya bloqueaba un segundo tap,
+    pero el tile en sí no debía invitar al toque durante la espera.
+    **Por qué la combinación se movió de `ListingFormFields` a `PhotoRow`**:
+    antes `ListingFormFields` hacía `eligiendoFotos ||
+    fotos.some(procesando)` para un solo booleano `procesando` que solo podía
+    decir "mostrar" o "esconder" — no bastaba para elegir ENTRE dos contenidos
+    distintos del mismo slot. `PhotoRow` ya recibe `fotos` completo, así que
+    puede derivar `hayPlaceholder` él mismo sin que se lo pasen aparte.
 - **La entrada a Publicar es el FAB de Perfil**, la única que define el diseño
   (§0.6: el tab bar tiene 4 ítems, sin "+" central). **Vive en
   `(tabs)/_layout.tsx` como hermano de `<NativeTabs>`, NO dentro de

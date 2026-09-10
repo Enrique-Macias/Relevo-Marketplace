@@ -11,7 +11,12 @@
 
 import { useCallback, useMemo, useState } from 'react';
 
-import { idFoto, type FotoElegida, type FotoEnEdicion } from '@/components/PhotoRow';
+import {
+  idFoto,
+  type FotoElegida,
+  type FotoEnEdicion,
+  type FotoProcesando,
+} from '@/components/PhotoRow';
 import type { Condicion, ListingInput } from '@/lib/listings';
 import { MAX_FOTOS } from '@/lib/storage';
 
@@ -71,12 +76,39 @@ export function useListingForm(iniciales: ValoresIniciales = FORMULARIO_VACIO) {
     setFotos((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  /**
+   * Slots de "esto se está eligiendo", agregados apenas `elegirFotos()` sabe
+   * cuántas fotos pasaron el filtro de formato — antes de que ninguna termine
+   * de normalizarse. Mismo `.slice(MAX_FOTOS)` que `agregarFotos`.
+   */
+  const agregarPlaceholders = useCallback((placeholders: FotoProcesando[]) => {
+    setFotos((prev) => [...prev, ...placeholders].slice(0, MAX_FOTOS));
+  }, []);
+
+  /**
+   * Reemplaza EN SU LUGAR el placeholder cuya `uri` cruda coincide con la del
+   * asset ya normalizado — no reordena ni reinicia el array, así que las fotos
+   * ya resueltas no parpadean. `uri` alcanza como llave: mientras hay un lote
+   * en curso no puede empezar otro (`PhotoRow` esconde `.photo-add`), así que
+   * no hay dos placeholders compitiendo por la misma uri cruda.
+   */
+  const reemplazarPlaceholder = useCallback((uri: string, foto: FotoElegida) => {
+    setFotos((prev) =>
+      prev.map((f) => (f.origen === 'procesando' && f.uri === uri ? foto : f))
+    );
+  }, []);
+
   const precioNum = parsePrecio(precio);
 
   /**
    * El mismo booleano derivado de "Completar perfil". `fotos.length > 0` es
    * decisión de producto, no del esquema: `listings` no exige ninguna foto,
    * pero una tarjeta sin imagen en el feed se lee como rota.
+   *
+   * `!fotos.some(origen === 'procesando')`: sin esto, tocar "Publicar
+   * artículo"/"Guardar" mientras una foto sigue procesando le pasaría una
+   * `FotoProcesando` (sin `path`) a `subirPendientes()`, que solo sabe tratar
+   * `'storage'`/`'local'`.
    */
   const puedeGuardar =
     titulo.trim().length > 0 &&
@@ -84,7 +116,8 @@ export function useListingForm(iniciales: ValoresIniciales = FORMULARIO_VACIO) {
     precioNum >= 0 &&
     categoriaId !== undefined &&
     condicion !== undefined &&
-    fotos.length > 0;
+    fotos.length > 0 &&
+    !fotos.some((f) => f.origen === 'procesando');
 
   /**
    * Los campos listos para la base. `universidadId`/`campusId` no son del
@@ -124,6 +157,8 @@ export function useListingForm(iniciales: ValoresIniciales = FORMULARIO_VACIO) {
     fotos,
     setFotos,
     agregarFotos,
+    agregarPlaceholders,
+    reemplazarPlaceholder,
     quitarFoto,
     puedeGuardar,
     aInput,

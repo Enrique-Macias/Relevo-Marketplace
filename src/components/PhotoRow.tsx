@@ -13,6 +13,7 @@
 import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { BlinkingDots } from '@/components/BlinkingDots';
 import { IconClose, IconPlus } from '@/components/icons';
 import { ListingPhoto } from '@/components/ListingPhoto';
 import { Colors, Radii, Typography } from '@/constants/theme';
@@ -49,7 +50,30 @@ export type FotoElegida = {
   fallo?: MotivoFallo;
 };
 
-export type FotoEnEdicion = FotoSubida | FotoElegida;
+/**
+ * Un asset recién elegido del carrete, todavía SIN pasar por `normalizar()`
+ * (filtrado de formato + re-encode a JPEG, `src/lib/foto-picker.ts`). Mientras
+ * exista una fila en este estado, `elegirFotos()` sigue trabajando sobre ella
+ * — nunca es el resultado final, solo un lugar donde pintar la foto real
+ * mientras se procesa.
+ *
+ * `uri` es la MISMA uri cruda del picker con la que luego se llama
+ * `normalizar(asset)`: es lo que conecta este placeholder con su reemplazo
+ * (`reemplazarPlaceholder` en `src/lib/listing-form.ts`), sin necesitar un id
+ * aparte.
+ */
+export type FotoProcesando = { origen: 'procesando'; uri: string };
+
+export type FotoEnEdicion = FotoSubida | FotoElegida | FotoProcesando;
+
+/**
+ * El subconjunto de `FotoEnEdicion` que ya puede pasar por `src/lib/publicar.ts`:
+ * nunca a medio elegir. `puedeGuardar` (`src/lib/listing-form.ts`) ya excluye
+ * cualquier `'procesando'` antes de que el usuario pueda tocar "Guardar"/
+ * "Publicar artículo" — este tipo es lo que hace que esa garantía se vea en la
+ * firma de las funciones de guardado, no solo en el botón.
+ */
+export type FotoParaGuardar = FotoSubida | FotoElegida;
 
 /**
  * Llave estable para el `key` de React y para comparar sets entre renders.
@@ -59,7 +83,9 @@ export type FotoEnEdicion = FotoSubida | FotoElegida;
  * "Editar publicación".
  */
 export function idFoto(foto: FotoEnEdicion): string {
-  return foto.origen === 'storage' ? `s:${foto.path}` : `l:${foto.uri}`;
+  if (foto.origen === 'storage') return `s:${foto.path}`;
+  if (foto.origen === 'procesando') return `p:${foto.uri}`;
+  return `l:${foto.uri}`;
 }
 
 type PhotoRowProps = {
@@ -68,10 +94,34 @@ type PhotoRowProps = {
   onQuitar: (index: number) => void;
   /** Durante el guardado la fila se congela: quitar una foto a media subida rompería el orden. */
   disabled?: boolean;
+  /**
+   * Cierto desde el tap en "Agregar" hasta que exista el primer resultado del
+   * picker — cubre el tramo en el que `fotos` todavía no cambió en nada pero
+   * el picker nativo puede seguir resolviendo (a veces varios segundos, si
+   * iOS necesita descargar la foto elegida desde iCloud). Mientras esto es
+   * cierto y TODAVÍA no hay ningún placeholder, el tile "+" se reemplaza por
+   * uno no interactivo con `BlinkingDots` — frame "Publicar (procesando
+   * fotos)", variante documentada junto al `.photo-row`. En cuanto aparece el
+   * primer placeholder (`fotos.some(origen === 'procesando')`, que este
+   * componente ya puede ver solo con su propio prop `fotos`) el tile
+   * desaparece del todo: ese es el estado ya aprobado antes de este cambio,
+   * sin tocar.
+   */
+  eligiendoFotos?: boolean;
 };
 
-export function PhotoRow({ fotos, onAgregar, onQuitar, disabled = false }: PhotoRowProps) {
+export function PhotoRow({
+  fotos,
+  onAgregar,
+  onQuitar,
+  disabled = false,
+  eligiendoFotos = false,
+}: PhotoRowProps) {
   const lleno = fotos.length >= MAX_FOTOS;
+  // Ya hay al menos un placeholder: el `.photo-add` se esconde del todo (sin
+  // reemplazo), empezar un segundo lote antes de que termine el primero no
+  // tiene un slot limpio donde ir.
+  const hayPlaceholder = fotos.some((f) => f.origen === 'procesando');
 
   return (
     <View style={styles.field}>
@@ -91,11 +141,24 @@ export function PhotoRow({ fotos, onAgregar, onQuitar, disabled = false }: Photo
               // Ya está en el bucket privado: se lee por el endpoint autenticado.
               <ListingPhoto path={foto.path} fallback={null} style={styles.thumbFill} />
             ) : (
-              // URI local del picker: no pasa por Storage ni necesita token.
+              // URI local: la del picker (origen 'local' o 'procesando') no pasa
+              // por Storage ni necesita token, se pinta tal cual.
               <Image source={{ uri: foto.uri }} style={styles.thumbFill} contentFit="cover" />
             )}
 
-            {!disabled ? (
+            {/* Foto real de fondo + scrim + splash-dots: mismo indicador de
+                espera que ya usa el botón "Subiendo imágenes", puesto sobre la
+                foto que ya se eligió en vez de un placeholder genérico —
+                responde directo a "parece que no se cargó" (frame "Publicar
+                (procesando fotos)", `/design/relevo-app.html`). */}
+            {foto.origen === 'procesando' ? (
+              <View style={styles.scrim}>
+                <BlinkingDots style={styles.scrimDots} />
+              </View>
+            ) : null}
+
+            {/* Nada que quitar de una foto que no terminó de existir. */}
+            {!disabled && foto.origen !== 'procesando' ? (
               <Pressable
                 style={styles.remove}
                 onPress={() => onQuitar(i)}
@@ -111,17 +174,29 @@ export function PhotoRow({ fotos, onAgregar, onQuitar, disabled = false }: Photo
 
         {/* El `.photo-add` desaparece al llegar al tope, igual que en el frame:
             el trigger `enforce_photo_limit()` ya rechazaría la sexta, pero
-            dejar tocar un botón que va a fallar es peor UX que esconderlo. */}
-        {!lleno && !disabled ? (
-          <Pressable
-            style={styles.add}
-            onPress={onAgregar}
-            accessibilityRole="button"
-            accessibilityLabel="Agregar foto"
-          >
-            <IconPlus size={18} color={Colors.inkSoft} />
-            <Text style={styles.addLabel}>Agregar</Text>
-          </Pressable>
+            dejar tocar un botón que va a fallar es peor UX que esconderlo.
+            También desaparece del todo en cuanto hay un placeholder. */}
+        {!lleno && !disabled && !hayPlaceholder ? (
+          eligiendoFotos ? (
+            // El picker sigue resolviendo y todavía no hay nada que mostrar
+            // en su lugar (ni se sabe cuántas fotos van a volver). MISMO slot
+            // 76x76 con borde punteado, pero `View`, no `Pressable`: sin
+            // `onPress` ni `accessibilityRole="button"` — no debe invitar al
+            // toque, no solo verse ocupado.
+            <View style={styles.add}>
+              <BlinkingDots style={styles.addBusyDots} />
+            </View>
+          ) : (
+            <Pressable
+              style={styles.add}
+              onPress={onAgregar}
+              accessibilityRole="button"
+              accessibilityLabel="Agregar foto"
+            >
+              <IconPlus size={18} color={Colors.inkSoft} />
+              <Text style={styles.addLabel}>Agregar</Text>
+            </Pressable>
+          )
         ) : null}
       </View>
     </View>
@@ -166,6 +241,25 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: Radii.lg,
   },
+  // .photo-thumb .thumb-scrim{position:absolute; inset:0; border-radius:14px;
+  //   background:rgba(34,31,28,0.55);} — mismo tono que .photo-remove, no un
+  // color nuevo.
+  scrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: Radii.lg,
+    backgroundColor: 'rgba(34,31,28,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // `.splash-dots` trae un margin-top pensado para el Splash; aquí, centrado
+  // dentro del scrim, se anula igual que en `.primary-btn.is-busy`.
+  scrimDots: {
+    marginTop: 0,
+  },
   // .photo-remove{top:-6px; right:-6px; width:20px; height:20px; border-radius:50%;
   //   background:rgba(34,31,28,0.55); border:2px solid var(--paper);}
   remove: {
@@ -200,5 +294,11 @@ const styles = StyleSheet.create({
     fontFamily: Typography.tabLabel.fontFamily,
     fontSize: 9.5,
     color: Colors.inkSoft,
+  },
+  // `.photo-add.is-busy .splash-dots{margin-top:0;}` — mismo motivo que
+  // `scrimDots`: el margen de `.splash-dots` es para el Splash, no para un
+  // tile de 76px.
+  addBusyDots: {
+    marginTop: 0,
   },
 });

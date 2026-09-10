@@ -539,6 +539,17 @@
     background:rgba(34,31,28,0.55); border:2px solid var(--paper);
     display:flex; align-items:center; justify-content:center;
   }
+  /* Foto recién elegida, todavía procesando (filtrado de formato + re-encode a
+     JPEG, "Publicar (procesando fotos)"). Mismo rgba(34,31,28,0.55) que
+     .photo-remove encima de la foto real —no un tono nuevo— y adentro
+     .splash-dots tal cual, el mismo indicador que ya usa "Subiendo imágenes".
+     Mostrar la foto real de fondo en vez de un skeleton vacío responde directo
+     a "parece que no se cargó": si se ve la foto, sí se cargó. */
+  .photo-thumb .thumb-scrim{
+    position:absolute; inset:0; border-radius:14px;
+    background:rgba(34,31,28,0.55);
+    display:flex; align-items:center; justify-content:center;
+  }
   /* Contador del tope de 5 (RF-05). Va como par del .field-label en su misma
      fila: sin él, el límite solo se manifiesta cuando el .photo-add desaparece
      sin explicación. */
@@ -546,6 +557,20 @@
   .field-label-row .field-label{margin-bottom:0;}
   .photo-count{font-size:11.5px; color:var(--ink-soft);}
   .photo-add{width:76px; height:76px; border-radius:14px; border:1.5px dashed var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; flex-shrink:0; color:var(--ink-soft); font-size:9.5px; font-weight:500;}
+  /* Variante de `.photo-add`, NO un frame nuevo: el mismo estado "Publicar
+     (procesando fotos)", en el momento ANTERIOR a que exista el primer
+     placeholder — mientras el picker nativo sigue resolviendo (puede tardar
+     varios segundos si iOS descarga la foto elegida desde iCloud) y
+     `form.fotos` todavía no cambió en nada, así que no hay ninguna foto real
+     que poner detrás de un scrim todavía. Mismo tamaño y mismo borde
+     punteado que `.photo-add` — solo cambia el contenido: el ícono "+" y
+     "Agregar" se reemplazan por `.splash-dots` centrado, el mismo indicador
+     de espera de siempre. NO lleva el ícono ni el texto "Agregar": en el
+     componente real (`PhotoRow.tsx`) este tile se pinta como `View`, no
+     `Pressable` — sin `onPress` y sin `accessibilityRole="button"`, no solo
+     "deshabilitado" visualmente. */
+  .photo-add.is-busy{border-style:solid; color:var(--ink-soft);}
+  .photo-add.is-busy .splash-dots{margin-top:0;}
   .textarea-field{width:100%; min-height:84px; resize:none; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px; font-size:14px; color:var(--ink); font-family:inherit; line-height:1.5;}
   .textarea-field::placeholder{color:#A8A29A;}
   .segmented{display:flex; gap:8px; flex-wrap:wrap;}
@@ -1675,19 +1700,180 @@
     </div>
   </div>
 
-  <!-- Estados 2 y 3 del MISMO componente que "Publicar", no pantallas aparte
-       (mismo patrón que Categoría o Búsqueda).
+  <!-- Estados 2, 3 y 4 del MISMO componente que "Publicar", no pantallas
+       aparte (mismo patrón que Categoría o Búsqueda).
 
-       POR QUÉ EXISTEN: el alta es ATÓMICA. La publicación se crea `pausada`,
-       suben todas las fotos, y solo si TODAS suben pasa a `activa`. Eso vuelve
-       la subida un momento con duración —y con posibilidad de fallar— del que
-       el usuario tiene que enterarse SIN salir de la pantalla, porque es aquí
-       donde se reintenta. Antes esto no hacía falta: la publicación se activaba
-       de inmediato y el fallo se contaba después, en "Publicación creada
-       (fotos faltantes)", un frame que este modelo elimina.
+       "Procesando fotos" (2) pasa ANTES de tocar "Guardar": el usuario sigue
+       componiendo el formulario, no hay listing todavía. "Subiendo imágenes"
+       (3) y "Error de subida" (4) pasan DESPUÉS: el alta es ATÓMICA, la
+       publicación se crea `pausada`, suben todas las fotos, y solo si TODAS
+       suben pasa a `activa`. Eso vuelve la subida un momento con duración —y
+       con posibilidad de fallar— del que el usuario tiene que enterarse SIN
+       salir de la pantalla, porque es aquí donde se reintenta. Antes esto no
+       hacía falta: la publicación se activaba de inmediato y el fallo se
+       contaba después, en "Publicación creada (fotos faltantes)", un frame
+       que este modelo elimina.
 
-       El formulario se congela en ambos: la publicación YA existe en la base,
-       así que editar el texto en pantalla lo desincronizaría de lo guardado. -->
+       El formulario se congela en 3 y 4: la publicación YA existe en la base,
+       así que editar el texto en pantalla lo desincronizaría de lo guardado.
+       En 2 NO — ver el comentario del propio frame.
+
+       "Procesando fotos" (2) tiene a su vez DOS momentos, y solo el primero
+       está pintado en el frame: el picker nativo puede tardar varios segundos
+       en resolver (ej. si iOS descarga la foto elegida desde iCloud) ANTES de
+       que exista ningún placeholder — ahí el único cambio en TODA la pantalla
+       es el propio `.photo-add`, que muestra `.splash-dots` en vez de "+" (ver
+       `.photo-add.is-busy` en el CSS y el comentario junto al `.photo-row` de
+       este frame). No es un phone-block aparte: layout idéntico, el resto de
+       la pantalla no cambia. -->
+  <div class="phone-block" data-cat="publicar">
+    <div class="phone-label">Publicar (procesando fotos)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        <div class="form-title">Nueva publicación</div>
+        <!-- Dimmed igual que en "subiendo imágenes", pero por otra razón: acá
+             no hay nada guardándose todavía, es que `puedeGuardar` exige que
+             NINGUNA foto siga procesando (src/lib/listing-form.ts) — mandar
+             una foto a medio elegir a subirPendientes() no tiene con qué
+             subir, literal: esa foto todavía no tiene bytes finales. -->
+        <span style="font-size:13px; font-weight:600; color:var(--brick); opacity:0.45;">Guardar</span>
+      </div>
+      <div class="screen">
+        <div class="form-body">
+          <!-- A DIFERENCIA de "subiendo imágenes": el listing AÚN NO EXISTE,
+               así que el resto del formulario (título, precio, categoría,
+               condición, descripción) sigue editable de verdad — sin
+               `.disabled`, sin `opacity:0.45`, sin `disabled` en el input.
+               Lo único que cambia es la fila de fotos: la que ya resolvió
+               conserva su `.photo-remove` normal, la que sigue procesando
+               muestra la foto real recién elegida con un scrim y los mismos
+               `.splash-dots` del botón "Subiendo imágenes" —ver
+               `.photo-thumb .thumb-scrim` en el CSS—, y no hay `.photo-add`:
+               empezar un segundo lote antes de que termine el primero no
+               tiene un slot limpio donde ir. -->
+          <div class="field-label-row">
+            <label class="field-label">Fotos</label>
+            <span class="photo-count">2/5</span>
+          </div>
+          <div class="photo-row">
+            <div class="photo-thumb" style="background:var(--brick-tint);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              <div class="photo-remove">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </div>
+            </div>
+            <div class="photo-thumb" style="background:var(--slate-tint);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              <div class="thumb-scrim">
+                <span class="splash-dots" style="margin-top:0;">
+                  <span class="splash-dot"></span>
+                  <span class="splash-dot"></span>
+                  <span class="splash-dot"></span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- VARIANTE renderizada de verdad (no solo descrita) del MISMO
+               estado, para revisar en el navegador antes de tocar
+               PhotoRow.tsx — NO es un phone-block aparte y NO es parte del
+               flujo real de esta pantalla, por eso el separador punteado y la
+               etiqueta: es el `.photo-row` de arriba en el momento ANTERIOR a
+               que exista el primer placeholder, mientras el picker nativo
+               todavía no resuelve y `form.fotos` no cambió en nada. Ahí,
+               `.photo-count` sería "1/5" (la que había antes de tocar
+               "Agregar") y no hay ningún `.photo-thumb` nuevo, porque todavía
+               no se sabe cuántas fotos van a volver del picker. Todo lo demás
+               en el frame real (Guardar, los campos, el CTA) se queda
+               EXACTAMENTE como está pintado arriba: ninguna foto en
+               `form.fotos` cambió todavía, así que `puedeGuardar` no se ve
+               afectado — el único elemento que cambia en toda la pantalla es
+               este tile. -->
+          <div style="margin:-4px 0 22px; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:9px;">
+              Variante (doc, no es parte del flujo): antes del primer placeholder
+            </div>
+            <div class="photo-row" style="margin-bottom:0;">
+              <div class="photo-thumb" style="background:var(--brick-tint);">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+                <div class="photo-remove">
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                </div>
+              </div>
+              <div class="photo-add is-busy">
+                <span class="splash-dots">
+                  <span class="splash-dot"></span>
+                  <span class="splash-dot"></span>
+                  <span class="splash-dot"></span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Título</label>
+            <input class="text-field" type="text" placeholder="Ej. Cálculo de Larson, 9a edición">
+          </div>
+
+          <div class="field">
+            <label class="field-label">Precio</label>
+            <input class="text-field" type="text" placeholder="$ 0.00">
+          </div>
+
+          <div class="field">
+            <label class="field-label">Categoría</label>
+            <div class="segmented">
+              <div class="segment active">Libros</div>
+              <div class="segment">Electrónica</div>
+              <div class="segment">Muebles</div>
+              <div class="segment">Ropa</div>
+              <div class="segment">Deportes</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Condición</label>
+            <div class="segmented">
+              <div class="segment">Nuevo</div>
+              <div class="segment active">Como nuevo</div>
+              <div class="segment">Buen estado</div>
+              <div class="segment">Usado</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Descripción</label>
+            <textarea class="textarea-field" placeholder="Cuenta el estado del artículo, si tiene detalles, por qué lo vendes…"></textarea>
+          </div>
+
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Zona de entrega</label>
+            <div class="select-field disabled">
+              <span>Tec de Monterrey</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="sticky-cta">
+          <!-- Deshabilitado por la misma razón que "Guardar" arriba:
+               `puedeGuardar` es falso mientras haya una foto procesando. -->
+          <button class="primary-btn disabled" style="margin-top:0;">Publicar artículo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="phone-block" data-cat="publicar">
     <div class="phone-label">Publicar (subiendo imágenes)</div>
     <div class="device">

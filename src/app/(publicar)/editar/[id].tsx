@@ -8,7 +8,7 @@
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ConfirmModal } from '@/components/ConfirmModal';
@@ -32,7 +32,13 @@ import {
   fetchListingParaEditar,
   type ListingDetalle,
 } from '@/lib/listings';
-import { componerAviso, fallosDe, guardarEdicion, type ProgresoFoto } from '@/lib/publicar';
+import {
+  componerAviso,
+  fallosDe,
+  fotosParaGuardar,
+  guardarEdicion,
+  type ProgresoFoto,
+} from '@/lib/publicar';
 import { useSession } from '@/lib/session';
 import { borrarFotos, MAX_FOTOS } from '@/lib/storage';
 
@@ -182,10 +188,41 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
 
   const ocupado = guardando || borrando;
 
+  /**
+   * Ref, no estado: tiene que valer ANTES del primer `await`, sin esperar a
+   * un re-render. `.photo-add` ya se esconde mientras hay un placeholder en
+   * `form.fotos`, pero eso depende de que React ya haya repintado — un
+   * doble-tap dentro del mismo frame pasaría igual sin este guard síncrono.
+   */
+  const procesandoRef = useRef(false);
+
+  /**
+   * SÍ es estado (a diferencia del ref de arriba): esto necesita disparar un
+   * re-render, porque es lo único que cubre visualmente el hueco entre tocar
+   * "Agregar" y que exista el primer placeholder en `form.fotos`.
+   *
+   * Medido con datos reales: `launchImageLibraryAsync()` puede tardar varios
+   * segundos MÁS de lo esperado si iOS necesita descargar la foto elegida
+   * desde iCloud (no escala con la cantidad de fotos, es por foto y fuera de
+   * nuestro control) — y hasta que esa promesa resuelve, `form.fotos` no
+   * cambió en nada, así que el `procesando` derivado solo de
+   * `form.fotos.some(...)` (ListingFormFields) se queda en `false` todo ese
+   * rato.
+   */
+  const [eligiendoFotos, setEligiendoFotos] = useState(false);
+
   async function agregarFoto() {
+    if (procesandoRef.current) return;
+    const disponibles = MAX_FOTOS - form.fotos.length;
+    if (disponibles <= 0) return;
+
+    procesandoRef.current = true;
+    setEligiendoFotos(true);
     try {
-      const { fotos, descartadas } = await elegirFotos(MAX_FOTOS - form.fotos.length);
-      form.agregarFotos(fotos);
+      const { descartadas } = await elegirFotos(disponibles, {
+        onPlaceholders: form.agregarPlaceholders,
+        onFotoLista: form.reemplazarPlaceholder,
+      });
       if (descartadas > 0) {
         mostrar(
           descartadas === 1
@@ -201,6 +238,9 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
       }
       console.warn('[editar] no se pudo abrir el carrete:', e);
       mostrar('No pudimos abrir tus fotos', 'error');
+    } finally {
+      procesandoRef.current = false;
+      setEligiendoFotos(false);
     }
   }
 
@@ -214,7 +254,7 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
       const resultado = await guardarEdicion({
         listingId: listing.id,
         input: form.aInput(universidadId, campusId),
-        fotos: form.fotos,
+        fotos: fotosParaGuardar(form.fotos),
         // `fotosGuardadas`, no `listing.fotos`: mismo bug que `firmaGuardada`
         // arriba. Con la lista congelada, un segundo guardado calcularía
         // `sobrantes` contra fotos que YA se habían borrado en el primero e
@@ -366,6 +406,7 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
           zonaEntrega={campusNombre}
           onAgregarFoto={agregarFoto}
           disabled={ocupado}
+          eligiendoFotos={eligiendoFotos}
         />
 
         {/* El frame le pone `style="padding-top:4px"` al .section-head. */}

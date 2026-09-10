@@ -18,7 +18,7 @@
  *     `storage.objects` exige que el listing exista para autorizar el borrado.
  */
 
-import type { FotoEnEdicion, MotivoFallo } from '@/components/PhotoRow';
+import type { FotoEnEdicion, FotoParaGuardar, MotivoFallo } from '@/components/PhotoRow';
 import {
   actualizarListing,
   cambiarEstadoListing,
@@ -49,7 +49,7 @@ export type ResultadoGuardado = {
    * pasada salta lo ya subido porque `subirPendientes` ignora las de origen
    * 'storage', y salta lo determinista por su marca.
    */
-  fotos: FotoEnEdicion[];
+  fotos: FotoParaGuardar[];
   /**
    * Falló algo que NO pertenece a ninguna foto: `guardarFotos()` o la
    * activación. Llega por retorno y no como excepción a propósito — ver
@@ -59,6 +59,21 @@ export type ResultadoGuardado = {
 };
 
 export type ProgresoFoto = { actual: number; total: number };
+
+/**
+ * El paso de guardado nunca debería ver una foto a medio elegir: `puedeGuardar`
+ * (`src/lib/listing-form.ts`) ya deshabilita "Guardar"/"Publicar artículo"
+ * mientras `form.fotos` tenga alguna `origen: 'procesando'`. Esta función es la
+ * red en el LÍMITE del módulo: si ese guard alguna vez se saltara, prefiere
+ * fallar alto y claro a que `subirConReintento` le pida `.path` a una foto que
+ * no lo tiene y mande `undefined` a la base.
+ */
+export function fotosParaGuardar(fotos: FotoEnEdicion[]): FotoParaGuardar[] {
+  if (fotos.some((f) => f.origen === 'procesando')) {
+    throw new Error('No se puede guardar mientras hay fotos procesando');
+  }
+  return fotos as FotoParaGuardar[];
+}
 
 /** Un fallo con la posición 1-based que la foto ocupa AHORA en el formulario. */
 export type FalloFoto = { pos: number; motivo: MotivoFallo };
@@ -177,7 +192,7 @@ export function componerAviso(fallos: FalloFoto[], falloGeneral: boolean): strin
  * producción antes de esta distinción: un incidente de 6 toques generó 12
  * requests, la mitad de ellos condenados de antemano.
  */
-async function subirConReintento(listingId: number, foto: FotoEnEdicion): Promise<string> {
+async function subirConReintento(listingId: number, foto: FotoParaGuardar): Promise<string> {
   if (foto.origen !== 'local') return foto.path;
 
   try {
@@ -217,11 +232,11 @@ function motivoDe(e: unknown): MotivoFallo {
  */
 async function subirPendientes(
   listingId: number,
-  fotos: FotoEnEdicion[],
+  fotos: FotoParaGuardar[],
   onProgreso?: (p: ProgresoFoto) => void
-): Promise<{ paths: string[]; hayFallos: boolean; fotos: FotoEnEdicion[] }> {
+): Promise<{ paths: string[]; hayFallos: boolean; fotos: FotoParaGuardar[] }> {
   const paths: string[] = [];
-  const actualizadas: FotoEnEdicion[] = [];
+  const actualizadas: FotoParaGuardar[] = [];
   let hayFallos = false;
 
   for (let i = 0; i < fotos.length; i++) {
@@ -285,7 +300,7 @@ async function subirPendientes(
 export async function publicarListing(params: {
   input: ListingInput;
   userId: string;
-  fotos: FotoEnEdicion[];
+  fotos: FotoParaGuardar[];
   onProgreso?: (p: ProgresoFoto) => void;
   onListingCreado?: (listingId: number) => void;
 }): Promise<ResultadoGuardado> {
@@ -329,7 +344,7 @@ export async function publicarListing(params: {
  */
 export async function finalizarPublicacion(params: {
   listingId: number;
-  fotos: FotoEnEdicion[];
+  fotos: FotoParaGuardar[];
   onProgreso?: (p: ProgresoFoto) => void;
 }): Promise<ResultadoGuardado> {
   const { listingId } = params;
@@ -377,7 +392,7 @@ export async function finalizarPublicacion(params: {
 export async function guardarEdicion(params: {
   listingId: number;
   input: ListingInput;
-  fotos: FotoEnEdicion[];
+  fotos: FotoParaGuardar[];
   /** Los `storage_path` que tenía la publicación al abrir el formulario. */
   pathsOriginales: string[];
   fotosCambiaron: boolean;

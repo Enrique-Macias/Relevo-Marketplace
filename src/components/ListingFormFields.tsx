@@ -36,6 +36,16 @@ type ListingFormFieldsProps = {
    * usuario NECESITA poder quitar la foto que no se puede subir.
    */
   fotosDisabled?: boolean;
+  /**
+   * Cierto desde el tap en "Agregar" hasta que `elegirFotos()` devuelve algo
+   * — lo pone la PANTALLA, no este componente, porque cubre un tramo que
+   * `form.fotos` todavía no puede reflejar: mientras `launchImageLibraryAsync()`
+   * no resuelve (puede tardar varios segundos más si iOS descarga la foto
+   * desde iCloud), no hay ningún placeholder todavía. Se pasa tal cual a
+   * `PhotoRow`, que ya sabe distinguir esto de "ya hay un placeholder" mirando
+   * su propio prop `fotos` — este componente no necesita combinarlos.
+   */
+  eligiendoFotos?: boolean;
 };
 
 export function ListingFormFields({
@@ -45,6 +55,7 @@ export function ListingFormFields({
   onAgregarFoto,
   disabled = false,
   fotosDisabled = disabled,
+  eligiendoFotos = false,
 }: ListingFormFieldsProps) {
   return (
     <View style={styles.body}>
@@ -53,6 +64,7 @@ export function ListingFormFields({
         onAgregar={onAgregarFoto}
         onQuitar={form.quitarFoto}
         disabled={fotosDisabled}
+        eligiendoFotos={eligiendoFotos}
       />
 
       <Field

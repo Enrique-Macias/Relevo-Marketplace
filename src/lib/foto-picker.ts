@@ -15,7 +15,7 @@ import {
 } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 
-import type { FotoElegida } from '@/components/PhotoRow';
+import type { FotoElegida, FotoProcesando } from '@/components/PhotoRow';
 import { formatoSoportado } from '@/lib/storage';
 
 export class PermisoDenegadoError extends Error {
@@ -158,10 +158,27 @@ async function normalizar(asset: ImagePicker.ImagePickerAsset): Promise<FotoEleg
  * si el manipulator falla justo con ese formato exótico, caeríamos a la URI
  * original y subiríamos algo que el bucket rechaza, con el error apareciendo
  * lejos de su causa (CLAUDE.md §9). Filtrar primero conserva la garantía.
+ *
+ * `callbacks` es lo que permite que el usuario vea cada foto aparecer nítida
+ * en cuanto SU normalize() termina, en vez de esperar a que termine el lote
+ * entero: `onPlaceholders` avisa, de una sola vez y apenas se conoce (tras el
+ * filtro de formato, que es síncrono y rápido), cuántas fotos van a procesarse
+ * y con qué uri cruda pintarlas mientras tanto; `onFotoLista` avisa una vez
+ * por foto, en el mismo orden del loop de abajo, con la MISMA uri que se le
+ * pasó a `normalizar(asset)` — esa uri es la llave que conecta el placeholder
+ * con su resultado (ver `FotoProcesando` en `PhotoRow.tsx`).
  */
 export type Seleccion = { fotos: FotoElegida[]; descartadas: number };
 
-export async function elegirFotos(disponibles: number): Promise<Seleccion> {
+export type ElegirFotosCallbacks = {
+  onPlaceholders?: (placeholders: FotoProcesando[]) => void;
+  onFotoLista?: (uri: string, foto: FotoElegida) => void;
+};
+
+export async function elegirFotos(
+  disponibles: number,
+  callbacks?: ElegirFotosCallbacks
+): Promise<Seleccion> {
   const permiso = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permiso.granted) throw new PermisoDenegadoError();
 
@@ -189,12 +206,20 @@ export async function elegirFotos(disponibles: number): Promise<Seleccion> {
     );
   }
 
+  callbacks?.onPlaceholders?.(
+    soportadas.map((asset) => ({ origen: 'procesando', uri: asset.uri }))
+  );
+
   // Secuencial y no `Promise.all`: normalizar es trabajo nativo sobre imágenes
   // grandes, y cinco a la vez es un pico de memoria que no compra nada — el
-  // usuario espera lo mismo de todos modos.
+  // usuario espera lo mismo de todos modos. Que sea secuencial es justo lo que
+  // hace útil a `onFotoLista`: cada foto avisa en cuanto la SUYA termina, sin
+  // esperar a las que siguen en la fila.
   const fotos: FotoElegida[] = [];
   for (const asset of soportadas) {
-    fotos.push(await normalizar(asset));
+    const foto = await normalizar(asset);
+    callbacks?.onFotoLista?.(asset.uri, foto);
+    fotos.push(foto);
   }
 
   return { fotos, descartadas: elegidas.length - soportadas.length };
