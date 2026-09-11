@@ -101,6 +101,20 @@ begin
   return v_out;
 end $$;
 
+-- Hermana de as_user_int para columnas y funciones que devuelven texto. La
+-- estrena T16 (`seller_whatsapp` devuelve el número, no un conteo).
+create or replace function pg_temp.as_user_text(p_uid uuid, p_sql text)
+returns text language plpgsql as $$
+declare v_out text;
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
+  execute p_sql into v_out;
+  perform set_config('role', 'postgres', true);
+  return v_out;
+end $$;
+
 -- Ejecuta un SQL como `authenticated` esperando que funcione.
 create or replace function pg_temp.as_user(p_uid uuid, p_sql text)
 returns void language plpgsql as $$
@@ -689,6 +703,146 @@ select pg_temp.assert(
 
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T16 — teléfono del vendedor (RF-13) sin romper RNF-05 =='
+-- Autocontenida, mismo criterio que T11b, T13, T14 y T15: no reutiliza fixtures
+-- de secciones anteriores.
+--
+-- ES LA PRIMERA SECCIÓN QUE SIEMBRA SU PROPIO USUARIO, y hace falta: el contacto
+-- tiene DOS puntas y `seller_whatsapp` valida las dos, así que probarlo exige un
+-- vendedor ACTIVO — y a esta altura del archivo :A es el único que queda activo
+-- (:B lo suspendió T10, :C lo borró T8). Sin :D, el camino feliz solo podría
+-- probarse contra uno mismo, y la negativa del objetivo no podría distinguirse
+-- de la del llamante.
+--
+-- El reparto: cada aserción prueba UNA cosa.
+--   :A — comprador activo, y el dueño que escribe su propio número.
+--   :D — vendedor ACTIVO con teléfono → el camino feliz.
+--   :B — vendedor SUSPENDIDO con teléfono → no se le puede contactar.
+\set D '''dddddddd-0000-0000-0000-00000000000d'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values (:D::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated',
+        'authenticated', 'rls-d@tec.mx', '', now(), now(), now());
+update public.users set nombre = 'Dora' where id = :D::uuid;
+
+-- El corazón de RNF-05: el número no se lee por la Data API, ni el propio.
+-- Hermana de T1 con `correo`. Si alguien agrega `telefono` al grant de select
+-- "para que el cliente lo pinte", esta es la que lo caza.
+select pg_temp.expect_error(:A::uuid,
+  'select telefono from public.users limit 1',
+  'A no puede leer users.telefono');
+
+-- El booleano derivado SÍ es público: es lo que el gate de Publicar necesita
+-- para decidir si mostrar el campo, y no dice nada del número.
+--
+-- Se pregunta por :D y no por un count() de la tabla a propósito: a esta altura
+-- del archivo :C ya no existe (T8 borra su cuenta de auth.users y el cascade se
+-- lleva su perfil), así que cualquier conteo global aquí probaría de rebote una
+-- cuenta que otra sección maneja — la moraleja de CLAUDE.md §3.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A::uuid,
+    format('select (tiene_telefono)::int from public.users where id = %L', :D::uuid)) = 0,
+  'A puede leer tiene_telefono de otro usuario, y D todavía no tiene número');
+
+-- El check de formato. Los dos casos que un usuario real produce: escribir los
+-- 10 dígitos sin lada, y quedarse a medias.
+select pg_temp.expect_error(:A::uuid,
+  format('update public.users set telefono = ''8111234567'' where id = %L', :A::uuid),
+  'un número sin +52 lo rechaza el check');
+select pg_temp.expect_error(:A::uuid,
+  format('update public.users set telefono = ''+521234'' where id = %L', :A::uuid),
+  'un número incompleto lo rechaza el check');
+
+-- El dueño escribe el suyo.
+select pg_temp.as_user(:A::uuid,
+  format('update public.users set telefono = ''+528111111111'' where id = %L', :A::uuid));
+select pg_temp.assert(
+  (select telefono from public.users where id = :A::uuid) = '+528111111111',
+  'A guardó su propio teléfono');
+
+-- La columna generada se mantiene sola. Si alguien la cambia por una columna
+-- normal "para poder escribirla", esta aserción sigue pasando pero la de abajo
+-- (la que prueba que NO se puede escribir) no.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A::uuid,
+    format('select (tiene_telefono)::int from public.users where id = %L', :A::uuid)) = 1,
+  'tiene_telefono pasó a true solo, sin escribirla nadie');
+
+-- Doble candado, y da igual cuál conteste primero: no hay grant de UPDATE sobre
+-- la columna (42501) y Postgres rechaza escribir una columna generada de todos
+-- modos (428C9). Lo que se prueba es que no hay camino.
+select pg_temp.expect_error(:A::uuid,
+  format('update public.users set tiene_telefono = false where id = %L', :A::uuid),
+  'tiene_telefono no es escribible ni por su dueño');
+
+-- Nadie escribe el teléfono de otro. `users_update_own` no lanza error: filtra
+-- la fila y el update afecta 0 filas, así que lo que se comprueba es que el
+-- valor de D siga intacto.
+select pg_temp.as_user(:A::uuid,
+  format('update public.users set telefono = ''+529999999999'' where id = %L', :D::uuid));
+select pg_temp.assert(
+  (select telefono from public.users where id = :D::uuid) is null,
+  'A no pudo escribir el teléfono de D');
+
+-- Vendedor sin número: la RPC devuelve null, no error. Es el caso de las
+-- publicaciones creadas antes de que esta columna existiera.
+--
+-- SE PREGUNTA POR :D Y NO POR :B, y es justo el punto: :B está suspendido, así
+-- que desde que la RPC valida también al objetivo daría null por DOS motivos a
+-- la vez y esta aserción pasaría por la razón equivocada — el mismo error que
+-- CLAUDE.md §3 documenta con la cuenta :C de T11b. :D está activo, así que el
+-- null solo puede ser porque no tiene número.
+select pg_temp.assert(
+  pg_temp.as_user_text(:A::uuid,
+    format('select public.seller_whatsapp(%L)', :D::uuid)) is null,
+  'un vendedor ACTIVO sin número devuelve null, no error');
+
+-- Los dos vendedores guardan el suyo. :B está SUSPENDIDO desde T10 y aun así
+-- puede: editar el propio perfil es de las cosas que un suspendido conserva
+-- (tabla de decisión de CLAUDE.md §3). Si alguien le agrega is_active_user() al
+-- update de users, esta es la que lo caza.
+select pg_temp.as_user(:D::uuid,
+  format('update public.users set telefono = ''+528133333333'' where id = %L', :D::uuid));
+select pg_temp.as_user(:B::uuid,
+  format('update public.users set telefono = ''+528122222222'' where id = %L', :B::uuid));
+
+-- El camino feliz de RF-13: un comprador activo obtiene el número de un vendedor
+-- activo para abrir WhatsApp.
+select pg_temp.assert(
+  pg_temp.as_user_text(:A::uuid,
+    format('select public.seller_whatsapp(%L)', :D::uuid)) = '+528133333333',
+  'A (activo) recibe el número de D (activo) para contactarlo');
+
+-- LAS DOS PUNTAS DEL CONTACTO. La tabla de decisión de §3 dice que un suspendido
+-- no puede contactar NI SER CONTACTADO, y cada dirección la hace cumplir una
+-- mitad distinta de la función — por eso son dos aserciones y no una.
+--
+-- Esta es la del OBJETIVO: la descubrió una prueba en dispositivo, donde un
+-- comprador activo sí llegaba a WhatsApp de un vendedor suspendido. La hace
+-- cumplir el `and u.estado = 'activo'` del subselect.
+select pg_temp.assert(
+  pg_temp.as_user_text(:A::uuid,
+    format('select public.seller_whatsapp(%L)', :B::uuid)) is null,
+  'A (activo) NO obtiene el número de B: no se contacta a una cuenta suspendida');
+
+-- Y esta es la del LLAMANTE, que hace cumplir el `case` de arriba. Pide el
+-- número de :D (activo) a propósito: si pidiera el de un suspendido, el null
+-- podría venir del otro chequeo y la aserción no probaría nada.
+--
+-- Por qué ninguna de las dos puede vivir en otro lado: listing_contacts_insert_own
+-- ya exige is_active_user(), pero el cliente se traga ese rechazo a propósito
+-- (abre wa.me igual y solo avisa con un toast, para no negar un contacto por un
+-- fallo de log), así que el único efecto real de estar suspendido era no quedar
+-- registrado. Con el número detrás de la RPC, estas dos aserciones son lo que
+-- impide que alguien quite cualquiera de los dos chequeos "por simplificar".
+select pg_temp.assert(
+  pg_temp.as_user_text(:B::uuid,
+    format('select public.seller_whatsapp(%L)', :D::uuid)) is null,
+  'B (suspendido) NO obtiene el número de D: no puede contactar');
+
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges
@@ -736,10 +890,26 @@ select pg_temp.assert(
   'la RPC de conteo de favoritos es ejecutable por authenticated y no por anon');
 
 select pg_temp.assert(
+  has_function_privilege('authenticated', 'public.seller_whatsapp(uuid)', 'execute')
+  and not has_function_privilege('anon', 'public.seller_whatsapp(uuid)', 'execute'),
+  'la RPC del teléfono es ejecutable por authenticated y no por anon');
+
+select pg_temp.assert(
   not exists (select 1 from information_schema.column_privileges
               where grantee = 'authenticated' and table_schema = 'public'
                 and table_name = 'users' and column_name = 'correo'),
   'authenticated no tiene ningún privilegio sobre users.correo');
+
+-- Hermana de la de `correo`, con una diferencia que importa: `telefono` SÍ
+-- tiene grant de UPDATE (su dueño lo escribe). Lo que no puede tener nunca es
+-- SELECT — ahí es donde se rompería RNF-05 y el número se volvería enumerable
+-- en bloque para cualquier autenticado.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.column_privileges
+              where grantee = 'authenticated' and table_schema = 'public'
+                and table_name = 'users' and column_name = 'telefono'
+                and privilege_type = 'SELECT'),
+  'authenticated no puede leer users.telefono (solo escribir el propio)');
 
 select pg_temp.assert(
   not exists (select 1 from information_schema.column_privileges

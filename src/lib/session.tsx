@@ -26,7 +26,7 @@ import { supabase } from '@/lib/supabase';
  * propio usuario se lee de `session.user.email`.
  */
 const PROFILE_COLUMNS =
-  'id, nombre, foto_url, universidad_id, campus_id, carrera, rating_promedio, estado';
+  'id, nombre, foto_url, universidad_id, campus_id, carrera, rating_promedio, estado, tiene_telefono';
 
 async function leerPerfil(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -54,6 +54,17 @@ export type Profile = {
   carrera: string | null;
   rating_promedio: number;
   estado: 'activo' | 'suspendido';
+  /**
+   * Si el perfil ya tiene un WhatsApp guardado. NO existe un `telefono` aquí y
+   * no es un olvido: el número está fuera del grant de select (RNF-05, ver la
+   * migración 20260910000448) y se lee solo por `seller_whatsapp`. Esta columna
+   * es generada en la base justo para que el cliente pueda preguntar "¿ya
+   * tiene?" sin poder preguntar "¿cuál es?".
+   *
+   * La usa el gate de Publicar: sin teléfono no se puede publicar (RF-13), y el
+   * campo para capturarlo aparece ahí mismo.
+   */
+  tiene_telefono: boolean | null;
 };
 
 type SessionState = {

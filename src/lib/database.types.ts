@@ -381,6 +381,8 @@ export type Database = {
           id: string
           nombre: string | null
           rating_promedio: number
+          telefono: string | null
+          tiene_telefono: boolean | null
           universidad_id: number | null
         }
         Insert: {
@@ -393,6 +395,8 @@ export type Database = {
           id: string
           nombre?: string | null
           rating_promedio?: number
+          telefono?: string | null
+          tiene_telefono?: boolean | null
           universidad_id?: number | null
         }
         Update: {
@@ -405,6 +409,8 @@ export type Database = {
           id?: string
           nombre?: string | null
           rating_promedio?: number
+          telefono?: string | null
+          tiene_telefono?: boolean | null
           universidad_id?: number | null
         }
         Relationships: [
@@ -437,6 +443,7 @@ export type Database = {
         Args: { p_listing_id: number }
         Returns: number
       }
+      seller_whatsapp: { Args: { p_user_id: string }; Returns: string }
     }
     Enums: {
       listing_condition: "nuevo" | "como_nuevo" | "buen_estado" | "usado"

@@ -27,8 +27,17 @@ export type Orden = 'recientes' | 'precio_asc' | 'precio_desc' | 'mejor_califica
  * todo listing tiene vendedor): está para que PostgREST acepte ordenar el
  * resultado de nivel superior por una columna del recurso embebido, que es lo
  * que necesita el orden "mejor calificados".
+ *
+ * `estado` lo usa SOLO Detalle: `seller_whatsapp` devuelve null por tres causas
+ * distintas y esta es la que separa "el vendedor no dejó número" de "la cuenta
+ * está suspendida" (ver `contactarPorWhatsapp`). Ya estaba en el `grant select`
+ * de `users` desde la migración inicial, así que no hubo que tocar la base. Va
+ * en el constante compartido y no en un embed aparte para el detalle: la
+ * tarjeta lo ignora, es una columna de 7 bytes, y partirlo en dos sería un
+ * concepto más a mantener por nada.
  */
-const VENDEDOR = 'vendedor:users!listings_user_id_fkey!inner(id, nombre, carrera, rating_promedio)';
+const VENDEDOR =
+  'vendedor:users!listings_user_id_fkey!inner(id, nombre, carrera, rating_promedio, estado)';
 
 /**
  * OJO — este embed NO lleva `!inner`, al revés que `VENDEDOR`.
@@ -95,6 +104,8 @@ export type ListingDetalle = ListingCard & {
     nombre: string | null;
     carrera: string | null;
     ratingPromedio: number;
+    /** Solo lo usa el toast de "Contactar por WhatsApp" — ver `VENDEDOR`. */
+    estado: 'activo' | 'suspendido';
   };
 };
 
@@ -297,6 +308,7 @@ export async function fetchListingById(id: number): Promise<ListingDetalle | nul
       nombre: row.vendedor.nombre,
       carrera: row.vendedor.carrera,
       ratingPromedio: Number(row.vendedor.rating_promedio),
+      estado: row.vendedor.estado,
     },
   };
 }

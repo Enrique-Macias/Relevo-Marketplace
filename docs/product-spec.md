@@ -126,6 +126,9 @@ vez validado.
 - **RF-13** Botón de contacto que abre WhatsApp con el vendedor — sin chat
   interno en el MVP. Cada tap se registra (usuario, publicación, fecha) para
   habilitar RF-12; la conversación en sí ocurre fuera de la app.
+  **✅ Implementado** — el número es real, se captura al publicar (no se puede
+  publicar sin él) y se lee de a uno por RPC para no exponerlo en el perfil
+  público (RNF-05). Ver el bloque de `users` en §Modelo de datos.
 - **RF-14** Reporte de publicaciones hacia moderación, con motivo
   seleccionable: spam o publicidad, sospecha de fraude, contenido
   inapropiado, no es un estudiante, u otro (con comentario libre).
@@ -223,19 +226,37 @@ Moderación: Supabase Studio, uso directo del equipo
 ```
 users
   id, correo, nombre, foto_url, universidad_id, campus_id,
-  carrera, rating_promedio, estado (activo/suspendido)
-  -- HUECO CONOCIDO: falta el teléfono. RF-13 pide un botón que abra WhatsApp
-  --   "con el vendedor", pero ninguna entidad de este modelo guarda un número,
-  --   y ningún frame de /design/relevo-app.html lo captura ("Completar perfil"
-  --   y "Editar perfil" no tienen ese campo). El esquema implementado tampoco
-  --   lo tiene. Mientras no se defina, el deep link de la app usa un número
-  --   placeholder — el registro en listing_contacts, que es lo que habilita
-  --   RF-12, sí es real. Cerrarlo requiere las tres cosas a la vez: columna
-  --   `telefono`, frame de captura en el diseño, y campo en el onboarding.
-  --   Decidir también su privacidad frente a RNF-05, que dice explícitamente
-  --   "no exponer correo/teléfono públicamente sin consentimiento explícito":
-  --   el número solo debería viajar al abrir WhatsApp, no en el select del
-  --   perfil público.
+  carrera, rating_promedio, estado (activo/suspendido),
+  telefono, tiene_telefono
+  -- HUECO CERRADO (antes: "falta el teléfono"). RF-13 pedía un botón que
+  --   abriera WhatsApp "con el vendedor" y ninguna entidad guardaba un número,
+  --   así que el deep link usaba un placeholder. Resuelto con las tres cosas a
+  --   la vez: la columna `telefono` (E.164, +52 y 10 dígitos), el frame de
+  --   captura en el diseño, y el campo en la app.
+  --
+  --   DÓNDE SE CAPTURA, y por qué no es el onboarding: exigirlo en "Completar
+  --   perfil" le cerraría el Feed a quien solo quiere comprar. El número no
+  --   hace falta para navegar, hace falta para vender, así que se pide en
+  --   "Publicar" — no se puede publicar sin él (frame "Publicar (falta
+  --   teléfono)"), y el campo aparece ahí mismo para que el bloqueo se
+  --   resuelva sin ir a otro lado. "Editar perfil" es la otra puerta.
+  --
+  --   PRIVACIDAD (RNF-05): `telefono` NO es legible por la Data API — mismo
+  --   trato que `correo`. Solo sale por la RPC public.seller_whatsapp(uuid),
+  --   una fila a la vez, así que el número viaja al abrir WhatsApp y no en el
+  --   select del perfil público, que era la condición que este documento
+  --   ponía. Junto a él va `tiene_telefono`, columna generada que solo dice si
+  --   el usuario es contactable, sin revelar el número.
+  --
+  --   Esa misma RPC es donde se hace cumplir que una cuenta SUSPENDIDA quede
+  --   fuera del contacto por WhatsApp (RF-17), y en las DOS direcciones: no
+  --   puede contactar (se valida quién llama) ni ser contactada (se valida el
+  --   dueño del número). Devuelve null en ambos casos.
+  --
+  --   PENDIENTE LIGADO A ESTO: las publicaciones de una cuenta suspendida
+  --   siguen visibles en el catálogo, así que un comprador puede llegar a una
+  --   publicación que no podrá contactar. Pausarlas al suspender es decisión
+  --   de producto (¿automático o revisión manual?) y se trata aparte.
 
 universidades
   id, nombre           -- Tec de Monterrey, UANL, UDEM, U-ERRE, UVM…

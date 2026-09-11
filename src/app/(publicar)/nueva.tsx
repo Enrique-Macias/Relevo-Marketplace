@@ -29,6 +29,7 @@ import { Colors, ScreenPadding } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
 import { elegirFotos, PermisoDenegadoError } from '@/lib/foto-picker';
 import { useListingForm } from '@/lib/listing-form';
+import { guardarTelefono, telefonoValido } from '@/lib/perfil';
 import {
   componerAviso,
   esDeterminista,
@@ -49,7 +50,7 @@ type Fase = { t: 'form' } | { t: 'subiendo'; progreso: ProgresoFoto | null };
 
 export default function PublicarScreen() {
   const insets = useSafeAreaInsets();
-  const { session, profile } = useSession();
+  const { session, profile, refreshProfile } = useSession();
   const { categorias, campusDisponibles } = useExplorarState();
   const { mostrar } = useToast();
 
@@ -65,6 +66,14 @@ export default function PublicarScreen() {
   const [listingId, setListingId] = useState<number | null>(null);
   /** El fallo que NO cuelga de ninguna foto: `guardarFotos()` o la activación. */
   const [falloGeneral, setFalloGeneral] = useState(false);
+  /**
+   * Lo tecleado en el campo de WhatsApp, cuando el campo existe.
+   *
+   * NO vive en `useListingForm` a propósito: no es un campo de la publicación
+   * sino del perfil, y se escribe en `public.users`. Dentro del form viajaría
+   * hasta `aInput()`, que arma la fila de `listings`.
+   */
+  const [telefono, setTelefono] = useState('');
 
   const userId = session?.user.id ?? null;
   // La zona de entrega es el campus DEL PERFIL, no el que el usuario tenga
@@ -72,8 +81,32 @@ export default function PublicarScreen() {
   // se entrega lo que uno vende (CLAUDE.md §5).
   const campus = campusDisponibles.find((c) => c.id === profile?.campus_id);
 
+  /**
+   * RF-13: no se puede publicar sin un WhatsApp al que contactar.
+   *
+   * El gate vive AQUÍ y no en "Completar perfil" porque exigirlo en el
+   * onboarding le cerraría el Feed a quien solo quiere comprar — el teléfono no
+   * hace falta para navegar, hace falta para vender. Y por eso mismo la captura
+   * vive en esta pantalla: bloquear sin dar la salida en el mismo lugar sería el
+   * callejón sin salida que ya documenta CLAUDE.md §8b para "Mis publicaciones".
+   *
+   * `faltaTelefono` es `false` mientras el perfil no haya cargado
+   * (`tiene_telefono` llega `undefined`): sin eso, el campo parpadearía en la
+   * pantalla de todo el mundo durante el primer render.
+   */
+  const faltaTelefono = profile?.tiene_telefono === false;
+
+  /**
+   * El gate se suma aquí y NO a `puedeGuardar` (`src/lib/listing-form.ts`): ese
+   * booleano lo comparte "Editar publicación", que no debe heredarlo. Quien
+   * edita una publicación ya publicó, o sea que ya dio su número.
+   */
   const listoParaGuardar =
-    form.puedeGuardar && userId !== null && profile?.universidad_id != null && campus != null;
+    form.puedeGuardar &&
+    userId !== null &&
+    profile?.universidad_id != null &&
+    campus != null &&
+    (!faltaTelefono || telefonoValido(telefono));
 
   const subiendo = fase.t === 'subiendo';
 
@@ -162,6 +195,30 @@ export default function PublicarScreen() {
     setFalloGeneral(false);
     const onProgreso = (progreso: ProgresoFoto) => setFase({ t: 'subiendo', progreso });
 
+    /**
+     * El teléfono va PRIMERO, y el orden es deliberado — el mismo criterio que
+     * "Completar perfil" con la contraseña: si esto falla, todavía no se creó
+     * ninguna publicación y no hay nada que recuperar. Al revés dejaría una
+     * publicación `pausada` cuyo dueño sigue sin ser contactable.
+     *
+     * Solo en el primer intento: para cuando hay `listingId`, el número ya se
+     * guardó y `faltaTelefono` ya es false.
+     */
+    if (faltaTelefono) {
+      try {
+        await guardarTelefono(userId!, telefono);
+        // Para que `tiene_telefono` pase a true y el campo desaparezca. Si esto
+        // fallara, lo peor que pasa es que el campo siga a la vista con el
+        // número ya guardado; el siguiente arranque lo corrige.
+        await refreshProfile();
+      } catch (e: any) {
+        console.warn('[publicar] no se pudo guardar el teléfono:', e?.message ?? e);
+        mostrar('No pudimos guardar tu WhatsApp. Intenta de nuevo.', 'error');
+        setFase({ t: 'form' });
+        return;
+      }
+    }
+
     try {
       const resultado =
         listingId === null
@@ -232,6 +289,11 @@ export default function PublicarScreen() {
           disabled={textoCongelado}
           fotosDisabled={subiendo}
           eligiendoFotos={eligiendoFotos}
+          telefono={
+            faltaTelefono
+              ? { value: telefono, onChangeText: setTelefono, disabled: textoCongelado }
+              : undefined
+          }
         />
       </Screen>
 

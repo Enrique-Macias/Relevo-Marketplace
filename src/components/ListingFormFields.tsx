@@ -10,7 +10,7 @@
 
 import { StyleSheet, View } from 'react-native';
 
-import { Field, SelectField } from '@/components/Field';
+import { Field, PhoneField, SelectField } from '@/components/Field';
 import { PhotoRow } from '@/components/PhotoRow';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { ScreenPadding } from '@/constants/theme';
@@ -46,6 +46,17 @@ type ListingFormFieldsProps = {
    * su propio prop `fotos` — este componente no necesita combinarlos.
    */
   eligiendoFotos?: boolean;
+  /**
+   * El campo de WhatsApp, que solo existe mientras el perfil no tenga número
+   * (RF-13). Se pasa entero o no se pasa: sin él, el formulario es exactamente
+   * el de antes, que es lo que necesita "Editar publicación".
+   *
+   * No sale de `form` a propósito — no es un campo de la publicación sino del
+   * perfil, y se escribe en `public.users`, no en `listings`. Meterlo a
+   * `useListingForm` lo haría viajar hasta `aInput()`, que arma la fila de la
+   * publicación.
+   */
+  telefono?: { value: string; onChangeText: (v: string) => void; disabled?: boolean };
 };
 
 export function ListingFormFields({
@@ -56,6 +67,7 @@ export function ListingFormFields({
   disabled = false,
   fotosDisabled = disabled,
   eligiendoFotos = false,
+  telefono,
 }: ListingFormFieldsProps) {
   return (
     <View style={styles.body}>
@@ -130,8 +142,28 @@ export function ListingFormFields({
         placeholder="Sin campus"
         onPress={() => {}}
         disabled
-        containerStyle={styles.ultimoCampo}
+        containerStyle={telefono ? undefined : styles.ultimoCampo}
       />
+
+      {/*
+        Solo cuando el perfil todavía no tiene número (RF-13). Va al final y no
+        arriba porque no es un dato del artículo: es lo último que falta para
+        poder publicar. Ver el frame "Publicar (falta teléfono)".
+
+        Editar publicación nunca lo pasa, así que ahí el formulario queda
+        idéntico a como estaba: quien ya publicó una vez, por definición ya dio
+        su número.
+      */}
+      {telefono ? (
+        <PhoneField
+          label="Tu WhatsApp"
+          value={telefono.value}
+          onChangeText={telefono.onChangeText}
+          editable={!telefono.disabled}
+          hint="Solo se comparte cuando alguien toca “Contactar por WhatsApp” en una de tus publicaciones. No aparece en tu perfil."
+          containerStyle={styles.ultimoCampo}
+        />
+      ) : null}
     </View>
   );
 }

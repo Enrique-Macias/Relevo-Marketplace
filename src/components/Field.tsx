@@ -67,6 +67,74 @@ export function Field({ label, containerStyle, style, onFocus, ...inputProps }: 
   );
 }
 
+type PhoneFieldProps = {
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  /** Letra chica bajo el campo (`.auth-terms`). Publicar la usa, Editar perfil no. */
+  hint?: string;
+  editable?: boolean;
+  containerStyle?: ViewStyle;
+};
+
+/**
+ * `.phone-field` — el campo de WhatsApp, con la lada fija fuera del input.
+ *
+ * El `+52` es parte del control y no un placeholder ni texto tecleable: hoy el
+ * catálogo es mexicano (la deuda consciente de CLAUDE.md §8 tiene el disparador
+ * para el día que deje de serlo), así que no hay nada que elegir, y sacándolo
+ * del input se vuelve imposible borrarlo por accidente. Lo que el usuario
+ * teclea son los 10 dígitos nacionales; `aE164()` (`src/lib/perfil.ts`) arma el
+ * valor que va a la base.
+ *
+ * No filtra las teclas al escribir: `soloDigitos()` acepta "81 1234 5678" y
+ * "81-1234-5678" porque es como la gente dicta un número, y pelearle al usuario
+ * a media escritura es peor que limpiar al guardar — el mismo criterio que ya
+ * usa `precio` en `listing-form.ts`.
+ */
+export function PhoneField({
+  label,
+  value,
+  onChangeText,
+  hint,
+  editable = true,
+  containerStyle,
+}: PhoneFieldProps) {
+  const inputRef = useRef<TextInput>(null);
+  const scrollViewRef = useScreenScrollViewRef();
+
+  // Mismo delay y mismo motivo que en `Field` — este campo lo necesita más que
+  // ninguno: en Publicar es el último de la pantalla, justo encima del teclado.
+  const handleFocus = () => {
+    setTimeout(() => scrollToFocusedInput(scrollViewRef, inputRef), 100);
+  };
+
+  return (
+    <View style={[styles.field, containerStyle]}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={[styles.phone, !editable && styles.disabled]}>
+        <Text style={styles.phonePrefix}>+52</Text>
+        <TextInput
+          ref={inputRef}
+          style={styles.phoneInput}
+          value={value}
+          onChangeText={onChangeText}
+          onFocus={handleFocus}
+          editable={editable}
+          placeholder="81 1234 5678"
+          placeholderTextColor={Colors.placeholder}
+          keyboardType="phone-pad"
+          // 16 y no 10: `soloDigitos()` tolera separadores y un +52 pegado al
+          // inicio (quien copia su número de WhatsApp lo trae incluido), así que
+          // el tope cuenta caracteres tecleados, no dígitos útiles.
+          maxLength={16}
+        />
+      </View>
+      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+    </View>
+  );
+}
+
 type SelectFieldProps = {
   label: string;
   /** Texto elegido. Sin valor, se muestra el placeholder en `--placeholder`. */
@@ -149,6 +217,43 @@ const styles = StyleSheet.create({
   selectPlaceholder: {
     ...Typography.input,
     color: Colors.placeholder,
+  },
+  // .phone-field{display:flex; align-items:center; gap:8px; background:var(--card);
+  //   border:1px solid var(--line); border-radius:14px; padding:13px 14px;}
+  // Son exactamente los valores de `.text-field`; lo único propio es el reparto
+  // en dos partes.
+  phone: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    borderRadius: Radii.lg,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+  },
+  // .phone-prefix{font-size:14px; color:var(--ink-soft);}
+  phonePrefix: {
+    ...Typography.input,
+    color: Colors.inkSoft,
+  },
+  // .phone-field .text-field{flex:1; background:none; border:none; padding:0;}
+  // Se despoja de la caja para no dibujar un borde dentro de otro.
+  phoneInput: {
+    flex: 1,
+    padding: 0,
+    ...Typography.input,
+    color: Colors.ink,
+  },
+  // `.auth-terms` con los dos overrides inline del frame: sin su max-width de
+  // 250px (existe para una columna centrada y aquí partiría el texto a media
+  // pantalla) y pegada al campo en vez de los 18px que separan bloques.
+  hint: {
+    ...Typography.terms,
+    color: Colors.placeholder,
+    marginTop: 7,
   },
   // `.select-field.disabled{ opacity:0.45 }` — misma regla compartida del
   // prototipo que usa `.primary-btn.disabled`.

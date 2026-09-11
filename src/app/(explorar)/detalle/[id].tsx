@@ -39,6 +39,7 @@ import {
   registrarContacto,
   type ListingDetalle,
 } from '@/lib/listings';
+import { fetchTelefonoVendedor, urlWhatsapp } from '@/lib/perfil';
 import { useSession } from '@/lib/session';
 
 const CONDICION_LABEL: Record<string, string> = {
@@ -67,7 +68,7 @@ export default function DetalleScreen() {
   const listingId = Number(id);
   const insets = useSafeAreaInsets();
   const { favoritos, toggleFavorito, getCategoria } = useExplorarState();
-  const { session } = useSession();
+  const { session, profile } = useSession();
   const { mostrar } = useToast();
 
   const [listing, setListing] = useState<ListingDetalle | null>(null);
@@ -164,16 +165,75 @@ export default function DetalleScreen() {
   }, [listing, isOwner]);
 
   /**
-   * RF-13. El registro va PRIMERO y con `await`, pero su fallo no cancela el
-   * contacto: negarle al usuario abrir WhatsApp por un fallo de log sería peor
-   * que perder la fila. Ahora bien, esa fila no es cosmética — alimenta
-   * "¿A quién le vendiste?" y de ahí las calificaciones (RF-12) — así que el
-   * fallo se le dice al usuario con un toast, además de quedar en consola con
-   * los ids para poder correlacionarlo con los logs del proyecto.
+   * RF-13 — el contacto por WhatsApp, en tres pasos y en este orden: conseguir
+   * el número, registrar el contacto, abrir el deep link. El porqué de cada uno
+   * está en el cuerpo, junto al paso que lo explica.
    */
   async function contactarPorWhatsapp() {
     if (!listing) return;
 
+    /**
+     * EL NÚMERO VA PRIMERO, Y ESO CAMBIÓ EL ORDEN DE ESTA FUNCIÓN.
+     *
+     * Antes se registraba el contacto y se abría WhatsApp con un placeholder,
+     * así que nada podía impedir el contacto. Ahora el número puede no llegar
+     * —y hay dos motivos distintos por los que no llega— y en ese caso no hubo
+     * contacto: registrarlo dejaría en "¿A quién le vendiste?" (RF-12) a
+     * alguien que nunca pudo escribirle.
+     */
+    let telefono: string | null = null;
+    try {
+      telefono = await fetchTelefonoVendedor(listing.vendedor.id);
+    } catch (e: any) {
+      console.warn(`[contacto] no se pudo leer el teléfono del vendedor: ${e?.message ?? e}`);
+      mostrar('No pudimos abrir WhatsApp. Revisa tu conexión.', 'error');
+      return;
+    }
+
+    if (!telefono) {
+      /**
+       * `seller_whatsapp` devuelve null por TRES causas y no dice cuál — no
+       * revela por qué negó. Las tres se separan aquí, cada una con un dato que
+       * el cliente ya tiene:
+       *
+       *  1. quien llama está suspendido → `profile.estado`, de la propia sesión;
+       *  2. el vendedor está suspendido → `listing.vendedor.estado`, que viene
+       *     en el embed (ver `VENDEDOR` en `src/lib/listings.ts`);
+       *  3. el vendedor no guardó número → lo que queda.
+       *
+       * El orden importa: (1) va primero porque es lo que le pasa a QUIEN está
+       * leyendo, y saber que su propia cuenta está suspendida le explica también
+       * todo lo demás que no le funciona.
+       *
+       * Esto NO es lógica de autorización duplicada (CLAUDE.md §0 regla 7): el
+       * candado es la RPC —el número no salió de la base, mire el cliente lo que
+       * mire— y aquí solo se elige el texto. Mismo criterio que el guard de
+       * reactivación, que traduce el `raise exception` del trigger de fotos a un
+       * toast.
+       *
+       * El mensaje del vendedor suspendido es NEUTRO a propósito: `estado` es
+       * consultable por cualquier autenticado, pero una cosa es que el dato
+       * exista y otra anunciar en pantalla que una cuenta está sancionada.
+       */
+      mostrar(
+        profile?.estado === 'suspendido'
+          ? 'Tu cuenta está suspendida y no puede contactar vendedores'
+          : listing.vendedor.estado === 'suspendido'
+            ? 'Esta cuenta no está disponible para contacto'
+            : 'Este vendedor todavía no ha dejado un WhatsApp',
+        'error'
+      );
+      return;
+    }
+
+    /**
+     * RF-13. El registro va con `await`, pero su fallo no cancela el contacto:
+     * negarle al usuario abrir WhatsApp por un fallo de log sería peor que
+     * perder la fila. Ahora bien, esa fila no es cosmética — alimenta "¿A quién
+     * le vendiste?" y de ahí las calificaciones (RF-12) — así que el fallo se le
+     * dice al usuario con un toast, además de quedar en consola con los ids
+     * para poder correlacionarlo con los logs del proyecto.
+     */
     if (userId) {
       try {
         await registrarContacto(listing.id, userId);
@@ -186,24 +246,8 @@ export default function DetalleScreen() {
       }
     }
 
-    // TODO(teléfono real): este número es un placeholder — el deep link no
-    // llega al vendedor de verdad. No es un olvido, es un hueco del modelo de
-    // datos, ya investigado:
-    //   · `public.users` no tiene columna de teléfono
-    //     (supabase/migrations/20260906000438_users_profiles.sql).
-    //   · `docs/product-spec.md` §Modelo de datos tampoco la lista: RF-13
-    //     ("botón que abre WhatsApp con el vendedor") y RF-05 la asumen, pero
-    //     ninguna la define.
-    //   · Ningún frame de `design/relevo-app.html` la captura — ni "Completar
-    //     perfil" ni "Editar perfil" tienen ese campo.
-    // O sea: resolverlo necesita migración + frame nuevo en el diseño + campo
-    // en Onboarding, no solo cambiar esta línea. Anotado en CLAUDE.md §8 y en
-    // product-spec.md como pendiente formal.
-    const telefono = '528111234567';
     void Linking.openURL(
-      `https://wa.me/${telefono}?text=${encodeURIComponent(
-        `Hola, vi tu publicación "${listing.titulo}" en Relevo`
-      )}`
+      urlWhatsapp(telefono, `Hola, vi tu publicación "${listing.titulo}" en Relevo`)
     );
   }
 

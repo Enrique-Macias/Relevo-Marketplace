@@ -633,6 +633,19 @@
   .segment.active{background:var(--ink); color:var(--paper); border-color:var(--ink);}
   .select-field{display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px; font-size:14px; color:var(--ink);}
 
+  /* Campo de teléfono con lada FIJA. El país no se elige: hoy el catálogo es
+     mexicano (ver la deuda consciente de CLAUDE.md §8, con su disparador para
+     el día que deje de serlo). El "+52" es parte del control y no un
+     placeholder a propósito — comunica que los 10 dígitos que se escriben se
+     guardan como +52XXXXXXXXXX, y no se puede borrar por accidente.
+     No trae ningún valor nuevo: el contenedor son exactamente los de
+     .text-field (mismo fondo, borde, radio y padding), y lo único propio es el
+     reparto en dos partes. El input de adentro se despoja de esos mismos
+     valores para no dibujar una caja dentro de otra. */
+  .phone-field{display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px;}
+  .phone-prefix{font-size:14px; color:var(--ink-soft); flex-shrink:0;}
+  .phone-field .text-field{flex:1; width:auto; background:none; border:none; border-radius:0; padding:0;}
+
   /* Profile */
   .profile-top{display:flex; align-items:center; justify-content:space-between; padding:16px 20px 0; flex-shrink:0;}
   .profile-block{display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 20px 20px;}
@@ -2267,6 +2280,139 @@
     </div>
   </div>
 
+  <!-- QUINTO estado de "Publicar", y el único que se ve ANTES de tocar nada.
+
+       Por qué existe: RF-13 pide un botón que abra WhatsApp "con el vendedor",
+       y hasta ahora ninguna pantalla capturaba un número — el deep link usaba
+       un placeholder. El número se pide AQUÍ, y no en "Completar perfil",
+       porque exigirlo en el onboarding le cerraría el Feed a quien solo quiere
+       comprar: el teléfono no hace falta para navegar, hace falta para vender.
+       Así que el candado vive donde el dato se vuelve necesario — no se puede
+       publicar sin él— y la captura vive junto al candado, en la misma
+       pantalla, para que quien se topa con el bloqueo pueda resolverlo sin ir
+       a ningún lado (el mismo criterio del .notice del error de subida).
+
+       El campo aparece SOLO mientras el perfil no tenga número guardado. En
+       cuanto se guarda, esta pantalla vuelve a ser "Publicar" tal cual, y ya
+       no reaparece. Por eso no es una pantalla nueva del inventario de
+       Publicar sino un estado más del mismo formulario, como los otros cuatro.
+
+       El "Publicar artículo" va apagado y no es un misterio: el campo vacío
+       que lo explica está a la vista, en la misma pantalla, justo arriba. -->
+  <div class="phone-block" data-cat="publicar">
+    <div class="phone-label">Publicar (falta teléfono)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        <div class="form-title">Nueva publicación</div>
+        <span style="font-size:13px; font-weight:600; color:var(--brick); opacity:0.45;">Guardar</span>
+      </div>
+      <div class="screen">
+        <div class="form-body">
+          <div class="field-label-row">
+            <label class="field-label">Fotos</label>
+            <span class="photo-count">1/5</span>
+          </div>
+          <div class="photo-row">
+            <div class="photo-thumb" style="background:var(--brick-tint);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              <div class="photo-remove">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </div>
+            </div>
+            <div class="photo-add">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Agregar
+            </div>
+            <div class="photo-add">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Agregar
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Título</label>
+            <input class="text-field" type="text" value="Cálculo de Larson, 9a edición">
+          </div>
+
+          <div class="field">
+            <label class="field-label">Precio</label>
+            <input class="text-field" type="text" value="$ 280">
+          </div>
+
+          <div class="field">
+            <label class="field-label">Categoría</label>
+            <div class="segmented">
+              <div class="segment active">Libros</div>
+              <div class="segment">Electrónica</div>
+              <div class="segment">Muebles</div>
+              <div class="segment">Ropa</div>
+              <div class="segment">Deportes</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Condición</label>
+            <div class="segmented">
+              <div class="segment">Nuevo</div>
+              <div class="segment active">Como nuevo</div>
+              <div class="segment">Buen estado</div>
+              <div class="segment">Usado</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Descripción</label>
+            <textarea class="textarea-field" placeholder="Cuenta el estado del artículo, si tiene detalles, por qué lo vendes…"></textarea>
+          </div>
+
+          <!-- Deshabilitado: la zona de entrega es el campus del perfil, no una
+               elección de esta pantalla. Usa el estado compartido
+               `.select-field.disabled`, que ya existía anticipando este uso. -->
+          <div class="field">
+            <label class="field-label">Zona de entrega</label>
+            <div class="select-field disabled">
+              <span>Tec de Monterrey</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </div>
+
+          <!-- Último campo del formulario, de ahí el margin-bottom:0 que antes
+               llevaba "Zona de entrega". Va al final y no arriba porque no es
+               un dato del artículo: es lo último que falta para poder publicar.
+
+               La ayuda usa `.auth-terms` —la misma letra chica de 11px que ya
+               explica cosas en el onboarding— con dos overrides inline: sin el
+               max-width de 250px, que existe para una columna centrada y aquí
+               partiría el texto a media pantalla, y pegada al campo en vez de
+               los 18px que separan un bloque de otro. No es una clase nueva
+               porque no es un rol nuevo. -->
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Tu WhatsApp</label>
+            <div class="phone-field">
+              <span class="phone-prefix">+52</span>
+              <input class="text-field" type="text" placeholder="81 1234 5678">
+            </div>
+            <div class="auth-terms" style="margin-top:7px; max-width:none;">Solo se comparte cuando alguien toca “Contactar por WhatsApp” en una de tus publicaciones. No aparece en tu perfil.</div>
+          </div>
+        </div>
+
+        <div class="sticky-cta">
+          <button class="primary-btn disabled" style="margin-top:0;">Publicar artículo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="phone-block" data-cat="cuenta">
     <div class="phone-label">Perfil</div>
     <div class="device">
@@ -3680,6 +3826,19 @@
             <div class="field">
               <label class="field-label">Carrera</label>
               <input class="text-field" type="text" value="Ingeniería en Sistemas">
+            </div>
+            <!-- Mismo campo que "Publicar (falta teléfono)", y la única otra
+                 puerta para cambiarlo una vez guardado. Va aquí, con el nombre
+                 y la carrera, porque es dato de contacto personal — universidad
+                 y campus de abajo son el bloque institucional. La ayuda no se
+                 repite: en Publicar explica por qué de pronto se lo piden; aquí
+                 el usuario vino a editar su perfil a propósito. -->
+            <div class="field">
+              <label class="field-label">Tu WhatsApp</label>
+              <div class="phone-field">
+                <span class="phone-prefix">+52</span>
+                <input class="text-field" type="text" value="81 1234 5678">
+              </div>
             </div>
             <div class="field">
               <label class="field-label">Universidad</label>

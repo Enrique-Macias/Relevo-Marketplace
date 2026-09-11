@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 50 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 51 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -141,7 +141,7 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Aplicado en 11 migraciones (`supabase/migrations/`) contra el proyecto remoto,
+Aplicado en 13 migraciones (`supabase/migrations/`) contra el proyecto remoto,
 con RLS activo y probado en las 10 tablas más el bucket de Storage. Este es el esquema **real**, no
 solo la intención original.
 
@@ -165,7 +165,9 @@ users
   id uuid (= auth.users.id), correo (NO expuesto al cliente, ver abajo),
   nombre, foto_url, universidad_id, campus_id, carrera (nullable hasta
   "Completar perfil"), rating_promedio (solo triggers escriben),
-  estado (solo triggers/service_role escriben)
+  estado (solo triggers/service_role escriben),
+  telefono (E.164 `+52` + 10 dígitos, NO expuesto al cliente — ver abajo),
+  tiene_telefono (generada: `telefono is not null`; ESTA sí es legible)
 
 -- Publicaciones
 listings
@@ -207,11 +209,65 @@ protección real es un `grant select` de columna que excluye `correo`
 explícitamente. El propio usuario ya tiene su correo en la sesión de Auth, no
 necesita leerlo de `public.users`.
 
+**Protección de `telefono` (RNF-05, RF-13):** mismo criterio que `correo` —
+fuera del `grant select`, con una diferencia: `telefono` SÍ tiene `grant update`
+(su dueño lo escribe). Se lee **solo** por `public.seller_whatsapp(uuid)`.
+Ponerlo en el select lo volvería enumerable en bloque: `users_select` es
+`using (true)`, así que un autenticado se bajaría el directorio entero de
+teléfonos en un request. **Alcance honesto:** la RPC lo hace no-enumerable-en-
+bloque, no inaccesible — `users.id` sí es legible, así que iterarlos y llamar N
+veces es posible; son N requests observables contra 1 invisible. Junto a él vive
+`tiene_telefono`, columna **generada** (mismo truco que `listings.busqueda`:
+materializar para poder referenciarla por nombre desde PostgREST) que responde
+"¿es contactable?" sin revelar el número — la usa el gate de Publicar para
+decidir en el render si mostrar el campo, sin round trip ni parpadeo.
+
 **Usuario suspendido — tabla de decisión (no implícita):** puede leer catálogo,
-perfiles y reseñas; puede editar su propio perfil y usar favoritos. NO puede
-publicar, editar/pausar/borrar sus publicaciones existentes, tocar sus fotos,
-contactar por WhatsApp, calificar, ni reportar — todo vía el helper
-`private.is_active_user()`.
+perfiles y reseñas; puede editar su propio perfil (**incluido su teléfono**) y
+usar favoritos. NO puede publicar, editar/pausar/borrar sus publicaciones
+existentes, tocar sus fotos, contactar por WhatsApp **ni ser contactado**,
+calificar, ni reportar. Casi todo vía el helper `private.is_active_user()` — la
+excepción es "ni ser contactado", que no puede usarlo y se explica abajo.
+
+Las tres primeras **sí tienen policy real detrás**, por si alguien lo duda:
+`listings_insert_own`, `listings_update_own` y `listings_delete_own`
+(`20260906000439:61-74`) llevan `is_active_user()` en su `with check` / `using`,
+y T10 las vigila con `:B` suspendido. No son intención documentada.
+
+**Dónde se hace cumplir "no puede contactar por WhatsApp", que no era donde
+parecía.** `listing_contacts_insert_own` exige `is_active_user()`, así que la
+base sí le rechaza al suspendido el registro del contacto — pero el cliente se
+traga ese rechazo **a propósito**: negarle el contacto a alguien por un fallo de
+log sería peor que perder la fila, así que abre `wa.me` igual y solo avisa con un
+toast. Correcto para un fallo de red, y con el efecto colateral de que **el único
+efecto real de estar suspendido era no quedar registrado**. Desde que el número
+vive detrás de `seller_whatsapp`, esa función es lo único que hace cumplir la
+regla.
+
+**Y la hace cumplir en las DOS direcciones, con dos mecanismos distintos**
+(`20260911000449`) — lo segundo lo destapó una prueba en dispositivo, donde un
+comprador activo sí llegaba a WhatsApp de un vendedor suspendido:
+
+- **el llamante**, con el `case ... when private.is_active_user()`;
+- **el objetivo**, con un `and u.estado = 'activo'` inline en el subselect. Va
+  inline y NO con el helper porque `is_active_user()` resuelve `auth.uid()` por
+  definición: no acepta parámetro, así que no hay forma de preguntarle por un
+  tercero.
+
+No quites ninguno de los dos "por simplificar": T16 tiene una aserción por cada
+dirección, y cada una pide el número de alguien cuyo estado NO esté en juego,
+justo para que un `null` no pueda pasar por la razón equivocada.
+
+Consecuencia en la UI: `seller_whatsapp` devuelve `null` por **tres** causas —el
+vendedor no tiene número, quien llama está suspendido, o el vendedor lo está— y
+no dice cuál. El toast las separa con datos que el cliente ya tiene: `estado` de
+la propia sesión (`profile.estado`, en `PROFILE_COLUMNS`) y `estado` del vendedor
+(en el embed `VENDEDOR` de `src/lib/listings.ts`, que lo trae para esto). El
+mensaje del vendedor suspendido es **neutro** ("Esta cuenta no está disponible
+para contacto"): el dato es consultable, pero anunciar en pantalla que una cuenta
+está sancionada es otra cosa. Nada de esto es autorización duplicada: la RPC ya
+negó el número mire el cliente lo que mire, y lo único que se elige aquí es el
+texto.
 
 **`vistas_count` se incrementa solo vía `public.increment_listing_view(id)`**
 (`SECURITY DEFINER`, excluye al dueño para que no infle sus propias vistas).
@@ -304,17 +360,28 @@ para impedir. Tres cosas que conviene saber antes de tocarlo:
   `raise exception` a un toast con salida.
 
 **Funciones `SECURITY DEFINER`** viven en el esquema `private` (nunca en
-`public`) excepto DOS, que sí deben ser invocables por PostgREST desde el
-cliente: `increment_listing_view` y `listing_favorites_count` (eran una sola
-hasta que Detalle necesitó el conteo de favoritos; si algún día hay una
-tercera, revisa primero si de verdad la invoca el cliente o si va en `private`).
-`authenticated` tiene `USAGE` sobre `private` + `EXECUTE` acotado
-a las TRES que se invocan desde policies — `is_active_user()`, `can_rate()` y
-`listing_id_from_object_name()` — mientras las otras cinco, que solo disparan
-por trigger, siguen revocadas. Ver sección 9 sobre por qué ese `USAGE` existe (no es lo que
-originalmente se pensó).
+`public`) excepto TRES, que sí deben ser invocables por PostgREST desde el
+cliente: `increment_listing_view`, `listing_favorites_count` y
+`seller_whatsapp` (eran una sola hasta que Detalle necesitó el conteo de
+favoritos, y dos hasta que el botón de WhatsApp necesitó el número real; si
+algún día hay una cuarta, revisa primero si de verdad la invoca el cliente o si
+va en `private`). `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
+acotado a las TRES que se invocan desde policies — `is_active_user()`,
+`can_rate()` y `listing_id_from_object_name()` — mientras las otras cinco, que
+solo disparan por trigger, siguen revocadas. Ver sección 9 sobre por qué ese
+`USAGE` existe (no es lo que originalmente se pensó).
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 67 aserciones, corre dentro de
+**Una función `SECURITY DEFINER` de `public` llamando a una de `private` no
+necesita ningún grant extra** — patrón estrenado por `seller_whatsapp`, que
+invoca a `private.is_active_user()`. No es el caso de §9 (una *policy* llamando
+a una función, donde Postgres sí exige el privilegio al rol que dispara la
+policy): el cuerpo corre como el dueño de la función, así que el chequeo se hace
+contra él y los privilegios de `authenticated` sobre `private` son irrelevantes
+para ese camino. **Verificado corriendo la suite**, no deducido: la aserción de
+T16 en la que `:B` (suspendido) recibe `null` pasa en verde, y con un grant
+faltante habría reventado con `42501`.
+
+**Regresión de RLS:** `supabase/tests/rls.sql`, 81 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -331,16 +398,34 @@ altura del archivo). Y a **67** con las 3 del trigger de activación (T15, que
 siembra sus propias dos publicaciones y también usa a `:A`) — la cuarta que iba
 a tener, la del EXECUTE revocado, terminó sumada a la invariante de grants de
 T12, que es donde vive ese tipo de aserción, así que ahí se pasó de 4 funciones
-vigiladas a 5 sin cambiar la cuenta.
+vigiladas a 5 sin cambiar la cuenta. Y a **80** con el teléfono: 11 de T16 más
+**2** en T12, no una: la del EXECUTE de `seller_whatsapp` y la de que `telefono`
+nunca tenga `SELECT` — hermana de la de `correo`, con la diferencia de que este
+sí tiene `UPDATE`. Y a **81** al hacer que `seller_whatsapp` valide también al
+objetivo.
+
+**Ese último cambio no solo sumó: reestructuró T16, y ahí hay una lección.** El
+camino feliz era "`:A` (activo) recibe el número de `:B`" — con `:B` suspendido
+desde T10, porque era el único otro usuario disponible a esa altura. En cuanto
+la RPC miró al objetivo, esa aserción **empezó a fallar**, y otra ("un vendedor
+sin número devuelve null", también contra `:B`) habría **pasado por la razón
+equivocada**: dos motivos distintos produciendo el mismo `null`. Es el error que
+esta misma sección documenta con la cuenta `:C` de T11b, reaparecido. La salida
+fue que **T16 siembre su propio `:D`** —vendedor activo con teléfono, la primera
+sección del archivo que siembra un usuario— para que cada aserción tenga un solo
+motivo posible: el camino feliz contra `:D`, la negativa del objetivo contra
+`:B`, y la del llamante pidiendo el número de `:D`.
 **Moraleja para secciones nuevas: no reutilices fixtures de secciones
-anteriores** — a media suite hay filas y cuentas ya borradas a propósito.
+anteriores** — a media suite hay filas y cuentas ya borradas a propósito, y un
+estado que hoy es incidental (quién está suspendido) puede volverse
+load-bearing.
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
 
 ---
 
-## 4. Inventario completo de pantallas (50)
+## 4. Inventario completo de pantallas (51)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -367,9 +452,15 @@ transitorio, no una pantalla en la que la app se quede**, igual que
 `.photo-add.is-busy` dentro de "Publicar (procesando fotos)"; se cuenta porque
 es un `phone-block` propio y el filtro del prototipo lo cuenta.
 
-### Publicar (6)
+### Publicar (7)
 Publicar · Publicar (procesando fotos) · Publicar (subiendo imágenes) ·
-Publicar (error de subida) · Editar publicación · Publicación creada
+Publicar (error de subida) · Publicar (falta teléfono) · Editar publicación ·
+Publicación creada
+
+"Publicar (falta teléfono)" es el quinto estado del MISMO componente, y el único
+que se ve ANTES de tocar nada: el campo de WhatsApp aparece solo mientras el
+perfil no tenga número guardado (RF-13), y en cuanto se guarda la pantalla
+vuelve a ser "Publicar" tal cual. Ver §8b.
 
 ### Cuenta (8)
 Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío ·
@@ -436,7 +527,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 50 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 51 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -506,8 +597,8 @@ y solo al final las convenciones genéricas de los skills.
 ## 8. Estado de implementación del backend
 
 **Hecho:**
-- 11 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
-  con RLS + regresión de 67 aserciones pasando. (§3 es la cuenta buena: esta
+- 13 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
+  con RLS + regresión de 81 aserciones pasando. (§3 es la cuenta buena: esta
   línea ya se quedó atrás dos veces —en 8/53 y en 10/64—, así que si no
   coinciden, la de §3 gana.)
 - Seed de datos de referencia (12 categorías, Tec de Monterrey / campus
@@ -617,22 +708,67 @@ y solo al final las convenciones genéricas de los skills.
   - **Lo respalda un trigger en la base**, no solo el cliente: ver §3
     (`listings_enforce_activation_has_photos`).
 
+- **RF-13 completo: el botón de WhatsApp abre el número REAL del vendedor**
+  (migración `20260910000448`). Se cerró el "HUECO CONOCIDO" que
+  `docs/product-spec.md` arrastraba desde el principio. Cuatro cosas que no se
+  ven en el diff:
+  - **El gate vive en Publicar, NO en el onboarding.** Exigir el teléfono en
+    "Completar perfil" le habría cerrado el Feed a quien solo quiere comprar, y
+    habría bloqueado a toda cuenta existente. El número no hace falta para
+    navegar, hace falta para vender: no se puede publicar sin él.
+  - **Y por eso la captura vive en la MISMA pantalla.** Bloquear en Publicar con
+    la única captura en el onboarding —por donde toda cuenta existente ya
+    pasó— habría dejado al usuario tocando el FAB, bloqueado y sin a dónde ir
+    hasta que exista "Editar perfil". Es el callejón sin salida que este mismo
+    documento describe para "Mis publicaciones". El campo aparece solo cuando
+    `tiene_telefono` es false y desaparece al guardarse.
+  - **El campo NO se agregó a "Completar perfil"**, ni siquiera como opcional:
+    un comprador lo saltaría, así que el gate de Publicar tendría que existir
+    igual, y a cambio costaba tres frames más estado nuevo en el borrador de
+    onboarding. Su casa es "Editar perfil" (Fase b, sin construir todavía);
+    el frame de diseño YA lo tiene, adelantado a propósito para no hacer dos
+    pasadas al HTML.
+  - **El chequeo de suspensión vive en la RPC**, y ese es el único lugar donde
+    esa regla se cumple — ver §3, que explica por qué `listing_contacts` no
+    alcanzaba. Desde `20260911000449` valida las **dos** puntas: ni un
+    suspendido contacta, ni se le contacta a él.
+
+- **Consecuencia abierta de eso, y es el gancho a una tarea que NO está hecha:
+  las publicaciones de un suspendido siguen visibles en el feed.**
+  `listings_select` no filtra por el estado del dueño (solo esconde las
+  `pausada` a quien no es su dueño), así que desde este cambio el catálogo
+  puede mostrar una publicación que nadie puede contactar: el comprador toca
+  "Contactar por WhatsApp" y recibe "Esta cuenta no está disponible para
+  contacto". No es un bug —la regla de negocio se cumple— pero es un callejón
+  para el comprador. Cerrarlo es **pausar las publicaciones al suspender la
+  cuenta**, y eso es decisión de producto antes que técnica (¿automático con un
+  trigger sobre `users` que escribe en `listings`, o revisión manual de un admin
+  desde Studio?, ¿y qué pasa al reactivar: se despausan solas o no?). Se trata
+  aparte, con su propio plan.
+
 **Pendiente, en este orden de prioridad:**
 1. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
    deja los datos listos (`listing_contacts`, `favorites`), pero no hay
    función que dispare la notificación todavía.
-2. **Columna `telefono` en `public.users` + su captura.** El botón "Contactar
-   por WhatsApp" abre un `wa.me` con un número placeholder, porque no hay de
-   dónde sacar el real: no existe la columna
-   (`20260906000438_users_profiles.sql`), `docs/product-spec.md` §Modelo de
-   datos no la lista, y ningún frame de `relevo-app.html` la captura —
-   RF-13 y RF-05 la asumen sin definirla nunca. Resolverlo es migración +
-   frame nuevo en el diseño + campo en "Completar perfil" y "Editar perfil",
-   no una línea de código. El insert a `listing_contacts` (lo que de verdad
-   habilita RF-12) SÍ es real desde ya.
 
 **Deuda consciente — con disparador de revisión, no "algún día":**
 
+- **La lada del teléfono está fija en `+52`**, en el `check` de la base
+  (`users_telefono_e164_mx`), en el prefijo inerte del campo y en el
+  `slice(1)` que arma el `wa.me`. Hoy el catálogo es mexicano y nadie pidió
+  otra cosa, así que un selector de país sería UI que nadie usa. El dato ya se
+  guarda en E.164, o sea que el costo futuro es acotado. **Revisar cuando:** se
+  abra la app a una universidad fuera de México. **Fix:** alterar el `check` +
+  agregar el selector de país a los frames de "Publicar (falta teléfono)" y
+  "Editar perfil" (el segundo ya tiene el campo, le faltaría el selector).
+- **El teléfono es no-enumerable-en-bloque, no inaccesible.** `seller_whatsapp`
+  evita que un autenticado se baje el directorio entero en un request, que es lo
+  que pide RNF-05 — pero `users.id` sí está en el grant de select, así que un
+  cliente hostil podría iterar ids y llamarla N veces. Son N requests
+  observables y limitables contra 1 invisible. **Revisar cuando:** aparezcan
+  llamadas masivas a esa RPC en los logs del proyecto. **Fix:** rate limit, o
+  anclar la firma a un `listing_id` que el llamante esté viendo (ojo: eso deja
+  fuera el botón de "Perfil público", que no tiene publicación en contexto).
 - **Un insert directo con `estado='activa'` y 0 fotos sigue siendo posible.** El
   trigger `listings_enforce_activation_has_photos` (§3) solo cubre UPDATE. Es
   hermano exacto del punto de abajo: el cliente ya no toma ese camino (toda
@@ -888,10 +1024,18 @@ color pleno — bajarlo apagaría los puntos que comunican el avance.
 
 Botones inertes a propósito (llevan a grupos sin construir): Compartir,
 Reportar, menú kebab y "Marcar como vendida". **"Editar publicación" en
-Detalle ya NO es inerte** — navega a `(publicar)/editar/[id]`. El botón de
-WhatsApp sí registra de verdad en `listing_contacts` antes de abrir el deep
-link; lo único mock que le queda es el número, y por la razón documentada en §8
-(pendiente 2), no por descuido.
+Detalle ya NO es inerte** — navega a `(publicar)/editar/[id]`. **El botón de
+WhatsApp ya no tiene nada mock**: pide el número real por `seller_whatsapp` y
+registra el contacto en `listing_contacts`, en ese orden.
+
+**El orden de `contactarPorWhatsapp()` cambió y no es cosmético.** Antes
+registraba primero y abría después, porque el `wa.me` con placeholder no podía
+fallar. Ahora el número puede no llegar —vendedor sin teléfono, o llamante
+suspendido— y en ese caso NO hubo contacto: registrarlo dejaría en "¿A quién le
+vendiste?" (RF-12) a alguien que nunca pudo escribirle. Por eso el número va
+primero y su ausencia corta la función. Lo que NO cambió es el fallo suave del
+registro: si el insert revienta, WhatsApp se abre igual y el usuario ve un toast
+(§8, deuda del log perdido).
 
 **Fotos: construidas, con UN pendiente de dispositivo real.**
 `src/components/ListingPhoto.tsx` es el punto ÚNICO de contacto con el bucket
@@ -913,15 +1057,40 @@ simulador headless no cuenta como prueba, y todo el patrón de lectura depende d
 ese header. Si no llegara, la respuesta NO es migrar a signed URLs: eso es un
 cambio de semántica de seguridad disfrazado de refactor (§9).
 
-**Publicar — construido, conectado y ATÓMICO.** Las 5 pantallas viven en 3
-archivos de ruta: `nueva.tsx` cubre los 3 estados de Publicar (formulario,
-subiendo, error de subida), más `creada.tsx` —hoy de un solo estado— y
-`editar/[id].tsx`. La capa de datos: `src/lib/storage.ts` (subida, borrado y URL
-autenticada), `src/lib/publicar.ts` (la orquestación y su orden de llamadas),
-`src/lib/listing-form.ts` (estado + validación compartida) y
+**Publicar — construido, conectado y ATÓMICO.** Las 7 pantallas del grupo viven
+en 3 archivos de ruta: `nueva.tsx` cubre los 5 estados de Publicar (formulario,
+falta teléfono, procesando fotos, subiendo, error de subida), más `creada.tsx`
+—hoy de un solo estado— y `editar/[id].tsx`. (Esta cuenta decía "5 pantallas /
+3 estados": se le había quedado fuera "procesando fotos", que sí es un
+`phone-block` propio y §4 sí contaba.) La capa de datos: `src/lib/storage.ts` (subida,
+borrado y URL autenticada), `src/lib/publicar.ts` (la orquestación y su orden de
+llamadas), `src/lib/listing-form.ts` (estado + validación compartida),
+`src/lib/perfil.ts` (el teléfono: normalización, escritura y la RPC de lectura) y
 `src/lib/foto-picker.ts`.
 
 Detalles que no se ven en el diff:
+
+- **El gate del teléfono (RF-13) se suma a `listoParaGuardar` en `nueva.tsx`, NO
+  a `puedeGuardar` de `listing-form.ts`** — ese booleano lo comparte "Editar
+  publicación", que no debe heredarlo: quien edita una publicación ya publicó, o
+  sea que ya dio su número. `listoParaGuardar` ya existía para exactamente esto
+  (los datos del perfil que el formulario necesita pero no controla), así que el
+  gate no estrenó mecanismo.
+- **El teléfono no vive en `useListingForm`, y no es organización.** No es un
+  campo de la publicación sino del perfil, y se escribe en `public.users`.
+  Dentro del form viajaría hasta `aInput()`, que arma la fila de `listings`.
+  Por lo mismo `ListingFormFields` lo recibe como un prop opcional entero
+  (`telefono`) y no como parte de `form`: sin ese prop el formulario es
+  exactamente el de antes, que es lo que necesita Editar.
+- **`faltaTelefono` es `profile?.tiene_telefono === false`, con el `=== false`
+  a propósito.** Mientras el perfil no ha cargado, `tiene_telefono` llega
+  `undefined`; con un `!profile?.tiene_telefono` el campo parpadearía en la
+  pantalla de todo el mundo durante el primer render.
+- **El teléfono se guarda ANTES de crear la publicación**, mismo criterio que
+  "Completar perfil" con la contraseña: si falla, todavía no se creó nada y no
+  hay qué recuperar. Al revés dejaría una publicación `pausada` cuyo dueño sigue
+  sin ser contactable. Después va un `refreshProfile()`, que es lo que hace
+  desaparecer el campo.
 
 - **No se puede subir una foto antes de crear el listing, y no es una decisión
   de UX.** La carpeta del objeto ES `{listing_id}/`, y
