@@ -556,10 +556,37 @@ export async function crearListing(
   return data.id;
 }
 
+/**
+ * Un UPDATE sobre `listings` que la RLS rechaza NO LANZA: el `using` de
+ * `listings_update_own` filtra la fila, así que el update afecta 0 y la respuesta
+ * llega sin `error`. Sin comparar el conteo, "no se escribió nada" se ve
+ * exactamente igual que un éxito — el mismo problema y la misma solución que
+ * `VentaCongeladaError` (`src/lib/confianza.ts`).
+ *
+ * OJO AL LEER ESE 0: tiene DOS causas y la respuesta no dice cuál. La publicación
+ * ya está `vendida` (20260913000454, RF-08), o quien escribe está suspendido. Por
+ * eso el mensaje es neutro y con salida en vez de afirmar una de las dos.
+ *
+ * Esto NO duplica autorización (CLAUDE.md §0 regla 7): el candado es la policy,
+ * que decide mire el cliente lo que mire. Aquí solo se elige que el usuario vea
+ * un aviso en vez de un cambio silencioso que nunca ocurrió.
+ */
+export class ListingNoEditableError extends Error {
+  constructor() {
+    super('Esta publicación ya no se puede editar');
+    this.name = 'ListingNoEditableError';
+  }
+}
+
 /** RF-06. Solo columnas del grant de update — ver la nota de `ListingInput`. */
 export async function actualizarListing(id: number, input: ListingInput): Promise<void> {
-  const { error } = await supabase.from('listings').update(aFila(input)).eq('id', id);
+  const { error, count } = await supabase
+    .from('listings')
+    .update(aFila(input), { count: 'exact' })
+    .eq('id', id);
+
   if (error) throw error;
+  if ((count ?? 0) === 0) throw new ListingNoEditableError();
 }
 
 /**
@@ -572,13 +599,30 @@ export async function actualizarListing(id: number, input: ListingInput): Promis
  * cuando la subida falla entera. Quien llama debe anticiparlo (los dos toggles
  * de reactivación lo hacen) para no mostrarle al usuario el `raise exception`
  * crudo de Postgres.
+ *
+ * Y pasar a `'activa'` o `'pausada'` puede afectar 0 filas SIN error si la
+ * publicación ya está `vendida` — ver `ListingNoEditableError`. Es lo que impedía
+ * que el toggle de "Editar publicación" resucitara una venta: su estado local
+ * arranca en `listing.estado === 'pausada'`, o sea `false` sobre una vendida, así
+ * que el control se veía "Activa" y tocarlo la despausaba.
+ *
+ * Marcar `'vendida'` es la transición que el `using` SÍ deja pasar, porque se
+ * evalúa contra la fila vieja. El único caso en que esta llamada lanza con
+ * `estado: 'vendida'` es reintentar una venta cuyo update ya se había aplicado
+ * (respuesta perdida): la venta quedó bien y reabrir la pantalla lo muestra
+ * correcto. Se prefirió errar fuerte a mentir con un éxito.
  */
 export async function cambiarEstadoListing(
   id: number,
   estado: 'activa' | 'pausada' | 'vendida'
 ): Promise<void> {
-  const { error } = await supabase.from('listings').update({ estado }).eq('id', id);
+  const { error, count } = await supabase
+    .from('listings')
+    .update({ estado }, { count: 'exact' })
+    .eq('id', id);
+
   if (error) throw error;
+  if ((count ?? 0) === 0) throw new ListingNoEditableError();
 }
 
 /**

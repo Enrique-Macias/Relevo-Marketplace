@@ -166,8 +166,9 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Aplicado en 16 migraciones (`supabase/migrations/`) contra el proyecto remoto,
-con RLS activo y probado en las 12 tablas más el bucket de Storage. Este es el esquema **real**, no
+Definido en 18 migraciones (`supabase/migrations/`) — 17 ya aplicadas al proyecto
+remoto y la de `vendida` terminal pendiente de `db push`—, con RLS activo y
+probado en las 12 tablas más el bucket de Storage. Este es el esquema **real**, no
 solo la intención original.
 
 ```
@@ -327,6 +328,38 @@ hereda esa postura. De regalo, el trigger de notificación cuelga de esa tabla y
 su rama de insert **no necesita cláusula `when`** — colgado de `listings`
 tendría que esquivar a `increment_listing_view()` y `set_updated_at`, que
 disparan en TODOS los updates.
+
+**`vendida` es TERMINAL, y lo hace cumplir la policy — no un trigger, y el
+detalle importa** (`20260913000454`). `listings_update_own` lleva
+`and estado <> 'vendida'` en su **`using`**, nunca en el `with check`: el `using`
+se evalúa contra la fila VIEJA (el gotcha de §9, otra vez a favor), así que la
+transición activa/pausada → vendida pasa y todo update posterior queda fuera.
+En el `with check` bloquearía el marcado de venta, que es justo lo contrario — lo
+caza el control negativo, que muere en la transición misma.
+
+- **Por qué NO un trigger, que es lo que hizo el precedente de forma idéntica**
+  (`20260909000447`): `increment_listing_view()` es `SECURITY DEFINER` sobre una
+  tabla sin `force row level security`, así que **bypasea RLS pero no triggers**,
+  y su filtro es `estado <> 'pausada'` — o sea que sí cuenta vistas de vendidas.
+  **Medido**: con la regla puesta como trigger, la suite muere en la aserción (i)
+  de T20 con la excepción del trigger. Un trigger haría reventar **abrir el
+  Detalle** de cualquier publicación vendida. Segundo motivo: un trigger alcanza
+  también a `service_role`, cerrando Studio, que es donde vive la moderación
+  (RF-17) y la única salida para arreglar una venta marcada por error.
+- **El rechazo NO lanza**, mismo gotcha que `listing_sales_update_seller`: el
+  `using` filtra y el update afecta 0 filas sin error. Por eso
+  `cambiarEstadoListing` y `actualizarListing` piden `{count:'exact'}` y lanzan
+  `ListingNoEditableError` — sin eso el usuario veía "Cambios guardados" sobre un
+  update que no escribió nada. **Ojo al leer ese 0: tiene DOS causas** (vendida, o
+  el usuario suspendido) y la respuesta no dice cuál, así que el copy es neutro.
+- **Lo que esto cerró no era el caso obvio.** No era "editar el título de algo
+  vendido": era que el toggle de pausa de `editar/[id].tsx` **resucitaba una
+  venta**, porque su estado local arranca en `listing.estado === 'pausada'` —o
+  sea `false` sobre una vendida—, el control se veía "Activa" y tocarlo la
+  despausaba. Por eso T20 tiene dos aserciones y no una para las dos ramas del
+  mismo toggle.
+- **Queda vivo sobre una vendida:** verla, corregir el comprador (`listing_sales`,
+  otra tabla con su propia policy) y eliminarla (`listings_delete_own`, intacta).
 
 **Se puede corregir al comprador mal elegido, y el congelamiento es
 DIRECCIONAL.** `listing_sales_update_seller` deja al vendedor reapuntar
@@ -556,7 +589,7 @@ de integración en vez de dos, la función no sabe nada del esquema de negocio, 
 `listing_contacts` (§8b) pero esta vez con recuperación. Ver §9 sobre el header
 `apikey` y el esquema real de `pg_net`, que son dos trampas distintas.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 128 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 138 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -622,6 +655,43 @@ aserción, no solo contra quién.
 cuenta deja UNA sola fila, del dueño nuevo" y "el mismo usuario re-registrando su
 token no duplica ni pierde el otro". Sin la segunda, un trigger que borrara
 incondicionalmente también pasaría la primera.
+
+Y a **138** con las 10 de T20 (vendida es terminal, RF-08), autocontenida con sus
+propios `:J`/`:K`/`:L` y TRES publicaciones. Nada en T12: los grants no cambian, y
+una aserción textual sobre `pg_policies.qual` sería frágil al lado de las de 0
+filas, que prueban comportamiento.
+**La tercera publicación no es relleno, es el control (h):** el mismo dueño
+editando una NO vendida en la misma sesión. Sin ella, estas aserciones no
+distinguirían "bloqueado por vendida" de "bloqueado por grant o por suspensión".
+**Y una foto que parece decorado sí es load-bearing.** La publicación de (d) lleva
+una fila en `listing_photos` porque sin ella el control negativo falló con «Una
+publicación no puede activarse sin fotos»: quien bloqueaba la reactivación era el
+trigger `listings_enforce_activation_has_photos` y no la policy, o sea que la
+aserción no probaba lo que dice. Es la misma familia de errores que `:C` en T11b,
+detectada esta vez por correr el control en vez de razonarlo.
+**Las listas COMPLETAS de los tres controles de T20, medidas — y ninguna coincide
+con lo que el plan había predicho.** Enumerarlas exige instrumentar el harness:
+`pg_temp.assert` hace `raise exception` y la suite corre con `ON_ERROR_STOP`, así
+que **una corrida normal solo muestra la PRIMERA caída**. Para la lista real hay
+que (1) volver `assert` no-abortante y (2) envolver en `expect_error` los
+statements que lanzan error crudo de Postgres, que no son aserciones y abortan
+igual. Con eso:
+
+| Control | Aserciones de T20 que caen |
+|---|---|
+| Quitar la condición del `using` | (d)(e)(f) por el bloqueo, (g) porque los updates dejaron rastro, e (i) en cascada |
+| Moverla al `with check` | (a)(b) —la transición queda prohibida— y, en cascada, (d)(e)(f)(g)(i) |
+| La regla como trigger | **solo** (i) |
+
+Tres cosas que conviene no volver a suponer: **(h) sobrevive a los tres**, que es
+exactamente su trabajo —si cayera, el bloqueo no sería por estado—; **(i) es
+cascada en los dos primeros** (los updates dejan la fila en `pausada` y
+`increment_listing_view` excluye ese estado) pero **causa directa en el tercero**;
+y **T5 NO cae con el trigger**, contra lo que se había predicho. La predicción
+confundía dos cosas distintas: lo que tumba T5 es quitarle el `when` al trigger de
+fotos (`20260909000447`), que dispara en TODOS los updates; un trigger que
+pregunta `old.estado = 'vendida'` en su cuerpo nunca toca las filas `activa` de
+T5. Fuera de T20 no cae nada en ninguno de los tres.
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -848,10 +918,17 @@ y solo al final las convenciones genéricas de los skills.
 ## 8. Estado de implementación del backend
 
 **Hecho:**
-- 16 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
-  con RLS + regresión de 108 aserciones pasando. (§3 es la cuenta buena: esta
-  línea ya se quedó atrás dos veces —en 8/53 y en 10/64—, así que si no
-  coinciden, la de §3 gana.)
+- Esquema aplicado al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio) con RLS y la
+  suite de regresión pasando.
+  **Esta línea ya NO lleva números, y es a propósito.** Llevaba "8 migraciones /
+  53 aserciones", luego "10 / 64", luego "16 / 108" — siempre desincronizada, y
+  siempre descubierta tarde. Los conteos se MIDEN, no se recuerdan:
+  `ls supabase/migrations | wc -l` para las migraciones del repo,
+  `mcp__supabase__list_migrations` para las que de verdad están en remoto (que
+  pueden ser menos: una recién escrita no viaja hasta el `db push`), y
+  `grep -cE '^\s*select pg_temp\.(assert|expect_error)\('` sobre
+  `supabase/tests/rls.sql` para las aserciones. Si un número de la prosa discrepa
+  del comando, **gana el comando** y se corrige la prosa en el mismo cambio.
 - Seed de datos de referencia (12 categorías, Tec de Monterrey / campus
   Monterrey) aplicado en remoto vía `db push --include-seed`. `seed.sql` es
   idempotente (`on conflict do nothing`).
@@ -1052,13 +1129,38 @@ y solo al final las convenciones genéricas de los skills.
     sobre una publicación todavía activa: la entrada sigue visible y el
     reintento es idempotente (`ignoreDuplicates` + la preselección del comprador
     ya registrado).
-  - Probado en local de punta a punta: 128 aserciones en verde y **seis
+  - Probado en local de punta a punta: las 128 aserciones **de entonces** en
+    verde (hoy son más; este número es el de ese hito, no el actual — la cuenta
+    viva se mide, ver abajo) y **seis
     controles negativos**, cada uno fallando en su aserción (ver §3), más
     `scripts/probe-venta.mjs` (13 aserciones) con sus tres controles: romper la
     policy hace fallar el lado base, "simplificar" `congelada()` a bidireccional
     hace fallar el tripwire, y derivar el vendedor de la sesión —el bug real que
     apareció construyendo esto— también. Ese último es el que demostró que
     tripwire y escenario 3 cubren cosas distintas (§3).
+
+- **RF-08 completo: `vendida` es terminal también para editar**
+  (`20260913000454`). Una migración de una sola policy, 10 aserciones (T20) y tres
+  pantallas. Lo que no se ve en el diff:
+  - **La tarea parecía de UI y el bug real era de base.** Esconder "Editar
+    publicación" era lo pedido; lo que estaba roto era que el toggle de pausa de
+    Editar **resucitaba una venta** (§3). Ninguna pantalla lo delataba.
+  - **Es el primer cambio a una policy del repo.** No había ni un `drop policy`
+    ni un `alter policy` en las 17 migraciones anteriores; el precedente de
+    "restringir un update sobre `listings` según `old.estado`" había ido por
+    trigger, y aquí ese camino está medido como incorrecto (§3).
+  - **El control negativo encontró un defecto en la prueba, no en el código.** La
+    aserción de "no se puede reactivar una vendida" fallaba con el mensaje del
+    trigger de fotos, o sea que no probaba lo que dice; se arregló dándole una
+    foto a esa fixture (§3). Vale como recordatorio de que un control negativo se
+    corre, no se razona.
+  - **Tres variantes nuevas en `relevo-app.html`, ningún frame nuevo:** el
+    inventario sigue en 54. Dos de ellas dibujan contenedores degenerados que
+    antes no existían —un `.sticky-cta` que se quedaría vacío y una hoja de
+    acciones de una sola fila roja—, y la tercera es el guard de Editar.
+  - **Dos comentarios del diseño decían lo contrario de la regla nueva** y se
+    corrigieron: el del sticky del vendedor afirmaba que "Editar publicación" se
+    quedaba sola a ancho completo, que es justo lo que ya no pasa.
 
 **Pendiente, en este orden de prioridad:**
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
@@ -1079,6 +1181,17 @@ y solo al final las convenciones genéricas de los skills.
 
 **Deuda consciente — con disparador de revisión, no "algún día":**
 
+- **`ErrorState` promete "Reintentar" aunque no haya nada que reintentar.** Su
+  `PrimaryButton` lleva el label hardcodeado (`ErrorState.tsx:37`), sin prop para
+  cambiarlo, así que el guard de `esDueno` de `editar/[id].tsx` dice "Reintentar"
+  y ejecuta `router.back()`. Es pre-existente y se detectó al construir RF-08; el
+  guard nuevo de vendida lo esquivó usando `EmptyState` sin botón, que además es
+  el criterio correcto (§4: la única acción posible es volver, y eso ya es el
+  chevron del header). **Revisar cuando:** aparezca un tercer consumidor de
+  `ErrorState` cuyo fallo tampoco sea reintentable, o alguien reporte que el botón
+  no hace lo que dice. **Fix:** una prop `actionLabel` con default `'Reintentar'`,
+  o migrar ese guard a `EmptyState` como el de vendida — pero el copy del botón es
+  persistente, así que el frame va primero (§0 regla 4).
 - **"Omitir por ahora" en Calificar es DEFINITIVO.** La publicación ya es
   `vendida` y la fila de venta pasa a decir "Cambiar comprador", no "Calificar",
   así que no hay segunda entrada para el vendedor. El copy promete algo que no
@@ -1729,9 +1842,14 @@ Detalles que no se ven en el diff:
   re-muestra el toast y no gasta red: las marcadas se saltan igual.
   **Revisar cuando:** alguien reporte no entender por qué su publicación no
   guarda.
-- **"Marcar como vendida" sigue inerte** en Editar: dispara "¿A quién le
-  vendiste?" del grupo Confianza. Cablearla como un update suelto a `'vendida'`
-  saltándose ese paso rompería RF-12.
+- **"Marcar como vendida" ya NO es inerte en Editar** (lo era antes de RF-07):
+  navega a "¿A quién le vendiste?" del grupo Confianza, con el mismo
+  `accionVenta()` que las otras dos entradas. Cablearla como un update suelto a
+  `'vendida'` saltándose ese paso seguiría rompiendo RF-12.
+  Y desde RF-08 esa fila **solo existe en su primer estado aquí**: al volver de
+  Calificar, el refetch al foco descubre que la publicación ya es vendida y la
+  pantalla rebota con su guard, así que "Cambiar comprador" nunca llega a pintarse
+  en Editar. Se ofrece desde Detalle y desde la hoja de "Mis publicaciones".
 
 **Cuenta — 3 de 8 pantallas, las de "Mis publicaciones", construidas y
 conectadas.** Se hicieron por necesidad, no por avanzar el grupo: conectar
@@ -1880,6 +1998,35 @@ Detalles que no se ven en el diff:
   publicación", "Detalle (vista vendedor)" y la hoja de "Mis publicaciones"—:
   calcularlo tres veces es la forma de que se desincronicen. Los estados son
   "Marcar como vendida" / "Cambiar comprador" / ausente.
+  **Ojo: desde que vendida es terminal (RF-08), "Cambiar comprador" perdió una de
+  esas tres entradas.** La de "Editar publicación" quedó inalcanzable sobre una
+  vendida —esa pantalla ahora rebota con su guard— y eso es correcto, no una
+  regresión: las otras dos siguen ofreciéndola. `accionVenta()` no cambió.
+- **"Editar publicación" se esconde sobre una vendida en las DOS entradas que la
+  ofrecen** (`mis-publicaciones.tsx`, con `puedeEditar` hermano de
+  `puedeAlternar`; y `detalle/[id].tsx`, en la rama `isOwner`), más un guard
+  dentro de la propia pantalla para el deep link. Ninguno es el candado: lo es el
+  `using` de `listings_update_own` (§3). Dos consecuencias que no se ven:
+  - **En Detalle el reparto del `.sticky-cta` pasó de cuatro a seis**, y el del
+    dueño ahora tiene tres: ghost+primary, solo el ghost ("Cambiar comprador", a
+    ancho completo por su propio `flex:1`), o el `.notice` de "ya se vendió"
+    —extraído a `VendidoNotice`, local del archivo, porque pasó a tener dos
+    consumidores—. Sin ese tercero el contenedor quedaría **vacío**.
+  - **El estilo `editBtnSolo` dejó de aplicarse al botón del dueño**, y no por
+    gusto: `accionVenta()` devuelve `'marcar'` para todo estado distinto de
+    vendida, así que cuando ese botón se pinta el ghost está siempre al lado. La
+    rama era inalcanzable; el estilo sigue vivo para las ramas del comprador.
+- **Detalle y Editar recargan al recuperar el foco** (`useFocusEffect` + el ref
+  que salta el primer foco, el patrón de `mis-publicaciones.tsx`), y no es
+  frescura general: es lo único que hace que esconder el botón sirva. El flujo de
+  venta se lanza DESDE esas pantallas y vuelve con `router.back()`, así que nunca
+  se desmontan — sin el refetch seguirían ofreciendo "Editar publicación" sobre
+  algo que acaba de venderse. En Editar además no destruye trabajo:
+  `FormularioCargado` está keyed por `listing.id`, no por `recargas`.
+  **`useVentaDetalle` recibe ese mismo contador** (§ su firma ganó un cuarto
+  parámetro): con el listing fresco y la venta vieja, `accionVenta()` vería
+  `estado='vendida'` + `venta=null` y pintaría el aviso en vez de "Cambiar
+  comprador" justo después de registrar al comprador.
 - **El congelamiento que lee el cliente (`congelada()`) es DIRECCIONAL**, y tiene
   que ser la misma condición que el `using` de `listing_sales_update_seller`:
   `listing_id` de la venta, `from_user_id` = el dueño del listing,

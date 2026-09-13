@@ -6,12 +6,13 @@
  * mismo orden. Lo propio de esta pantalla es la `.status-section` de abajo.
  */
 
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ConfirmModal } from '@/components/ConfirmModal';
+import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { IconCheckCircle, IconChevronRight, IconPause, IconTrash } from '@/components/icons';
 import { ListingFormFields } from '@/components/ListingFormFields';
@@ -31,6 +32,7 @@ import {
   borrarListing,
   cambiarEstadoListing,
   fetchListingParaEditar,
+  ListingNoEditableError,
   type ListingDetalle,
 } from '@/lib/listings';
 import {
@@ -76,6 +78,32 @@ export default function EditarPublicacionScreen() {
       vigente = false;
     };
   }, [listingId, recargas, idValido]);
+
+  /**
+   * Recargar al VOLVER, con el mismo `ref` para saltarse el primer foco que usa
+   * "Mis publicaciones".
+   *
+   * Existe por una carrera concreta: desde aquí se puede tocar "Marcar como
+   * vendida", que empuja `(confianza)/vendida/[id]`; esa pantalla hace
+   * `router.replace` hacia Calificar, así que el `router.back()` de Calificar
+   * aterriza de vuelta EN ESTA, que nunca se desmontó. Sin este refetch el guard
+   * de abajo leería el `estado` congelado al abrir y no dispararía nunca — se
+   * seguiría viendo el formulario de una publicación que ya es terminal.
+   *
+   * No destruye trabajo: `FormularioCargado` está keyed por `listing.id`, no por
+   * `recargas`, así que esto actualiza el prop sin remontar el formulario ni
+   * perder ediciones sin guardar.
+   */
+  const primerFoco = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (primerFoco.current) {
+        primerFoco.current = false;
+        return;
+      }
+      setRecargas((n) => n + 1);
+    }, [])
+  );
 
   const estado: 'loading' | 'ready' | 'error' =
     !idValido || errorPara === listingId
@@ -347,7 +375,17 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
     } catch (e: any) {
       setPausada(anterior);
       console.warn('[editar] no se pudo cambiar el estado:', e?.message ?? e);
-      mostrar('No pudimos cambiar el estado de la publicación', 'error');
+      // El guard de vendida de abajo cubre el caso estable, pero hay una ventana
+      // real: al volver del flujo de venta esta pantalla sigue montada con el
+      // `listing` viejo mientras el refetch está en vuelo. Distinguir el error
+      // evita ofrecer "reintenta" sobre algo que no va a cambiar nunca.
+      const terminal = e instanceof ListingNoEditableError;
+      mostrar(
+        terminal
+          ? 'Esta publicación ya se vendió: su estado no se puede cambiar'
+          : 'No pudimos cambiar el estado de la publicación',
+        'error'
+      );
     }
   }
 
@@ -389,6 +427,36 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
           onRetry={() => router.back()}
           title="Esta publicación no es tuya"
           sub="Solo puedes editar las publicaciones que tú creaste."
+        />
+      </Screen>
+    );
+  }
+
+  /**
+   * RF-08: vendida es terminal, también para editar. Se llega aquí por dos
+   * caminos reales —un deep link, y volver de Calificar al Editar que lanzó el
+   * flujo de venta (ver el refetch al foco del componente de ruta)—, así que no
+   * es una rama defensiva.
+   *
+   * Va con `EmptyState` y NO con `ErrorState`, que es lo que usa el guard de
+   * arriba, por dos razones: `ErrorState` trae "Reintentar" hardcodeado en su
+   * `PrimaryButton` y aquí no hay nada que reintentar, y su ícono de alerta sobre
+   * --brick-tint dice "algo falló" cuando esto es un estado terminal, no un
+   * fallo. Sin `.empty-actions` por el mismo criterio que "Notificaciones vacío"
+   * y "Categoría sin resultados": la única acción posible es volver, y eso ya es
+   * el chevron del `FormHeader`.
+   *
+   * Esto no es el candado —lo es el `using` de `listings_update_own`
+   * (20260913000454)—, solo evita ofrecer un formulario que no podría guardar.
+   */
+  if (listing.estado === 'vendida') {
+    return (
+      <Screen header={<FormHeader title="Editar publicación" />}>
+        <StatusBar style="dark" />
+        <EmptyState
+          icon={<IconCheckCircle size={30} color={Colors.inkSoft} />}
+          title="Esta publicación ya se vendió"
+          sub="Una publicación vendida ya no se puede editar ni pausar. Puedes cambiar el comprador o eliminarla desde Mis publicaciones."
         />
       </Screen>
     );

@@ -101,6 +101,8 @@ vez validado.
 - **RF-06** Editar y eliminar publicación propia. **✅ Implementado** —
   "Editar publicación", incluidos agregar/quitar fotos dentro del tope de 5 y
   el borrado con confirmación (que borra también los archivos de Storage).
+  **Editar aplica solo mientras la publicación NO esté vendida** (ver RF-08);
+  eliminar, en cambio, sigue disponible en cualquier estado.
 - **RF-07** Marcar publicación como "vendida" sin borrar el historial.
   **✅ Implementado** — desde las tres entradas (Editar publicación, Detalle
   vista vendedor y la hoja de acciones de Mis publicaciones), pasando siempre
@@ -112,8 +114,16 @@ vez validado.
   error sería permanente.
 - **RF-08** Estados de publicación: activa, pausada, vendida.
   **✅ Implementado** — activa/pausada se alternan desde "Editar publicación" y
-  desde "Mis publicaciones"; vendida llega por RF-07 y es terminal (no se pausa
-  ni se reactiva).
+  desde "Mis publicaciones"; vendida llega por RF-07 y es **terminal**.
+  Terminal significa que NINGÚN campo de la publicación se modifica ya: no se
+  pausa, no se reactiva y **tampoco se edita** su contenido (título, precio,
+  descripción, categoría, condición ni fotos). Lo hace cumplir la base —el
+  `using` de `listings_update_own` exige `estado <> 'vendida'`—, no el cliente,
+  así que tampoco se puede por API directa; las pantallas solo esconden las
+  acciones para no ofrecer algo que va a ser rechazado.
+  Lo único que sigue disponible sobre una vendida es **ver** la publicación,
+  **cambiar el comprador** mientras la ventana de RF-07 siga abierta (eso vive en
+  `listing_sales`, otra tabla con su propia policy) y **eliminarla**.
 
 ### Descubrimiento
 - **RF-09** Catálogo/feed principal, ordenado por más reciente.

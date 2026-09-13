@@ -1287,6 +1287,182 @@ select pg_temp.assert(
 
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T20 — vendida es terminal: ningún UPDATE sobre listings (RF-08) =='
+-- Autocontenida, por la misma moraleja de siempre (CLAUDE.md §3): a esta altura
+-- del archivo casi todos los usuarios anteriores cargan estado de otras
+-- secciones, y :G/:H/:I acaban de quedar con una venta CONGELADA por la reseña
+-- de (l). Reutilizarlos haría que estas aserciones pasaran por la razón
+-- equivocada.
+--
+-- El reparto:
+--   :J — el vendedor, dueño de las tres publicaciones.
+--   :K — la compradora. Además es quien invoca increment_listing_view() en (i),
+--        porque esa función excluye al dueño por diseño.
+--   :L — el segundo contacto, al que se reapunta la venta en (c).
+--
+-- Las tres publicaciones existen por una aserción cada una: una nace 'activa' y
+-- se vende, otra nace 'pausada' y se vende (son dos transiciones distintas), y
+-- la tercera NO se vende nunca — es el control de (h), sin el cual estas pruebas
+-- no distinguirían "bloqueado por vendida" de "bloqueado por grant o por
+-- suspensión".
+\set J '''44444444-0000-0000-0000-000000000044'''
+\set K '''55555555-0000-0000-0000-000000000055'''
+\set L '''66666666-0000-0000-0000-000000000066'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:J::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-j@tec.mx', '', now(), now(), now()),
+  (:K::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-k@tec.mx', '', now(), now(), now()),
+  (:L::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-l@tec.mx', '', now(), now(), now());
+update public.users set nombre = 'Julia'   where id = :J::uuid;
+update public.users set nombre = 'Karla'   where id = :K::uuid;
+update public.users set nombre = 'Leonel'  where id = :L::uuid;
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values
+  (:J::uuid, 1, 1, 1, 'RLS Terminal activa',  900, 'nuevo',        'activa'),
+  (:J::uuid, 1, 1, 1, 'RLS Terminal pausada', 700, 'buen_estado',  'pausada'),
+  (:J::uuid, 1, 1, 1, 'RLS Terminal control', 500, 'como_nuevo',   'activa');
+
+-- Los ids en una temp table y no en un \set sobre el título: (f) intenta
+-- reescribir el título y (h) SÍ lo reescribe, así que un handle basado en el
+-- título dejaría de resolver justo donde hace falta.
+create temp table t_term as
+select
+  (select id from public.listings where titulo = 'RLS Terminal activa')  as vendida_a,
+  (select id from public.listings where titulo = 'RLS Terminal pausada') as vendida_p,
+  (select id from public.listings where titulo = 'RLS Terminal control') as control;
+
+-- Precondición de la venta y de su corrección: ambas policies de listing_sales
+-- exigen que el comprador tenga fila en listing_contacts.
+insert into public.listing_contacts (user_id, listing_id)
+values (:K::uuid, (select vendida_a from t_term)),
+       (:L::uuid, (select vendida_a from t_term));
+
+-- ESTA FOTO NO ES DECORADO, y lo destapó el control negativo: sin ella, (d)
+-- fallaba con «Una publicación no puede activarse sin fotos» en vez de con su
+-- propio mensaje. O sea que quien bloqueaba la reactivación era el trigger
+-- `listings_enforce_activation_has_photos` (20260909000447) y no la policy de
+-- esta migración, y (d) no probaba lo que dice. Con la foto, el trigger queda
+-- satisfecho y el único candado posible sobre esa reactivación es el `estado <>
+-- 'vendida'` del `using`.
+insert into public.listing_photos (listing_id, storage_path, orden)
+values ((select vendida_a from t_term),
+        'rls-terminal/00000000-0000-0000-0000-0000000000aa.jpg', 0);
+
+-- (a) La transición desde 'activa' sigue funcionando. El `using` se evalúa
+-- contra la fila VIEJA, que todavía es 'activa', así que pasa.
+select pg_temp.as_user(:J::uuid,
+  format('insert into public.listing_sales (listing_id, comprador_id)
+          values (%s, %L)', (select vendida_a from t_term), :K::uuid));
+select pg_temp.as_user(:J::uuid,
+  format('update public.listings set estado = ''vendida'' where id = %s',
+         (select vendida_a from t_term)));
+
+select pg_temp.assert(
+  (select estado from public.listings where id = (select vendida_a from t_term)) = 'vendida',
+  'J pudo marcar como vendida una publicación activa');
+
+-- (b) Y desde 'pausada', que es la otra mitad de RF-08. Va sin comprador, o sea
+-- por el camino de "No fue a través de Relevo".
+select pg_temp.as_user(:J::uuid,
+  format('update public.listings set estado = ''vendida'' where id = %s',
+         (select vendida_p from t_term)));
+
+select pg_temp.assert(
+  (select estado from public.listings where id = (select vendida_p from t_term)) = 'vendida',
+  'J pudo marcar como vendida una publicación pausada');
+
+-- (c1)(c2) "Cambiar comprador" NO pasa por listings_update_own: es otra tabla con su
+-- propia policy. Congelar listings no puede llevarse esto por delante, porque es
+-- la única salida del vendedor que se equivocó de persona.
+select pg_temp.assert(
+  pg_temp.as_user_int(:J::uuid,
+    format('with u as (update public.listing_sales set comprador_id = %L
+                        where listing_id = %s returning 1)
+            select count(*) from u', :L::uuid, (select vendida_a from t_term))) = 1,
+  'sobre una publicación ya vendida, corregir el comprador sigue afectando 1 fila');
+
+select pg_temp.assert(
+  (select comprador_id from public.listing_sales
+    where listing_id = (select vendida_a from t_term)) = :L::uuid,
+  'y el comprador quedó reapuntado a L');
+
+-- LOS TRES BLOQUEOS — (d), (e) y (f), una etiqueta por aserción. Ninguna usa
+-- expect_error: el `using` FILTRA, así que el update no lanza nada y afecta 0
+-- filas. Una aserción con expect_error aquí pasaría por la razón equivocada — o
+-- no pasaría nunca.
+--
+-- (d) y (e) van separadas porque son las dos ramas distintas del mismo toggle de
+-- "Editar publicación": reactivar y pausar. Es el bug concreto que motivó todo
+-- esto, y con una sola aserción la otra rama quedaría sin red.
+
+-- (d) Reactivar.
+select pg_temp.assert(
+  pg_temp.as_user_int(:J::uuid,
+    format('with u as (update public.listings set estado = ''activa''
+                        where id = %s returning 1)
+            select count(*) from u', (select vendida_a from t_term))) = 0,
+  'ni el dueño puede reactivar una publicación vendida');
+
+-- (e) Pausar.
+select pg_temp.assert(
+  pg_temp.as_user_int(:J::uuid,
+    format('with u as (update public.listings set estado = ''pausada''
+                        where id = %s returning 1)
+            select count(*) from u', (select vendida_a from t_term))) = 0,
+  'ni el dueño puede pausar una publicación vendida');
+
+-- (f) Editar contenido.
+select pg_temp.assert(
+  pg_temp.as_user_int(:J::uuid,
+    format('with u as (update public.listings set titulo = ''RLS Terminal hackeada'',
+                                                   precio = 1
+                        where id = %s returning 1)
+            select count(*) from u', (select vendida_a from t_term))) = 0,
+  'ni el dueño puede editar el contenido de una publicación vendida');
+
+-- (g) Y ninguno de los tres dejó rastro. Un `using` que filtra no lanza, así que
+-- sin esta aserción "0 filas" y "0 filas pero algo cambió" se verían igual.
+select pg_temp.assert(
+  (select estado = 'vendida' and titulo = 'RLS Terminal activa' and precio = 900
+     from public.listings where id = (select vendida_a from t_term)),
+  'tras los tres intentos, la publicación vendida quedó intacta');
+
+-- (h) CONTROL. El MISMO usuario, en la misma sesión, sí edita su publicación no
+-- vendida. Sin esto, un grant roto o una suspensión inesperada harían pasar las
+-- tres de arriba sin que el bloqueo nuevo existiera siquiera.
+-- Es la ÚNICA de T20 que sobrevive a los tres controles negativos: si cayera,
+-- el bloqueo no sería por estado.
+select pg_temp.as_user(:J::uuid,
+  format('update public.listings set titulo = ''RLS Terminal editada'' where id = %s',
+         (select control from t_term)));
+
+select pg_temp.assert(
+  (select titulo from public.listings where id = (select control from t_term))
+    = 'RLS Terminal editada',
+  'el mismo dueño sí edita una publicación que no está vendida (el bloqueo es por estado)');
+
+-- (i) GUARD DE REGRESIÓN DE "POLICY Y NO TRIGGER". increment_listing_view() es
+-- SECURITY DEFINER, así que bypasea RLS y sigue contando vistas de una vendida
+-- (su filtro es `estado <> 'pausada'`). Un trigger SÍ la alcanzaría y haría
+-- reventar abrir el Detalle de cualquier publicación vendida — el fallo que
+-- 20260909000447:39-44 documenta como medido. La invoca :K porque la función
+-- excluye al dueño a propósito.
+select pg_temp.as_user(:K::uuid,
+  format('select public.increment_listing_view(%s)', (select vendida_a from t_term)));
+
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = (select vendida_a from t_term)) = 1,
+  'una publicación vendida sigue contando vistas (la regla vive en la policy, no en un trigger)');
+
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges

@@ -1,7 +1,7 @@
 /** Detalle de publicación — 2 estados: vista comprador / vista vendedor. */
 
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -106,9 +106,13 @@ export default function DetalleScreen() {
   const { venta, yaCalifique } = useVentaDetalle(
     listing?.estado === 'vendida' ? listing.id : null,
     userId,
-    listing?.vendedor.id ?? null
+    listing?.vendedor.id ?? null,
+    recargas
   );
   const accionDeVenta = listing ? accionVenta(listing.estado, venta) : null;
+  // RF-08: vendida es terminal. Hermano del `puedeEditar` de la hoja de "Mis
+  // publicaciones" — la misma regla, en la otra entrada a la misma pantalla.
+  const puedeEditar = listing?.estado !== 'vendida';
   // "Soy el comprador" NO se deduce del estado sino de la fila: `listing_sales`
   // solo la ven las dos partes, así que la RLS ya contestó esa pregunta.
   const soyComprador = !!venta && !!userId && venta.compradorId === userId;
@@ -137,6 +141,33 @@ export default function DetalleScreen() {
       vigente = false;
     };
   }, [listingId, recargas, idValido]);
+
+  /**
+   * Recargar al VOLVER a la pantalla, no solo al montar. Mismo patrón —y mismo
+   * `ref` para saltarse el primer foco— que "Mis publicaciones".
+   *
+   * No es una mejora de frescura general: es lo que hace que el reparto del
+   * `.sticky-cta` sea correcto después de marcar la venta DESDE AQUÍ. El flujo
+   * empuja `(confianza)/vendida/[id]` y vuelve con `router.back()`, así que esta
+   * pantalla nunca se desmonta; sin esto seguiría ofreciendo "Editar publicación"
+   * y "Marcar como vendida" sobre una publicación que ya se vendió, y el primero
+   * llevaría a un formulario que la base va a rechazar.
+   *
+   * `recargas` alimenta también a `useVentaDetalle`: con el listing fresco pero
+   * la venta vieja, `accionVenta()` vería `estado='vendida'` + `venta=null` y
+   * pintaría el aviso de "ya se vendió" en lugar de "Cambiar comprador", justo
+   * después de registrar al comprador.
+   */
+  const primerFoco = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (primerFoco.current) {
+        primerFoco.current = false;
+        return;
+      }
+      setRecargas((n) => n + 1);
+    }, [])
+  );
 
   const estado: 'loading' | 'ready' | 'error' =
     errorPara === listingId ? 'error' : cargadoPara === listingId ? 'ready' : 'loading';
@@ -438,19 +469,20 @@ export default function DetalleScreen() {
         </View>
 
         {/*
-          El `.sticky-cta` tiene CUATRO repartos, no dos. Los tres primeros son
-          del frame "Detalle (vendida)" y los distingue la fila de venta, NO el
-          estado de la publicación: `listing_sales` solo la ven las dos partes,
-          así que "soy el comprador" es una pregunta que la RLS ya contestó.
+          El `.sticky-cta` tiene SEIS repartos. Los tres del dueño los decide el
+          estado de la publicación; los tres del resto son del frame "Detalle
+          (vendida)" y los distingue la fila de venta, NO el estado: los que
+          preguntaron y no compraron ven lo mismo que cualquier otro, porque
+          `listing_sales` solo la ven las dos partes y "soy el comprador" es una
+          pregunta que la RLS ya contestó.
         */}
         <View style={[styles.cta, { paddingBottom: insets.bottom + 22 }]}>
           {isOwner ? (
             <>
               {/* El derivado de tres estados, compartido con "Editar
-                  publicación" y la hoja de "Mis publicaciones". Si no hay
-                  acción, "Editar publicación" se queda sola a ancho completo
-                  —sin el flex:1.2, que solo existe para repartir contra el
-                  ghost. */}
+                  publicación" y la hoja de "Mis publicaciones". Sobre una
+                  vendida corregible este ghost se queda SOLO, y su flex:1 lo
+                  deja a ancho completo sin estilo aparte. */}
               {accionDeVenta ? (
                 <GhostButton
                   label={LABEL_ACCION_VENTA[accionDeVenta]}
@@ -463,11 +495,27 @@ export default function DetalleScreen() {
                   style={styles.flexBtn}
                 />
               ) : null}
-              <PrimaryButton
-                label="Editar publicación"
-                onPress={() => router.push(`/(publicar)/editar/${listing.id}`)}
-                style={accionDeVenta ? styles.editBtn : styles.editBtnSolo}
-              />
+              {/* Vendida es terminal (RF-08): no se edita. El candado es el
+                  `using` de `listings_update_own` (20260913000454), que rechaza
+                  el UPDATE mire el cliente lo que mire — esto solo evita ofrecer
+                  un formulario que no va a poder guardar.
+
+                  El estilo ya no es un ternario: `accionVenta()` devuelve
+                  'marcar' para TODO estado distinto de vendida, así que cuando
+                  este botón se pinta el ghost está siempre al lado y el flex:1.2
+                  siempre reparte contra algo. La rama `editBtnSolo` que había
+                  aquí era inalcanzable. */}
+              {puedeEditar ? (
+                <PrimaryButton
+                  label="Editar publicación"
+                  onPress={() => router.push(`/(publicar)/editar/${listing.id}`)}
+                  style={styles.editBtn}
+                />
+              ) : null}
+              {/* Vendida y sin nada pendiente —ya calificada, o "No fue a través
+                  de Relevo"—: sin esto el contenedor quedaría vacío. Es el mismo
+                  aviso que ve cualquier otro autenticado. */}
+              {!accionDeVenta && !puedeEditar ? <VendidoNotice /> : null}
             </>
           ) : listing.estado === 'vendida' ? (
             <>
@@ -496,11 +544,8 @@ export default function DetalleScreen() {
               ) : (
                 // Cualquier otro autenticado —incluidos los que preguntaron y no
                 // compraron. Sin WhatsApp: contactar por algo ya vendido no
-                // tiene sentido. El `.notice` va sin su `.notice-icon`, que es
-                // --brick (el color de error) y aquí no falló nada.
-                <View style={styles.vendidoNotice}>
-                  <Text style={styles.vendidoText}>Esta publicación ya se vendió.</Text>
-                </View>
+                // tiene sentido.
+                <VendidoNotice />
               )}
             </>
           ) : (
@@ -546,6 +591,25 @@ export default function DetalleScreen() {
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * El `.notice` del `.sticky-cta` de una publicación vendida.
+ *
+ * Local a este archivo y no un componente del sistema de diseño: lo usan las DOS
+ * ramas de esta misma pantalla —el dueño sin nada pendiente y cualquier otro
+ * autenticado— y no lo pide nadie más. Se extrajo cuando pasó a tener dos
+ * consumidores, no antes.
+ *
+ * Va SIN su `.notice-icon`: ese círculo es --brick, el color de error del
+ * sistema, y aquí no falló nada — la publicación simplemente ya se vendió.
+ */
+function VendidoNotice() {
+  return (
+    <View style={styles.vendidoNotice}>
+      <Text style={styles.vendidoText}>Esta publicación ya se vendió.</Text>
+    </View>
   );
 }
 

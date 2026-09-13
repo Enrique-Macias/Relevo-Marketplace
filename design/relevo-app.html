@@ -1678,15 +1678,43 @@
             <div class="spec-row"><span class="spec-key">Zona de entrega</span><span class="spec-val">Tec de Monterrey</span></div>
             <div class="spec-row"><span class="spec-key">Publicado</span><span class="spec-val">Hace 2 horas</span></div>
           </div>
+          <!-- Variante (doc, no es parte del flujo): el reparto TERMINAL, que es
+               el único que deja el .sticky-cta sin un solo botón. Ese hueco no
+               existía antes de que "Editar publicación" dejara de pintarse sobre
+               una vendida, así que se dibuja aquí en vez de quedar en prosa. El
+               .notice es el mismo, palabra por palabra, que ve cualquier otro
+               autenticado en "Detalle (vendida)". -->
+          <div style="margin:26px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:9px;">
+              Variante (doc, no es parte del flujo): vendida, sin acción pendiente
+            </div>
+            <div class="sticky-cta" style="position:static; padding:0; background:none; backdrop-filter:none; border-top:none;">
+              <div class="notice" style="flex:1; width:auto; margin-bottom:0;">
+                <div class="notice-text">Esta publicación ya se vendió.</div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- El .ghost-btn sigue EL MISMO derivado de tres estados que la fila
-             de "Mis publicaciones (acciones)" —ver el comentario largo de ese
-             frame—: "Marcar como vendida" mientras está activa o pausada,
-             "Cambiar comprador" una vez vendida y mientras el vendedor no haya
-             calificado a ese comprador, y ausente en cualquier otro caso, con
-             "Editar publicación" quedándose sola a ancho completo (sin el
-             flex:1.2, que solo existe para repartir contra el ghost). -->
+        <!-- El .sticky-cta del vendedor tiene TRES repartos, y los decide el
+             estado de la publicación junto con el derivado de tres estados del
+             .ghost-btn —el mismo de la fila de "Mis publicaciones (acciones)",
+             ver el comentario largo de ese frame—:
+
+             · activa o pausada → "Marcar como vendida" + "Editar publicación".
+               Es lo que se pinta abajo; el flex:1.2 del primary existe solo para
+               repartir contra el ghost.
+             · vendida, con comprador registrado y sin calificar todavía →
+               "Cambiar comprador" SOLO, a ancho completo por su propio flex:1.
+             · vendida sin nada pendiente —ya calificada, o "No fue a través de
+               Relevo"— → ningún botón, y va el .notice de la variante de arriba.
+
+             "Editar publicación" NO se pinta en los dos últimos: vendida es
+             terminal (RF-08) y quien lo hace cumplir es la base, en el `using` de
+             `listings_update_own`. OJO: este comentario decía antes que era
+             "Editar publicación" la que se quedaba sola a ancho completo cuando el
+             ghost desaparecía. Fue cierto hasta que vendida bloqueó la edición;
+             hoy es exactamente al revés. -->
         <div class="sticky-cta">
           <div class="ghost-btn">Marcar como vendida</div>
           <button class="primary-btn" style="margin-top:0; flex:1.2;">Editar publicación</button>
@@ -4172,6 +4200,33 @@
             </div>
           </div>
         </div>
+
+        <!-- Variante (doc, no es parte del flujo): lo que se ve si esta pantalla
+             se abre sobre una publicación YA VENDIDA. Reemplaza al formulario
+             entero, no se le suma: vendida es terminal (RF-08) y la base rechaza
+             el UPDATE, así que dejar los campos vivos sería prometer un guardado
+             que no ocurre.
+
+             Se llega por dos caminos, los dos reales: un deep link, y volver de
+             "Calificar" al mismo "Editar publicación" que lanzó el flujo de venta.
+
+             NO lleva .empty-actions, por el mismo criterio que "Notificaciones
+             vacío" y "Categoría sin resultados": la única acción posible es
+             volver, y eso ya es el chevron del .form-header de arriba. El ícono es
+             el check de la fila de venta, no el de error —esto no es un fallo, es
+             un estado terminal. -->
+        <div style="margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+          <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:9px;">
+            Variante (doc, no es parte del flujo): se abrió una publicación vendida
+          </div>
+          <div class="empty-state">
+            <div class="empty-icon">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+            </div>
+            <div class="empty-title">Esta publicación ya se vendió</div>
+            <div class="empty-sub">Una publicación vendida ya no se puede editar ni pausar. Puedes cambiar el comprador o eliminarla desde Mis publicaciones.</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -4450,6 +4505,15 @@
        El label de la primera fila depende del estado —"Reactivar" si está
        pausada, "Pausar" si está activa— y desaparece cuando ya está vendida.
 
+       "EDITAR PUBLICACIÓN" DESAPARECE CON ELLA, por el mismo motivo: vendida es
+       terminal (RF-08), y no solo para pausar/reactivar. Quien lo hace cumplir es
+       la base —el `using` de `listings_update_own`—, así que esconder la fila no
+       es la regla sino su traducción. Ver la variante renderizada al final de
+       este frame: cuando además la venta ya está congelada, la hoja se queda con
+       UNA sola fila, y es la destructiva. Es deliberado, no un descuido de
+       layout: la hoja conserva su header con el título, que es lo que evita que
+       se lea como un menú roto.
+
        LA FILA DE VENTA TIENE TRES ESTADOS, no dos, y el tercero es el que
        impide un callejón sin salida:
          · "Marcar como vendida" — la publicación está activa o pausada.
@@ -4537,6 +4601,24 @@
                 <div class="status-row-label">
                   <div class="status-row-icon" style="color:var(--brick);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg></div>
                   <span class="status-row-text danger">Eliminar publicación</span>
+                </div>
+              </div>
+
+              <!-- Variante (doc, no es parte del flujo): la MISMA hoja sobre una
+                   publicación vendida y ya congelada. Se dibuja porque es el
+                   reparto degenerado —una sola fila, y destructiva— y conviene
+                   verlo antes de decidir que está roto. Con la venta todavía
+                   corregible, arriba de Eliminar va además "Cambiar comprador".
+                   Lo que NO vuelve en ningún caso es "Editar publicación". -->
+              <div style="margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+                <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:9px;">
+                  Variante (doc, no es parte del flujo): publicación vendida
+                </div>
+                <div class="status-row">
+                  <div class="status-row-label">
+                    <div class="status-row-icon" style="color:var(--brick);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg></div>
+                    <span class="status-row-text danger">Eliminar publicación</span>
+                  </div>
                 </div>
               </div>
             </div>

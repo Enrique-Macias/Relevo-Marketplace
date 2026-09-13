@@ -32,6 +32,7 @@ import { Screen } from '@/components/Screen';
 import { SkeletonRows } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 import { Colors, ScreenPadding, Typography } from '@/constants/theme';
+import { ListingNoEditableError } from '@/lib/listings';
 import {
   VentaCongeladaError,
   corregirComprador,
@@ -132,6 +133,12 @@ export default function VendidaScreen() {
       // vendedor, no cualquier reseña de la venta.
       if (e instanceof VentaCongeladaError) {
         mostrar('Ya calificaste a esta persona, el comprador no se puede cambiar', 'error');
+      } else if (e instanceof ListingNoEditableError) {
+        // La publicación ya estaba vendida cuando se intentó marcarla. Se llega
+        // desde una pantalla con el estado viejo en memoria, o reintentando una
+        // venta cuya respuesta se perdió. En los dos casos la venta ya quedó
+        // registrada, así que el remedio es volver a abrirla y no reintentar.
+        mostrar('Esta publicación ya estaba marcada como vendida', 'error');
       } else {
         console.warn('[vendida] no se pudo confirmar:', e?.message ?? e);
         mostrar('No pudimos marcar la publicación como vendida', 'error');

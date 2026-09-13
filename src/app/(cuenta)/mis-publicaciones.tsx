@@ -429,9 +429,18 @@ function HojaAcciones({
 
   if (!item) return null;
 
-  // Una publicación vendida no se pausa ni se reactiva: ese estado es terminal
-  // (RF-07 conserva el historial). La fila simplemente no se pinta.
+  // Una publicación vendida no se pausa, no se reactiva y no se edita: ese
+  // estado es terminal (RF-08). Las filas simplemente no se pintan.
+  //
+  // `puedeEditar` es hermano de `puedeAlternar`, no una variante suya: son dos
+  // filas distintas que hoy comparten condición pero no razón — si algún día
+  // vendida dejara de bloquear una de las dos, se toca una sola.
+  //
+  // Ninguno de los dos es el candado. Ese vive en el `using` de
+  // `listings_update_own` (20260913000454) y lo vigila T20; esconder las filas
+  // solo evita ofrecer algo que la base va a rechazar.
   const puedeAlternar = item.estado !== 'vendida';
+  const puedeEditar = item.estado !== 'vendida';
   const accion = accionVenta(item.estado, venta);
 
   return (
@@ -469,12 +478,14 @@ function HojaAcciones({
               />
             ) : null}
 
-            <StatusRow
-              icon={<IconPencil size={16} color={Colors.inkSoft} />}
-              label="Editar publicación"
-              trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
-              onPress={() => onEditar(item)}
-            />
+            {puedeEditar ? (
+              <StatusRow
+                icon={<IconPencil size={16} color={Colors.inkSoft} />}
+                label="Editar publicación"
+                trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
+                onPress={() => onEditar(item)}
+              />
+            ) : null}
 
             {/* La fila de venta, con el MISMO derivado de tres estados que usa
                 "Editar publicación" y "Detalle (vista vendedor)" — por eso vive

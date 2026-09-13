@@ -345,11 +345,20 @@ export function useVenta(listingId: number | null, vendedorId: string | null) {
  * `vendedorId` entra como parámetro en vez de derivarse: quien mira puede ser
  * el vendedor o el comprador, y `yaCalifique` se pregunta SIEMPRE desde quien
  * mira hacia la otra parte.
+ *
+ * `recargas` es el contador de quien llama, y existe porque el Detalle no se
+ * desmonta al volver del flujo de venta: sin él, la pantalla podía recargar el
+ * listing y quedarse con la venta vieja, y esa combinación —`estado='vendida'`
+ * con `venta=null`— hace que `accionVenta()` devuelva null y esconda "Cambiar
+ * comprador" justo después de registrar al comprador. Va por parámetro en vez de
+ * ser estado propio para que listing y venta se refresquen en el mismo gesto;
+ * `useVenta`, que sí controla su propio ciclo, tiene el suyo interno.
  */
 export function useVentaDetalle(
   listingId: number | null,
   userId: string | null,
-  vendedorId: string | null
+  vendedorId: string | null,
+  recargas = 0
 ) {
   const [venta, setVenta] = useState<Venta | null>(null);
   const [yaCalifique, setYaCalifique] = useState(false);
@@ -358,7 +367,7 @@ export function useVentaDetalle(
   // `useMisListings` y `useNotificaciones`. En un tab que reusa la pantalla
   // para otra publicación, hacerlo en el efecto deja pasar un render con la
   // venta ANTERIOR, que aquí decide si se pinta un botón de calificar.
-  const key = `${listingId ?? ''}|${userId ?? ''}`;
+  const key = `${listingId ?? ''}|${userId ?? ''}|${recargas}`;
   const [keyPintada, setKeyPintada] = useState(key);
   if (key !== keyPintada) {
     setKeyPintada(key);
@@ -397,7 +406,7 @@ export function useVentaDetalle(
     return () => {
       vigente = false;
     };
-  }, [listingId, userId, vendedorId]);
+  }, [listingId, userId, vendedorId, recargas]);
 
   return { venta, yaCalifique };
 }

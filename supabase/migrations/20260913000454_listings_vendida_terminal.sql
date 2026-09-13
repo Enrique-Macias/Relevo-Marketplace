@@ -1,0 +1,95 @@
+-- Relevo — una publicación `vendida` deja de ser editable. RF-08.
+--
+-- Qué lo motivó: RF-08 (docs/product-spec.md) declara `vendida` terminal, pero
+-- nada lo hacía cumplir. El agujero más concreto no era el obvio de "editar el
+-- título de algo ya vendido", sino el toggle de pausa de
+-- src/app/(publicar)/editar/[id].tsx: su estado local arranca en
+-- `useState(listing.estado === 'pausada')`, así que sobre una vendida arranca en
+-- `false`, el control se ve "Activa" y tocarlo escribe `'pausada'`.
+-- `cambiarEstadoListing` (src/lib/listings.ts) manda `update … where id = …` sin
+-- filtrar por el estado previo, y la base lo aceptaba: una venta registrada
+-- volvía a estar viva y el feed la volvía a listar.
+--
+-- Lo que queda vivo sobre una vendida, a propósito: verla, CORREGIR EL COMPRADOR
+-- (`listing_sales`, que tiene su propia policy y no pasa por aquí) y ELIMINARLA
+-- (`listings_delete_own`, que no se toca).
+--
+-- ---------------------------------------------------------------------------
+-- POR QUÉ EN EL `USING` Y NO EN EL `WITH CHECK`
+-- ---------------------------------------------------------------------------
+-- El `using` se evalúa contra la fila VIEJA y el `with check` contra la NUEVA
+-- (el gotcha de CLAUDE.md §9, esta vez a favor). Eso es exactamente lo que hace
+-- falta: al marcar la venta, la fila vieja todavía es 'activa'/'pausada', así
+-- que la transición pasa; cualquier update POSTERIOR ve una fila vieja
+-- 'vendida' y queda fuera. La misma condición en el `with check` bloquearía el
+-- marcado de venta, que es justo lo que no se quiere.
+--
+-- ---------------------------------------------------------------------------
+-- POR QUÉ POLICY Y NO TRIGGER, que es lo que hizo el precedente más cercano
+-- ---------------------------------------------------------------------------
+-- 20260909000447 resolvió un problema de la MISMA forma ("un update sobre
+-- listings debe fallar según una condición sobre old.estado") con un trigger, y
+-- aquí no sirve, por dos razones:
+--
+-- 1. `public.increment_listing_view()` (20260906000442) es SECURITY DEFINER
+--    sobre una tabla sin `force row level security`, así que BYPASEA RLS — pero
+--    NO bypasea triggers. Y su filtro es `estado <> 'pausada'`, o sea que sí
+--    cuenta vistas de publicaciones vendidas. Un trigger haría reventar ABRIR EL
+--    DETALLE de cualquier vendida: es el mismo fallo que 20260909000447:39-44
+--    documenta como medido, y por eso aquel necesitó un `when` obligatorio. La
+--    policy, en cambio, ni se le aplica a esa función. T20 lo vigila con una
+--    aserción propia.
+-- 2. Un trigger alcanzaría también a `service_role`, cerrando la puerta de
+--    Studio — que es donde vive la moderación (RF-17) y la única salida para
+--    arreglarle a alguien una venta marcada por error.
+--
+-- Tampoco se usa un helper en `private`: un predicado plano sobre una columna de
+-- la misma fila no lo necesita, y meter una función SECURITY DEFINER dentro de
+-- una policy es la condición (1) del SIGSEGV de supabase/KNOWN_ISSUES.md.
+--
+-- ---------------------------------------------------------------------------
+-- POR QUÉ DROP + CREATE Y NO `alter policy … using (…)`
+-- ---------------------------------------------------------------------------
+-- Las dos formas existen y las dos funcionan. Se eligió drop+create porque
+-- restituye la policy COMPLETA —`using` y `with check`— a la vista de quien lea
+-- esta migración; un `alter policy` mostraría solo la mitad que cambió y dejaría
+-- la otra a que el lector la busque tres migraciones atrás.
+--
+-- Es lo OPUESTO al criterio de 20260912000453:157-160, donde `can_rate()` se
+-- reemplazó con `create or replace` justamente para conservar el OID del que
+-- dependían dos policies y un `grant execute`. De una policy no depende ningún
+-- OID: nada la referencia por nombre salvo esta migración. Y como las
+-- migraciones corren en una transacción, no hay ventana en la que la tabla quede
+-- sin policy de update.
+--
+-- Es el primer cambio a una policy del repo — antes de esto no había ni un
+-- `drop policy` ni un `alter policy` en ninguna migración.
+--
+-- ---------------------------------------------------------------------------
+-- EL RECHAZO NO LANZA ERROR. Esto hay que saberlo antes de tocar el cliente.
+-- ---------------------------------------------------------------------------
+-- Un `using` FILTRA: el update simplemente no encuentra la fila y afecta 0,
+-- sin error (mismo comportamiento que `listing_sales_update_seller`,
+-- 20260912000453:104-105). Por eso `cambiarEstadoListing` y `actualizarListing`
+-- (src/lib/listings.ts) piden `{ count: 'exact' }` y lanzan cuando es 0 — sin
+-- eso, el usuario vería "Cambios guardados" sobre un update que no escribió
+-- nada. Ojo al leer ese conteo: 0 filas tiene DOS causas, esta y un usuario
+-- suspendido, y la respuesta no dice cuál.
+--
+-- CONSECUENCIA BUSCADA, no efecto colateral: una publicación marcada como
+-- vendida SIN comprador ("No fue a través de Relevo") no tiene fila en
+-- `listing_sales`, así que `accionVenta()` devuelve null y no queda ninguna
+-- acción salvo eliminarla. Es terminal de verdad.
+--
+-- El `grant update (…, estado)` de 20260906000439:92-94 NO se toca: quien
+-- bloquea es la policy, no el grant. El grant sigue siendo lo que permite el
+-- pausar/reactivar legítimo de una publicación que no está vendida.
+
+drop policy if exists listings_update_own on public.listings;
+
+create policy listings_update_own on public.listings
+  for update to authenticated
+  using      (user_id = (select auth.uid())
+              and (select private.is_active_user())
+              and estado <> 'vendida')
+  with check (user_id = (select auth.uid()));
