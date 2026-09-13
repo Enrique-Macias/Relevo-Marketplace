@@ -133,7 +133,13 @@ export const Typography = {
   }, // .detail-desc, .onboard-sub
   bodyStrong: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 13 }, // .title (card), .chip, .toast-text
   cardBadge: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 10.5 }, // .thumb .badge (overlay en la tarjeta de producto — no confundir con .detail-badge, que ya matchea `caption`)
+  notifTime: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 10.5 }, // .notif-time — mismo tamaño que `cardBadge` pero regular, no semibold
   activeChip: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 12 }, // .active-chip
+  notifDesc: {
+    fontFamily: face(Fonts.body, FontWeights.regular),
+    fontSize: 12,
+    lineHeight: 16.8, // 12 × 1.4
+  }, // .notif-desc — mismo tamaño que `activeChip`, pero regular y con line-height propio
   auth: {
     fontFamily: face(Fonts.body, FontWeights.regular),
     fontSize: 13,

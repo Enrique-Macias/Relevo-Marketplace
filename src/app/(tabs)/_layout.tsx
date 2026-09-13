@@ -4,6 +4,7 @@ import { View, StyleSheet } from 'react-native';
 
 import { PublicarFab } from '@/components/PublicarFab';
 import { Colors } from '@/constants/theme';
+import { useRespuestaANotificacion } from '@/lib/push';
 import { useSession } from '@/lib/session';
 
 // Tab bar de Relevo: 4 ítems fijos, sin botón central de "+"
@@ -13,6 +14,20 @@ import { useSession } from '@/lib/session';
 export default function TabsLayout() {
   const { status, session, isProfileComplete } = useSession();
   const pathname = usePathname();
+
+  /**
+   * El tap sobre un push navega desde AQUÍ, y no desde el layout raíz.
+   *
+   * Dos razones, las dos de orden: este layout solo se monta cuando el gating ya
+   * pasó (hay sesión y el perfil está completo), que es la única situación en la
+   * que `/detalle/<id>` es un destino alcanzable; y el raíz devuelve `null`
+   * mientras cargan las fuentes, así que una navegación disparada ahí podría
+   * ejecutarse antes de que exista el navegador y perderse sin dejar rastro.
+   *
+   * Y sigue montado bajo las pantallas que se empujan encima (Detalle, Editar),
+   * así que el listener no se pierde al navegar.
+   */
+  useRespuestaANotificacion();
 
   // Guard del gating: aquí es literalmente "no puedes entrar al Feed".
   // Va en este layout y no en el root porque el usuario con perfil a medias

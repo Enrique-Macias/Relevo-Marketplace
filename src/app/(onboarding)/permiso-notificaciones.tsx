@@ -1,17 +1,37 @@
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { GhostButton, PrimaryButton } from '@/components/Buttons';
 import { IconBell } from '@/components/icons';
 import { Screen } from '@/components/Screen';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { registrarPushToken } from '@/lib/push';
+import { useSession } from '@/lib/session';
 
 /** Frame "Permiso de notificaciones". */
 export default function NotificacionesScreen() {
-  // TODO: aquí va `expo-notifications` cuando se implemente RF-16. Hoy ambos
-  // botones solo cierran el onboarding — no se pide permiso real al sistema.
+  const { session } = useSession();
+  const [pidiendo, setPidiendo] = useState(false);
+
   const irAlFeed = () => router.replace('/(tabs)');
+
+  /**
+   * Pide el permiso real del sistema y guarda el token (RF-16).
+   *
+   * Se entra al Feed pase lo que pase, incluso si el usuario dice que no en el
+   * diálogo del sistema: esta pantalla es el último paso del onboarding, y
+   * dejarlo atorado aquí por no querer notificaciones sería absurdo. El
+   * resultado no se usa para nada más que no volver a pedirlo — el efecto de
+   * `SessionProvider` reintenta en cada arranque, que es lo que cubre a las
+   * cuentas que nunca vieron esta pantalla.
+   */
+  const activar = async () => {
+    setPidiendo(true);
+    if (session?.user.id) await registrarPushToken(session.user.id);
+    irAlFeed();
+  };
 
   return (
     <Screen>
@@ -32,7 +52,8 @@ export default function NotificacionesScreen() {
           {/* El frame le pone `style="margin-top:0"` al primary, anulando los 4px de la clase. */}
           <PrimaryButton
             label="Activar notificaciones"
-            onPress={irAlFeed}
+            onPress={activar}
+            busy={pidiendo}
             style={styles.primary}
           />
           <GhostButton label="Ahora no" onPress={irAlFeed} />

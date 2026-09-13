@@ -402,6 +402,19 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# send-push — entrega de notificaciones (RF-16), disparada por el webhook de
+# `public.notifications`.
+#
+# `verify_jwt = false` NO la deja abierta, y conviene entender por qué antes de
+# "endurecerlo": este proyecto usa las secret keys modernas (`sb_secret_…`), que
+# NO son JWT (CLAUDE.md §1). La verificación integrada de la plataforma solo
+# entiende las llaves legadas, así que con `verify_jwt = true` rechazaría la
+# llamada de pg_net con "Invalid JWT" sin siquiera mirarla — y por lo mismo la
+# llave viaja en el header `apikey` y no en `Authorization: Bearer`.
+# Quien autoriza es `withSupabase({ auth: 'secret' })` dentro de la función.
+[functions.send-push]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

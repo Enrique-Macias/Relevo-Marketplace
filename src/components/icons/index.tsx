@@ -493,3 +493,15 @@ export function IconTrash({ size, color }: IconProps) {
     </Svg>
   );
 }
+
+// `.notif-icon` de la fila "Respuesta a tu reporte", en el frame Notificaciones.
+// El `<rect>` va DESPUÉS del `<path>` de la solapa, igual que en el prototipo:
+// al revés, el relleno del rectángulo taparía la V del sobre.
+export function IconMail({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
+      <Path d="M3 6l9 6 9-6" />
+      <Rect x={3} y={5} width={18} height={14} rx={2} />
+    </Svg>
+  );
+}

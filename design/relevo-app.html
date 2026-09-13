@@ -3176,6 +3176,48 @@
     </div>
   </div>
 
+  <!-- Estado vacío del inbox. No es un caso borde: TODA cuenta nueva abre esta
+       pantalla así el día uno, porque las notificaciones solo nacen de eventos
+       (baja de precio de un favorito, resolución de un reporte) que aún no
+       ocurrieron.
+
+       Sin `.empty-actions`, a diferencia de "Favoritos vacío" y "Mis
+       publicaciones vacío": aquí no hay nada que el usuario pueda hacer para
+       llenar la lista —depende de terceros—, y la única acción posible sería
+       volver, que ya es el chevron de arriba.
+
+       El ícono va con el `.empty-icon` neutro (--paper + borde --line, trazo
+       --ink-soft), que es la convención de los otros dos vacíos, y NO con el
+       `.notif-permission-icon` en --brick-tint: ese pertenece a la pantalla de
+       permiso, que vende una función; esta informa que no hay nada. -->
+  <div class="phone-block" data-cat="notificaciones">
+    <div class="phone-label">Notificaciones vacío</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="page-heading">Notificaciones</div>
+      </div>
+      <div class="screen">
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.6" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+          </div>
+          <div class="empty-title">Todavía no hay avisos</div>
+          <div class="empty-sub">Te avisamos aquí cuando baje el precio de algo que guardaste o cuando respondamos a un reporte tuyo.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="phone-block" data-cat="explorar">
     <div class="phone-label">Categoría</div>
     <div class="device">

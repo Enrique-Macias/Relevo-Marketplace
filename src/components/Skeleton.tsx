@@ -108,6 +108,32 @@ export function SkeletonRows({ filas = 4, style }: { filas?: number; style?: Vie
   );
 }
 
+/**
+ * El inbox de notificaciones mientras carga: `.notif-row` sin contenido.
+ *
+ * Hermano de `SkeletonRows` y no una variante suya, por el mismo motivo por el
+ * que aquella no reusó `SkeletonGrid`: la forma que anticipa es distinta —
+ * círculo de 36px y DOS líneas, contra thumb cuadrado de 76px y tres— y un
+ * esqueleto que anticipa la forma equivocada produce el salto de layout que
+ * existe para evitar. Comparte el borde inferior de la fila real, que es lo que
+ * hace que la lista no "aparezca" de golpe.
+ */
+export function SkeletonNotifRows({ filas = 5, style }: { filas?: number; style?: ViewStyle }) {
+  return (
+    <View style={style}>
+      {Array.from({ length: filas }).map((_, i) => (
+        <View key={i} style={styles.notifRow}>
+          <SkeletonPiece style={styles.skNotifIcon} />
+          <View style={styles.rowInfo}>
+            <SkeletonPiece style={[styles.skLine, styles.skNotifTitle]} />
+            <SkeletonPiece style={[styles.skLine, styles.skNotifDesc]} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   // .skeleton{border-radius:8px;} — el gradiente se traduce a color base + pulso.
   piece: {
@@ -216,6 +242,30 @@ const styles = StyleSheet.create({
   },
   skMeta: {
     width: '55%',
+    marginBottom: 0,
+  },
+  // .notif-row{gap:12px; padding:14px 20px; border-bottom:1px solid var(--line);
+  //            align-items:flex-start;}
+  notifRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: ScreenPadding,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.line,
+  },
+  // .notif-icon{width:36px; height:36px; border-radius:50%;}
+  skNotifIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: Radii.full,
+  },
+  skNotifTitle: {
+    width: '55%',
+  },
+  skNotifDesc: {
+    width: '90%',
     marginBottom: 0,
   },
 });

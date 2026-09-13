@@ -43,6 +43,12 @@
         {
           "photosPermission": "Relevo usa tus fotos para que puedas ilustrar las publicaciones que pones en venta."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#C1440E"
+        }
       ]
     ],
     "experiments": {

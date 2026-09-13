@@ -15,6 +15,7 @@ import type { Session } from '@supabase/supabase-js';
 import { Redirect } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
+import { borrarPushToken, registrarPushToken } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
 
 /**
@@ -143,6 +144,28 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
   }, [userId]);
 
+  /**
+   * Re-registro del token de push en cada arranque con sesión (RF-16).
+   *
+   * NO basta con el botón "Activar notificaciones" del onboarding, y esta es la
+   * misma lección que dejó el gate del teléfono de RF-13 (CLAUDE.md §8): TODA
+   * cuenta existente ya pasó por esa pantalla, así que si ese fuera el único
+   * punto de captura, nadie con cuenta previa recibiría jamás un push. Además el
+   * permiso se puede revocar desde Ajustes y el token puede rotar.
+   *
+   * Vive en su propio efecto y NO dentro del callback de `onAuthStateChange`:
+   * ese callback es síncrono a propósito por el deadlock de supabase-js
+   * documentado arriba, y esto hace una escritura a la base.
+   *
+   * Sin `await` visible ni manejo de error: `registrarPushToken` ya se traga lo
+   * suyo y devuelve false. Que no haya token es un estado válido —el usuario
+   * dijo que no, o está en un simulador— y no debe frenar el arranque.
+   */
+  useEffect(() => {
+    if (!userId) return;
+    void registrarPushToken(userId);
+  }, [userId]);
+
   // Sin sesión el perfil es null y está resuelto por definición. Con sesión,
   // solo cuenta como resuelto si el perfil cargado es el de ESTE usuario —
   // así, al cambiar de cuenta, el gating no decide con el perfil del anterior.
@@ -163,6 +186,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [userId]);
 
   const signOut = useCallback(async () => {
+    // ANTES del signOut, y el orden no es estético: la policy de delete de
+    // `push_tokens` es `user_id = auth.uid()`, así que sin sesión ya no hay
+    // quién autorice el borrado. Al revés, el token quedaría vivo y este
+    // teléfono seguiría mostrando en su pantalla de bloqueo los avisos de la
+    // cuenta que acaba de salir.
+    //
+    // Best-effort con await: si falla, `borrarPushToken` lo registra y sigue —
+    // no se le puede negar a alguien cerrar sesión por esto.
+    await borrarPushToken();
     await supabase.auth.signOut();
   }, []);
 
@@ -204,7 +236,7 @@ export function useSession(): SessionState {
  * Devuelve el `<Redirect>` a renderizar, o `null` para seguir en la pantalla.
  * No va en `(onboarding)/_layout.tsx` a propósito: al guardar el perfil,
  * `isProfileComplete` pasa a true y el usuario todavía tiene que ver
- * "/notificaciones", que vive en ese mismo grupo — un guard de grupo lo
+ * "/permiso-notificaciones", que vive en ese mismo grupo — un guard de grupo lo
  * expulsaría al Feed a media pantalla.
  */
 export function useRedirectSiPerfilCompleto(): React.ReactElement | null {

@@ -843,6 +843,251 @@ select pg_temp.assert(
 
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T17 — tokens de push por dispositivo (RF-16) =='
+-- Autocontenida, mismo criterio que T11b, T13, T14, T15 y T16: siembra sus
+-- propios usuarios. A esta altura del archivo :B está suspendido, :C fue borrada
+-- por T8 y :A ya tiene teléfono y estado propios — reutilizar cualquiera haría
+-- que una aserción pasara por la razón equivocada (CLAUDE.md §3).
+--
+-- El reparto: :E y :F son dos cuentas activas cualesquiera. Lo que se prueba no
+-- depende de su estado, sino de quién es dueño de qué fila.
+\set E '''eeeeeeee-0000-0000-0000-00000000000e'''
+\set F '''ffffffff-0000-0000-0000-00000000000f'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:E::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-e@tec.mx', '', now(), now(), now()),
+  (:F::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-f@tec.mx', '', now(), now(), now());
+update public.users set nombre = 'Eva'  where id = :E::uuid;
+update public.users set nombre = 'Fito' where id = :F::uuid;
+
+-- El registro normal: cada quien inserta el token de su propio aparato.
+select pg_temp.as_user(:E::uuid,
+  format('insert into public.push_tokens (token, user_id, platform)
+          values (''ExponentPushToken[EEE]'', %L, ''ios'')', :E::uuid));
+select pg_temp.as_user(:F::uuid,
+  format('insert into public.push_tokens (token, user_id, platform)
+          values (''ExponentPushToken[FFF]'', %L, ''android'')', :F::uuid));
+
+select pg_temp.assert(
+  pg_temp.as_user_int(:E::uuid, 'select count(*) from public.push_tokens') = 1,
+  'E solo ve su propio token, no el de F');
+
+-- Nadie registra un token a nombre de otro. Este es el punto de enforcement que
+-- el trigger de reasignación NO reemplaza: la policy de insert sigue siendo la
+-- que decide de quién puede ser la fila nueva.
+select pg_temp.expect_error(:E::uuid,
+  format('insert into public.push_tokens (token, user_id, platform)
+          values (''ExponentPushToken[ROBADO]'', %L, ''ios'')', :F::uuid),
+  'E no puede registrar un token a nombre de F');
+
+-- Sin grant de UPDATE: la única escritura que lo habría necesitado era el upsert
+-- de reasignación, que no funciona (ver la migración). Si alguien lo agrega
+-- "para poder hacer upsert", esta lo caza.
+select pg_temp.expect_error(:E::uuid,
+  'update public.push_tokens set platform = ''android''',
+  'push_tokens no tiene grant de UPDATE para nadie');
+
+-- Borrar el ajeno no lanza error: la policy filtra la fila y el delete afecta 0.
+-- Lo que se comprueba es que el token de F siga existiendo.
+select pg_temp.as_user(:E::uuid,
+  'delete from public.push_tokens where token = ''ExponentPushToken[FFF]''');
+select pg_temp.assert(
+  (select count(*) from public.push_tokens where token = 'ExponentPushToken[FFF]') = 1,
+  'E no pudo borrar el token de F');
+
+-- EL CASO QUE ORIGINÓ TODO EL DISEÑO DE ESTA TABLA: el mismo teléfono cambia de
+-- cuenta. Expo entrega el MISMO token, así que la fila tiene que cambiar de
+-- dueño. El cliente manda un insert plano con DO NOTHING y el trigger
+-- `push_tokens_claim` libera la fila del dueño anterior.
+--
+-- Si alguien "simplifica" esto a un upsert (`do update`), falla con
+-- "new row violates row-level security policy (USING expression)", porque el
+-- USING de la policy de UPDATE se evalúa contra la fila VIEJA. Y si lo deja en
+-- DO NOTHING sin el trigger, no falla: se queda callado y F nunca recibe un push.
+select pg_temp.as_user(:F::uuid,
+  format('insert into public.push_tokens (token, user_id, platform)
+          values (''ExponentPushToken[EEE]'', %L, ''android'')
+          on conflict (token) do nothing', :F::uuid));
+select pg_temp.assert(
+  (select count(*) from public.push_tokens where token = 'ExponentPushToken[EEE]') = 1
+  and (select user_id from public.push_tokens where token = 'ExponentPushToken[EEE]') = :F::uuid,
+  'un token que cambia de cuenta queda en UNA sola fila, del dueño nuevo');
+
+select pg_temp.assert(
+  pg_temp.as_user_int(:E::uuid, 'select count(*) from public.push_tokens') = 0,
+  'E dejó de tener ese token: el aparato ya no es suyo');
+
+-- CONTROL NEGATIVO de la anterior, y sin él la anterior no prueba lo que dice:
+-- un trigger que borrara INCONDICIONALMENTE también dejaría una sola fila. Lo
+-- que distingue al correcto es que el re-registro normal de cada arranque —el
+-- mismo usuario mandando su mismo token— no duplique ni borre nada.
+select pg_temp.as_user(:F::uuid,
+  format('insert into public.push_tokens (token, user_id, platform)
+          values (''ExponentPushToken[EEE]'', %L, ''android'')
+          on conflict (token) do nothing', :F::uuid));
+select pg_temp.assert(
+  (select count(*) from public.push_tokens where user_id = :F::uuid) = 2,
+  'F re-registrando su propio token no duplica ni pierde el otro');
+
+-- Cerrar sesión: el cliente borra el token de ESTE aparato, o el teléfono
+-- seguiría recibiendo los push de la cuenta anterior.
+select pg_temp.as_user(:F::uuid,
+  'delete from public.push_tokens where token = ''ExponentPushToken[EEE]''');
+select pg_temp.assert(
+  (select count(*) from public.push_tokens where token = 'ExponentPushToken[EEE]') = 0,
+  'F borró el token de su propio aparato al cerrar sesión');
+
+-- ---------------------------------------------------------------------------
+\echo ''
+\echo '== T18 — inbox de notificaciones y sus disparadores (RF-16) =='
+-- Sigue con :E y :F de T17, que son de esta misma tanda y cuyo estado no lo toca
+-- ninguna sección intermedia.
+--   :E — vendedora. Marca como favorita SU PROPIA publicación, que es lo que
+--        hace falta para probar que no se le notifica a sí misma.
+--   :F — compradora que tiene la publicación en favoritos.
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, descripcion, precio, condicion, estado)
+values (:E::uuid, 1, 1, 1, 'RLS Monitor', 'Para notificaciones', 3200, 'buen_estado', 'activa'),
+       (:E::uuid, 1, 1, 1, 'RLS Pausada', 'Para notificaciones', 500, 'usado', 'pausada');
+
+create temporary table t_notif on commit drop as
+select max(id) filter (where titulo = 'RLS Monitor')  as activa,
+       max(id) filter (where titulo = 'RLS Pausada')  as pausada
+  from public.listings where user_id = :E::uuid;
+
+insert into public.favorites (user_id, listing_id)
+select :F::uuid, activa from t_notif
+union all
+select :E::uuid, activa from t_notif   -- la dueña también la tiene en favoritos
+union all
+select :F::uuid, pausada from t_notif;
+
+-- --- Disparador 1: bajó el precio ------------------------------------------
+
+select pg_temp.as_user(:E::uuid,
+  format('update public.listings set precio = 2900 where id = %s',
+         (select activa from t_notif)));
+
+select pg_temp.assert(
+  (select count(*) from public.notifications where user_id = :F::uuid) = 1,
+  'bajar el precio notifica a quien la tiene en favoritos');
+
+-- El `and f.user_id <> new.user_id` del trigger. Un vendedor PUEDE marcar como
+-- favorita su propia publicación (la RLS de favorites solo compara user_id), así
+-- que sin ese `<>` se notificaría a sí mismo su propio cambio.
+select pg_temp.assert(
+  (select count(*) from public.notifications where user_id = :E::uuid) = 0,
+  'a la dueña NO se le notifica su propio cambio de precio');
+
+-- El texto se materializa en el trigger porque el precio ANTERIOR no existe en
+-- ningún lado después del UPDATE. Esta aserción es lo único que amarra el
+-- formato de SQL con `formatPrecio` del cliente.
+select pg_temp.assert(
+  (select cuerpo from public.notifications where user_id = :F::uuid)
+    = '"RLS Monitor" ahora cuesta $2,900, antes $3,200.',
+  'el cuerpo trae el precio nuevo y el anterior, con separador de miles');
+
+select pg_temp.assert(
+  (select listing_id from public.notifications where user_id = :F::uuid)
+    = (select activa from t_notif),
+  'la notificación de precio apunta a la publicación, para el tap');
+
+-- CENTAVOS. `to_char(p,'FM999,999,999')` a secas redondea 99.50 a "100": esta es
+-- la aserción que impide que alguien "simplifique" el `case` de
+-- private.formato_precio y le mienta al usuario sobre el precio.
+select pg_temp.as_user(:E::uuid,
+  format('update public.listings set precio = 99.50 where id = %s',
+         (select activa from t_notif)));
+select pg_temp.assert(
+  (select cuerpo from public.notifications
+    where user_id = :F::uuid order by id desc limit 1)
+    = '"RLS Monitor" ahora cuesta $99.50, antes $2,900.',
+  'un precio con centavos sale como $99.50, no redondeado a $100');
+
+-- Las dos condiciones del `when`, cada una con su aserción.
+select pg_temp.as_user(:E::uuid,
+  format('update public.listings set precio = 5000 where id = %s',
+         (select activa from t_notif)));
+select pg_temp.assert(
+  (select count(*) from public.notifications where user_id = :F::uuid) = 2,
+  'SUBIR el precio no notifica a nadie');
+
+select pg_temp.as_user(:E::uuid,
+  format('update public.listings set precio = 100 where id = %s',
+         (select pausada from t_notif)));
+select pg_temp.assert(
+  (select count(*) from public.notifications where user_id = :F::uuid) = 2,
+  'bajar el precio de una PAUSADA no notifica: nadie más puede verla');
+
+-- --- Disparador 2: respuesta a un reporte -----------------------------------
+
+insert into public.reports (reporter_id, listing_id, motivo)
+select :F::uuid, activa, 'spam_publicidad' from t_notif;
+
+-- La transición la hace service_role desde Studio (RF-17): `reports` no tiene
+-- grant de update para authenticated, así que el trigger no puede depender de
+-- auth.uid().
+update public.reports set estado = 'resuelto' where reporter_id = :F::uuid;
+
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where user_id = :F::uuid and tipo = 'reporte_resuelto') = 1,
+  'resolver un reporte notifica a quien lo levantó');
+
+select pg_temp.assert(
+  (select cuerpo from public.notifications
+    where user_id = :F::uuid and tipo = 'reporte_resuelto')
+    = 'Revisamos tu reporte sobre una publicación y tomamos acción.',
+  'el copy del reporte sale de `estado`, sin necesitar un campo de respuesta');
+
+-- El tap NO lleva de vuelta al contenido que la persona denunció.
+select pg_temp.assert(
+  (select listing_id from public.notifications
+    where user_id = :F::uuid and tipo = 'reporte_resuelto') is null,
+  'la notificación de reporte no deep-linkea a la publicación reportada');
+
+-- El `old.estado is distinct from new.estado` del `when`: un update que no
+-- cambia el estado (por ejemplo llenar un snapshot a mano) no debe re-notificar.
+update public.reports set comentario = 'nota de moderación' where reporter_id = :F::uuid;
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where user_id = :F::uuid and tipo = 'reporte_resuelto') = 1,
+  'un update de reports que no toca `estado` no vuelve a notificar');
+
+-- --- La RLS del inbox -------------------------------------------------------
+
+select pg_temp.assert(
+  pg_temp.as_user_int(:E::uuid, 'select count(*) from public.notifications') = 0,
+  'E no ve ninguna notificación de F');
+
+-- Sin grant de insert: las filas solo nacen de los triggers. Sin esto, cualquiera
+-- podría fabricarse avisos — o peor, fabricárselos a otro.
+select pg_temp.expect_error(:F::uuid,
+  format('insert into public.notifications (user_id, tipo, titulo, cuerpo)
+          values (%L, ''precio_favorito'', ''Falso'', ''Falso'')', :F::uuid),
+  'nadie puede insertar una notificación a mano');
+
+-- Marcar leído es lo ÚNICO que el cliente puede escribir.
+select pg_temp.as_user(:F::uuid,
+  'update public.notifications set leida_at = now()');
+select pg_temp.assert(
+  pg_temp.as_user_int(:F::uuid,
+    'select count(*) from public.notifications where leida_at is null') = 0,
+  'F puede marcar sus notificaciones como leídas');
+
+-- El grant de COLUMNA. La policy dice qué filas; esto dice qué columnas. Sin él,
+-- un usuario reescribiría el texto de su propia notificación.
+select pg_temp.expect_error(:F::uuid,
+  'update public.notifications set titulo = ''Editado''',
+  'F no puede reescribir el titulo de su propia notificación');
+
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges
@@ -864,16 +1109,31 @@ select pg_temp.assert(
         'private.listing_id_from_object_name(text)', 'execute'),
   'authenticated puede ejecutar las 3 funciones invocadas desde policies');
 
--- Estas cinco sí son de seguridad: solo disparan por trigger y nadie debe poder
+-- Estas nueve sí son de seguridad: solo disparan por trigger y nadie debe poder
 -- invocarlas. Postgres verifica EXECUTE al crear el trigger, no al dispararlo.
+-- Dos de las nuevas importan más que el resto: `claim_push_token`, que invocable
+-- a mano sería un borrado arbitrario de la fila de cualquiera cuyo token se
+-- conozca, y `notify_push`, que lee la secret key de Vault.
 select pg_temp.assert(
   not has_function_privilege('authenticated', 'private.handle_new_user()', 'execute')
   and not has_function_privilege('authenticated', 'private.enforce_photo_limit()', 'execute')
   and not has_function_privilege('authenticated', 'private.recalc_rating_promedio()', 'execute')
   and not has_function_privilege('authenticated', 'private.capture_report_snapshot()', 'execute')
   and not has_function_privilege('authenticated',
-        'private.enforce_activation_has_photos()', 'execute'),
-  'las 5 funciones que solo disparan por trigger siguen revocadas');
+        'private.enforce_activation_has_photos()', 'execute')
+  and not has_function_privilege('authenticated', 'private.claim_push_token()', 'execute')
+  and not has_function_privilege('authenticated', 'private.notify_price_drop()', 'execute')
+  and not has_function_privilege('authenticated', 'private.notify_report_resolved()', 'execute')
+  and not has_function_privilege('authenticated', 'private.notify_push()', 'execute'),
+  'las 9 funciones que solo disparan por trigger siguen revocadas');
+
+-- El webhook no puede quedar como un grant abierto sobre Vault: si
+-- `authenticated` pudiera leer `vault.decrypted_secrets`, la secret key del
+-- proyecto sería legible por cualquier usuario de la app.
+select pg_temp.assert(
+  not has_schema_privilege('authenticated', 'vault', 'usage')
+  and not has_schema_privilege('anon', 'vault', 'usage'),
+  'ni authenticated ni anon tienen acceso al esquema vault');
 
 select pg_temp.assert(
   not has_schema_privilege('anon', 'private', 'usage'),
@@ -937,6 +1197,40 @@ select pg_temp.assert(
                 and table_name = 'listing_contacts'
                 and privilege_type in ('UPDATE','DELETE')),
   'listing_contacts es append-only');
+
+-- Las notificaciones solo nacen de triggers y solo mueren con el cascade de su
+-- dueño. Un grant de insert aquí dejaría que cualquiera se fabricara avisos.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee = 'authenticated' and table_schema = 'public'
+                and table_name = 'notifications'
+                and privilege_type in ('INSERT','DELETE')),
+  'notifications no tiene grant de INSERT ni DELETE');
+
+-- El UPDATE de notifications existe SOLO por columna, y solo sobre leida_at. Si
+-- alguien lo sube a nivel tabla, el texto del aviso se vuelve editable por quien
+-- lo recibe.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee = 'authenticated' and table_schema = 'public'
+                and table_name = 'notifications' and privilege_type = 'UPDATE')
+  and exists (select 1 from information_schema.column_privileges
+              where grantee = 'authenticated' and table_schema = 'public'
+                and table_name = 'notifications' and column_name = 'leida_at'
+                and privilege_type = 'UPDATE'),
+  'notifications solo se actualiza en la columna leida_at');
+
+-- Sin UPDATE en push_tokens: la reasignación de un token entre cuentas la hace
+-- el trigger, no un upsert del cliente (que además fallaría contra el USING de
+-- la policy). Ver la migración 20260911000450.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee = 'authenticated' and table_schema = 'public'
+                and table_name = 'push_tokens' and privilege_type = 'UPDATE')
+  and not exists (select 1 from information_schema.column_privileges
+                  where grantee = 'authenticated' and table_schema = 'public'
+                    and table_name = 'push_tokens' and privilege_type = 'UPDATE'),
+  'push_tokens no tiene grant de UPDATE por ningún lado');
 
 -- Todas las tablas de public tienen RLS activo.
 select pg_temp.assert(

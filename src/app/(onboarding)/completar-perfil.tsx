@@ -78,7 +78,7 @@ export default function CompletarPerfilScreen() {
 
     await refreshProfile();
     setGuardando(false);
-    router.replace('/notificaciones');
+    router.replace('/permiso-notificaciones');
   };
 
   return (

@@ -71,7 +71,7 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
 | Backend / BD | Supabase (Postgres), proyecto remoto `ukxfnydfhmryrzhdqkvj`, región Ohio (us-east-2) | Auth + BD relacional + Storage + Row Level Security, sin backend custom |
 | Cliente BD | `@supabase/supabase-js` (versión fijada, sin `^`) | Ver sección 8 para el wrapper (`src/lib/supabase.ts`) y por qué usa `expo-crypto` en vez de `react-native-get-random-values` |
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
-| Notificaciones | Expo Notifications | Integración directa, disparadas desde Supabase Edge Functions (pendiente, sección 8) |
+| Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía Database Webhook. El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, §8b) |
 | Admin / moderación | Supabase Studio | Panel de reportes y suspensión de usuarios/publicaciones, sin desarrollo adicional |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
@@ -130,10 +130,15 @@ Tipografía — dos familias, uso deliberado y separado:
 Ya implementado en `src/constants/theme.ts`: `Colors`, `Fonts`, `FontWeights`
 (400/500/600, todos sí se usan — no asumas que la UI evita el regular),
 `Radii` (8/12/14/16/20/9999, más el 10px de `.menu-icon`/`.status-row-icon`
-que quedó fuera del token original), `Typography` (27 roles por nombre
+que quedó fuera del token original), `Typography` (29 roles por nombre
 semántico, cada uno citando la clase CSS exacta de origen — incluye
 `.avatar`/`.seller-avatar` en weight 600, ojo si agregas un rol parecido, es
-fácil confundirlo con 500), y `ScreenPadding = 20`. No hay escala formal de
+fácil confundirlo con 500), y `ScreenPadding = 20`.
+
+Dos de esos roles son de la fila de notificación y se parecen a otros que ya
+existían, así que conviene no confundirlos: `notifTime` es 10.5 **regular**
+(`cardBadge` es 10.5 semibold) y `notifDesc` es 12 **regular con line-height
+propio** (`activeChip` es 12 medium, sin line-height). No hay escala formal de
 spacing — los paddings del prototipo son ad-hoc por componente; se leen
 directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
@@ -141,8 +146,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Aplicado en 13 migraciones (`supabase/migrations/`) contra el proyecto remoto,
-con RLS activo y probado en las 10 tablas más el bucket de Storage. Este es el esquema **real**, no
+Aplicado en 16 migraciones (`supabase/migrations/`) contra el proyecto remoto,
+con RLS activo y probado en las 12 tablas más el bucket de Storage. Este es el esquema **real**, no
 solo la intención original.
 
 ```
@@ -153,6 +158,7 @@ listing_condition  : nuevo | como_nuevo | buen_estado | usado
 report_reason      : spam_publicidad | sospecha_fraude | contenido_inapropiado
                       | no_es_estudiante | otro
 report_status      : pendiente | resuelto | descartado
+notification_type  : precio_favorito | reporte_resuelto
 
 -- Catálogos (solo lectura para authenticated; altas vía Studio/service_role)
 universidades   (id, nombre único)
@@ -202,6 +208,19 @@ reports
   reported_user_correo para seguir siendo legible). reported_user_correo
   NUNCA es legible por el cliente (mismo criterio que users.correo) — solo
   service_role lo ve.
+
+-- Notificaciones (RF-16)
+push_tokens
+  token text PRIMARY KEY (¡sobre el TOKEN, no sobre (user_id, token)!),
+  user_id → users on delete cascade, platform ('ios'|'android'), created_at.
+  Sin grant NI policy de UPDATE — no es un olvido, ver abajo.
+notifications
+  id, user_id → users, tipo notification_type, titulo, cuerpo (AMBOS
+  materializados por el trigger), listing_id → listings on delete SET NULL
+  (null en las de reporte a propósito), leida_at, push_enviado_at (lo sella la
+  Edge Function), created_at.
+  El cliente solo escribe `leida_at` (grant de columna). Sin insert ni delete:
+  las filas solo nacen de triggers.
 ```
 
 **Protección de `correo` (RNF-05):** RLS filtra filas, no columnas — la
@@ -381,7 +400,65 @@ para ese camino. **Verificado corriendo la suite**, no deducido: la aserción de
 T16 en la que `:B` (suspendido) recibe `null` pasa en verde, y con un grant
 faltante habría reventado con `42501`.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 81 aserciones, corre dentro de
+**Un upsert NO puede reasignar el dueño de una fila, y por eso `push_tokens`
+tiene un trigger.** Cuando alguien cierra sesión y otra cuenta entra en el MISMO
+teléfono, Expo entrega el mismo token y esa fila tiene que cambiar de dueño —
+de ahí la PK sobre `token`. Lo obvio sería
+`on conflict (token) do update set user_id = excluded.user_id`, y **falla**:
+en un `ON CONFLICT DO UPDATE` Postgres evalúa el `USING` de la policy de UPDATE
+contra la fila **existente**, que es del dueño anterior. Medido contra el stack
+local con estas policias exactas:
+
+| Intento | Resultado real |
+|---|---|
+| `do update` | `ERROR: new row violates row-level security policy (USING expression)` |
+| `do nothing` a secas | `INSERT 0 0` — **silencioso**: el token sigue siendo del otro y el usuario nuevo nunca recibe un push |
+| `before insert` que libera el token + `do nothing` | una sola fila, del dueño nuevo |
+
+Por eso el cliente hace un **INSERT plano con `ignoreDuplicates`** (igual que
+`favorites`, §8b) y `private.claim_push_token()` borra la fila perdedora. Va
+como trigger y NO como RPC `SECURITY DEFINER` de `public` deliberadamente: sería
+la cuarta de esas, y sobre todo **movería el punto de enforcement** — con el
+trigger, la policy `with check (user_id = auth.uid())` sigue siendo quien decide
+de quién puede ser la fila, y el código elevado solo puede BORRAR, nunca
+fabricar una fila a nombre de otro. Alcance honesto: quien conozca el token de
+alguien más puede reasignárselo y dejarlo sin push; la precondición no es
+alcanzable desde el API (el token solo lo lee su dueño y no aparece en ninguna
+otra respuesta).
+
+**`notifications.titulo`/`cuerpo` se materializan en el trigger, y no es
+duplicación evitable.** El mensaje del diseño dice "ahora cuesta $2,900, **antes
+$3,200**" — y el precio anterior **no existe en ningún lado después del UPDATE**
+que dispara el trigger. Mismo criterio de snapshot que `reports.listing_titulo`.
+Efecto secundario bueno: la Edge Function recibe el texto resuelto y no tiene ni
+una línea de lógica de negocio.
+
+Eso obliga a formatear el precio en SQL, duplicando a `formatPrecio`
+(`src/lib/format.ts`). **La versión ingenua no cuadra:** `to_char(p,
+'FM999,999,999')` REDONDEA — medido, `99.50 → "100"` y `0.50 → "1"`. Por eso
+`private.formato_precio()` lleva un `case` sobre `p = trunc(p)`, y por eso T18
+verifica el cuerpo de una baja a `99.50` carácter por carácter: es el único
+amarre entre las dos implementaciones.
+
+**Por qué el disparador del reporte es `estado` y no un campo de respuesta.**
+RF-16 dice "hay respuesta a un reporte" y `reports` no tiene ningún campo de
+texto para eso. No hace falta: el copy del diseño
+(`design/relevo-app.html`, fila "Respuesta a tu reporte") es genérico y se
+deriva entero de `estado`. Y un campo de texto libre **no tendría quién lo
+escribiera** — RF-17 pone la moderación en Studio, que es un editor de celdas.
+Si algún día el copy debe ser por caso, el orden correcto es un frame primero
+(§0 regla 4).
+
+**El webhook es UNO, sobre `notifications`, no uno por tabla de origen.** Como
+el inbox del diseño exige que la fila exista de todos modos, esa tabla es
+también el outbox: `private.notify_push()` dispara `net.http_post` a la Edge
+Function `send-push` con **solo el id** en el body. Tres consecuencias: un punto
+de integración en vez de dos, la función no sabe nada del esquema de negocio, y
+**si el push falla el aviso sigue en el inbox** — el mismo fallo suave de
+`listing_contacts` (§8b) pero esta vez con recuperación. Ver §9 sobre el header
+`apikey` y el esquema real de `pg_net`, que son dos trampas distintas.
+
+**Regresión de RLS:** `supabase/tests/rls.sql`, 108 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -419,13 +496,24 @@ motivo posible: el camino feliz contra `:D`, la negativa del objetivo contra
 anteriores** — a media suite hay filas y cuentas ya borradas a propósito, y un
 estado que hoy es incidental (quién está suspendido) puede volverse
 load-bearing.
+
+Y a **108** con las de RF-16: T17 (`push_tokens`) y T18 (`notifications` y sus
+dos disparadores), que siembran sus propios `:E` y `:F` siguiendo esa misma
+moraleja, más 4 en T12 (`notifications` sin INSERT/DELETE, su UPDATE solo por
+columna, `push_tokens` sin UPDATE por ningún lado, y `vault` inaccesible para
+`authenticated`/`anon`). La aserción de las funciones-solo-trigger pasó de 5 a
+**9** sin cambiar la cuenta, que es donde vive ese tipo de invariante.
+**Dos aserciones de T17 van juntas o ninguna sirve:** "un token que cambia de
+cuenta deja UNA sola fila, del dueño nuevo" y "el mismo usuario re-registrando su
+token no duplica ni pierde el otro". Sin la segunda, un trigger que borrara
+incondicionalmente también pasaría la primera.
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
 
 ---
 
-## 4. Inventario completo de pantallas (51)
+## 4. Inventario completo de pantallas (52)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -469,8 +557,15 @@ Mis publicaciones · Mis publicaciones vacío · Mis publicaciones (acciones)
 ### Confianza (3)
 Reportar publicación · Calificar · ¿A quién le vendiste?
 
-### Notificaciones (1)
-Notificaciones
+### Notificaciones (2)
+Notificaciones · Notificaciones vacío
+
+"Notificaciones vacío" se agregó al construir RF-16 y **no es un caso borde**:
+toda cuenta nueva abre el inbox así el día uno, porque las notificaciones solo
+nacen de eventos que todavía no ocurrieron. A diferencia de "Favoritos vacío" y
+"Mis publicaciones vacío" no lleva `.empty-actions`: no hay nada que el usuario
+pueda hacer para llenarlo —depende de terceros— y la única acción posible sería
+volver, que ya es el chevron del header.
 
 ### Sistema (6)
 Confirmar eliminar · Confirmar cerrar sesión · Error de conexión ·
@@ -597,8 +692,8 @@ y solo al final las convenciones genéricas de los skills.
 ## 8. Estado de implementación del backend
 
 **Hecho:**
-- 13 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
-  con RLS + regresión de 81 aserciones pasando. (§3 es la cuenta buena: esta
+- 16 migraciones aplicadas al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio),
+  con RLS + regresión de 108 aserciones pasando. (§3 es la cuenta buena: esta
   línea ya se quedó atrás dos veces —en 8/53 y en 10/64—, así que si no
   coinciden, la de §3 gana.)
 - Seed de datos de referencia (12 categorías, Tec de Monterrey / campus
@@ -746,12 +841,96 @@ y solo al final las convenciones genéricas de los skills.
   desde Studio?, ¿y qué pasa al reactivar: se despausan solas o no?). Se trata
   aparte, con su propio plan.
 
+- **RF-16 completo: inbox persistido + push.** Tres migraciones
+  (`20260911000450` push_tokens, `...451` notifications y sus dos triggers,
+  `...452` el webhook), la primera Edge Function del proyecto (`send-push`), y
+  el grupo Notificaciones construido en el cliente. Lo que no se ve en el diff:
+  - **La tarea no era "una Edge Function".** La pantalla del diseño es un inbox
+    persistido (hora relativa + punto de no leído), o sea que la tabla tenía que
+    existir igual — y al existir, ES el outbox del push. Eso eliminó los
+    webhooks colgados de `listings` y `reports`.
+  - **Dos disparadores, no tres.** "Nueva publicación en categoría seguida" es
+    opcional en RF-16 y no tiene modelo (ni tabla ni afordance en el diseño);
+    además es el único fan-out 1→N del campus entero, o sea el único con riesgo
+    real de spam. Queda fuera, documentado abajo.
+  - **El enum nace con dos valores** aunque el frame tenga cuatro filas: "Tu
+    correo fue verificado" no tiene disparador (ocurre en el alta) y la de
+    categoría seguida no tiene modelo. Un valor de enum sin productor solo
+    genera ramas muertas en el cliente.
+  - **El registro del token NO puede vivir solo en el onboarding**, por la misma
+    razón que el gate del teléfono de RF-13: toda cuenta existente ya pasó por
+    esa pantalla. Hay un efecto de re-registro en `SessionProvider`, fuera del
+    callback de `onAuthStateChange` (el deadlock de supabase-js).
+  - **`tsconfig.json` ahora excluye `supabase/functions`**, y no es cosmético:
+    esa carpeta es código **Deno**, con specifiers `npm:` que el tsconfig de
+    Expo no resuelve. Sin el exclude, `npx tsc --noEmit` de la app falla con 4
+    errores que no son errores. Si alguien lo quita "para typechear todo", lo
+    correcto es darle a esa carpeta su propia config de Deno, no devolverla al
+    tsconfig de React Native.
+  - Probado de punta a punta en local: baja de precio → fila con el copy exacto
+    del diseño → webhook (HTTP 200) → la función llamó a Expo, recibió el ticket
+    de error del token falso y **borró ese token** (`limpiados: 1`). Lo único que
+    falta es un aparato de verdad — ver el pendiente de abajo.
+
 **Pendiente, en este orden de prioridad:**
-1. Edge Functions para el push de RF-16 (Expo Notifications) — el esquema
-   deja los datos listos (`listing_contacts`, `favorites`), pero no hay
-   función que dispare la notificación todavía.
+1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
+   completo y probado hasta el borde de la red de Expo, pero nada de esto ha
+   entregado todavía una notificación a un teléfono:
+   - **Android:** subir el service account JSON de **FCM V1** a las credenciales
+     de EAS. Sin eso Android no entrega, y **sin error visible en la app**.
+   - **iOS:** llave **APNs** y un dispositivo físico — el simulador de iOS no
+     recibe push en absoluto.
+   - **Los dos secretos de Vault en remoto**, que son paso manual a propósito
+     (una credencial no se comitea):
+     `select vault.create_secret('sb_secret_…', 'send_push_secret_key');` y
+     `select vault.create_secret('https://ukxfnydfhmryrzhdqkvj.supabase.co/functions/v1/send-push', 'send_push_function_url');`
+     Sin ellos el trigger no revienta: levanta un `warning`, la fila queda en el
+     inbox con `push_enviado_at is null` y no sale ningún push.
+   - Por §6 el simulador headless no cuenta como prueba. Es hermano del pendiente
+     del header `Authorization` de `expo-image`.
 
 **Deuda consciente — con disparador de revisión, no "algún día":**
+
+- **`reports.resolved_at` existe y NADIE la escribe.** Está en el esquema desde
+  `20260906000441:16` y ningún trigger ni camino de código la llena, así que hoy
+  es siempre `null`. Se detectó al construir RF-16 y **se dejó fuera a
+  propósito**: el primer impulso fue llenarla con el mismo trigger que notifica
+  la resolución del reporte, pero esa notificación toma su hora de
+  `notifications.created_at` —escrito en el mismo instante—, así que
+  `resolved_at` no tenía ningún consumidor y habría sido una columna escrita
+  para nadie. **Revisar cuando:** se trabaje la moderación de RF-17, que es
+  donde "¿cuándo se resolvió esto?" empieza a ser una pregunta real. **Fix:** un
+  `before update` con el mismo `when` que `reports_notify_resolved`, modelado
+  sobre `private.set_updated_at()` (`20260906000439:33-46`).
+- **Sin receipts de Expo.** `send-push` maneja los errores a nivel *ticket*, que
+  es donde llega `DeviceNotRegistered` para un token inválido, pero no hace el
+  segundo round-trip a `/push/getReceipts` — donde Expo reporta fallos que solo
+  se conocen después de intentar la entrega. **Revisar cuando:** aparezcan
+  usuarios que no reciben push y cuyo token sigue vivo en la tabla. **Fix:**
+  guardar el `ticket.id` y un job que consulte recibos.
+- **`pg_net` es fire-and-forget.** Si el webhook falla (función caída, secreto de
+  Vault mal puesto, 5xx), la notificación queda en el inbox con
+  `push_enviado_at is null` y el error solo se ve en `net._http_response`. Nadie
+  reintenta. **Revisar cuando:** alguien reporte no haber recibido un push que sí
+  está en su inbox. **Fix:** un barrido de
+  `notifications where push_enviado_at is null and created_at > now() - interval '1 day'`.
+- **El inbox no pagina:** `fetchNotificaciones()` trae las últimas 100 y ya.
+  **Revisar cuando:** una cuenta real pase de ~100 notificaciones — hoy se
+  acumulan de a una por baja de precio de un favorito, o sea decenas al año.
+  **Fix:** el mismo cursor `(created_at, id)` que ya usa `fetchListings`.
+- **Sin "categoría seguida"**, el tercer disparador (opcional) de RF-16. No
+  existe modelo ni afordance en el diseño, y es el único fan-out 1→N del campus
+  entero. **Revisar cuando:** se pida de verdad. **Fix:** tabla
+  `category_follows` + su RLS + su bloque en la suite + la UI de seguir, y
+  **scoping por campus más throttling** antes de encender el disparador — si no,
+  es una notificación por cada publicación nueva del campus.
+- **El token de push es no-enumerable, pero robable si se conoce.** Cualquiera
+  que sepa el token de otra persona puede reasignárselo (el trigger
+  `claim_push_token` no distingue) y dejarla sin push. La precondición no es
+  alcanzable desde el API —el token solo lo lee su dueño y no aparece en ninguna
+  otra respuesta—, así que hoy no hay camino. **Revisar cuando:** un token de
+  push llegue a viajar en alguna respuesta o log accesible. **Fix:** exigir que
+  el insert traiga también algo que solo el aparato tenga.
 
 - **La lada del teléfono está fija en `+52`**, en el `check` de la base
   (`users_telefono_e164_mx`), en el prefijo inerte del campo y en el
@@ -857,11 +1036,14 @@ y solo al final las convenciones genéricas de los skills.
 ## 8b. Estado de implementación del frontend (por grupo)
 
 **Onboarding — construido y conectado a Supabase real.** Las 13 pantallas
-existen como código, con auth gating real (ver sección 8). Sin conectar
-todavía, fuera de alcance por decisión explícita: `recuperar-password.tsx`
-(necesita deep linking), `expo-notifications` real (el botón solo navega),
-`expo-image-picker` para la foto de perfil, íconos nativos de los 4 triggers
-de `NativeTabs` (siguen siendo solo texto).
+existen como código, con auth gating real (ver sección 8). **"Permiso de
+notificaciones" ya pide el permiso REAL** y registra el token (RF-16): el botón
+llama a `registrarPushToken()` y entra al Feed pase lo que pase, incluso si el
+usuario dice que no — es el último paso del onboarding y atorarlo ahí sería
+absurdo. Sin conectar todavía, fuera de alcance por decisión explícita:
+`recuperar-password.tsx` (necesita deep linking), `expo-image-picker` para la
+foto de perfil, íconos nativos de los 4 triggers de `NativeTabs` (siguen siendo
+solo texto).
 
 **Explorar — construido y conectado a Supabase real.** Las 11 pantallas
 existen como código (7 archivos de ruta, algunos cubren varios estados:
@@ -1382,9 +1564,72 @@ Lo que sigue siendo placeholder de Perfil: avatar, stats y el resto del
 `.menu-list`. Hoy tiene dos afordances reales (cerrar sesión y "Mis
 publicaciones") más el FAB de publicar.
 
-**Confianza y Notificaciones — no construidos todavía.** Del grupo Cuenta
-tampoco lo están *Favoritos* (sigue siendo placeholder aunque el toggle de
-favorito ya funcione en todo Explorar), *Editar perfil* ni *Perfil público*.
+**Notificaciones — construido y conectado (RF-16).** Las 2 pantallas del grupo
+(el inbox y su vacío) viven en `src/app/(notificaciones)/notificaciones.tsx`, con
+`src/lib/notificaciones.ts` como capa de datos y `src/lib/push.ts` como el único
+punto de contacto con `expo-notifications`.
+
+Detalles que no se ven en el diff:
+
+- **Dos rutas se renombraron, y NO es cosmético: `(notificaciones)/index.tsx`
+  colisionaba con `(tabs)/index.tsx`.** Un `index.tsx` dentro de un grupo de
+  primer nivel resuelve a `/` con el nombre del grupo eliminado, así que había
+  DOS rutas reclamando la raíz de la app — verificado leyendo
+  `.expo/types/router.d.ts`, que generaba `` `/(tabs)` | `/` `` **y**
+  `` `/(notificaciones)` | `/` ``. Funcionaba de milagro, porque la campana
+  navegaba con el prefijo explícito del grupo y `/` caía en `(tabs)` por orden
+  de declaración. Arreglo, que además alinea las rutas con los nombres de los
+  frames del diseño:
+  - `(onboarding)/notificaciones.tsx` → **`permiso-notificaciones.tsx`**
+    (`/permiso-notificaciones`) — el frame se llama "Permiso de notificaciones".
+  - `(notificaciones)/index.tsx` → **`notificaciones.tsx`** (`/notificaciones`),
+    que quedó libre — el frame se llama "Notificaciones".
+  Ahora una sola ruta reclama `/`, y el inbox tiene URL propia, que es lo que
+  hace posible el deep link del tap sobre un push. Si alguien "simplifica"
+  cualquiera de los dos a `index.tsx`, vuelve la ambigüedad.
+- **La campana del Feed dejó de ser inerte** (`(tabs)/index.tsx`) y **su `.dot`
+  pasó a ser condicional** al conteo de no leídas — antes se pintaba siempre. El
+  conteo se recuenta al ENFOCAR (`useFocusEffect`) y no solo al montar: el Feed
+  es un tab, así que vuelve del inbox sin desmontarse, y ese regreso es
+  justamente cuando el número cambió. Nada de Realtime: sería una suscripción
+  abierta toda la sesión para un dato que cambia un puñado de veces al día.
+- **El tap sobre un push navega desde `(tabs)/_layout.tsx`, NO desde el layout
+  raíz**, por dos razones de orden: ese layout solo se monta cuando el gating ya
+  pasó (que es cuando `/detalle/<id>` es alcanzable), y el raíz devuelve `null`
+  mientras cargan las fuentes, así que una navegación disparada ahí podría
+  ejecutarse antes de que exista el navegador y perderse sin rastro.
+  `useRespuestaANotificacion()` cubre los DOS caminos —`addNotificationResponse…`
+  (app viva) y `getLastNotificationResponseAsync` (el tap ABRIÓ la app)—; sin el
+  segundo, el caso más común de todos aterriza en el Feed como si nada.
+- **`borrarPushToken()` corre ANTES de `supabase.auth.signOut()`**, y el orden no
+  es estético: la policy de delete es `user_id = auth.uid()`, así que sin sesión
+  ya no hay quién autorice el borrado y el teléfono seguiría mostrando en su
+  pantalla de bloqueo los avisos de la cuenta que acaba de salir.
+- **`formatRelativo` (`src/lib/format.ts`) ganó una rama de minutos, y eso
+  CORRIGE a sus tres consumidores viejos** (`ProductCard`, Detalle, Mis
+  publicaciones), no solo sirve al inbox. Antes todo lo de menos de una hora
+  decía "hace un momento" — una cadena que **no aparece ni una vez** en
+  `relevo-app.html`, o sea una invención del código; el diseño usa minutos
+  explícitos ("hace 12m").
+- **`SkeletonNotifRows` es hermano de `SkeletonRows`, no una variante suya**, por
+  el mismo motivo por el que aquella no reusó `SkeletonGrid`: la forma que
+  anticipa es distinta (círculo de 36 y dos líneas, contra thumb de 76 y tres).
+- **Las notificaciones de reporte no llevan `listing_id`** aunque el reporte sí
+  apunte a una publicación: el tap devolvería al reportante al contenido que
+  denunció. Sin `listing_id`, `NotifRow` no recibe `onPress` y **ni siquiera se
+  anuncia como botón**.
+- El inbox **marca todo como leído al terminar de cargar**, con update optimista
+  sin rollback — mismo criterio que el corazón de favoritos: la policy solo
+  compara `user_id = auth.uid()` sobre filas propias, así que no hay rechazo por
+  política posible y el costo de equivocarse es que el punto reaparezca.
+
+Componentes nuevos: `NotifRow`, `SkeletonNotifRows`, `IconMail`, y dos roles de
+`Typography` (`notifTime`, `notifDesc` — ver §2, se confunden fácil con
+`cardBadge` y `activeChip`).
+
+**Confianza — no construido todavía.** Del grupo Cuenta tampoco lo están
+*Favoritos* (sigue siendo placeholder aunque el toggle de favorito ya funcione en
+todo Explorar), *Editar perfil* ni *Perfil público*.
 **Sistema** tiene las 3 piezas que Explorar necesitó (arriba) más "Confirmar
 eliminar", cableado con `ConfirmModal` + `DangerButton` tanto en Editar
 publicación como en Mis publicaciones.
@@ -1400,6 +1645,33 @@ publicación como en Mis publicaciones.
   ya concedido. Cada bloque de grants en las migraciones lleva ahora un
   comentario explicando esto — **cualquier tabla nueva necesita el mismo
   patrón: revocar primero, otorgar después.**
+- **`ON CONFLICT DO UPDATE` evalúa el `USING` de la policy contra la fila
+  VIEJA.** O sea que un upsert que pretende cambiarle el DUEÑO a una fila falla
+  siempre —`new row violates row-level security policy (USING expression)`—
+  justo en el caso que pretende resolver. Y degradarlo a `DO NOTHING` no lo
+  arregla: lo vuelve **silencioso** (`INSERT 0 0`, la fila ajena intacta, cero
+  errores), que es peor. Cuando una fila debe cambiar de dueño, el patrón es un
+  `before insert` `SECURITY DEFINER` que libere la fila perdedora, más un insert
+  plano con `ignoreDuplicates` del lado del cliente. Medido en local; es lo que
+  hace `push_tokens` (§3).
+- **`pg_net` NO deja sus funciones donde dice su extensión.** La extensión queda
+  en `extensions` (`create extension pg_net with schema extensions` funciona y
+  `pg_extension` lo confirma), pero `http_post` y compañía viven en un esquema
+  `net` propio que ella misma crea. La llamada correcta es **`net.http_post`**,
+  no `extensions.net.http_post`. Con `search_path = ''` en el cuerpo —como exige
+  el estilo de este repo— equivocarse ahí **no falla al crear la función**
+  (plpgsql no resuelve nombres hasta ejecutarla): falla en runtime, con la fila
+  ya insertada y el push perdido en silencio.
+- **Las secret keys modernas no son JWT, así que NO van en
+  `Authorization: Bearer`.** Este proyecto usa `sb_secret_…` (§1), y mandarla
+  como Bearer desde `pg_net` hace que la plataforma intente parsearla como JWT y
+  rechace con "Invalid JWT". Va en el header **`apikey`**, y la función tiene que
+  llevar **`verify_jwt = false`** en `config.toml` —porque esa verificación
+  integrada solo entiende las llaves legadas— autorizando en su propio código
+  (`withSupabase({ auth: 'secret' })`). Verificado en local con los cuatro casos:
+  sin llave → 401, llave inventada → 401, **publishable → 401**, secret → pasa.
+  `verify_jwt = false` NO significa "función abierta"; significa que la
+  autorización la hace la función.
 - **Un `policy` no puede invocar una función `SECURITY DEFINER` sin que el rol
   invocante tenga `USAGE`/`EXECUTE` sobre ella** — aunque la función "corra
   con privilegios elevados", Postgres exige el permiso de invocación al rol
@@ -1534,6 +1806,35 @@ publicación como en Mis publicaciones.
   de caer a `image/jpeg` para todo lo desconocido: ese fallback "inocente"
   guardaría bytes HEIC bajo un tipo que miente, Android no los podría pintar, y
   el error aparecería lejísimos de su causa.
+- **`Cannot find native module 'X'` no siempre significa "estás en Expo Go"** —
+  tiene DOS causas posibles, y las dos aplicaron a este proyecto en la misma
+  tarea (RF-16, push), aunque solo una quedó confirmada con el mensaje exacto
+  en pantalla (`Cannot find native module 'ExpoPushTokenManager'`; la otra es
+  la causa obvia y documentada de Expo Go, no algo que se haya visto reventar
+  aquí). No asumas cuál es sin mirar:
+  - **Expo Go.** Nunca lleva módulos nativos de terceros (los quitó desde el
+    SDK 53), así que importar `expo-notifications` ahí explota siempre.
+  - **Un dev build STALE.** Confirmado en este proyecto: el proceso en
+    foreground SÍ era el dev build (`launchctl list` mostraba
+    `com.enrique-macias.enrique-macias`, no `host.exp.Exponent`) y aun así
+    explotaba con el mismo mensaje. Causa: el simulador booteado era uno de
+    los **tres** "iPhone 17 Pro" que Xcode tiene creados, cada uno en un
+    runtime de iOS distinto (26.1/26.2/26.5), y el que estaba abierto tenía un
+    `relevomarketplace.app` instalado **antes** de que `expo-notifications`
+    existiera en el proyecto — Metro le servía el JS nuevo sobre un binario
+    nativo viejo. Mismo síntoma que Expo Go, causa opuesta: no "abriste la app
+    equivocada", sino "el simulador correcto tiene el binario equivocado".
+  **Cómo distinguirlas antes de asumir**: `xcrun simctl list devices booted`
+  para ver CUÁL simulador está activo, y
+  `xcrun simctl spawn <udid> launchctl list | grep UIKitApplication` para ver
+  qué bundle id está en foreground — `host.exp.Exponent` es Expo Go,
+  `com.enrique-macias.enrique-macias` es el dev build. Si es el dev build y
+  aun así falta el módulo, el fix no es "cambiar de app" sino reconstruir:
+  `npx expo run:ios --device <udid>` (recompila con el pod ya resuelto en
+  `ios/Podfile.lock` si `expo install` ya corrió, sin volver a bajar nada).
+  **La regla general**: agregar cualquier módulo nativo o config plugin
+  invalida TODOS los binarios ya instalados, en todos los simuladores/
+  dispositivos — Fast Refresh actualiza el JS, nunca el nativo.
 - **Un elemento visualmente sobre `NativeTabs` puede no recibir touch si vive
   dentro del contenido de una pantalla del Tabs en vez de como hermano del
   navegador.** Pasó con el FAB de "Publicar": se pintaba perfectamente sobre el

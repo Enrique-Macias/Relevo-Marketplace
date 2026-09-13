@@ -137,6 +137,18 @@ vez validado.
 - **RF-15** Guardar publicaciones como favoritas.
 - **RF-16** Push cuando baja el precio de un favorito, hay respuesta a un
   reporte, o (opcional) nueva publicación en categoría seguida.
+  **✅ Implementado los dos disparadores obligatorios** — baja de precio de un
+  favorito y resolución de un reporte. Además de push, cada aviso queda en un
+  **inbox in-app** (pantalla "Notificaciones", con hora relativa y punto de no
+  leído), que es lo que hace que un aviso sobreviva a un push que no llegó.
+  "Respuesta a un reporte" NO necesitó un campo de texto nuevo: el copy del
+  diseño es genérico y se deriva de `reports.estado`, y un campo libre no
+  tendría quién lo escribiera (RF-17 pone la moderación en Studio).
+  **⏳ Fuera de alcance:** el tercer disparador, marcado opcional aquí — no
+  existe modelo de "seguir una categoría", y es el único fan-out 1→N de todo el
+  campus, o sea el único con riesgo real de volverse spam.
+  **⚠️ Pendiente operativo, no de código:** credenciales FCM V1 / APNs y la
+  prueba en un teléfono real. Ver `CLAUDE.md` §8.
 
 ### Administración
 - **RF-17** Panel interno para revisar reportes, suspender

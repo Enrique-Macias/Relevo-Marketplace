@@ -239,6 +239,86 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          created_at: string
+          cuerpo: string
+          id: number
+          leida_at: string | null
+          listing_id: number | null
+          push_enviado_at: string | null
+          tipo: Database["public"]["Enums"]["notification_type"]
+          titulo: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          cuerpo: string
+          id?: never
+          leida_at?: string | null
+          listing_id?: number | null
+          push_enviado_at?: string | null
+          tipo: Database["public"]["Enums"]["notification_type"]
+          titulo: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          cuerpo?: string
+          id?: never
+          leida_at?: string | null
+          listing_id?: number | null
+          push_enviado_at?: string | null
+          tipo?: Database["public"]["Enums"]["notification_type"]
+          titulo?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "listings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      push_tokens: {
+        Row: {
+          created_at: string
+          platform: string
+          token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          platform: string
+          token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          platform?: string
+          token?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ratings: {
         Row: {
           comentario: string | null
@@ -448,6 +528,7 @@ export type Database = {
     Enums: {
       listing_condition: "nuevo" | "como_nuevo" | "buen_estado" | "usado"
       listing_status: "activa" | "pausada" | "vendida"
+      notification_type: "precio_favorito" | "reporte_resuelto"
       report_reason:
         | "spam_publicidad"
         | "sospecha_fraude"
@@ -585,6 +666,7 @@ export const Constants = {
     Enums: {
       listing_condition: ["nuevo", "como_nuevo", "buen_estado", "usado"],
       listing_status: ["activa", "pausada", "vendida"],
+      notification_type: ["precio_favorito", "reporte_resuelto"],
       report_reason: [
         "spam_publicidad",
         "sospecha_fraude",

@@ -1,7 +1,7 @@
 /** Feed — `header.top` (brand+campus+hero) + búsqueda + categorías + recomendados. */
 
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
@@ -20,6 +20,7 @@ import { useExplorarState } from '@/lib/explorar-state';
 import { iniciales } from '@/lib/format';
 import { chunkRows } from '@/lib/grid';
 import { useListings } from '@/lib/listings';
+import { useNoLeidas } from '@/lib/notificaciones';
 import { useSession } from '@/lib/session';
 
 // El tile de cierre del grid. `id: null` lo distingue de una categoría real:
@@ -27,9 +28,16 @@ import { useSession } from '@/lib/session';
 const TILE_MAS = { id: null, slug: 'otros', nombre: 'Más' } as const;
 
 export default function InicioScreen() {
-  const { profile } = useSession();
+  const { profile, session } = useSession();
   const { campusSeleccionado, categorias, categoriasListas, favoritos, toggleFavorito } =
     useExplorarState();
+
+  // El punto de la campana. Se recuenta al ENFOCAR y no solo al montar: el Feed
+  // es un tab, así que vuelve del inbox sin desmontarse nunca, y ese regreso es
+  // justo el momento en que el número cambió (el inbox marca todo como leído al
+  // abrirse).
+  const { noLeidas, recontar } = useNoLeidas(session?.user.id ?? null);
+  useFocusEffect(recontar);
 
   // El Feed no es una lista infinita: el frame muestra un grid de 6 con
   // "Ver todo" hacia Búsqueda, que es donde vive la paginación (RNF-01).
@@ -75,10 +83,19 @@ export default function InicioScreen() {
         <View style={styles.brandRow}>
           <Text style={styles.wordmark}>Relevo</Text>
           <View style={styles.topActions}>
-            {/* pendiente: (notificaciones) es un grupo vacío todavía */}
-            <Pressable style={styles.iconBtn} accessibilityRole="button">
+            <Pressable
+              style={styles.iconBtn}
+              accessibilityRole="button"
+              accessibilityLabel={
+                noLeidas > 0 ? `Notificaciones, ${noLeidas} sin leer` : 'Notificaciones'
+              }
+              onPress={() => router.push('/notificaciones')}
+            >
               <IconBell size={17} color={Colors.ink} />
-              <View style={styles.dot} />
+              {/* `.dot` es el indicador de no leídas. Estuvo pintado siempre
+                  mientras el inbox no existía; ahora es condicional — un punto
+                  permanente no informa nada y entrena a ignorarlo. */}
+              {noLeidas > 0 ? <View style={styles.dot} /> : null}
             </Pressable>
             <Pressable style={styles.avatar} onPress={() => router.push('/perfil')} accessibilityRole="button">
               <Text style={styles.avatarText}>{iniciales(profile?.nombre)}</Text>
