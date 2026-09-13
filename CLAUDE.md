@@ -1851,8 +1851,9 @@ Detalles que no se ven en el diff:
   pantalla rebota con su guard, así que "Cambiar comprador" nunca llega a pintarse
   en Editar. Se ofrece desde Detalle y desde la hoja de "Mis publicaciones".
 
-**Cuenta — 3 de 8 pantallas, las de "Mis publicaciones", construidas y
-conectadas.** Se hicieron por necesidad, no por avanzar el grupo: conectar
+**Cuenta — 5 de 8 pantallas, las de "Mis publicaciones" y "Favoritos",
+construidas y conectadas.** Las de "Mis publicaciones" se hicieron por
+necesidad, no por avanzar el grupo: conectar
 Publicar dejó la app en un estado donde pausar una publicación la volvía
 inalcanzable (el Feed filtra `estado = 'activa'`), y lo mismo pasaba con una que
 quedaba sin fotos por un fallo de subida. Eso último dejó de ser un accidente y
@@ -1909,6 +1910,46 @@ publicación que se queda `pausada` por un fallo de subida se recupera aquí.
   `fotosGuardadas`/`firmaGuardada`.
 - `SkeletonRows` (nuevo, en `Skeleton.tsx`) es el esqueleto de una lista plana —
   `SkeletonGrid` habría anticipado una forma que no es la que llega.
+
+**"Favoritos" (+ su vacío) construida y conectada** —
+`src/app/(tabs)/favoritos.tsx`, con `fetchFavoritos()` nuevo en
+`src/lib/listings.ts`. No hizo falta ninguna migración: `favorites` y su RLS
+ya estaban aplicadas desde el grupo Explorar. Sin componentes nuevos: reusa
+`ProductCard`, `SkeletonGrid`, `EmptyState`/`ErrorState`, igual que
+Feed/Búsqueda.
+
+- **El heading es un `<Text>` suelto, NO `PageHeader`.** El frame usa
+  `.page-heading` a secas, sin chevron, porque esta pantalla es raíz de tab
+  —como Feed y Buscar, que tampoco lo llevan— y `PageHeader` siempre dibuja
+  `router.back()`, que aquí no tendría a dónde volver.
+- **La lista que se pinta se DERIVA, no se mantiene como estado propio.**
+  `items` (lo que trae `fetchFavoritos`) se filtra en cada render contra
+  `favoritos` (el `Set` optimista de `useExplorarState`, la misma fuente que
+  ya gobierna el corazón en Feed/Búsqueda): `items.filter(l =>
+  favoritos.has(l.id))`. El corazón de esta pantalla llama al mismo
+  `toggleFavorito()` del contexto —no a un mecanismo propio—, así que la
+  tarjeta desaparece sola en el siguiente render cuando se destoca, y
+  reaparece sola si la escritura falla y el contexto revierte, porque `items`
+  nunca se tocó, solo se filtró. El vacío también se calcula sobre esa lista
+  derivada, no sobre `items`: destocar el último favorito aquí mismo muestra
+  "Favoritos vacío" al instante, sin esperar un refetch.
+- **`fetchFavoritos()` parte de `favorites` como tabla base, no de
+  `listings`** —al revés que `fetchListings`/`fetchMisListings`—,
+  embebiendo `listing:listings!inner(${SELECT_CARD})`, para poder ordenar el
+  resultado de nivel superior por `favorites.created_at` (cuándo se guardó
+  como favorito) en vez de por la fecha del listing. Filtra
+  `estado = 'activa'`: `ProductCard` no tiene ningún estado visual para
+  "vendida" —esa tarjeta no existe en ningún frame de grid, solo en Detalle
+  y en la fila plana de Mis publicaciones—, así que mostrar una vendida aquí
+  inventaría un estado fuera del diseño (§0 regla 4).
+- **Sin paginación ni pull-to-refresh**, mismo criterio que
+  `fetchFavoritoIds`: es la lista personal de un estudiante, no un catálogo.
+  Refetch al volver al tab (`useFocusEffect` saltando el primer foco, mismo
+  patrón que `mis-publicaciones.tsx`), no al gesto.
+- Ver §9 sobre el hallazgo que hizo falta verificar antes de escribir esta
+  query: si `order`/`limit` por `referencedTable` funcionan con una ruta
+  punteada a DOS niveles de embed (`favorites → listing → fotos`), y no solo
+  al nivel que ya usaba `fetchListings`.
 
 Lo que sigue siendo placeholder de Perfil: avatar, stats y el resto del
 `.menu-list`. Hoy tiene dos afordances reales (cerrar sesión y "Mis
@@ -2064,8 +2105,7 @@ Detalles que no se ven en el diff:
   estrellas: lo opcional es el comentario, no el puntaje (`estrellas` es
   `not null check (between 1 and 5)`).
 
-Del grupo Cuenta siguen sin construir *Favoritos* (placeholder, aunque el toggle
-de favorito ya funcione en todo Explorar), *Editar perfil* y *Perfil público*.
+Del grupo Cuenta siguen sin construir *Editar perfil* y *Perfil público*.
 **Sistema** tiene las 3 piezas que Explorar necesitó (arriba) más "Confirmar
 eliminar", cableado con `ConfirmModal` + `DangerButton` tanto en Editar
 publicación como en Mis publicaciones.
@@ -2147,6 +2187,35 @@ publicación como en Mis publicaciones.
   cualquier cliente. Antes de dar un índice por bueno, confírmalo con
   `explain (analyze)` **y con suficientes filas**: con pocos datos el planner
   elige seq scan por costo y el plan no prueba nada en ninguna dirección.
+- **`order`/`limit` por `referencedTable` SÍ soportan una ruta punteada a DOS
+  niveles de embed, no solo al nivel que ya usaba `fetchListings` (`fotos`
+  directo sobre `listings`).** Hacía falta para `fetchFavoritos()` (§8b,
+  grupo Cuenta): la query parte de `favorites`, embebe
+  `listing:listings!inner(...)`, y dentro de ese embed va otro,
+  `fotos:listing_photos(...)` — o sea que acotar la portada a la de menor
+  `orden` exige `referencedTable: 'listing.fotos'`, dos segmentos, no uno.
+  El código fuente de `@supabase/postgrest-js`
+  (`PostgrestTransformBuilder.order()`/`.limit()`) arma la clave del query
+  param con una interpolación de string sin validar
+  (`` `${referencedTable}.order` ``), así que el cliente no impone ningún
+  límite de profundidad — pero eso no dice nada sobre si el SERVIDOR
+  (PostgREST) la acepta. Se verificó con una prueba diferencial por HTTP
+  directo contra el proyecto remoto, sin sesión (rol `anon`, sobre
+  `/rest/v1/favorites`):
+  - Con una ruta de dos niveles **inválida** (`listing.fotosxyz.order=…`,
+    alias que no existe) → `400 PGRST108 "'fotosxyz' is not an embedded
+    resource in this request"`. O sea que SÍ camina el path segmento por
+    segmento y valida cada uno contra los embeds reales de la request.
+  - Con la ruta real (`listing.fotos.order=orden.asc` +
+    `listing.fotos.limit=1`) → deja de aparecer ese error y la respuesta pasa
+    a `42501 permission denied for table favorites` (esperado: `anon` no
+    tiene grant sobre `favorites`, y no tiene nada que ver con la sintaxis).
+  - La diferencia entre ambas pruebas ES la prueba: un path de dos niveles
+    sintácticamente inválido se detecta y rechaza distinto (400, antes de
+    tocar la base) de uno válido que solo tropieza después, en la
+    autorización (42501). Con `authenticated` (el rol real del cliente) ese
+    42501 no ocurre —`favorites` sí tiene `grant select` para
+    `authenticated`—, así que la consulta completa corre hasta el final.
 - **`postgres` no es dueño de `storage.objects` y aun así puede politiquearla.**
   La dueña es `supabase_storage_admin` y `postgres` ni siquiera es miembro de ese
   rol, así que `create policy` debería fallar con 42501 "must be owner of table

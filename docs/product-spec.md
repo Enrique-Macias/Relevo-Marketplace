@@ -157,7 +157,11 @@ vez validado.
   inapropiado, no es un estudiante, u otro (con comentario libre).
 
 ### Favoritos y notificaciones
-- **RF-15** Guardar publicaciones como favoritas.
+- **RF-15** Guardar publicaciones como favoritas. **✅ Implementado** — el
+  toggle de guardar/quitar (optimistic update + rollback) ya existía desde el
+  grupo Explorar, en Feed/Búsqueda/Detalle. Lo que faltaba era dónde
+  consultarlos de vuelta: la pantalla "Favoritos" (grupo Cuenta) los lista y
+  permite quitarlos desde ahí mismo.
 - **RF-16** Push cuando baja el precio de un favorito, hay respuesta a un
   reporte, o (opcional) nueva publicación en categoría seguida.
   **✅ Implementado, TRES disparadores** — baja de precio de un favorito,

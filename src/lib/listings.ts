@@ -324,6 +324,58 @@ export async function fetchListingById(id: number): Promise<ListingDetalle | nul
 export const fetchListingParaEditar = fetchListingById;
 
 /**
+ * OJO — este select parte de `favorites`, no de `listings` (al revés que
+ * `SELECT_CARD` cuando lo usa `fetchListings`), para poder ordenar el
+ * resultado de nivel superior por CUÁNDO se guardó como favorito
+ * (`favorites.created_at`) en vez de por la fecha del listing.
+ *
+ * `listing:listings!inner(...)` no necesita desambiguar la FK como sí hace
+ * falta con `users` dentro de `VENDEDOR`: entre `favorites` y `listings` hay
+ * una sola relación (`favorites_listing_id_fkey`).
+ */
+const SELECT_FAVORITOS = `
+  created_at,
+  listing:listings!inner(${SELECT_CARD})
+`;
+
+/**
+ * Los listings favoritados por el usuario, completos — no solo los ids
+ * (`fetchFavoritoIds` en `src/lib/favoritos.ts`, que alimenta el `Set` de
+ * `useExplorarState` para pintar el corazón en Feed/Búsqueda).
+ *
+ * Sin paginar, mismo criterio que `fetchFavoritoIds`: es la lista personal de
+ * un estudiante, no un catálogo.
+ *
+ * `estado = 'activa'` filtra los que ya no están en pie (vendidos o
+ * pausados). `ProductCard` no tiene ningún estado visual para "vendida" —esa
+ * tarjeta no existe en ningún frame de grid, solo en Detalle y en la fila
+ * plana de "Mis publicaciones"—, así que mostrar una vendida aquí inventaría
+ * un estado que no está en el diseño (CLAUDE.md §0 regla 4).
+ */
+export async function fetchFavoritos(userId: string): Promise<ListingCard[]> {
+  const { data, error } = await supabase
+    .from('favorites')
+    .select(SELECT_FAVORITOS)
+    .eq('user_id', userId)
+    .eq('listing.estado', 'activa')
+    // Acota la portada a la de menor `orden`, igual que `fetchListings` —
+    // VERIFICADO contra el proyecto remoto que un `referencedTable` de dos
+    // niveles (favorites → listing → fotos) es válido: una ruta de dos
+    // niveles con un alias inexistente responde 400 PGRST108 ("no es un
+    // recurso embebido"), y esta ruta real deja de dar ese error y llega
+    // hasta la autorización (42501 para `anon`, que no tiene grant sobre
+    // `favorites`; `authenticated` sí lo tiene y no se topa con eso). Sin
+    // esto, `mapCard` tomaría `fotos[0]` tal cual las devuelva el servidor,
+    // que no tiene por qué ser la de menor `orden`.
+    .order('orden', { referencedTable: 'listing.fotos', ascending: true })
+    .limit(1, { referencedTable: 'listing.fotos' })
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map((row: any) => mapCard(row.listing));
+}
+
+/**
  * OJO — este select NO embebe al vendedor, al revés que `SELECT_CARD`.
  *
  * Todas estas filas son mías, así que el dato no aporta nada; de paso el
