@@ -490,6 +490,23 @@ export async function fetchVentasVendedor(userId: string): Promise<number> {
 }
 
 /**
+ * "Activas" del stat-row de "Perfil público" — hermana de `fetchVentasVendedor`.
+ *
+ * `listings_select` ya esconde las `pausada` de quien no es dueño; este filtro
+ * además excluye las `vendida`, mismo criterio que `fetchFavoritos`.
+ */
+export async function fetchActivasVendedor(userId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('listings')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('estado', 'activa');
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/**
  * Los 2 stats de "Detalle (vista vendedor)" que no vienen en la fila.
  *
  * `contactos` sale directo: la policy de listing_contacts ya deja al vendedor

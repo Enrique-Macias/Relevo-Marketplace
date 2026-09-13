@@ -107,6 +107,7 @@ export const Typography = {
   headline: { fontFamily: face(Fonts.display, FontWeights.medium), fontSize: 22 }, // .auth-headline, .onboard-headline
   logoMark: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 22 }, // .auth-logo span
   rateAvatarInitials: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 22 }, // .rate-avatar (Calificar) — MISMOS valores que `logoMark`, pero otro rol: aquel es el cuadro de la "R" en auth. Si el avatar de Calificar cambia de escala, se cambia aquí y no allá.
+  profileAvatarInitials: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 24 }, // .profile-avatar (Perfil público) — CERCANO a `rateAvatarInitials`/`logoMark` (22px) pero un rol distinto: 24px, no 22. Es un cuarto valor fácil de confundir con ese par — ver CLAUDE.md §2.
   otp: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 20 }, // .otp-box
   priceLarge: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 28 }, // .detail-price, .splash-logo span
   price: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 19 }, // .price (card), .stat-num
@@ -124,6 +125,7 @@ export const Typography = {
   campusChip: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 14 }, // .campus-chip (Feed) — mismo tamaño/peso que .whatsapp-btn pero es un rol distinto
   avatarInitials: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 13 }, // .avatar (iniciales del header del Feed)
   sellerAvatarInitials: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 14 }, // .seller-avatar (Detalle de publicación)
+  reviewAvatarInitials: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 10 }, // .review-avatar (Perfil público)
   input: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 14 }, // .text-field, .textarea-field, .select-field
   emphasis: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 13.5 }, // .detail-section-title, .seller-name, .ghost-btn, .list-row-name
   rowLabel: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 13.5 }, // .menu-label, .status-row-text, .radio-label
@@ -147,6 +149,7 @@ export const Typography = {
     lineHeight: 20.15, // 13 × 1.55
   }, // .auth-sub, .empty-sub
   label: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 12.5 }, // .field-label, .section-link, .notif-title, .onboard-skip
+  reviewName: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 12.5 }, // .review-name (Perfil público) — mismo tamaño/peso que `label`, rol distinto a propósito (mismo criterio que `campusChip` frente a `buttonWhatsapp`)
   labelMuted: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 12.5 }, // .segment
   meta: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 12.5 }, // .results-count, .detail-meta, .auth-link, .splash-tag
   modalSub: {
@@ -154,6 +157,11 @@ export const Typography = {
     fontSize: 12.5,
     lineHeight: 19.375, // 12.5 × 1.55
   }, // .modal-sub — mismo tamaño que `meta`, pero con line-height propio
+  reviewText: {
+    fontFamily: face(Fonts.body, FontWeights.regular),
+    fontSize: 12.5,
+    lineHeight: 18.75, // 12.5 × 1.5
+  }, // .review-text (Perfil público) — mismo tamaño que `meta`/`modalSub`, pero su propio line-height (1.5, no 1.55)
   rowSub: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 11.5 }, // .list-row-sub, .buyer-time
   heroStat: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 11.5 }, // .hero-stat (chip del hero del Feed)
   caption: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 11 }, // .cat-label, .hero-eyebrow

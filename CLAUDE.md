@@ -144,16 +144,23 @@ Tipografía — dos familias, uso deliberado y separado:
 Ya implementado en `src/constants/theme.ts`: `Colors`, `Fonts`, `FontWeights`
 (400/500/600, todos sí se usan — no asumas que la UI evita el regular),
 `Radii` (8/12/14/16/20/9999, más el 10px de `.menu-icon`/`.status-row-icon`
-que quedó fuera del token original), `Typography` (29 roles por nombre
-semántico, cada uno citando la clase CSS exacta de origen — incluye
-`.avatar`/`.seller-avatar` en weight 600, ojo si agregas un rol parecido, es
-fácil confundirlo con 500), y `ScreenPadding = 20`.
+que quedó fuera del token original), `Typography` (46 roles por nombre
+semántico — medido con `awk` sobre el objeto en `theme.ts`, no de memoria: si
+este número discrepa del archivo, gana el archivo — cada uno citando la clase
+CSS exacta de origen — incluye `.avatar`/`.seller-avatar` en weight 600, ojo si
+agregas un rol parecido, es fácil confundirlo con 500), y `ScreenPadding = 20`.
 
 Hay un tercer par fácil de confundir, y este coincide en TODO: `rateAvatarInitials`
 (`.rate-avatar` de Calificar) tiene los mismos valores que `logoMark`
 (`.auth-logo span`), display/600/22. Son roles distintos a propósito — si el
 avatar de Calificar cambia de escala, se cambia ahí y no en el cuadro de la "R"
 de auth.
+
+Y un CUARTO valor cercano a ese par, con "Perfil público": `profileAvatarInitials`
+(`.profile-avatar`) es display/600/**24**, no 22 — un punto de tamaño más que
+`rateAvatarInitials`/`logoMark`, y el más fácil de los tres de confundir porque
+"parece" el mismo valor a simple vista. Si el avatar de Perfil público cambia de
+escala, se cambia ahí y en ningún otro rol de este grupo.
 
 Dos de esos roles son de la fila de notificación y se parecen a otros que ya
 existían, así que conviene no confundirlos: `notifTime` es 10.5 **regular**
@@ -1851,8 +1858,8 @@ Detalles que no se ven en el diff:
   pantalla rebota con su guard, así que "Cambiar comprador" nunca llega a pintarse
   en Editar. Se ofrece desde Detalle y desde la hoja de "Mis publicaciones".
 
-**Cuenta — 5 de 8 pantallas, las de "Mis publicaciones" y "Favoritos",
-construidas y conectadas.** Las de "Mis publicaciones" se hicieron por
+**Cuenta — 6 de 8 pantallas, las de "Mis publicaciones", "Favoritos" y
+"Perfil público", construidas y conectadas.** Las de "Mis publicaciones" se hicieron por
 necesidad, no por avanzar el grupo: conectar
 Publicar dejó la app en un estado donde pausar una publicación la volvía
 inalcanzable (el Feed filtra `estado = 'activa'`), y lo mismo pasaba con una que
@@ -1954,6 +1961,57 @@ Feed/Búsqueda.
 Lo que sigue siendo placeholder de Perfil: avatar, stats y el resto del
 `.menu-list`. Hoy tiene dos afordances reales (cerrar sesión y "Mis
 publicaciones") más el FAB de publicar.
+
+**"Perfil público" construida y conectada.** Vista de solo lectura del perfil
+de OTRO usuario — distinta de "Perfil" (el propio, sigue siendo placeholder).
+Vive en `src/app/(cuenta)/perfil-publico/[id].tsx`, con `src/lib/perfil-publico.ts`
+como capa de datos (`fetchPerfilPublico`, `fetchReviews`). Se entra desde el
+`.seller-card` de "Detalle de publicación", que hasta ahora tenía el chevron
+pero ningún `onPress`.
+
+Seis cosas que no se ven en el diff:
+
+- **Es la PRIMERA pantalla que renderiza `rating_promedio`.** Detalle ya lo
+  trae en el embed de `vendedor` (`VENDEDOR`, `src/lib/listings.ts:40`) pero
+  nunca lo pinta — un grep de `ratingPromedio`/`rating_promedio` en todo `src/`
+  antes de esta tarea solo encontraba el `order('vendedor(rating_promedio)')`
+  de `mejor_calificados`. Sin ningún criterio de Detalle que copiar para "0
+  calificaciones", se decidió aquí: si `total === 0`, todo `.profile-rating`
+  (ícono y texto) desaparece — un vendedor sin historial no debe leerse como
+  "calificación de 0".
+- **El botón de WhatsApp aquí NO llama a `registrarContacto()`.** Esta
+  pantalla no tiene ninguna publicación en contexto y `listing_contacts.listing_id`
+  es NOT NULL — el caso que ya preveía la deuda consciente de RNF-05 más abajo
+  ("eso deja fuera el botón de 'Perfil público'"). El resto de
+  `contactarPorWhatsapp()` es el mismo criterio que Detalle: los mismos 3
+  motivos de `null`, el mismo orden de prioridad, el mismo tono neutro para el
+  vendedor suspendido.
+- **"En Relevo" (`mesesEnRelevo()`, `src/lib/format.ts`) no tiene rama de
+  años.** El frame solo ilustra un ejemplo en meses; sin un estado en
+  `relevo-app.html` con una cuenta de más de un año, no se inventa un formato
+  `Na` sin evidencia (§0 regla 4).
+- **Las reseñas se piden con un tope de 100, sin paginación** — mismo criterio
+  que el inbox de notificaciones: una lista que crece por evento, no un
+  catálogo. El `total` de `.profile-rating` sale del `count:'exact'` de esa
+  misma consulta, no de `items.length`, para que el número sea correcto aunque
+  la lista se corte en el tope.
+- **`ratings` tiene DOS FKs a `users`** (`from_user_id`, `to_user_id`, ninguna
+  con nombre explícito en la migración → default de Postgres
+  `ratings_from_user_id_fkey`/`ratings_to_user_id_fkey`). Embeber `users` desde
+  `ratings` sin desambiguar revienta con `PGRST201`, el mismo problema que ya
+  resuelve `VENDEDOR` en `listings.ts` — aquí hace falta
+  `from_user:users!ratings_from_user_id_fkey(nombre)`.
+- **La RLS de `ratings` no necesitó ninguna policy nueva — verificado, no
+  asumido.** `ratings_select`
+  (`supabase/migrations/20260906000440_favorites_contacts_ratings.sql:163-164`,
+  la misma migración donde nace la tabla en la línea 84) es
+  `for select to authenticated using (true)` — sin restringir a
+  `from_user_id = auth.uid() or to_user_id = auth.uid()` ni ninguna variante
+  que excluya a un tercero — y el grant de la línea 188
+  (`grant select, insert on public.ratings to authenticated;`) es de tabla
+  completa, sin lista de columnas. Leer reseñas de alguien que no es ninguna de
+  las dos partes ya estaba permitido antes de esta tarea: se deja anotado para
+  que nadie vuelva a preguntárselo.
 
 **Notificaciones — construido y conectado (RF-16).** Las 2 pantallas del grupo
 (el inbox y su vacío) viven en `src/app/(notificaciones)/notificaciones.tsx`, con
@@ -2105,7 +2163,7 @@ Detalles que no se ven en el diff:
   estrellas: lo opcional es el comentario, no el puntaje (`estrellas` es
   `not null check (between 1 and 5)`).
 
-Del grupo Cuenta siguen sin construir *Editar perfil* y *Perfil público*.
+Del grupo Cuenta sigue sin construir *Editar perfil*.
 **Sistema** tiene las 3 piezas que Explorar necesitó (arriba) más "Confirmar
 eliminar", cableado con `ConfirmModal` + `DangerButton` tanto en Editar
 publicación como en Mis publicaciones.

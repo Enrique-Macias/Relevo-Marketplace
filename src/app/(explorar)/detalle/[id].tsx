@@ -399,8 +399,16 @@ export default function DetalleScreen() {
           </View>
 
           {!isOwner ? (
-            // pendiente: "Perfil público" es otro grupo sin construir
-            <View style={styles.sellerCard}>
+            <Pressable
+              style={styles.sellerCard}
+              onPress={() =>
+                router.push({
+                  pathname: '/(cuenta)/perfil-publico/[id]',
+                  params: { id: listing.vendedor.id },
+                })
+              }
+              accessibilityRole="button"
+            >
               <View style={styles.sellerAvatar}>
                 <Text style={styles.sellerAvatarText}>{iniciales(listing.vendedor.nombre)}</Text>
               </View>
@@ -420,7 +428,7 @@ export default function DetalleScreen() {
                 </Text>
               </View>
               <IconChevronRight size={16} color={Colors.inkSoft} />
-            </View>
+            </Pressable>
           ) : (
             <View style={styles.statRow}>
               <View style={styles.statCard}>

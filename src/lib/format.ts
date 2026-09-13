@@ -41,6 +41,23 @@ export function formatRelativo(fecha: Date): string {
  * "Jorge Muñoz" → "JM", "Ana" → "A" — y cae a "?" si no hay nombre, que es lo
  * que puede pasar con un perfil a medias visto desde otra pantalla.
  */
+/**
+ * "8m" del `.stat-card` "En Relevo" de "Perfil público" — meses completos
+ * desde `users.created_at`.
+ *
+ * SIN RAMA DE AÑOS a propósito: el frame solo ilustra un ejemplo de meses, y no
+ * hay ningún estado en `relevo-app.html` con una cuenta de más de un año que
+ * diga cómo debe verse ese caso (CLAUDE.md §0 regla 4) — así que no se inventa
+ * un formato "1a"/"2a" sin evidencia. El mes se aproxima a 30.44 días
+ * (365.25 / 12): no importa que no sea un mes calendario exacto, es un stat de
+ * antigüedad, no una fecha.
+ */
+export function mesesEnRelevo(createdAt: Date): string {
+  const diffMs = Date.now() - createdAt.getTime();
+  const meses = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44));
+  return `${meses}m`;
+}
+
 export function iniciales(nombre: string | null | undefined): string {
   const palabras = (nombre ?? '').trim().split(/\s+/).filter(Boolean);
   if (palabras.length === 0) return '?';
