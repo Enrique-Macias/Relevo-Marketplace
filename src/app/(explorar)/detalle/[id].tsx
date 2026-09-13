@@ -29,6 +29,7 @@ import { RoundIconButton } from '@/components/RoundIconButton';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { accionVenta, LABEL_ACCION_VENTA, useVentaDetalle } from '@/lib/confianza';
 import { useExplorarState } from '@/lib/explorar-state';
 import { formatPrecio, formatRelativo, iniciales } from '@/lib/format';
 import {
@@ -96,6 +97,21 @@ export default function DetalleScreen() {
 
   const userId = session?.user.id ?? null;
   const isOwner = !!listing && !!userId && listing.userId === userId;
+
+  /**
+   * Frame "Detalle (vendida)". Solo se pide cuando la publicación YA está
+   * vendida: en cualquier otro estado no hay fila de venta que leer, y el
+   * reparto del `.sticky-cta` no depende de ella.
+   */
+  const { venta, yaCalifique } = useVentaDetalle(
+    listing?.estado === 'vendida' ? listing.id : null,
+    userId,
+    listing?.vendedor.id ?? null
+  );
+  const accionDeVenta = listing ? accionVenta(listing.estado, venta) : null;
+  // "Soy el comprador" NO se deduce del estado sino de la fila: `listing_sales`
+  // solo la ven las dos partes, así que la RLS ya contestó esa pregunta.
+  const soyComprador = !!venta && !!userId && venta.compradorId === userId;
   // Una ruta con id no numérico es un error derivado del param, no un estado
   // que haya que asentar con setState desde un efecto.
   const idValido = !Number.isNaN(listingId);
@@ -297,6 +313,16 @@ export default function DetalleScreen() {
             style={StyleSheet.absoluteFill}
           />
 
+          {/* El MISMO `.sold-badge` del grid de Perfil y de "Mis publicaciones".
+              Va DESPUÉS del carrusel y ANTES del chrome, que es exactamente el
+              orden del frame: cubre las fotos y queda por debajo de los botones
+              y los dots. */}
+          {listing.estado === 'vendida' ? (
+            <View style={styles.soldBadge} pointerEvents="none">
+              <Text style={styles.soldBadgeText}>Vendido</Text>
+            </View>
+          ) : null}
+
           <View style={styles.nav}>
             <RoundIconButton onPress={() => router.back()}>
               <IconChevronLeft size={16} color={Colors.ink} />
@@ -411,8 +437,73 @@ export default function DetalleScreen() {
           </View>
         </View>
 
+        {/*
+          El `.sticky-cta` tiene CUATRO repartos, no dos. Los tres primeros son
+          del frame "Detalle (vendida)" y los distingue la fila de venta, NO el
+          estado de la publicación: `listing_sales` solo la ven las dos partes,
+          así que "soy el comprador" es una pregunta que la RLS ya contestó.
+        */}
         <View style={[styles.cta, { paddingBottom: insets.bottom + 22 }]}>
-          {!isOwner ? (
+          {isOwner ? (
+            <>
+              {/* El derivado de tres estados, compartido con "Editar
+                  publicación" y la hoja de "Mis publicaciones". Si no hay
+                  acción, "Editar publicación" se queda sola a ancho completo
+                  —sin el flex:1.2, que solo existe para repartir contra el
+                  ghost. */}
+              {accionDeVenta ? (
+                <GhostButton
+                  label={LABEL_ACCION_VENTA[accionDeVenta]}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(confianza)/vendida/[id]',
+                      params: { id: String(listing.id), titulo: listing.titulo },
+                    })
+                  }
+                  style={styles.flexBtn}
+                />
+              ) : null}
+              <PrimaryButton
+                label="Editar publicación"
+                onPress={() => router.push(`/(publicar)/editar/${listing.id}`)}
+                style={accionDeVenta ? styles.editBtn : styles.editBtnSolo}
+              />
+            </>
+          ) : listing.estado === 'vendida' ? (
+            <>
+              <Pressable
+                style={styles.favBtn}
+                onPress={() => toggleFavorito(listing.id)}
+                accessibilityRole="button"
+              >
+                <IconHeart size={18} color={favorito ? Colors.brick : Colors.ink} filled={favorito} />
+              </Pressable>
+              {soyComprador && !yaCalifique ? (
+                <PrimaryButton
+                  label="Calificar al vendedor"
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(confianza)/calificar',
+                      params: {
+                        toUserId: listing.vendedor.id,
+                        listingId: String(listing.id),
+                        nombre: listing.vendedor.nombre ?? '',
+                      },
+                    })
+                  }
+                  style={styles.editBtnSolo}
+                />
+              ) : (
+                // Cualquier otro autenticado —incluidos los que preguntaron y no
+                // compraron. Sin WhatsApp: contactar por algo ya vendido no
+                // tiene sentido. El `.notice` va sin su `.notice-icon`, que es
+                // --brick (el color de error) y aquí no falló nada.
+                <View style={styles.vendidoNotice}>
+                  <Text style={styles.vendidoText}>Esta publicación ya se vendió.</Text>
+                </View>
+              )}
+            </>
+          ) : (
             <>
               <Pressable
                 style={styles.favBtn}
@@ -429,16 +520,6 @@ export default function DetalleScreen() {
                 <IconWhatsapp size={17} color={Colors.paper} />
                 <Text style={styles.whatsappText}>Contactar por WhatsApp</Text>
               </Pressable>
-            </>
-          ) : (
-            <>
-              {/* pendiente: flujo real vive en (publicar)/(confianza) */}
-              <GhostButton label="Marcar como vendida" onPress={() => {}} style={styles.flexBtn} />
-              <PrimaryButton
-                label="Editar publicación"
-                onPress={() => router.push(`/(publicar)/editar/${listing.id}`)}
-                style={styles.editBtn}
-              />
             </>
           )}
         </View>
@@ -676,5 +757,49 @@ const styles = StyleSheet.create({
     flex: 1.2,
     width: undefined,
     marginTop: 0,
+  },
+  // Sin el ghost al lado, el flex:1.2 no reparte contra nada y solo confunde.
+  editBtnSolo: {
+    flex: 1,
+    width: undefined,
+    marginTop: 0,
+  },
+  // .notice dentro del .sticky-cta, SIN su .notice-icon: ese círculo es
+  // --brick, el color de error del sistema, y aquí no falló nada — la
+  // publicación simplemente ya no está disponible. Lleva flex:1 para ocupar el
+  // lugar del .whatsapp-btn al que reemplaza.
+  vendidoNotice: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    borderRadius: Radii.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+  },
+  // .notice-text{font-size:12.5px; color:var(--ink-soft); line-height:1.45;}
+  vendidoText: {
+    ...Typography.meta,
+    color: Colors.inkSoft,
+    lineHeight: 18.125, // 12.5 × 1.45
+  },
+  // .sold-badge{position:absolute; inset:0; background:rgba(34,31,28,0.55);}
+  // Va sobre el carrusel y por DEBAJO del chrome, igual que en el frame.
+  soldBadge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(34,31,28,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // .sold-badge{color:#fff; font-size:11px; font-weight:600; letter-spacing:0.03em;}
+  soldBadgeText: {
+    ...Typography.caption,
+    color: '#FFFFFF',
+    letterSpacing: 0.33,
   },
 });

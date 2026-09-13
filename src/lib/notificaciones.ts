@@ -12,7 +12,11 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
 
-export type TipoNotificacion = 'precio_favorito' | 'reporte_resuelto';
+export type TipoNotificacion =
+  | 'precio_favorito'
+  | 'reporte_resuelto'
+  /** Te acreditaron una compra al marcar la venta (RF-07/RF-12). */
+  | 'compra_calificable';
 
 export type Notificacion = {
   id: number;

@@ -1,0 +1,403 @@
+/**
+ * Grupo Confianza — "¿A quién le vendiste?" y "Calificar" (RF-07, RF-12).
+ *
+ * Como no hay chat interno, el vendedor no sabe automáticamente quién compró:
+ * al marcar una publicación como vendida se le muestra la lista de quienes
+ * tocaron "Contactar por WhatsApp", y su elección se registra en
+ * `listing_sales`. Esa fila es lo que después autoriza la calificación entre
+ * las dos partes — ver `private.can_rate()` en la migración 20260912000453.
+ */
+
+import { useCallback, useEffect, useState } from 'react';
+
+import { cambiarEstadoListing } from '@/lib/listings';
+import { supabase } from '@/lib/supabase';
+
+export type Contacto = {
+  userId: string;
+  nombre: string | null;
+  createdAt: string;
+};
+
+export type Venta = {
+  compradorId: string;
+  /**
+   * Si la ventana de corrección ya se cerró. Ver `congelada()` abajo: la
+   * condición es DIRECCIONAL y tiene que coincidir con el `using` de
+   * `listing_sales_update_seller`.
+   */
+  congelada: boolean;
+};
+
+/**
+ * Los candidatos de "¿A quién le vendiste?".
+ *
+ * El embed va sin desambiguar (`users(id, nombre)`) y eso NO es un descuido:
+ * entre `listing_contacts` y `users` hay UNA sola FK, así que aquí no aplica el
+ * `PGRST201` que obliga a escribir `users!listings_user_id_fkey` en
+ * `src/lib/listings.ts`. Si algún día se agrega una segunda relación entre esas
+ * dos tablas, esta query empieza a fallar y hay que nombrarla.
+ *
+ * `nombre` sí está en el `grant select` de `users` (20260906000438); `correo` y
+ * `telefono` no — por eso se listan las columnas y nunca se pide `*`, que
+ * rechazaría la query ENTERA con 42501 en vez de devolverla sin esas columnas.
+ *
+ * La RLS de `listing_contacts` ya limita el resultado a quien puede verlo: el
+ * dueño de la publicación ve quién lo contactó. No hace falta filtrar por
+ * vendedor aquí.
+ */
+export async function fetchContactos(listingId: number): Promise<Contacto[]> {
+  const { data, error } = await supabase
+    .from('listing_contacts')
+    .select('user_id, created_at, usuario:users(id, nombre)')
+    .eq('listing_id', listingId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+
+  return (data ?? []).map((c: any) => ({
+    userId: c.user_id,
+    nombre: c.usuario?.nombre ?? null,
+    createdAt: c.created_at,
+  }));
+}
+
+/**
+ * La venta registrada de una publicación, o `null`.
+ *
+ * La RLS de `listing_sales` decide a quién le devuelve algo: al vendedor y al
+ * comprador, a nadie más. Ni siquiera a los otros contactos de esa misma
+ * publicación.
+ *
+ * Trae TAMBIÉN el congelamiento porque los dos consumidores lo necesitan a la
+ * vez: la fila decide si se pinta "Cambiar comprador", y el congelamiento
+ * decide si esa fila se puede tocar.
+ *
+ * `vendedorId` va EXPLÍCITO y no se deriva de la sesión, aunque en el camino del
+ * vendedor sean lo mismo. Cuando lo derivaba, el camino del COMPRADOR
+ * (`useVentaDetalle`) calculaba `congelada` preguntando "¿me califiqué a mí
+ * mismo?" — siempre `false`, un valor sin sentido que parecía correcto. No
+ * causaba un bug porque nadie lo leía en esa rama, pero el nombre del parámetro
+ * mentía y el siguiente consumidor se lo habría creído.
+ */
+export async function fetchVenta(
+  listingId: number,
+  vendedorId: string
+): Promise<Venta | null> {
+  const { data, error } = await supabase
+    .from('listing_sales')
+    .select('comprador_id')
+    .eq('listing_id', listingId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  return {
+    compradorId: data.comprador_id,
+    congelada: await congelada(listingId, vendedorId, data.comprador_id),
+  };
+}
+
+/**
+ * ¿Se cerró ya la ventana de corrección?
+ *
+ * ESTA CONDICIÓN Y EL `using` DE `listing_sales_update_seller` SON LA MISMA
+ * CONDICIÓN ESCRITA DOS VECES. Cambiar una sin la otra no produce ningún error
+ * visible — solo una fila de menú que desaparece de más, o un botón que promete
+ * algo que la base rechaza.
+ *
+ * Y ES DIRECCIONAL: cierra la ventana la reseña DEL VENDEDOR hacia el comprador
+ * registrado, nunca "cualquier reseña de la venta". Si el vendedor se equivocó
+ * de persona y esa persona lo calificó, la corrección SIGUE abierta — y un
+ * cliente que leyera esto en cualquier dirección escondería la única salida que
+ * le queda al vendedor. El cliente no puede ser más estricto que la base.
+ *
+ * Es una lectura normal, sin RPC: `ratings_select` es `using (true)` porque las
+ * reseñas son públicas (las muestra "Perfil público"). Justamente por eso el
+ * filtro por vendedor va EXPLÍCITO: al ser legible por todos, la RLS no acota
+ * nada aquí y un `count` sin ese `eq` contaría también la reseña del comprador
+ * — que es exactamente la que NO debe congelar.
+ */
+async function congelada(
+  listingId: number,
+  vendedorId: string,
+  compradorId: string
+): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('ratings')
+    .select('id', { count: 'exact', head: true })
+    .eq('listing_id', listingId)
+    .eq('from_user_id', vendedorId)
+    .eq('to_user_id', compradorId);
+
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
+/**
+ * Registra la venta y marca la publicación.
+ *
+ * EL ORDEN ES OBLIGATORIO: primero la fila de venta, después el estado. Al
+ * revés, un fallo entre los dos statements deja la publicación `vendida` sin
+ * comprador registrado y SIN SALIDA — la entrada "Marcar como vendida"
+ * desaparece en cuanto el estado cambia, y con ella la única forma de registrar
+ * al comprador o de calificar a nadie.
+ *
+ * Con este orden, un fallo del segundo statement deja una venta registrada
+ * sobre una publicación todavía activa: la entrada sigue visible, el usuario
+ * reintenta, el insert es no-op (`ignoreDuplicates`, el mismo idiom de
+ * `favorites` y `push_tokens`) y el update se rehace.
+ */
+export async function registrarVenta(listingId: number, compradorId: string): Promise<void> {
+  const { error } = await supabase
+    .from('listing_sales')
+    .upsert(
+      { listing_id: listingId, comprador_id: compradorId },
+      { onConflict: 'listing_id', ignoreDuplicates: true }
+    );
+  if (error) throw error;
+
+  await cambiarEstadoListing(listingId, 'vendida');
+}
+
+/** Se vendió, pero no a través de Relevo: no hay comprador que registrar. */
+export async function marcarVendidaSinComprador(listingId: number): Promise<void> {
+  await cambiarEstadoListing(listingId, 'vendida');
+}
+
+/**
+ * Corrige al comprador mal elegido. No toca `listings`: ya está vendida.
+ *
+ * UN RECHAZO POR CONGELAMIENTO NO LANZA ERROR. El `using` de una policy FILTRA
+ * filas, no aborta: el update simplemente afecta 0. Por eso se pide
+ * `count: 'exact'` y se compara — sin eso, el caso "ya calificaste, no se puede
+ * corregir" se vería exactamente igual que un éxito.
+ *
+ * Esto NO duplica autorización (CLAUDE.md §0 regla 7): el candado es la policy,
+ * que decide mire el cliente lo que mire. Lo único que se elige aquí es que el
+ * usuario vea un mensaje en vez de un cambio silencioso que no ocurrió.
+ */
+export class VentaCongeladaError extends Error {
+  constructor() {
+    super('La venta ya no se puede corregir');
+    this.name = 'VentaCongeladaError';
+  }
+}
+
+export async function corregirComprador(
+  listingId: number,
+  compradorId: string
+): Promise<void> {
+  const { error, count } = await supabase
+    .from('listing_sales')
+    .update({ comprador_id: compradorId }, { count: 'exact' })
+    .eq('listing_id', listingId);
+
+  if (error) throw error;
+  if ((count ?? 0) === 0) throw new VentaCongeladaError();
+}
+
+/**
+ * ¿Esta persona ya calificó a la otra por esta publicación?
+ *
+ * Existe para no OFRECER un botón que el `unique` de la tabla va a rechazar.
+ * No es el candado —ese es el constraint— sino evitar el callejón de tocar
+ * "Calificar" y recibir un error.
+ */
+export async function yaCalifico(
+  listingId: number,
+  fromUserId: string,
+  toUserId: string
+): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('ratings')
+    .select('id', { count: 'exact', head: true })
+    .eq('listing_id', listingId)
+    .eq('from_user_id', fromUserId)
+    .eq('to_user_id', toUserId);
+
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
+/** RF-12. El `unique (from_user_id, to_user_id, listing_id)` impide el duplicado. */
+export async function crearRating(input: {
+  fromUserId: string;
+  toUserId: string;
+  listingId: number;
+  estrellas: number;
+  comentario: string;
+}): Promise<void> {
+  const { error } = await supabase.from('ratings').insert({
+    from_user_id: input.fromUserId,
+    to_user_id: input.toUserId,
+    listing_id: input.listingId,
+    estrellas: input.estrellas,
+    comentario: input.comentario.trim() === '' ? null : input.comentario.trim(),
+  });
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// El derivado de tres estados de la fila de venta
+// ---------------------------------------------------------------------------
+
+export type AccionVenta = 'marcar' | 'corregir' | null;
+
+/**
+ * Qué dice —o si aparece— la fila/botón de venta, en UN solo lugar.
+ *
+ * Lo comparten las TRES entradas ("Editar publicación", "Detalle (vista
+ * vendedor)" y la hoja de acciones de "Mis publicaciones"), y por eso vive
+ * aquí: calcularlo tres veces es la forma de que las tres se desincronicen.
+ *
+ *   · 'marcar'   — activa o pausada: todavía no se ha vendido.
+ *   · 'corregir' — vendida, con comprador registrado y sin congelar. Este es el
+ *                  estado que impide un callejón sin salida: al pasar a
+ *                  vendida desaparece la entrada original, así que sin él un
+ *                  comprador mal elegido sería incorregible desde la app.
+ *   · null       — vendida sin comprador (la salida "No fue a través de
+ *                  Relevo"), o ya congelada por la calificación del vendedor.
+ */
+export function accionVenta(
+  estado: 'activa' | 'pausada' | 'vendida',
+  venta: Venta | null
+): AccionVenta {
+  if (estado !== 'vendida') return 'marcar';
+  if (venta === null || venta.congelada) return null;
+  return 'corregir';
+}
+
+export const LABEL_ACCION_VENTA: Record<'marcar' | 'corregir', string> = {
+  marcar: 'Marcar como vendida',
+  corregir: 'Cambiar comprador',
+};
+
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
+
+type EstadoCarga = 'loading' | 'ready' | 'error';
+
+/**
+ * Lo que necesita "¿A quién le vendiste?": los candidatos y la venta ya
+ * registrada (para el modo corrección).
+ *
+ * Resetea EN RENDER comparando una `key`, no dentro del efecto — el patrón de
+ * `useMisListings` y `useNotificaciones`. Hacerlo en el efecto deja pasar un
+ * render con los contactos de la publicación ANTERIOR pintados bajo el título
+ * de la nueva. Ver CLAUDE.md §9: que la regla `set-state-in-effect` no lo
+ * marque no prueba nada.
+ */
+export function useVenta(listingId: number | null, vendedorId: string | null) {
+  const [contactos, setContactos] = useState<Contacto[]>([]);
+  const [venta, setVenta] = useState<Venta | null>(null);
+  const [estado, setEstado] = useState<EstadoCarga>('loading');
+  const [recargas, setRecargas] = useState(0);
+
+  const key = `${listingId ?? ''}|${vendedorId ?? ''}|${recargas}`;
+  const [keyPintada, setKeyPintada] = useState(key);
+  if (key !== keyPintada) {
+    setKeyPintada(key);
+    setContactos([]);
+    setVenta(null);
+    setEstado('loading');
+  }
+
+  useEffect(() => {
+    if (listingId === null || vendedorId === null) return;
+
+    let vigente = true;
+
+    Promise.all([fetchContactos(listingId), fetchVenta(listingId, vendedorId)])
+      .then(([c, v]) => {
+        if (!vigente) return;
+        setContactos(c);
+        setVenta(v);
+        setEstado('ready');
+      })
+      .catch((e: any) => {
+        if (!vigente) return;
+        console.warn('[confianza] falló la carga de la venta:', e?.message ?? e);
+        setEstado('error');
+      });
+
+    return () => {
+      vigente = false;
+    };
+  }, [listingId, vendedorId, recargas]);
+
+  const recargar = useCallback(() => setRecargas((n) => n + 1), []);
+
+  return { contactos, venta, estado, recargar };
+}
+
+/**
+ * Lo que necesita el Detalle de una publicación VENDIDA.
+ *
+ * Hermano de `useVenta` y no el mismo: aquel trae también los contactos, que
+ * aquí no se usan —el Detalle no ofrece elegir comprador— y que además el
+ * comprador solo vería a medias (`listing_contacts_select` le deja ver los
+ * suyos, no los de los demás). Pedirlos sería un request por apertura de
+ * Detalle para pintar nada.
+ *
+ * `vendedorId` entra como parámetro en vez de derivarse: quien mira puede ser
+ * el vendedor o el comprador, y `yaCalifique` se pregunta SIEMPRE desde quien
+ * mira hacia la otra parte.
+ */
+export function useVentaDetalle(
+  listingId: number | null,
+  userId: string | null,
+  vendedorId: string | null
+) {
+  const [venta, setVenta] = useState<Venta | null>(null);
+  const [yaCalifique, setYaCalifique] = useState(false);
+
+  // Reseteo EN RENDER comparando la key, no dentro del efecto — el patrón de
+  // `useMisListings` y `useNotificaciones`. En un tab que reusa la pantalla
+  // para otra publicación, hacerlo en el efecto deja pasar un render con la
+  // venta ANTERIOR, que aquí decide si se pinta un botón de calificar.
+  const key = `${listingId ?? ''}|${userId ?? ''}`;
+  const [keyPintada, setKeyPintada] = useState(key);
+  if (key !== keyPintada) {
+    setKeyPintada(key);
+    setVenta(null);
+    setYaCalifique(false);
+  }
+
+  useEffect(() => {
+    if (listingId === null || userId === null || vendedorId === null) return;
+
+    let vigente = true;
+
+    // `vendedorId` es el DUEÑO del listing, no quien llama. En esta ruta los dos
+    // difieren —aquí también entra el comprador— y pasar el de la sesión haría
+    // que `congelada` preguntara "¿me califiqué a mí mismo?", siempre false.
+    fetchVenta(listingId, vendedorId)
+      .then(async (v) => {
+        if (!vigente) return;
+        setVenta(v);
+
+        // Solo se pregunta si hay a quién calificar: el comprador registrado
+        // mirando al vendedor. En cualquier otro caso el botón no se pinta y la
+        // respuesta no cambiaría nada.
+        if (v && v.compradorId === userId) {
+          const ya = await yaCalifico(listingId, userId, vendedorId);
+          if (vigente) setYaCalifique(ya);
+        }
+      })
+      .catch((e: any) => {
+        // Fallo suave a propósito: si esto revienta, el Detalle se sigue
+        // pintando sin el botón de calificar en vez de romperse entero. Lo
+        // único que se pierde es una afordancia que el inbox vuelve a ofrecer.
+        console.warn('[confianza] no se pudo leer la venta:', e?.message ?? e);
+      });
+
+    return () => {
+      vigente = false;
+    };
+  }, [listingId, userId, vendedorId]);
+
+  return { venta, yaCalifique };
+}

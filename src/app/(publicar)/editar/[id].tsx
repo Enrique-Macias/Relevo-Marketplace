@@ -23,6 +23,7 @@ import { SkeletonGrid } from '@/components/Skeleton';
 import { StatusRow } from '@/components/StatusRow';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding } from '@/constants/theme';
+import { accionVenta, LABEL_ACCION_VENTA, useVenta } from '@/lib/confianza';
 import { useExplorarState } from '@/lib/explorar-state';
 import { elegirFotos, PermisoDenegadoError } from '@/lib/foto-picker';
 import { useListingForm } from '@/lib/listing-form';
@@ -140,6 +141,21 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
   const [fotosGuardadas, setFotosGuardadas] = useState<string[]>(listing.fotos);
   const [confirmandoBorrado, setConfirmandoBorrado] = useState(false);
   const [borrando, setBorrando] = useState(false);
+
+  /**
+   * La venta registrada, para el derivado de tres estados de la fila de abajo.
+   * Solo se pide si la publicación YA está vendida: en cualquier otro estado la
+   * fila dice "Marcar como vendida" pase lo que pase, así que la lectura sería
+   * un request por cada apertura de Editar para un dato que no se usa.
+   */
+  // El vendedor sale del LISTING, no de la sesión: en esta pantalla coinciden,
+  // pero `listing.vendedor.id` es el dato correcto por definición y no depende
+  // de quién esté mirando.
+  const { venta } = useVenta(
+    listing.estado === 'vendida' ? listing.id : null,
+    listing.vendedor.id
+  );
+  const accion = accionVenta(listing.estado, venta);
 
   const userId = session?.user.id ?? null;
   const universidadId = profile?.universidad_id ?? null;
@@ -421,18 +437,32 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
           />
 
           {/*
-            "Marcar como vendida" queda INERTE a propósito: dispara el flujo
-            "¿A quién le vendiste?" del grupo Confianza, fuera del alcance de
-            esta tarea. Cablearla como un update suelto a 'vendida' saltándose
-            ese paso rompería RF-12 —el vendedor nunca elegiría comprador y
-            nadie podría calificar— así que es mejor que no haga nada a que
-            haga lo incorrecto.
+            La fila de venta, con su derivado de TRES estados (`accionVenta`):
+            "Marcar como vendida" mientras no lo está, "Cambiar comprador" una
+            vez vendida y mientras el vendedor no haya calificado a ese
+            comprador, y ausente en cualquier otro caso.
+
+            El estado del medio no es un extra: al pasar a vendida desaparece
+            esta entrada, así que sin él un comprador mal elegido sería
+            incorregible desde la app. Es el mismo callejón sin salida que
+            motivó "Mis publicaciones" (CLAUDE.md §8).
           */}
-          <StatusRow
-            icon={<IconCheckCircle size={16} color={Colors.inkSoft} />}
-            label="Marcar como vendida"
-            trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
-          />
+          {accion ? (
+            <StatusRow
+              icon={<IconCheckCircle size={16} color={Colors.inkSoft} />}
+              label={LABEL_ACCION_VENTA[accion]}
+              trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
+              onPress={
+                ocupado
+                  ? undefined
+                  : () =>
+                      router.push({
+                        pathname: '/(confianza)/vendida/[id]',
+                        params: { id: String(listing.id), titulo: listing.titulo },
+                      })
+              }
+            />
+          ) : null}
 
           <StatusRow
             icon={<IconTrash size={16} color={Colors.brick} />}

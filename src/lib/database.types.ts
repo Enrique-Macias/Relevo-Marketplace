@@ -159,6 +159,39 @@ export type Database = {
           },
         ]
       }
+      listing_sales: {
+        Row: {
+          comprador_id: string
+          created_at: string
+          listing_id: number
+        }
+        Insert: {
+          comprador_id: string
+          created_at?: string
+          listing_id: number
+        }
+        Update: {
+          comprador_id?: string
+          created_at?: string
+          listing_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_sales_comprador_id_fkey"
+            columns: ["comprador_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "listing_sales_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: true
+            referencedRelation: "listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       listings: {
         Row: {
           busqueda: unknown
@@ -528,7 +561,10 @@ export type Database = {
     Enums: {
       listing_condition: "nuevo" | "como_nuevo" | "buen_estado" | "usado"
       listing_status: "activa" | "pausada" | "vendida"
-      notification_type: "precio_favorito" | "reporte_resuelto"
+      notification_type:
+        | "precio_favorito"
+        | "reporte_resuelto"
+        | "compra_calificable"
       report_reason:
         | "spam_publicidad"
         | "sospecha_fraude"
@@ -666,7 +702,11 @@ export const Constants = {
     Enums: {
       listing_condition: ["nuevo", "como_nuevo", "buen_estado", "usado"],
       listing_status: ["activa", "pausada", "vendida"],
-      notification_type: ["precio_favorito", "reporte_resuelto"],
+      notification_type: [
+        "precio_favorito",
+        "reporte_resuelto",
+        "compra_calificable",
+      ],
       report_reason: [
         "spam_publicidad",
         "sospecha_fraude",

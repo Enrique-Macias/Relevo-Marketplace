@@ -505,3 +505,27 @@ export function IconMail({ size, color }: IconProps) {
     </Svg>
   );
 }
+
+/**
+ * La estrella de `.rate-stars` (frame "Calificar") y del `.notif-icon` de
+ * "Califica tu compra".
+ *
+ * Es el ÚNICO icono del set con dos anchos de trazo, y sale del prototipo: la
+ * rellena va con `stroke-width:1` y la vacía con `1.3`. No es un descuido del
+ * diseño — el trazo más grueso es lo que hace que la estrella vacía pese lo
+ * mismo visualmente que la llena a la misma escala.
+ */
+export function IconStar({ size, color, filled }: IconProps & { filled?: boolean }) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={filled ? color : 'none'}
+      stroke={color}
+      strokeWidth={filled ? 1 : 1.3}
+    >
+      <Path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" />
+    </Svg>
+  );
+}

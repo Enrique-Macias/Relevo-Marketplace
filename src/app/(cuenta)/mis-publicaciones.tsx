@@ -20,6 +20,7 @@ import { ConfirmModal } from '@/components/ConfirmModal';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import {
+  IconCheckCircle,
   IconChevronRight,
   IconClose,
   IconKebab,
@@ -37,6 +38,7 @@ import { SkeletonRows } from '@/components/Skeleton';
 import { StatusRow } from '@/components/StatusRow';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
+import { accionVenta, LABEL_ACCION_VENTA, useVenta } from '@/lib/confianza';
 import { useExplorarState } from '@/lib/explorar-state';
 import { formatPrecio, formatRelativo } from '@/lib/format';
 import {
@@ -245,6 +247,7 @@ export default function MisPublicacionesScreen() {
 
       <HojaAcciones
         item={acciones}
+        vendedorId={userId}
         onCerrar={() => setAcciones(null)}
         onAlternarPausa={alternarPausa}
         onEditar={(item) => {
@@ -254,6 +257,13 @@ export default function MisPublicacionesScreen() {
         onEliminar={(item) => {
           setAcciones(null);
           setPorBorrar(item);
+        }}
+        onVenta={(item) => {
+          setAcciones(null);
+          router.push({
+            pathname: '/(confianza)/vendida/[id]',
+            params: { id: String(item.id), titulo: item.titulo },
+          });
         }}
       />
 
@@ -390,18 +400,39 @@ function HojaAcciones({
   onAlternarPausa,
   onEditar,
   onEliminar,
+  onVenta,
+  vendedorId,
 }: {
   item: MiListing | null;
   onCerrar: () => void;
   onAlternarPausa: (item: MiListing) => void;
   onEditar: (item: MiListing) => void;
   onEliminar: (item: MiListing) => void;
+  onVenta: (item: MiListing) => void;
+  vendedorId: string | null;
 }) {
+  /**
+   * La venta registrada, para el derivado de tres estados de la fila de venta.
+   * Solo se pide cuando la hoja está abierta Y la publicación ya está vendida:
+   * `MiListing` no trae ese dato y meterlo en la query de la lista pagaría un
+   * join por fila para un caso minoritario.
+   *
+   * El hook va ANTES del early return: no puede haber hooks condicionales.
+   */
+  // `MiListing` no trae `userId` porque no hace falta: `useMisListings` filtra
+  // por `user_id = auth.uid()`, así que toda fila de esta lista es del usuario
+  // en sesión — él ES el vendedor, verificable en la query y no supuesto.
+  const { venta } = useVenta(
+    item && item.estado === 'vendida' ? item.id : null,
+    vendedorId
+  );
+
   if (!item) return null;
 
   // Una publicación vendida no se pausa ni se reactiva: ese estado es terminal
   // (RF-07 conserva el historial). La fila simplemente no se pinta.
   const puedeAlternar = item.estado !== 'vendida';
+  const accion = accionVenta(item.estado, venta);
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onCerrar}>
@@ -444,6 +475,18 @@ function HojaAcciones({
               trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
               onPress={() => onEditar(item)}
             />
+
+            {/* La fila de venta, con el MISMO derivado de tres estados que usa
+                "Editar publicación" y "Detalle (vista vendedor)" — por eso vive
+                en `src/lib/confianza.ts` y no se recalcula por pantalla. */}
+            {accion ? (
+              <StatusRow
+                icon={<IconCheckCircle size={16} color={Colors.inkSoft} />}
+                label={LABEL_ACCION_VENTA[accion]}
+                trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
+                onPress={() => onVenta(item)}
+              />
+            ) : null}
 
             <StatusRow
               icon={<IconTrash size={16} color={Colors.brick} />}

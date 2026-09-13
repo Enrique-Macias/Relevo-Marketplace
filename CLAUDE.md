@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 51 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 54 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -41,6 +41,20 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
 4. Cuando falte una pantalla o un estado (ej. un caso borde nuevo), constrúyelo
    primero como frame dentro de `relevo-app.html` siguiendo el sistema de
    diseño existente, antes de escribir el componente real.
+
+   **Aclaración — los toasts son la excepción, y solo ellos.** El copy de
+   mensajes efímeros (toasts) NO requiere representación 1:1 en
+   `relevo-app.html`: el HTML documenta el **patrón visual** (los frames "Toast
+   de éxito" y "Toast de error"), y el texto específico de cada evento se
+   escribe en código. Esto **NO aplica** a copy persistente en pantalla
+   —botones, títulos, estados vacíos, avisos `.notice`—, que sigue bajo la regla
+   original: si el usuario puede leerlo con calma y volver a él, va al frame
+   primero.
+
+   Se documenta porque estaba ambiguo y el repo lo reflejaba: "No pudimos
+   registrar el contacto" SÍ está en el HTML, mientras que "Publicación
+   pausada", "reactivada" y "eliminada" nunca estuvieron. La regla es esta, no
+   aquel precedente mixto.
 5. **Antes de implementar cualquier funcionalidad de negocio** (qué campos
    lleva una publicación, qué estados existen, qué puede hacer un usuario
    suspendido, etc.), consulta `/docs/product-spec.md` — los RF-01 a RF-17 y
@@ -135,6 +149,12 @@ semántico, cada uno citando la clase CSS exacta de origen — incluye
 `.avatar`/`.seller-avatar` en weight 600, ojo si agregas un rol parecido, es
 fácil confundirlo con 500), y `ScreenPadding = 20`.
 
+Hay un tercer par fácil de confundir, y este coincide en TODO: `rateAvatarInitials`
+(`.rate-avatar` de Calificar) tiene los mismos valores que `logoMark`
+(`.auth-logo span`), display/600/22. Son roles distintos a propósito — si el
+avatar de Calificar cambia de escala, se cambia ahí y no en el cuadro de la "R"
+de auth.
+
 Dos de esos roles son de la fila de notificación y se parecen a otros que ya
 existían, así que conviene no confundirlos: `notifTime` es 10.5 **regular**
 (`cardBadge` es 10.5 semibold) y `notifDesc` es 12 **regular con line-height
@@ -158,7 +178,7 @@ listing_condition  : nuevo | como_nuevo | buen_estado | usado
 report_reason      : spam_publicidad | sospecha_fraude | contenido_inapropiado
                       | no_es_estudiante | otro
 report_status      : pendiente | resuelto | descartado
-notification_type  : precio_favorito | reporte_resuelto
+notification_type  : precio_favorito | reporte_resuelto | compra_calificable
 
 -- Catálogos (solo lectura para authenticated; altas vía Studio/service_role)
 universidades   (id, nombre único)
@@ -193,6 +213,11 @@ favorites        (user_id, listing_id) — privados, nadie ve favoritos ajenos
 listing_contacts (user_id, listing_id, created_at) — log append-only de cada
                  tap en "Contactar por WhatsApp"; alimenta el flujo
                  "¿A quién le vendiste?" (sección 5)
+listing_sales    (listing_id PK → listings, comprador_id → users, created_at)
+                 quién compró (RF-07/RF-12). PK sobre listing_id: una venta o
+                 ninguna. Solo la ven las DOS PARTES, ni los otros contactos.
+                 Sin DELETE; su UPDATE es solo sobre `comprador_id`. NO es una
+                 columna de `listings` — ver abajo.
 ratings
   from_user_id, to_user_id, listing_id, estrellas (1-5), comentario nullable.
   Solo se puede calificar si hubo contacto real (función can_rate()).
@@ -287,6 +312,79 @@ para contacto"): el dato es consultable, pero anunciar en pantalla que una cuent
 está sancionada es otra cosa. Nada de esto es autorización duplicada: la RPC ya
 negó el número mire el cliente lo que mire, y lo único que se elige aquí es el
 texto.
+
+**Quién compró NO es una columna de `listings`, y la razón no es de estilo**
+(`20260912000453`). `listings` tiene `grant select` **a nivel tabla**
+(`20260906000439:86`), así que toda columna nueva queda legible por cualquier
+autenticado que pueda ver la fila — y `listings_select` solo esconde las
+`pausada`: una publicación vendida la ve el campus entero. El truco de
+`correo`/`telefono` (sacarla del grant) **no se puede aplicar aquí**: exigiría
+convertir ese grant a lista de columnas, que es justo lo que hoy hace funcionar
+a `listings.busqueda` sin grant propio y lo que T13 vigila. Y comprar es más
+revelador que preguntar: `favorites` es privado hasta para el dueño de la
+publicación, y `listing_contacts` solo lo ven las dos partes. `listing_sales`
+hereda esa postura. De regalo, el trigger de notificación cuelga de esa tabla y
+su rama de insert **no necesita cláusula `when`** — colgado de `listings`
+tendría que esquivar a `increment_listing_view()` y `set_updated_at`, que
+disparan en TODOS los updates.
+
+**Se puede corregir al comprador mal elegido, y el congelamiento es
+DIRECCIONAL.** `listing_sales_update_seller` deja al vendedor reapuntar
+`comprador_id` —a otro de sus contactos, nunca a sí mismo— **hasta que ÉL haya
+calificado a ese comprador**. Una reseña del comprador hacia el vendedor NO
+cierra la ventana, y eso es deliberado: las dos direcciones no son simétricas en
+consecuencia. Si el vendedor ya calificó, existe una reseña *suya* sobre alguien
+que quizá nunca le compró y moverla sería lavarla; si calificó el otro, esa
+reseña se sostiene sola (sí hubo contacto real) y congelar por ella castigaría
+al vendedor **y al comprador real** por el acto de un tercero — el comprador
+real no podría ser acreditado ni calificar nunca. "Simplificarlo" a las dos
+direcciones no rompe nada visible: solo vuelve incorregible un error ajeno. Lo
+caza T19 (l2), y el `using` se evalúa contra la fila VIEJA (el gotcha de §9, esta
+vez a favor), así que `listing_sales.comprador_id` ahí dentro es el comprador
+**original**.
+
+- **Esa condición está escrita DOS VECES** — en el `using` de la policy y en
+  `congelada()` de `src/lib/confianza.ts`. Cambiar una sin la otra no produce
+  ningún error: solo una fila de menú que desaparece de más, dejando al vendedor
+  sin salida. Es el mismo acoplamiento que `formatPrecio` ↔
+  `private.formato_precio()`, **pero el amarre NO puede ser una aserción de la
+  suite**, y por eso vive en `scripts/probe-venta.mjs`: allá las dos
+  implementaciones producen el mismo STRING y T18 lo compara carácter por
+  carácter; aquí un lado es una query del cliente y el otro una cláusula `using`,
+  así que no hay salida común observable desde SQL. El amarre tiene que ser un
+  script que ejecute los DOS lados contra el mismo estado. Ver §6.
+- **Y ese amarre son DOS MECANISMOS con responsabilidades distintas, no uno.**
+  Conviene saberlo antes de "simplificar" borrando alguno, porque cada uno deja
+  pasar exactamente lo que el otro caza:
+  - **El escenario 3 de `probe-venta.mjs`** vigila la **lógica**: ejecuta la
+    condición contra la base por la ruta del COMPRADOR y comprueba las dos
+    polaridades. Caza que la condición esté mal *pensada* (la variante
+    bidireccional, una dirección invertida).
+  - **El tripwire sobre el fuente** vigila la **firma y el cableado** de
+    `congelada()`. Caza que la condición esté bien pensada pero mal *conectada*.
+  - Por qué hacen falta los dos: `congeladaSegunCliente()` del probe **transcribe**
+    la query, no importa a `congelada()` — `src/lib/confianza.ts` no es cargable
+    desde Node (arrastra `expo-secure-store`, `expo-crypto`, AsyncStorage). O sea
+    que el escenario 3 prueba la semántica, pero **no** prueba que la app use esa
+    semántica. **Medido, no deducido:** al reintroducir a propósito el bug de
+    derivar el vendedor de la sesión, el escenario 3 pasó en verde y lo cazó
+    ÚNICAMENTE el tripwire. Borrarlo "porque el escenario 3 ya cubre todo" deja
+    ese bug sin red.
+- **El rechazo NO lanza**: el `using` filtra, así que el update afecta 0 filas.
+  `corregirComprador()` compara el conteo — sin eso, "ya calificaste" se vería
+  igual que un éxito.
+- **Dos triggers sobre la misma función, no uno**: el `WHEN` de un trigger
+  declarado sobre INSERT y UPDATE a la vez no puede referenciar `old`.
+
+**`can_rate()` mira ahora también `listing_sales`, en las DOS ramas.** Antes,
+cualquiera de los que contactó podía calificar al vendedor (haya comprado o no) y
+el vendedor podía calificar a cualquiera de sus contactos. Registrada la venta,
+la única pareja que puede calificarse es vendedor ↔ comprador. Cada rama suma un
+`not exists` sobre una venta de OTRA persona — y como la PK es `listing_id`, eso
+dice exactamente "no hay venta registrada, o la venta es de quien toca", así que
+el caso viejo (sin venta, o "No fue a través de Relevo") sigue intacto. Se hizo
+con `create or replace` para conservar el OID: un `drop` obligaría a recrear
+`ratings_insert_own`/`ratings_update_own` y su `grant execute`.
 
 **`vistas_count` se incrementa solo vía `public.increment_listing_view(id)`**
 (`SECURITY DEFINER`, excluye al dueño para que no infle sus propias vistas).
@@ -458,7 +556,7 @@ de integración en vez de dos, la función no sabe nada del esquema de negocio, 
 `listing_contacts` (§8b) pero esta vez con recuperación. Ver §9 sobre el header
 `apikey` y el esquema real de `pg_net`, que son dos trampas distintas.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 108 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 128 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -503,6 +601,23 @@ moraleja, más 4 en T12 (`notifications` sin INSERT/DELETE, su UPDATE solo por
 columna, `push_tokens` sin UPDATE por ningún lado, y `vault` inaccesible para
 `authenticated`/`anon`). La aserción de las funciones-solo-trigger pasó de 5 a
 **9** sin cambiar la cuenta, que es donde vive ese tipo de invariante.
+
+Y a **128** con las de RF-07/RF-12: 19 de T19 (`listing_sales`, su corrección y
+el apriete de `can_rate()`) más 1 en T12 (sin DELETE, y UPDATE solo sobre
+`comprador_id`); la de funciones-solo-trigger pasó de 9 a **10** sin cambiar la
+cuenta. T19 siembra sus propios `:G`/`:H`/`:I` —vendedor, comprador real y un
+tercer contacto que preguntó y no compró—, y ese tercero no es adorno: es el que
+prueba las dos ramas apretadas de `can_rate()`.
+**Y aquí hay una lección nueva, hermana de la de `:C` en T11b: el ORDEN de las
+aserciones puede hacer que una pase por la razón equivocada.** La primera versión
+de (l2) tenía a `:I` calificando al vendedor mientras `:H` seguía registrada como
+compradora — y con el congelamiento evaluándose contra
+`listing_sales.comprador_id`, esa reseña no lo disparaba **en ninguna de las dos
+variantes**, así que la aserción pasaba igual con la implementación correcta y con
+la descartada. Medido con el control negativo, que caía en (j) en vez de en (l2).
+El arreglo fue que califique **el comprador REGISTRADO EN ESE MOMENTO**. Moraleja:
+en una sección con estado que avanza, verifica también *cuándo* corre cada
+aserción, no solo contra quién.
 **Dos aserciones de T17 van juntas o ninguna sirve:** "un token que cambia de
 cuenta deja UNA sola fila, del dueño nuevo" y "el mismo usuario re-registrando su
 token no duplica ni pierde el otro". Sin la segunda, un trigger que borrara
@@ -513,7 +628,7 @@ correr esta suite antes de comitear.
 
 ---
 
-## 4. Inventario completo de pantallas (52)
+## 4. Inventario completo de pantallas (54)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -527,12 +642,22 @@ Completar perfil (estado inicial) · Completar perfil (selector de campus) ·
 Selector de universidad · Permiso de notificaciones ·
 Iniciar sesión · Recuperar contraseña
 
-### Explorar (13)
+### Explorar (14)
 Feed · Selector de campus · Categoría · Categoría sin resultados ·
 Ver todas (categorías) · Búsqueda (recomendados) · Búsqueda ·
 Búsqueda sin resultados · Filtros · Detalle de publicación ·
-Detalle (vista vendedor) · Detalle (foto a pantalla completa) ·
-Detalle (foto — cerrando)
+**Detalle (vendida)** · Detalle (vista vendedor) ·
+Detalle (foto a pantalla completa) · Detalle (foto — cerrando)
+
+"Detalle (vendida)" es el Detalle de una publicación ya vendida vista por quien
+NO es su dueño, y cubre **dos espectadores en un solo frame** con el recurso de
+variante etiquetada de `.photo-add.is-busy`: el comprador acreditado ve
+"Calificar al vendedor"; cualquier otro autenticado ve un `.notice` de "ya se
+vendió" en lugar del `.whatsapp-btn` (contactar por algo vendido no tiene
+sentido). El dueño no entra aquí — sigue en "Detalle (vista vendedor)", cuyo
+`.ghost-btn` cambia de label según el estado de la venta. Vive en `explorar` y
+no en `confianza` porque **todos** los estados de Detalle lo hacen, incluido
+"vista vendedor": el agrupador sigue a la pantalla, no al tema.
 
 "Detalle (foto — cerrando)" es el gesto de cierre del visor congelado a media
 altura — un frame estático no puede animarlo. **Es documentación de un estado
@@ -554,8 +679,23 @@ vuelve a ser "Publicar" tal cual. Ver §8b.
 Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío ·
 Mis publicaciones · Mis publicaciones vacío · Mis publicaciones (acciones)
 
-### Confianza (3)
-Reportar publicación · Calificar · ¿A quién le vendiste?
+### Confianza (4)
+Reportar publicación · Calificar · ¿A quién le vendiste? ·
+¿A quién le vendiste? (sin contactos)
+
+El vacío NO es un caso borde: nadie está obligado a tocar "Contactar por
+WhatsApp" antes de que el vendedor marque la venta —pudo acordarse en persona, o
+el registro del contacto pudo fallar (§8, la deuda del log perdido)—, así que se
+alcanza el primer día. Como "Notificaciones vacío", no lleva `.empty-actions`:
+la única acción posible ya está en el `.sticky-cta`, que se conserva intacto —
+la publicación SÍ se marca como vendida desde ahí; lo único que no ocurre es la
+calificación, porque no hay a quién calificar.
+
+**El modo corrección ("Cambiar comprador") NO es una pantalla más**: es el mismo
+frame "¿A quién le vendiste?" con el comprador actual preseleccionado, el CTA
+diciendo "Guardar cambio" y la salida "No fue a través de Relevo" escondida
+(deshacer una venta registrada no está soportado). Va como variante etiquetada
+dentro de ese frame, no cuenta aparte.
 
 ### Notificaciones (2)
 Notificaciones · Notificaciones vacío
@@ -622,7 +762,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 51 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 54 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -639,7 +779,23 @@ Toast de éxito · Toast de error · Loading / skeleton
   visible con solo "que compile" — se necesitó revisión deliberada.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario.
+  `postgres`/superusuario. Son TRES pasos, no uno:
+  1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
+  2. `node scripts/probe-storage.mjs` — lo que la suite SQL no puede ver del
+     bucket: `DELETE` (el trigger `storage.protect_delete` aborta antes que la
+     RLS) y `move` (el `with_check` de UPDATE).
+  3. `node scripts/probe-venta.mjs` — el amarre entre `congelada()`
+     (`src/lib/confianza.ts`) y el `using` de `listing_sales_update_seller`: la
+     MISMA condición escrita en dos runtimes, que al desincronizarse no da
+     ningún error y solo esconde la única salida del vendedor (§3). Ejecuta los
+     dos lados contra el mismo estado, en tres escenarios (califica el comprador
+     → sigue corregible; califica el vendedor → congelado; y la misma condición
+     por la ruta del COMPRADOR, en las dos polaridades), más un tripwire que lee
+     el fuente de `congelada()`. **El tripwire y el escenario 3 NO son
+     redundantes** — uno vigila el cableado y el otro la lógica, y §3 explica
+     por qué borrar cualquiera deja un hueco medido.
+  Los dos probes necesitan el stack local arriba y limpian lo suyo en un
+  `finally`; si una corrida muere de golpe, `supabase db reset` borra la basura.
 - **Para bugs de UI que dependen de interacción real (teclado, gestos, touch),
   el simulador headless de Claude Code no siempre puede confirmarlos** — no
   dispara `keyboardDidShow` ni simula touch. Cuando reporte "no pude
@@ -765,7 +921,10 @@ y solo al final las convenciones genéricas de los skills.
     aborta todo borrado por SQL antes de que la RLS opine, así que una aserción
     ahí pasaría con la policy borrada) y `move` (el `with_check` de UPDATE, sin el
     cual un dueño puede renombrar su objeto hacia la carpeta de otro — medido:
-    devuelve **HTTP 200**).
+    devuelve **HTTP 200**). **Ya tiene hermano**: `scripts/probe-venta.mjs`, por
+    otra razón (§3) — aquel cubre lo que la RLS de SQL no alcanza, este amarra
+    una condición que vive en dos runtimes. Los dos son parte de la verificación
+    de backend, no extras: ver §6.
   - **Ya se sube y se pinta.** El grupo Publicar escribe en `listing_photos` y
     `ListingPhoto` las lee por el endpoint autenticado — ver §8b.
 - **Grupo Explorar conectado a datos reales** (7ª migración incluida:
@@ -872,6 +1031,35 @@ y solo al final las convenciones genéricas de los skills.
     de error del token falso y **borró ese token** (`limpiados: 1`). Lo único que
     falta es un aparato de verdad — ver el pendiente de abajo.
 
+- **RF-07 + RF-12 completos: "Marcar como vendida → ¿A quién le vendiste? →
+  Calificar".** Una migración (`20260912000453`), el grupo Confianza construido,
+  y el cuarto disparador de RF-16. Lo que no se ve en el diff:
+  - **La premisa de la tarea estaba mal en dos puntos, y verificarlo antes de
+    planear ahorró rehacer.** El trigger de `rating_promedio` YA existía
+    (`20260906000440:136-158`) y el `unique` de `ratings` también (`:93`), así
+    que ninguno hizo falta. En cambio, la fila "Marcar como vendida" **no
+    estaba** en la hoja de acciones de "Mis publicaciones" —ni en el código ni
+    en el frame—, así que hubo que construirla en el HTML primero.
+  - **El comprador es una tabla, no una columna** (§3). Esa decisión de
+    privacidad cambió la forma de la migración entera.
+  - **Sin el modo corrección, la policy de UPDATE habría sido inalcanzable desde
+    la UI**: al pasar a `vendida` desaparece la entrada "Marcar como vendida" de
+    las tres pantallas. Por eso esa fila tiene **tres** estados derivados de un
+    solo helper (`accionVenta`), no dos.
+  - **El orden de escritura es insert-antes-de-update y no es cosmético.** Al
+    revés, un fallo entre los dos statements deja la publicación `vendida` sin
+    comprador registrado y sin salida. Con este orden el fallo deja una venta
+    sobre una publicación todavía activa: la entrada sigue visible y el
+    reintento es idempotente (`ignoreDuplicates` + la preselección del comprador
+    ya registrado).
+  - Probado en local de punta a punta: 128 aserciones en verde y **seis
+    controles negativos**, cada uno fallando en su aserción (ver §3), más
+    `scripts/probe-venta.mjs` (13 aserciones) con sus tres controles: romper la
+    policy hace fallar el lado base, "simplificar" `congelada()` a bidireccional
+    hace fallar el tripwire, y derivar el vendedor de la sesión —el bug real que
+    apareció construyendo esto— también. Ese último es el que demostró que
+    tripwire y escenario 3 cubren cosas distintas (§3).
+
 **Pendiente, en este orden de prioridad:**
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
@@ -890,6 +1078,50 @@ y solo al final las convenciones genéricas de los skills.
      del header `Authorization` de `expo-image`.
 
 **Deuda consciente — con disparador de revisión, no "algún día":**
+
+- **"Omitir por ahora" en Calificar es DEFINITIVO.** La publicación ya es
+  `vendida` y la fila de venta pasa a decir "Cambiar comprador", no "Calificar",
+  así que no hay segunda entrada para el vendedor. El copy promete algo que no
+  ocurre. **Revisar cuando:** alguien reporte que omitió sin querer. **Fix:** un
+  botón "Calificar al comprador" en "Detalle (vista vendedor)" — exige frame
+  primero (§0 regla 4).
+- **La reseña del mal asignado sobrevive y queda inmutable.** Si el vendedor
+  acredita por error a C y C lo califica, esa fila se queda: tras la corrección
+  `can_rate()` ya no la autorizaría, así que **C tampoco puede editarla**
+  (`ratings_update_own` lleva `can_rate()` en su `with check`) y nadie puede
+  borrarla (`ratings` sin delete, y eso es deliberado). Alcance: una reseña de
+  alguien que sí tuvo contacto real, o sea legítima cuando nació. **Revisar
+  cuando:** alguien pida retirar una reseña por venta mal atribuida. **Fix:** un
+  `delete` acotado al autor con la misma ventana de congelamiento — es un cambio
+  de postura sobre "una calificación no se borra", por eso no se tomó de paso.
+- **El vendedor puede reasignar la venta varias veces antes de calificar, y cada
+  cambio dispara una notificación.** Acotado a sus propios contactos (las dos
+  policies exigen fila en `listing_contacts`), así que el máximo es "los N que
+  preguntaron por esa publicación". El comprador anterior conserva su aviso
+  —`notifications` no tiene delete y sus filas son historia— y degrada bien: el
+  tap lo lleva al Detalle, donde el botón está gateado por la fila de venta, que
+  ya no es suya, y ve el `.notice` de "ya se vendió". **Revisar cuando:** un
+  vendedor lo reporte, o alguien note avisos repetidos de "califica tu compra"
+  sin haber comprado nada. **Fix:** throttle por `listing_id` en el trigger de
+  corrección, o no notificar en la corrección y dejar el Detalle como único
+  descubrimiento.
+- **El amarre cliente ↔ RLS se sostiene con dos mecanismos parciales en vez de
+  uno fuerte**, y es una elección, no una carencia. El fuerte sería que el probe
+  ejecutara `congelada()` de verdad, lo que exige extraer la condición a un
+  módulo puro —sin dependencias de React Native— cargable desde Node. Hoy no se
+  paga: es una sola función, tocar la frontera de módulos de `src/lib` cuesta más
+  que el riesgo, y la combinación tripwire + escenario 3 ya cazó la regresión
+  real (§3). **Revisar cuando:** `src/lib/confianza.ts` acumule más lógica de
+  este tipo — condiciones de autorización espejadas contra una policy—, porque
+  ahí el costo se reparte entre varias y el argumento se invierte. **Fix:**
+  extraer el descriptor de filtros a un `.ts` sin imports de RN, consumido por
+  `congelada()` y por el probe vía el type-stripping de Node; el tripwire
+  desaparece con él.
+- **No se puede deshacer una venta entera**, solo corregir a quién. Borrar la
+  fila equivaldría a decir "no fue a través de Relevo" después de haberla
+  registrado. Es una línea de alcance explícita, no un olvido: `listing_sales`
+  no tiene grant ni policy de DELETE, y T12 lo vigila. **Revisar cuando:**
+  alguien marque una venta por error y quiera revertirla del todo.
 
 - **`reports.resolved_at` existe y NADIE la escribe.** Está en el esquema desde
   `20260906000441:16` y ningún trigger ni camino de código la llena, así que hoy
@@ -1623,13 +1855,70 @@ Detalles que no se ven en el diff:
   compara `user_id = auth.uid()` sobre filas propias, así que no hay rechazo por
   política posible y el costo de equivocarse es que el punto reaparezca.
 
+- **El tercer tipo, `compra_calificable`, NO cambió ni `destino()`
+  (`src/lib/push.ts`) ni el `onPress` del inbox.** Trae `listing_id`, así que el
+  tap ya cae en `/detalle/<id>`, que es donde vive "Calificar al vendedor". La
+  notificación es el *descubrimiento*; Detalle es la *afordancia*. Su tinte es
+  `--gold` porque es el color de `.rate-stars`; lo comparte con la fila de
+  "categoría seguida" del frame, que no tiene disparador y está ahí solo como
+  documentación.
+
 Componentes nuevos: `NotifRow`, `SkeletonNotifRows`, `IconMail`, y dos roles de
 `Typography` (`notifTime`, `notifDesc` — ver §2, se confunden fácil con
 `cardBadge` y `activeChip`).
 
-**Confianza — no construido todavía.** Del grupo Cuenta tampoco lo están
-*Favoritos* (sigue siendo placeholder aunque el toggle de favorito ya funcione en
-todo Explorar), *Editar perfil* ni *Perfil público*.
+**Confianza — 3 de 4 pantallas construidas y conectadas (RF-07, RF-12).**
+"¿A quién le vendiste?" (con su vacío y su modo corrección) vive en
+`src/app/(confianza)/vendida/[id].tsx`, "Calificar" en
+`(confianza)/calificar.tsx`, y la capa de datos en `src/lib/confianza.ts`.
+*Reportar publicación* sigue sin construir.
+
+Detalles que no se ven en el diff:
+
+- **`accionVenta()` es el derivado de TRES estados de la fila de venta, y vive en
+  un solo lugar a propósito.** Lo consumen las tres entradas —"Editar
+  publicación", "Detalle (vista vendedor)" y la hoja de "Mis publicaciones"—:
+  calcularlo tres veces es la forma de que se desincronicen. Los estados son
+  "Marcar como vendida" / "Cambiar comprador" / ausente.
+- **El congelamiento que lee el cliente (`congelada()`) es DIRECCIONAL**, y tiene
+  que ser la misma condición que el `using` de `listing_sales_update_seller`:
+  `listing_id` de la venta, `from_user_id` = el dueño del listing,
+  `to_user_id` = el `comprador_id` de la fila. **NO** "existe reseña entre las dos
+  partes". Si el único rating es el del comprador mal asignado hacia el vendedor,
+  la policy **sí** deja corregir — y un cliente que lo leyera bidireccional
+  escondería "Cambiar comprador" por completo, dejando al vendedor sin camino de
+  vuelta. **El cliente no puede ser más estricto que la base.** El filtro por
+  vendedor va explícito porque `ratings_select` es `using (true)`: la RLS no
+  acota nada ahí, y un `count` sin ese `eq` contaría justo la reseña que NO debe
+  congelar.
+- **"Soy el comprador" no se deduce del estado sino de la fila de venta.** La RLS
+  de `listing_sales` solo se la devuelve a las dos partes, así que esa pregunta
+  ya la contestó la base — el cliente no vuelve a decidirla.
+- **`useVentaDetalle` es hermano de `useVenta`, no el mismo.** Aquel trae también
+  los contactos, que en Detalle no se usan (no se ofrece elegir comprador) y que
+  el comprador además solo vería a medias. Su fallo es SUAVE: si revienta, el
+  Detalle se pinta sin el botón de calificar en vez de romperse entero — lo único
+  que se pierde es una afordancia que el inbox vuelve a ofrecer.
+- **La selección no se preselecciona en el alta, pero sí en la corrección.** El
+  frame pinta la primera fila marcada para documentar el estado seleccionado;
+  sin elección explícita, "nada" y "No fue a través de Relevo" serían
+  indistinguibles. En corrección nace en el comprador ya registrado, y se
+  **deriva** en vez de sembrarse con un efecto: `venta` llega asíncrona, así que
+  un `setElegido` en un efecto pintaría un render con todo sin marcar.
+- **En modo corrección NO se navega a Calificar**, y se esconde "No fue a través
+  de Relevo": deshacer la venta es el DELETE que quedó fuera de alcance (§8).
+- **`BuyerRow` reusa `RadioCircle`** de `ListRow.tsx` pero **no** `ListRow`:
+  `.list-row` no tiene avatar y su padding es 14, no 13.
+- **`IconStar` es el único icono del set con dos anchos de trazo** (1 rellena,
+  1.3 vacía), y sale del prototipo: el trazo más grueso es lo que hace que la
+  estrella vacía pese lo mismo que la llena.
+- **La pantalla Calificar no lleva `.form-header`**: es un `.auth-body` centrado,
+  la misma forma que las pantallas de auth. Y el botón se deshabilita sin
+  estrellas: lo opcional es el comentario, no el puntaje (`estrellas` es
+  `not null check (between 1 and 5)`).
+
+Del grupo Cuenta siguen sin construir *Favoritos* (placeholder, aunque el toggle
+de favorito ya funcione en todo Explorar), *Editar perfil* y *Perfil público*.
 **Sistema** tiene las 3 piezas que Explorar necesitó (arriba) más "Confirmar
 eliminar", cableado con `ConfirmModal` + `DangerButton` tanto en Editar
 publicación como en Mis publicaciones.

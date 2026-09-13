@@ -106,6 +106,7 @@ export const Typography = {
   wordmark: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 24 }, // .wordmark
   headline: { fontFamily: face(Fonts.display, FontWeights.medium), fontSize: 22 }, // .auth-headline, .onboard-headline
   logoMark: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 22 }, // .auth-logo span
+  rateAvatarInitials: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 22 }, // .rate-avatar (Calificar) — MISMOS valores que `logoMark`, pero otro rol: aquel es el cuadro de la "R" en auth. Si el avatar de Calificar cambia de escala, se cambia aquí y no allá.
   otp: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 20 }, // .otp-box
   priceLarge: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 28 }, // .detail-price, .splash-logo span
   price: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 19 }, // .price (card), .stat-num

@@ -102,13 +102,18 @@ vez validado.
   "Editar publicación", incluidos agregar/quitar fotos dentro del tope de 5 y
   el borrado con confirmación (que borra también los archivos de Storage).
 - **RF-07** Marcar publicación como "vendida" sin borrar el historial.
-  **⏳ Pendiente** — el estado existe en la BD y la fila de "Marcar como
-  vendida" está en la UI, pero inerte: dispara el flujo "¿A quién le vendiste?"
-  del grupo Confianza, que no está construido. Cablearla como un update suelto
-  rompería RF-12.
+  **✅ Implementado** — desde las tres entradas (Editar publicación, Detalle
+  vista vendedor y la hoja de acciones de Mis publicaciones), pasando siempre
+  por "¿A quién le vendiste?" para no romper RF-12. Quién compró se guarda en
+  `listing_sales`, tabla aparte y privada entre las dos partes: NO es una
+  columna de `listings`, que es legible por todo el campus.
+  El vendedor puede **corregir** al comprador mal elegido mientras no lo haya
+  calificado — sin eso, al pasar a vendida desaparece la única entrada y el
+  error sería permanente.
 - **RF-08** Estados de publicación: activa, pausada, vendida.
-  **⏳ Parcial** — activa/pausada ya se alternan desde "Editar publicación";
-  vendida depende de RF-07.
+  **✅ Implementado** — activa/pausada se alternan desde "Editar publicación" y
+  desde "Mis publicaciones"; vendida llega por RF-07 y es terminal (no se pausa
+  ni se reactiva).
 
 ### Descubrimiento
 - **RF-09** Catálogo/feed principal, ordenado por más reciente.
@@ -123,6 +128,14 @@ vez validado.
   WhatsApp" en esa publicación (ver RF-13) para que elija a quién calificar,
   con opción de salida "No fue a través de Relevo". Ver
   `/design/relevo-app.html` → pantallas "¿A quién le vendiste?" y "Calificar".
+  **✅ Implementado, en las dos direcciones.** El vendedor califica desde el
+  flujo de la venta; el comprador, desde el Detalle de la publicación vendida,
+  al que llega por la notificación "Califica tu compra".
+  Registrada la venta, **la única pareja que puede calificarse es vendedor ↔
+  comprador**: `private.can_rate()` dejó de bastar con "hubo contacto". Sin ese
+  apriete, cualquiera de los que solo preguntó podía dejar reseña.
+  **⏳ Fuera de alcance:** "Omitir por ahora" es definitivo para el vendedor (no
+  hay segunda entrada), y una reseña ya escrita no se retira. Ver `CLAUDE.md` §8.
 - **RF-13** Botón de contacto que abre WhatsApp con el vendedor — sin chat
   interno en el MVP. Cada tap se registra (usuario, publicación, fecha) para
   habilitar RF-12; la conversación en sí ocurre fuera de la app.
@@ -137,8 +150,11 @@ vez validado.
 - **RF-15** Guardar publicaciones como favoritas.
 - **RF-16** Push cuando baja el precio de un favorito, hay respuesta a un
   reporte, o (opcional) nueva publicación en categoría seguida.
-  **✅ Implementado los dos disparadores obligatorios** — baja de precio de un
-  favorito y resolución de un reporte. Además de push, cada aviso queda en un
+  **✅ Implementado, TRES disparadores** — baja de precio de un favorito,
+  resolución de un reporte, y **"Califica tu compra"**, que se dispara cuando un
+  vendedor acredita a alguien como comprador al marcar la venta (RF-07/RF-12) y
+  también cuando corrige a quién. Ese tercero **no** es el opcional de "categoría
+  seguida", que sigue fuera de alcance (abajo). Además de push, cada aviso queda en un
   **inbox in-app** (pantalla "Notificaciones", con hora relativa y punto de no
   leído), que es lo que hace que un aviso sobreviva a un push que no llegó.
   "Respuesta a un reporte" NO necesitó un campo de texto nuevo: el copy del
@@ -297,6 +313,13 @@ listing_contacts
   user_id → users, listing_id → listings, created_at
   -- se registra cada tap en "Contactar por WhatsApp" (RF-13); es la fuente
   -- de candidatos para el flujo "¿A quién le vendiste?" que habilita RF-12
+
+listing_sales
+  listing_id → listings (PK), comprador_id → users, created_at
+  -- quién compró (RF-07). Una venta o ninguna por publicación. Tabla aparte y
+  -- NO columna de `listings`: el catálogo es legible por todo el campus, y
+  -- quién compró solo lo ven las dos partes. Es lo que acota la calificación
+  -- de RF-12 a la pareja vendedor ↔ comprador.
 
 ratings
   from_user_id, to_user_id → users, listing_id → listings,

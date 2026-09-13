@@ -1088,6 +1088,205 @@ select pg_temp.expect_error(:F::uuid,
 
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T19 — venta registrada: comprador, corrección y can_rate (RF-07/RF-12) =='
+-- Autocontenida, mismo criterio que T11b, T13, T14, T15, T16 y T17: siembra sus
+-- propios usuarios y su propia publicación. A esta altura del archivo :B está
+-- suspendido, :C fue borrada por T8, y :A/:D/:E/:F ya cargan estado de otras
+-- secciones — reutilizar cualquiera haría que una aserción pasara por la razón
+-- equivocada (CLAUDE.md §3).
+--
+-- El reparto, y cada pieza existe por una aserción concreta:
+--   :G — el vendedor.
+--   :H — el comprador REAL.
+--   :I — otro contacto: preguntó y NO compró. Es el que prueba que `can_rate()`
+--        quedó apretado, y el que en (l2) califica al vendedor sin congelar la
+--        corrección.
+\set G '''11111111-0000-0000-0000-000000000011'''
+\set H '''22222222-0000-0000-0000-000000000022'''
+\set I '''33333333-0000-0000-0000-000000000033'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:G::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-g@tec.mx', '', now(), now(), now()),
+  (:H::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-h@tec.mx', '', now(), now(), now()),
+  (:I::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-i@tec.mx', '', now(), now(), now());
+update public.users set nombre = 'Gabriel' where id = :G::uuid;
+update public.users set nombre = 'Hilda'   where id = :H::uuid;
+update public.users set nombre = 'Iker'    where id = :I::uuid;
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values (:G::uuid, 1, 1, 1, 'RLS Venta bici', 1450, 'buen_estado', 'activa');
+\set VENTA_ID '(select id from public.listings where titulo = ''RLS Venta bici'')'
+
+-- Los dos contactan. Es la precondición de TODO lo demás: sin fila en
+-- listing_contacts no hay venta registrable ni calificación posible.
+insert into public.listing_contacts (user_id, listing_id)
+values (:H::uuid, :VENTA_ID), (:I::uuid, :VENTA_ID);
+
+-- (h2) CONTROL POSITIVO, y va antes de registrar la venta a propósito: sin fila
+-- de venta, can_rate() se comporta como siempre y el vendedor puede calificar a
+-- cualquiera de sus contactos. Sin esta, un can_rate() que devolviera false
+-- siempre también pasaría (g2).
+select pg_temp.assert(
+  pg_temp.as_user_int(:G::uuid,
+    format('select (private.can_rate(%L, %s))::int', :I::uuid, :VENTA_ID)) = 1,
+  'sin venta registrada, G puede calificar a I (control positivo de la rama 1)');
+
+-- (h) La misma, en la otra dirección.
+select pg_temp.assert(
+  pg_temp.as_user_int(:I::uuid,
+    format('select (private.can_rate(%L, %s))::int', :G::uuid, :VENTA_ID)) = 1,
+  'sin venta registrada, I puede calificar a G (control positivo de la rama 2)');
+
+-- (c) No puede venderse a sí mismo.
+select pg_temp.expect_error(:G::uuid,
+  format('insert into public.listing_sales (listing_id, comprador_id)
+          values (%s, %L)', :VENTA_ID, :G::uuid),
+  'G no puede registrarse a sí mismo como comprador');
+
+-- (b) EL punto de enforcement de "el comprador tiene que haberte contactado".
+-- :D nunca contactó esta publicación. Sin este exists, un vendedor apuntaría a
+-- cualquiera y le dispararía la notificación de compra.
+select pg_temp.expect_error(:G::uuid,
+  format('insert into public.listing_sales (listing_id, comprador_id)
+          values (%s, %L)', :VENTA_ID, :D::uuid),
+  'G no puede acreditar como comprador a alguien que nunca lo contactó');
+
+-- (d) Un tercero no registra la venta de una publicación ajena.
+select pg_temp.expect_error(:H::uuid,
+  format('insert into public.listing_sales (listing_id, comprador_id)
+          values (%s, %L)', :VENTA_ID, :H::uuid),
+  'H no puede registrarse como comprador de la publicación de G');
+
+-- (a) El camino feliz.
+select pg_temp.as_user(:G::uuid,
+  format('insert into public.listing_sales (listing_id, comprador_id)
+          values (%s, %L)', :VENTA_ID, :H::uuid));
+select pg_temp.assert(
+  (select comprador_id from public.listing_sales where listing_id = :VENTA_ID) = :H::uuid,
+  'G registró a H como compradora');
+
+-- (i) El disparador del cuarto tipo de notificación.
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where user_id = :H::uuid and tipo = 'compra_calificable'
+      and listing_id = :VENTA_ID) = 1,
+  'H recibió su aviso "Califica tu compra", con listing_id poblado');
+
+-- (e) Solo las dos partes ven la fila. I contactó esa misma publicación y aun
+-- así no puede saber quién se la llevó.
+select pg_temp.assert(
+  pg_temp.as_user_int(:H::uuid, 'select count(*) from public.listing_sales') = 1,
+  'H ve la venta en la que es compradora');
+select pg_temp.assert(
+  pg_temp.as_user_int(:I::uuid, 'select count(*) from public.listing_sales') = 0,
+  'I no ve la venta, aunque haya contactado esa publicación');
+
+-- (g)/(g2) EL APRIETE DE can_rate(), en las dos direcciones. Comparar con (h) y
+-- (h2) de arriba: los mismos dos pares de personas, el mismo listing, y la
+-- ÚNICA diferencia es que ahora existe la fila de venta.
+select pg_temp.assert(
+  pg_temp.as_user_int(:I::uuid,
+    format('select (private.can_rate(%L, %s))::int', :G::uuid, :VENTA_ID)) = 0,
+  'registrada la venta, I ya NO puede calificar al vendedor (rama 2)');
+select pg_temp.assert(
+  pg_temp.as_user_int(:G::uuid,
+    format('select (private.can_rate(%L, %s))::int', :I::uuid, :VENTA_ID)) = 0,
+  'registrada la venta, G ya NO puede calificar a I (rama 1)');
+
+-- (f) Y la pareja correcta sí puede.
+select pg_temp.assert(
+  pg_temp.as_user_int(:H::uuid,
+    format('select (private.can_rate(%L, %s))::int', :G::uuid, :VENTA_ID)) = 1,
+  'H, la compradora registrada, sí puede calificar al vendedor');
+
+-- (o) La corrección no puede apuntarse al propio vendedor. Hermana de (c), que
+-- prueba el mismo predicado en el insert.
+select pg_temp.expect_error(:G::uuid,
+  format('update public.listing_sales set comprador_id = %L where listing_id = %s',
+         :G::uuid, :VENTA_ID),
+  'G no puede corregir el comprador hacia sí mismo');
+
+-- (k) Ni hacia alguien que nunca lo contactó.
+select pg_temp.expect_error(:G::uuid,
+  format('update public.listing_sales set comprador_id = %L where listing_id = %s',
+         :D::uuid, :VENTA_ID),
+  'G no puede corregir el comprador hacia alguien que nunca lo contactó');
+
+-- (m) Un tercero no corrige la venta ajena. No lanza: el `using` filtra la fila
+-- y el update afecta 0, así que lo que se comprueba es que H siga siendo la
+-- compradora.
+select pg_temp.as_user(:H::uuid,
+  format('update public.listing_sales set comprador_id = %L where listing_id = %s',
+         :H::uuid, :VENTA_ID));
+select pg_temp.assert(
+  (select comprador_id from public.listing_sales where listing_id = :VENTA_ID) = :H::uuid,
+  'H no pudo tocar la venta de la publicación de G');
+
+-- (l2) LA ASIMETRÍA DEL CONGELAMIENTO, que es la razón de ser de esta sección.
+--
+-- OJO CON EL ORDEN, que es lo único que hace que esta aserción pruebe lo que
+-- dice: quien califica tiene que ser EL COMPRADOR REGISTRADO EN ESE MOMENTO. Si
+-- calificara alguien que todavía no lo es, el congelamiento bidireccional
+-- —que compara contra `listing_sales.comprador_id`— tampoco se dispararía, y
+-- la aserción pasaría con las DOS variantes sin distinguir ninguna. (Medido: la
+-- primera versión de este bloque tenía a I calificando mientras H seguía
+-- registrada, y el control negativo de la variante bidireccional caía en la
+-- aserción de abajo, no en esta.)
+--
+-- El insert va como H y no como postgres porque puede: es la compradora
+-- registrada, así que can_rate() la autoriza — es la aserción (f) ejercida de
+-- verdad.
+select pg_temp.as_user(:H::uuid,
+  format('insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas)
+          values (%L, %L, %s, 4)', :H::uuid, :G::uuid, :VENTA_ID));
+
+-- Y ahora G se da cuenta de que se equivocó de persona. La reseña que H ya dejó
+-- NO puede dejarlo sin corregir: castigaría a G y al comprador real por un acto
+-- de un tercero. Si alguien "simplifica" el `not exists` de la policy a las dos
+-- direcciones, esta es la aserción que lo caza.
+select pg_temp.as_user(:G::uuid,
+  format('update public.listing_sales set comprador_id = %L where listing_id = %s',
+         :I::uuid, :VENTA_ID));
+select pg_temp.assert(
+  (select comprador_id from public.listing_sales where listing_id = :VENTA_ID) = :I::uuid,
+  'una reseña DEL comprador registrado hacia el vendedor no congela la corrección');
+
+-- (j) Y la corrección funciona en las dos direcciones: G vuelve a poner a H.
+select pg_temp.as_user(:G::uuid,
+  format('update public.listing_sales set comprador_id = %L where listing_id = %s',
+         :H::uuid, :VENTA_ID));
+select pg_temp.assert(
+  (select comprador_id from public.listing_sales where listing_id = :VENTA_ID) = :H::uuid,
+  'G corrigió el comprador de vuelta a H');
+
+-- (n) Cada corrección avisa al comprador nuevo. H tiene dos: la del insert y la
+-- de esta corrección. El anterior conserva el suyo — `notifications` no tiene
+-- delete y sus filas son historia.
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where user_id = :H::uuid and tipo = 'compra_calificable') = 2,
+  'la corrección disparó un aviso nuevo para la compradora restituida');
+
+-- (l) EL CONGELAMIENTO DE VERDAD: la reseña DEL VENDEDOR hacia el comprador
+-- registrado. A partir de aquí la venta no se toca más.
+insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas)
+values (:G::uuid, :H::uuid, :VENTA_ID, 5);
+
+select pg_temp.as_user(:G::uuid,
+  format('update public.listing_sales set comprador_id = %L where listing_id = %s',
+         :I::uuid, :VENTA_ID));
+select pg_temp.assert(
+  (select comprador_id from public.listing_sales where listing_id = :VENTA_ID) = :H::uuid,
+  'una vez que G calificó a H, la venta quedó congelada');
+
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges
@@ -1124,8 +1323,10 @@ select pg_temp.assert(
   and not has_function_privilege('authenticated', 'private.claim_push_token()', 'execute')
   and not has_function_privilege('authenticated', 'private.notify_price_drop()', 'execute')
   and not has_function_privilege('authenticated', 'private.notify_report_resolved()', 'execute')
-  and not has_function_privilege('authenticated', 'private.notify_push()', 'execute'),
-  'las 9 funciones que solo disparan por trigger siguen revocadas');
+  and not has_function_privilege('authenticated', 'private.notify_push()', 'execute')
+  and not has_function_privilege('authenticated',
+        'private.notify_compra_calificable()', 'execute'),
+  'las 10 funciones que solo disparan por trigger siguen revocadas');
 
 -- El webhook no puede quedar como un grant abierto sobre Vault: si
 -- `authenticated` pudiera leer `vault.decrypted_secrets`, la secret key del
@@ -1231,6 +1432,25 @@ select pg_temp.assert(
                   where grantee = 'authenticated' and table_schema = 'public'
                     and table_name = 'push_tokens' and privilege_type = 'UPDATE'),
   'push_tokens no tiene grant de UPDATE por ningún lado');
+
+-- Una venta registrada no se borra: deshacerla sería decir "no fue a través de
+-- Relevo" después del hecho, y para eso está la corrección del comprador. Y su
+-- UPDATE existe SOLO por columna — si alguien lo sube a nivel tabla, el vendedor
+-- puede reapuntar `listing_id` y mover la venta a otra publicación.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee = 'authenticated' and table_schema = 'public'
+                and table_name = 'listing_sales'
+                and privilege_type in ('DELETE','UPDATE'))
+  and exists (select 1 from information_schema.column_privileges
+              where grantee = 'authenticated' and table_schema = 'public'
+                and table_name = 'listing_sales' and column_name = 'comprador_id'
+                and privilege_type = 'UPDATE')
+  and not exists (select 1 from information_schema.column_privileges
+                  where grantee = 'authenticated' and table_schema = 'public'
+                    and table_name = 'listing_sales' and privilege_type = 'UPDATE'
+                    and column_name <> 'comprador_id'),
+  'listing_sales no se borra y solo se actualiza en la columna comprador_id');
 
 -- Todas las tablas de public tienen RLS activo.
 select pg_temp.assert(

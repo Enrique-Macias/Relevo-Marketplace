@@ -9,7 +9,7 @@
 
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { IconHeart, IconMail } from '@/components/icons';
+import { IconHeart, IconMail, IconStar } from '@/components/icons';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
 import { formatRelativo } from '@/lib/format';
 import type { Notificacion, TipoNotificacion } from '@/lib/notificaciones';
@@ -32,6 +32,13 @@ const ESTILO_POR_TIPO: Record<
     color: Colors.slate,
     fondo: Colors.slateTint,
     icono: (color) => <IconMail size={16} color={color} />,
+  },
+  // `--gold` porque es el color de las estrellas (`.rate-stars`), que es a
+  // donde lleva el tap: pasa por el Detalle, donde vive "Calificar al vendedor".
+  compra_calificable: {
+    color: Colors.gold,
+    fondo: Colors.goldTint,
+    icono: (color) => <IconStar size={16} color={color} filled />,
   },
 };
 
