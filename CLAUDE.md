@@ -1897,8 +1897,7 @@ Detalles que no se ven en el diff:
   `(tabs)/_layout.tsx` como hermano de `<NativeTabs>`, NO dentro de
   `perfil.tsx`** — ahí se pintaba pero no recibía el toque; ver el gotcha de §9
   antes de "acercarlo a su pantalla". El layout decide mostrarlo solo cuando
-  `usePathname() === '/perfil'`. El resto de la pantalla Perfil sigue siendo
-  placeholder.
+  `usePathname() === '/perfil'`.
 - **Asimetría declarada en Editar, no olvido:** su aviso es un toast (mismo
   `componerAviso()`, calculado una vez al terminar el intento en vez de en cada
   render), y por eso ahí el botón "Guardar" **no** se deshabilita en el caso
@@ -2017,14 +2016,8 @@ Feed/Búsqueda.
   punteada a DOS niveles de embed (`favorites → listing → fotos`), y no solo
   al nivel que ya usaba `fetchListings`.
 
-Lo que sigue siendo placeholder de Perfil: avatar, stats y el resto del
-`.menu-list`. Hoy tiene TRES afordances reales (cerrar sesión, "Mis
-publicaciones" y "Editar perfil") más el FAB de publicar. Las dos filas del menú
-van en el orden del frame, y `menuRowLast` —que quita la línea inferior— vive en
-la de abajo, no fija en "Mis publicaciones".
-
 **"Perfil público" construida y conectada.** Vista de solo lectura del perfil
-de OTRO usuario — distinta de "Perfil" (el propio, sigue siendo placeholder).
+de OTRO usuario — distinta de "Perfil" (el propio, ver su bloque más abajo).
 Vive en `src/app/(cuenta)/perfil-publico/[id].tsx`, con `src/lib/perfil-publico.ts`
 como capa de datos (`fetchPerfilPublico`, `fetchReviews`). Se entra desde el
 `.seller-card` de "Detalle de publicación", que hasta ahora tenía el chevron
