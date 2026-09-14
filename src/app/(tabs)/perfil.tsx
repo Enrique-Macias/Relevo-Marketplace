@@ -1,24 +1,139 @@
-import { router } from 'expo-router';
-import { useState } from 'react';
+/**
+ * "Perfil" (perfil propio) — última pantalla del grupo Cuenta.
+ *
+ * Reusa, para el propio usuario, la misma capa de datos que ya resolvió el
+ * bloque de avatar/nombre/rating para OTRO usuario en "Perfil público"
+ * (`fetchPerfilPublico`/`fetchReviews` de `src/lib/perfil-publico.ts`, sin
+ * modificar): la RLS de `users`/`ratings` (`using(true)`) ya permite leerlos
+ * con el propio id, así que no hace falta una segunda implementación.
+ *
+ * A diferencia de "Perfil público" (una ruta de Stack que remonta cada vez),
+ * este es un TAB que no se desmonta — por eso la carga de datos son DOS
+ * efectos: el `useEffect` que de verdad pide los datos (dispara también en el
+ * primer montaje) y un `useFocusEffect` aparte cuyo único trabajo es refrescar
+ * al volver de otra pantalla (Editar publicación, Mis publicaciones, Marcar
+ * como vendida, Favoritos pueden cambiar estos números mientras el tab sigue
+ * montado), saltando su propia primera invocación para no duplicar esa carga
+ * inicial.
+ */
+
+import { router, useFocusEffect } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ConfirmModal } from '@/components/ConfirmModal';
-import { IconChevronRight, IconLogout, IconPencil, IconTag } from '@/components/icons';
-import { Colors, ScreenPadding, Typography } from '@/constants/theme';
+import { ErrorState } from '@/components/ErrorState';
+import {
+  IconCheck,
+  IconCheckCircle,
+  IconChevronRight,
+  IconHelpCircle,
+  IconLogout,
+  IconPencil,
+  IconSettings,
+  IconStar,
+  IconTag,
+} from '@/components/icons';
+import { CategoryIcon } from '@/components/icons/categories';
+import { ListingPhoto } from '@/components/ListingPhoto';
+import { Screen } from '@/components/Screen';
+import { SectionHead } from '@/components/SectionHead';
+import { SkeletonPerfil } from '@/components/Skeleton';
+import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
+import { useExplorarState } from '@/lib/explorar-state';
+import { formatPrecio, iniciales } from '@/lib/format';
+import { fetchActivasVendedor, fetchMisListings, fetchVentasVendedor, type MiListing } from '@/lib/listings';
+import { fetchPerfilPublico, fetchReviews, type PerfilPublico, type Review } from '@/lib/perfil-publico';
+import { fetchFavoritosCount } from '@/lib/favoritos';
 import { useSession } from '@/lib/session';
 
-/**
- * Placeholder deliberado: la pantalla real "Perfil" (avatar, stats, el resto del
- * `.menu-list`) necesita datos que todavía no están conectados — es otra tarea.
- * Hoy tiene tres afordances reales: "Cerrar sesión", la entrada a "Mis
- * publicaciones" —que se agregó por necesidad: el Feed filtra
- * `estado = 'activa'`, así que sin ella una publicación pausada no era
- * alcanzable desde ninguna parte (CLAUDE.md §8)— y la de "Editar perfil", que es
- * la única forma de corregir el WhatsApp una vez publicado (RF-13) y el único
- * camino que escribe `carrera`.
- */
+const TINT_BG: Record<string, string> = {
+  brick: Colors.brickTint,
+  slate: Colors.slateTint,
+  gold: Colors.goldTint,
+  forest: Colors.forestTint,
+};
+
+const TINT_FG: Record<string, string> = {
+  brick: Colors.brick,
+  slate: Colors.slate,
+  gold: Colors.gold,
+  forest: Colors.forest,
+};
+
 export default function PerfilScreen() {
-  const { signOut } = useSession();
+  const { session, signOut } = useSession();
+  const userId = session?.user.id ?? null;
+
+  const [perfil, setPerfil] = useState<PerfilPublico | null>(null);
+  const [reviews, setReviews] = useState<{ items: Review[]; total: number }>({
+    items: [],
+    total: 0,
+  });
+  const [activas, setActivas] = useState(0);
+  const [vendidas, setVendidas] = useState(0);
+  const [favoritosCount, setFavoritosCount] = useState(0);
+  const [misListings, setMisListings] = useState<MiListing[]>([]);
+
+  // Mismo idioma que "Perfil público": contra qué id está lo cargado (o el
+  // error), en vez de una bandera booleana de loading.
+  const [cargadoPara, setCargadoPara] = useState<string | null>(null);
+  const [errorPara, setErrorPara] = useState<string | null>(null);
+  const [recargas, setRecargas] = useState(0);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    let vigente = true;
+
+    Promise.all([
+      fetchPerfilPublico(userId),
+      fetchReviews(userId),
+      fetchActivasVendedor(userId),
+      fetchVentasVendedor(userId),
+      fetchFavoritosCount(userId),
+      fetchMisListings({ userId, limit: 2 }),
+    ])
+      .then(([p, r, a, v, f, mis]) => {
+        if (!vigente) return;
+        setPerfil(p);
+        setReviews(r);
+        setActivas(a);
+        setVendidas(v);
+        setFavoritosCount(f);
+        setMisListings(mis.items);
+        setCargadoPara(userId);
+      })
+      .catch((e) => {
+        if (!vigente) return;
+        console.warn('[perfil] no se pudo cargar el perfil:', e?.message ?? e);
+        setErrorPara(userId);
+      });
+
+    return () => {
+      vigente = false;
+    };
+  }, [userId, recargas]);
+
+  /**
+   * Refresco al volver al tab — no al montar, eso ya lo cubre el efecto de
+   * arriba. Mismo patrón que `mis-publicaciones.tsx`.
+   */
+  const primerFoco = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (primerFoco.current) {
+        primerFoco.current = false;
+        return;
+      }
+      setRecargas((r) => r + 1);
+    }, [])
+  );
+
+  const estado: 'loading' | 'ready' | 'error' =
+    errorPara === userId ? 'error' : cargadoPara === userId ? 'ready' : 'loading';
+
   const [confirmando, setConfirmando] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
 
@@ -31,53 +146,144 @@ export default function PerfilScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Perfil</Text>
+    <>
+      <Screen>
+        <StatusBar style="dark" />
 
-      {/* `.menu-list` con DOS filas por ahora, en el orden del frame — las otras
-          dos (Verificación, Ayuda) llegan cuando se construya Perfil de verdad.
-          `last` en la de abajo: `.menu-row:last-child` no lleva línea inferior. */}
-      <View style={styles.menuList}>
-        <Pressable
-          style={styles.menuRow}
-          onPress={() => router.push('/mis-publicaciones')}
-          accessibilityRole="button"
-        >
-          <View style={styles.menuIcon}>
-            <IconTag size={16} color={Colors.inkSoft} />
-          </View>
-          <Text style={styles.menuLabel}>Mis publicaciones</Text>
-          <IconChevronRight size={14} color={Colors.inkSoft} />
-        </Pressable>
+        <View style={styles.top}>
+          <Text style={styles.wordmark}>Perfil</Text>
+          {/* Ajustes: sin pantalla en el inventario de 54 ni en product-spec.md. */}
+          <Pressable onPress={() => {}} accessibilityRole="button" hitSlop={12}>
+            <IconSettings size={20} color={Colors.ink} />
+          </Pressable>
+        </View>
 
-        <Pressable
-          style={[styles.menuRow, styles.menuRowLast]}
-          onPress={() => router.push('/editar-perfil')}
-          accessibilityRole="button"
-        >
-          <View style={styles.menuIcon}>
-            <IconPencil size={16} color={Colors.inkSoft} />
-          </View>
-          <Text style={styles.menuLabel}>Editar perfil</Text>
-          <IconChevronRight size={14} color={Colors.inkSoft} />
-        </Pressable>
-      </View>
+        {estado === 'error' ? (
+          <ErrorState
+            onRetry={() => {
+              setErrorPara(null);
+              setRecargas((n) => n + 1);
+            }}
+            title="No pudimos cargar tu perfil"
+            sub="Revisa tu conexión e intenta de nuevo."
+          />
+        ) : estado === 'loading' || !perfil ? (
+          <SkeletonPerfil />
+        ) : (
+          <>
+            <View style={styles.block}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{iniciales(perfil.nombre)}</Text>
+              </View>
+              <View style={styles.nameRow}>
+                <Text style={styles.name}>{perfil.nombre ?? ''}</Text>
+                {/* Decorativo: toda fila de `users` pasó por OTP — mismo
+                    criterio que "Perfil público" y Detalle. */}
+                <View style={styles.verifiedTick}>
+                  <IconCheck size={8} color={Colors.paper} />
+                </View>
+              </View>
+              <Text style={styles.sub}>
+                {perfil.carrera ? `${perfil.carrera} · ` : ''}
+                {perfil.universidadNombre ?? ''}
+              </Text>
+              {/* Sin reseñas, la fila entera desaparece: "0.0" se leería como
+                  una mala calificación, no como "sin historial" — mismo
+                  criterio que "Perfil público". */}
+              {reviews.total > 0 ? (
+                <View style={styles.rating}>
+                  <IconStar size={13} color={Colors.gold} filled />
+                  <Text style={styles.ratingText}>
+                    {perfil.ratingPromedio.toFixed(1)} · {reviews.total}{' '}
+                    {reviews.total === 1 ? 'calificación' : 'calificaciones'}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
 
-      <Pressable
-        style={styles.logoutRow}
-        onPress={() => setConfirmando(true)}
-        accessibilityRole="button"
-      >
-        <Text style={styles.logoutLabel}>Cerrar sesión</Text>
-      </Pressable>
+            <View style={styles.statRow}>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{activas}</Text>
+                <Text style={styles.statLabel}>Activas</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{vendidas}</Text>
+                <Text style={styles.statLabel}>Vendidos</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNum}>{favoritosCount}</Text>
+                <Text style={styles.statLabel}>Favoritos</Text>
+              </View>
+            </View>
 
-      {/*
-        El FAB de "Publicar" NO va aquí aunque el diseño lo dibuje sobre esta
-        pantalla: dentro del contenido de una pantalla de `NativeTabs` se pinta
-        pero no recibe el toque (CLAUDE.md §9). Vive en `(tabs)/_layout.tsx`
-        como hermano del navegador, y ese layout decide mostrarlo solo en
-        Perfil.
-      */}
+            {/* Sin publicaciones, la sección entera desaparece — mismo
+                criterio que el bloque de rating: no hay frame de "Perfil" con
+                0 publicaciones en el inventario de 54. */}
+            {misListings.length > 0 ? (
+              <>
+                <SectionHead
+                  title="Mis publicaciones"
+                  linkLabel="Ver todas"
+                  onPressLink={() => router.push('/mis-publicaciones')}
+                />
+                <View style={styles.grid}>
+                  <MiniListingCard item={misListings[0]} />
+                  {misListings[1] ? (
+                    <MiniListingCard item={misListings[1]} />
+                  ) : (
+                    // Conteo impar: la segunda celda queda vacía, no se
+                    // estira la primera — mismo criterio que Categoría/Búsqueda.
+                    <View style={styles.gridSpacer} />
+                  )}
+                </View>
+              </>
+            ) : null}
+
+            <View style={styles.menuList}>
+              <MenuRow
+                icon={<IconTag size={16} color={Colors.inkSoft} />}
+                label="Mis publicaciones"
+                onPress={() => router.push('/mis-publicaciones')}
+              />
+              <MenuRow
+                icon={<IconPencil size={16} color={Colors.inkSoft} />}
+                label="Editar perfil"
+                onPress={() => router.push('/editar-perfil')}
+              />
+              {/* Verificación: sin pantalla en el inventario de 54 ni en
+                  product-spec.md — mismo criterio que Compartir/Reportar/kebab
+                  en Detalle. */}
+              <MenuRow
+                icon={<IconCheckCircle size={16} color={Colors.inkSoft} />}
+                label="Verificación"
+                onPress={() => {}}
+              />
+              {/* Ayuda y soporte: idem. */}
+              <MenuRow
+                icon={<IconHelpCircle size={16} color={Colors.inkSoft} />}
+                label="Ayuda y soporte"
+                onPress={() => {}}
+              />
+              <MenuRow
+                icon={<IconLogout size={16} color={Colors.inkSoft} />}
+                label="Cerrar sesión"
+                onPress={() => setConfirmando(true)}
+                chevron={false}
+                last
+              />
+            </View>
+          </>
+        )}
+
+        {/*
+          El FAB de "Publicar" NO va aquí aunque el diseño lo dibuje sobre esta
+          pantalla: dentro del contenido de una pantalla de `NativeTabs` se pinta
+          pero no recibe el toque (CLAUDE.md §9). Vive en `(tabs)/_layout.tsx`
+          como hermano del navegador, y ese layout decide mostrarlo solo en
+          Perfil.
+        */}
+      </Screen>
+
       <ConfirmModal
         visible={confirmando}
         icon={<IconLogout size={22} color={Colors.brick} />}
@@ -88,27 +294,240 @@ export default function PerfilScreen() {
         onCancel={() => setConfirmando(false)}
         confirming={cerrandoSesion}
       />
-    </View>
+    </>
+  );
+}
+
+/** `.menu-row` — ícono + label + chevron opcional. */
+function MenuRow({
+  icon,
+  label,
+  onPress,
+  chevron = true,
+  last = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onPress: () => void;
+  chevron?: boolean;
+  last?: boolean;
+}) {
+  return (
+    <Pressable
+      style={[styles.menuRow, last && styles.menuRowLast]}
+      onPress={onPress}
+      accessibilityRole="button"
+    >
+      <View style={styles.menuIcon}>{icon}</View>
+      <Text style={styles.menuLabel}>{label}</Text>
+      {chevron ? <IconChevronRight size={14} color={Colors.inkSoft} /> : null}
+    </Pressable>
+  );
+}
+
+/**
+ * `.card` de la mini-grid "Mis publicaciones" del frame Perfil — PRIMERA vez
+ * que el diseño pinta `.sold-badge` sobre una tarjeta de grid (hasta ahora ese
+ * overlay solo vivía en la fila plana de `mis-publicaciones.tsx`). No se reusa
+ * `ProductCard`: esta tarjeta no lleva corazón, badge de condición ni meta de
+ * campus/fecha — su `.info` es solo precio+título.
+ */
+function MiniListingCard({ item }: { item: MiListing }) {
+  const { getCategoria } = useExplorarState();
+  const categoria = getCategoria(item.categoriaId);
+  const tint = categoria?.tint ?? 'brick';
+
+  return (
+    <Pressable style={styles.card} onPress={() => router.push(`/detalle/${item.id}`)}>
+      <View style={[styles.thumb, { backgroundColor: TINT_BG[tint] }]}>
+        <ListingPhoto
+          path={item.fotoPath}
+          fallback={<CategoryIcon categoriaId={categoria?.slug ?? ''} size={30} color={TINT_FG[tint]} />}
+          style={styles.foto}
+          accessibilityLabel={item.titulo}
+        />
+        {item.estado === 'vendida' ? (
+          <View style={styles.soldBadge}>
+            <Text style={styles.soldBadgeText}>Vendido</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.info}>
+        <Text style={styles.price}>{formatPrecio(item.precio)}</Text>
+        <Text style={styles.title} numberOfLines={1}>
+          {item.titulo}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  // .profile-top{display:flex; align-items:center; justify-content:space-between; padding:16px 20px 0;}
+  top: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 24,
-    backgroundColor: Colors.paper,
+    justifyContent: 'space-between',
+    paddingHorizontal: ScreenPadding,
+    paddingTop: 16,
   },
-  text: {
-    ...Typography.pageHeading,
+  // .wordmark con el override inline `font-size:20px` del frame "Perfil".
+  wordmark: {
+    ...Typography.profileWordmark,
     color: Colors.ink,
   },
-  // .menu-list{padding:2px 20px 100px;} — el padding inferior no aplica aquí,
-  // donde la lista está centrada en un placeholder y no al final de la pantalla.
-  menuList: {
-    alignSelf: 'stretch',
+  // .profile-block{display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 20px 20px;}
+  block: {
+    alignItems: 'center',
     paddingHorizontal: ScreenPadding,
+    paddingTop: 12,
+    paddingBottom: 20,
+  },
+  // .profile-avatar{width:76px; height:76px; border-radius:50%; background:forest-tint; margin-bottom:12px;}
+  avatar: {
+    width: 76,
+    height: 76,
+    borderRadius: Radii.full,
+    backgroundColor: Colors.forestTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  avatarText: {
+    ...Typography.profileAvatarInitials,
+    color: Colors.forest,
+  },
+  // .profile-name-row{display:flex; align-items:center; gap:6px;}
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  name: {
+    ...Typography.profileName,
+    color: Colors.ink,
+  },
+  verifiedTick: {
+    width: 14,
+    height: 14,
+    borderRadius: Radii.full,
+    backgroundColor: Colors.forest,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // .profile-sub{font-size:12.5px; margin-top:4px;}
+  sub: {
+    ...Typography.meta,
+    color: Colors.inkSoft,
+    marginTop: 4,
+  },
+  // .profile-rating{display:flex; align-items:center; gap:5px; margin-top:9px;}
+  rating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 9,
+  },
+  ratingText: {
+    ...Typography.meta,
+    color: Colors.inkSoft,
+  },
+  // .stat-row{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:0 20px 22px;}
+  statRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: ScreenPadding,
+    paddingBottom: 22,
+  },
+  // .stat-card{background:card; border:1px solid line; border-radius:14px; padding:13px 6px; text-align:center;}
+  statCard: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    borderRadius: Radii.lg,
+    paddingVertical: 13,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+  },
+  statNum: {
+    ...Typography.price,
+    color: Colors.ink,
+  },
+  statLabel: {
+    ...Typography.statLabel,
+    color: Colors.inkSoft,
+    marginTop: 3,
+  },
+  // .grid{display:grid; grid-template-columns:repeat(2,1fr); gap:12px; padding:0 20px 20px;}
+  // — el `padding-bottom:20px` inline del frame Perfil, no los 90 del Feed:
+  // aquí sigue el `.menu-list`, no el fondo de la pantalla.
+  grid: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: ScreenPadding,
+    paddingBottom: 20,
+  },
+  gridSpacer: {
+    flex: 1,
+  },
+  // Mismo `.card` que ProductCard, sin corazón/badge/meta.
+  card: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderRadius: Radii.xl,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    overflow: 'hidden',
+  },
+  thumb: {
+    width: '100%',
+    aspectRatio: 4 / 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  foto: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  // .sold-badge{position:absolute; inset:0; background:rgba(34,31,28,0.55);}
+  soldBadge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(34,31,28,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  soldBadgeText: {
+    ...Typography.caption,
+    color: '#FFFFFF',
+    letterSpacing: 0.33,
+  },
+  info: {
+    paddingTop: 11,
+    paddingHorizontal: 12,
+    paddingBottom: 13,
+  },
+  price: {
+    ...Typography.price,
+    color: Colors.ink,
+    marginBottom: 5,
+  },
+  title: {
+    ...Typography.bodyStrong,
+    color: Colors.ink,
+  },
+  // .menu-list{padding:2px 20px 100px;}
+  menuList: {
+    paddingTop: 2,
+    paddingHorizontal: ScreenPadding,
+    paddingBottom: 100,
   },
   // .menu-row{display:flex; align-items:center; gap:12px; padding:13px 0; border-bottom:1px solid var(--line);}
   menuRow: {
@@ -139,13 +558,5 @@ const styles = StyleSheet.create({
     ...Typography.rowLabel,
     color: Colors.ink,
     flex: 1,
-  },
-  logoutRow: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-  },
-  logoutLabel: {
-    ...Typography.emphasis,
-    color: Colors.brick,
   },
 });

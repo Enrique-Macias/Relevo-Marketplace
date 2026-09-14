@@ -27,6 +27,23 @@ export async function fetchFavoritoIds(userId: string): Promise<number[]> {
   return (data ?? []).map((f) => f.listing_id);
 }
 
+/**
+ * Conteo de favoritos, para el stat-card "Favoritos" del frame "Perfil".
+ * `head:true` no trae filas, solo el total — mismo patrón que
+ * `fetchActivasVendedor`/`fetchVentasVendedor` en `listings.ts`. Solo sirve
+ * para el propio usuario: la RLS de `favorites` es `user_id = auth.uid()`.
+ */
+export async function fetchFavoritosCount(userId: string): Promise<number> {
+  // `favorites` no tiene columna `id` — su PK es compuesta (user_id, listing_id).
+  const { count, error } = await supabase
+    .from('favorites')
+    .select('listing_id', { count: 'exact', head: true })
+    .eq('user_id', userId);
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function agregarFavorito(listingId: number, userId: string): Promise<void> {
   // `ignoreDuplicates` emite ON CONFLICT DO NOTHING, no DO UPDATE. La distinción
   // importa: `favorites` no tiene grant de UPDATE ni policy de update, así que

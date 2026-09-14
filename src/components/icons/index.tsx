@@ -529,3 +529,25 @@ export function IconStar({ size, color, filled }: IconProps & { filled?: boolean
     </Svg>
   );
 }
+
+// `.profile-top` del frame "Perfil" — engrane de ajustes. Sin destino: no hay
+// pantalla de ajustes en el inventario de 54 pantallas.
+export function IconSettings({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8}>
+      <Circle cx={12} cy={12} r={3} />
+      <Path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.04 1.56V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1.04-1.56 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.56-1.04H3a2 2 0 110-4h.09a1.7 1.7 0 001.56-1.04 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001.04-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.04 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.56 1.04H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.04z" />
+    </Svg>
+  );
+}
+
+// `.menu-icon` de "Ayuda y soporte" (frame Perfil) — círculo de info, distinto
+// de `IconAlertCircle` (que dibuja la variante de exclamación, `M12 9v4`).
+export function IconHelpCircle({ size, color }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8}>
+      <Circle cx={12} cy={12} r={9} />
+      <Path d="M12 16v-4M12 8h.01" />
+    </Svg>
+  );
+}

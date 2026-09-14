@@ -104,6 +104,7 @@ export const Typography = {
     lineHeight: 27.6, // 24 × 1.15
   }, // .hero-headline
   wordmark: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 24 }, // .wordmark
+  profileWordmark: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 20 }, // .wordmark con el override inline `font-size:20px` del frame "Perfil" — mismo valor numérico que `otp` (display/600/20), pero rol distinto: son clases CSS distintas (`.wordmark` vs `.otp-box`) que podrían escalar por separado.
   headline: { fontFamily: face(Fonts.display, FontWeights.medium), fontSize: 22 }, // .auth-headline, .onboard-headline
   logoMark: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 22 }, // .auth-logo span
   rateAvatarInitials: { fontFamily: face(Fonts.display, FontWeights.semibold), fontSize: 22 }, // .rate-avatar (Calificar) — MISMOS valores que `logoMark`, pero otro rol: aquel es el cuadro de la "R" en auth. Si el avatar de Calificar cambia de escala, se cambia aquí y no allá.

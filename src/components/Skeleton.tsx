@@ -162,6 +162,56 @@ export function SkeletonPerfilForm({ campos = 5 }: { campos?: number }) {
   );
 }
 
+/**
+ * "Perfil" (perfil propio) mientras carga: avatar+nombre centrados, el
+ * stat-row de 3 cajas, la mini-grid de 2 tarjetas y las 5 filas del menú.
+ *
+ * Cuarto hermano de `SkeletonRows`/`SkeletonNotifRows`/`SkeletonPerfilForm`,
+ * mismo motivo de siempre: la forma que anticipa (círculo centrado + 3 cajas
+ * de stat + 2 tarjetas de grid + 5 filas de menú) no es la de ninguno de los
+ * otros tres. Las piezas de tarjeta (`card`/`skThumb`/`cardInfo`/`skLine`/
+ * `skPrice`/`skTitle`) se reusan tal cual de `SkeletonGrid`: es el mismo
+ * `.card` de producto, solo que aquí siempre son 2, nunca una fila completa.
+ */
+export function SkeletonPerfil() {
+  return (
+    <View>
+      <View style={styles.perfilBlock}>
+        <SkeletonPiece style={styles.skProfileAvatar} />
+        <SkeletonPiece style={[styles.skLine, styles.skProfileName]} />
+        <SkeletonPiece style={[styles.skLine, styles.skProfileSub]} />
+      </View>
+
+      <View style={styles.perfilStatRow}>
+        {[0, 1, 2].map((i) => (
+          <SkeletonPiece key={i} style={styles.skStatCard} />
+        ))}
+      </View>
+
+      <View style={styles.perfilGrid}>
+        {[0, 1].map((i) => (
+          <View key={i} style={styles.card}>
+            <SkeletonPiece style={styles.skThumb} />
+            <View style={styles.cardInfo}>
+              <SkeletonPiece style={[styles.skLine, styles.skPrice]} />
+              <SkeletonPiece style={[styles.skLine, styles.skTitle]} />
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.perfilMenu}>
+        {Array.from({ length: 5 }).map((_, i) => (
+          <View key={i} style={styles.perfilMenuRow}>
+            <SkeletonPiece style={styles.skMenuIcon} />
+            <SkeletonPiece style={[styles.skLine, styles.skMenuLabel]} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   // .skeleton{border-radius:8px;} — el gradiente se traduce a color base + pulso.
   piece: {
@@ -329,5 +379,74 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 44,
     borderRadius: Radii.lg,
+  },
+  // .profile-block{padding:12px 20px 20px; align-items:center;}
+  perfilBlock: {
+    alignItems: 'center',
+    paddingTop: 12,
+    paddingHorizontal: ScreenPadding,
+    paddingBottom: 20,
+  },
+  // .profile-avatar{width:76px; height:76px; border-radius:50%; margin-bottom:12px;}
+  skProfileAvatar: {
+    width: 76,
+    height: 76,
+    borderRadius: Radii.full,
+    marginBottom: 12,
+  },
+  // .profile-name{font-size:17px;} — ancho aproximado de "Enrique M.".
+  skProfileName: {
+    width: 110,
+    height: 14,
+  },
+  // .profile-sub{font-size:12.5px; margin-top:4px;} — "Carrera · Universidad".
+  skProfileSub: {
+    width: 180,
+    height: 10,
+    marginBottom: 0,
+  },
+  // .stat-row{gap:10px; padding:0 20px 22px;} .stat-card{padding:13px 6px; border-radius:14px;}
+  perfilStatRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: ScreenPadding,
+    paddingBottom: 22,
+  },
+  skStatCard: {
+    flex: 1,
+    height: 54,
+    borderRadius: Radii.lg,
+  },
+  // .grid del bloque "Mis publicaciones" del frame Perfil: `padding-bottom:20px`,
+  // no los 90 del Feed (aquí sigue el menú, no el fondo de pantalla).
+  perfilGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: ScreenPadding,
+    paddingBottom: 20,
+  },
+  // .menu-list{padding:2px 20px 100px;}
+  perfilMenu: {
+    paddingTop: 2,
+    paddingHorizontal: ScreenPadding,
+    paddingBottom: 100,
+  },
+  // .menu-row{gap:12px; padding:13px 0;}
+  perfilMenuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 13,
+  },
+  // .menu-icon{width:34px; height:34px; border-radius:10px;}
+  skMenuIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+  },
+  skMenuLabel: {
+    width: '45%',
+    height: 10,
+    marginBottom: 0,
   },
 });

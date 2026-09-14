@@ -1917,8 +1917,8 @@ Detalles que no se ven en el diff:
   pantalla rebota con su guard, así que "Cambiar comprador" nunca llega a pintarse
   en Editar. Se ofrece desde Detalle y desde la hoja de "Mis publicaciones".
 
-**Cuenta — 7 de 8 pantallas, las de "Mis publicaciones", "Favoritos",
-"Perfil público" y "Editar perfil", construidas y conectadas.** Las de "Mis publicaciones" se hicieron por
+**Cuenta — 8 de 8 pantallas construidas y conectadas: grupo completo.** Las de
+"Mis publicaciones" se hicieron por
 necesidad, no por avanzar el grupo: conectar
 Publicar dejó la app en un estado donde pausar una publicación la volvía
 inalcanzable (el Feed filtra `estado = 'activa'`), y lo mismo pasaba con una que
@@ -2180,6 +2180,86 @@ aunque `tsc` pasara — por eso van con `type` tanto el re-export como el `impor
 distinto de `ItemCatalogo` (`src/components/SelectorCatalogo.tsx`), que lleva
 `subtitulo` y es el del selector, no el del borrador.
 
+**"Perfil" (el propio) construida y conectada — cierra el grupo Cuenta (8/8).**
+Vive en `src/app/(tabs)/perfil.tsx`, sin ningún archivo nuevo de datos: reusa
+`fetchPerfilPublico`/`fetchReviews` (`src/lib/perfil-publico.ts`, SIN
+modificar) para el bloque de avatar/nombre/rating, y
+`fetchActivasVendedor`/`fetchVentasVendedor` (`src/lib/listings.ts`) para dos
+de los tres stat-cards — las cuatro llamadas con el propio `session.user.id`.
+La única función nueva es `fetchFavoritosCount` en `src/lib/favoritos.ts`.
+
+Seis cosas que no se ven en el diff:
+
+- **Reusar `fetchPerfilPublico`/`fetchReviews` para el propio usuario no es un
+  atajo improvisado: la RLS ya lo permitía.** `users_select` y `ratings_select`
+  son `using (true)` — la misma razón por la que "Perfil público" puede leer a
+  un DESCONOCIDO ya cubre leerse a uno mismo. Eso da gratis `universidadNombre`
+  (que `PROFILE_COLUMNS` de `session.tsx` no trae, solo `universidad_id`) sin
+  agregar ningún join a la sesión global.
+- **`favorites` no tiene columna `id`** — su PK es compuesta
+  (`user_id, listing_id`), a diferencia de `listings`, sobre la que sí corren
+  `fetchActivasVendedor`/`fetchVentasVendedor` con `select('id', {head:true})`.
+  Copiar ese mismo patrón a ciegas sobre `favorites` habría fallado: la primera
+  versión de `fetchFavoritosCount` seleccionaba `id` y se corrigió a
+  `listing_id` (`count:'exact', head:true` sobre la columna que sí existe) antes
+  de correr nada. Solo sirve para el propio usuario: la RLS de `favorites` es
+  `user_id = auth.uid()`.
+- **Son DOS efectos de carga, no uno — a diferencia de "Perfil público", al que
+  le basta un solo `useEffect`.** Aquella es una ruta de Stack que REMONTA cada
+  vez que se navega a ella, así que un solo efecto en `[id, recargas]` alcanza.
+  "Perfil" es un TAB que nunca se desmonta mientras la sesión sigue activa, así
+  que necesita el mismo patrón de dos piezas que ya usa `mis-publicaciones.tsx`:
+  el `useEffect` en `[userId, recargas]` que de verdad pide los datos (y que SÍ
+  dispara en el primer montaje, porque `recargas` arranca en 0) más un
+  `useFocusEffect` aparte cuyo único trabajo es `setRecargas((r) => r + 1)` en
+  cada foco POSTERIOR al primero — con un `useRef` que salta esa primera
+  invocación a propósito, para no disparar una segunda carga sobre el mismo
+  montaje que el primer efecto ya cubrió. Sin el segundo efecto, volver del tab
+  Favoritos o de Editar publicación dejaría los números y la mini-grid
+  desactualizados hasta cerrar y reabrir la app.
+- **`MiniListingCard` no reusa `ProductCard`, y no es evitar una prop.** El
+  frame de Perfil es la PRIMERA vez que el diseño pinta `.sold-badge` sobre una
+  tarjeta de GRID — hasta ahora ese overlay solo existía en la fila plana de
+  `MiListingRow` (`mis-publicaciones.tsx`), y esta misma sección documenta que
+  `ProductCard` no tiene ese estado a propósito (Favoritos, arriba, filtra las
+  vendidas en vez de pintarlas por esa razón). No es una invención: el frame
+  dibuja la tarjeta con `.info` reducido a solo precio+título —sin corazón, sin
+  badge de condición, sin meta de campus/fecha—, así que es una tarjeta más
+  simple que `ProductCard`, no una variante suya. Se construyó como componente
+  LOCAL a `perfil.tsx` (un solo consumidor), copiando el patrón de
+  `ListingPhoto` + `CategoryIcon` de fallback + overlay `.sold-badge` que ya
+  existía en `MiListingRow`.
+- **Sin publicaciones, la sección "Mis publicaciones" desaparece entera** —
+  mismo criterio que el bloque de rating en 0 (`reviews.total === 0`): no hay
+  frame de "Perfil" con 0 publicaciones en el inventario de 54, así que se seguía
+  un patrón ya existente en esta misma pantalla en vez de inventar uno. Con
+  exactamente 1 publicación, la segunda celda del grid queda vacía (`flex:1` sin
+  contenido) en vez de estirar la primera — mismo criterio de conteo impar que
+  Categoría/Búsqueda.
+- **"Cerrar sesión" se corrigió al construir esta pantalla, no solo se movió.**
+  El placeholder la pintaba FUERA de `.menu-list`, en `Typography.emphasis`/
+  `Colors.brick` (una fila roja aparte). El frame no le da ningún tratamiento
+  especial: es la fila 5 de `.menu-list`, mismo `.menu-icon`/`.menu-label` que
+  las otras cuatro, sin chevron (es una acción terminal, no navegación) y sin
+  color de alerta. Eso se corrigió aquí porque era la primera vez que se
+  construía la pantalla real contra el frame — no un cambio de comportamiento
+  fuera de alcance.
+  "Verificación" y "Ayuda y soporte" —sin pantalla propia en el inventario de
+  54 ni en `product-spec.md`— y el engrane de `.profile-top` (ajustes) quedan
+  inertes con el mismo patrón ya usado en Detalle para Compartir/Reportar/kebab:
+  `onPress={() => {}}` con un comentario de una línea, no un `View` sin
+  `accessibilityRole` — esa fila SÍ es un control que algún día podría hacer
+  algo, a diferencia del círculo de foto de "Editar perfil"/"Completar perfil".
+
+Componentes nuevos: `SkeletonPerfil` (círculo 76 + 3 cajas de stat + 2 tarjetas
+de grid + 5 filas de menú — cuarto hermano de `SkeletonRows`/
+`SkeletonNotifRows`/`SkeletonPerfilForm`, mismo motivo de siempre), `IconSettings`
+e `IconHelpCircle` (el segundo, distinto de `IconAlertCircle`: círculo + `M12
+16v-4M12 8h.01`, no la variante de exclamación), y un rol de `Typography`,
+`profileWordmark` (`.wordmark` con el override inline `font-size:20px` del
+frame "Perfil" — mismo valor numérico que `otp`, pero rol separado a propósito,
+mismo criterio que `campusChip`/`buttonWhatsapp`).
+
 **Notificaciones — construido y conectado (RF-16).** Las 2 pantallas del grupo
 (el inbox y su vacío) viven en `src/app/(notificaciones)/notificaciones.tsx`, con
 `src/lib/notificaciones.ts` como capa de datos y `src/lib/push.ts` como el único
@@ -2330,7 +2410,7 @@ Detalles que no se ven en el diff:
   estrellas: lo opcional es el comentario, no el puntaje (`estrellas` es
   `not null check (between 1 and 5)`).
 
-Del grupo Cuenta sigue sin construir *Perfil* (el propio, todavía placeholder).
+El grupo Cuenta está completo (8/8).
 **Sistema** tiene las 3 piezas que Explorar necesitó (arriba) más "Confirmar
 eliminar", cableado con `ConfirmModal` + `DangerButton` tanto en Editar
 publicación como en Mis publicaciones.
