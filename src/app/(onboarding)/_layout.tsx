@@ -11,7 +11,13 @@
 import { Stack } from 'expo-router';
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
-export type OpcionCatalogo = { id: number; nombre: string };
+import { type OpcionCatalogo } from '@/lib/catalogos';
+
+// Vive en `src/lib/catalogos.ts` desde que "Editar perfil" estrenó el segundo
+// borrador que elige universidad/campus: dos definiciones idénticas con el mismo
+// nombre en dos módulos distintos era una invitación a que se separaran. Se
+// re-exporta para no cambiar la superficie de este layout.
+export type { OpcionCatalogo };
 
 type Draft = {
   correo: string;

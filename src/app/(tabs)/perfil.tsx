@@ -3,17 +3,19 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ConfirmModal } from '@/components/ConfirmModal';
-import { IconChevronRight, IconLogout, IconTag } from '@/components/icons';
+import { IconChevronRight, IconLogout, IconPencil, IconTag } from '@/components/icons';
 import { Colors, ScreenPadding, Typography } from '@/constants/theme';
 import { useSession } from '@/lib/session';
 
 /**
  * Placeholder deliberado: la pantalla real "Perfil" (avatar, stats, el resto del
  * `.menu-list`) necesita datos que todavía no están conectados — es otra tarea.
- * Hoy solo tiene dos afordances reales: "Cerrar sesión" y la entrada a "Mis
- * publicaciones", que se agregó por necesidad — el Feed filtra
+ * Hoy tiene tres afordances reales: "Cerrar sesión", la entrada a "Mis
+ * publicaciones" —que se agregó por necesidad: el Feed filtra
  * `estado = 'activa'`, así que sin ella una publicación pausada no era
- * alcanzable desde ninguna parte (CLAUDE.md §8).
+ * alcanzable desde ninguna parte (CLAUDE.md §8)— y la de "Editar perfil", que es
+ * la única forma de corregir el WhatsApp una vez publicado (RF-13) y el único
+ * camino que escribe `carrera`.
  */
 export default function PerfilScreen() {
   const { signOut } = useSession();
@@ -32,13 +34,12 @@ export default function PerfilScreen() {
     <View style={styles.container}>
       <Text style={styles.text}>Perfil</Text>
 
-      {/* `.menu-list` con UNA sola fila por ahora — las otras tres del frame
-          (Editar perfil, Verificación, Ayuda) llegan cuando se construya Perfil
-          de verdad. `last` porque hoy es la única: `.menu-row:last-child` no
-          lleva línea inferior. */}
+      {/* `.menu-list` con DOS filas por ahora, en el orden del frame — las otras
+          dos (Verificación, Ayuda) llegan cuando se construya Perfil de verdad.
+          `last` en la de abajo: `.menu-row:last-child` no lleva línea inferior. */}
       <View style={styles.menuList}>
         <Pressable
-          style={[styles.menuRow, styles.menuRowLast]}
+          style={styles.menuRow}
           onPress={() => router.push('/mis-publicaciones')}
           accessibilityRole="button"
         >
@@ -46,6 +47,18 @@ export default function PerfilScreen() {
             <IconTag size={16} color={Colors.inkSoft} />
           </View>
           <Text style={styles.menuLabel}>Mis publicaciones</Text>
+          <IconChevronRight size={14} color={Colors.inkSoft} />
+        </Pressable>
+
+        <Pressable
+          style={[styles.menuRow, styles.menuRowLast]}
+          onPress={() => router.push('/editar-perfil')}
+          accessibilityRole="button"
+        >
+          <View style={styles.menuIcon}>
+            <IconPencil size={16} color={Colors.inkSoft} />
+          </View>
+          <Text style={styles.menuLabel}>Editar perfil</Text>
           <IconChevronRight size={14} color={Colors.inkSoft} />
         </Pressable>
       </View>

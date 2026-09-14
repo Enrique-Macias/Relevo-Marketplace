@@ -144,7 +144,7 @@ Tipografía — dos familias, uso deliberado y separado:
 Ya implementado en `src/constants/theme.ts`: `Colors`, `Fonts`, `FontWeights`
 (400/500/600, todos sí se usan — no asumas que la UI evita el regular),
 `Radii` (8/12/14/16/20/9999, más el 10px de `.menu-icon`/`.status-row-icon`
-que quedó fuera del token original), `Typography` (46 roles por nombre
+que quedó fuera del token original), `Typography` (47 roles por nombre
 semántico — medido con `awk` sobre el objeto en `theme.ts`, no de memoria: si
 este número discrepa del archivo, gana el archivo — cada uno citando la clase
 CSS exacta de origen — incluye `.avatar`/`.seller-avatar` en weight 600, ojo si
@@ -161,6 +161,14 @@ Y un CUARTO valor cercano a ese par, con "Perfil público": `profileAvatarInitia
 `rateAvatarInitials`/`logoMark`, y el más fácil de los tres de confundir porque
 "parece" el mismo valor a simple vista. Si el avatar de Perfil público cambia de
 escala, se cambia ahí y en ningún otro rol de este grupo.
+
+Y un QUINTO, el peor de todos, con "Editar perfil": `editAvatarInitials` es
+**body**/600/22. Comparte la CLASE con `sellerAvatarInitials` —los dos son
+`.seller-avatar`, pero el frame de Editar perfil le pone un `font-size:22px`
+inline encima de los 14 de la clase— y comparte el TAMAÑO con
+`rateAvatarInitials`/`logoMark`, que son 22 pero en fuente **display**. O sea que
+se confunde por los dos lados a la vez y no coincide del todo con ninguno: es el
+único del racimo en body a 22.
 
 Dos de esos roles son de la fila de notificación y se parecen a otros que ya
 existían, así que conviene no confundirlos: `notifTime` es 10.5 **regular**
@@ -1063,9 +1071,11 @@ y solo al final las convenciones genéricas de los skills.
   - **El campo NO se agregó a "Completar perfil"**, ni siquiera como opcional:
     un comprador lo saltaría, así que el gate de Publicar tendría que existir
     igual, y a cambio costaba tres frames más estado nuevo en el borrador de
-    onboarding. Su casa es "Editar perfil" (Fase b, sin construir todavía);
-    el frame de diseño YA lo tiene, adelantado a propósito para no hacer dos
-    pasadas al HTML.
+    onboarding. Su casa es "Editar perfil", cuyo frame YA lo tenía —adelantado a
+    propósito para no hacer dos pasadas al HTML— y que **ya está construida**
+    (§8b, grupo Cuenta): ahí el número se precarga por la misma RPC
+    `seller_whatsapp` y se edita, que es lo que por fin le da salida a quien ya
+    publicó con un número equivocado.
   - **El chequeo de suspensión vive en la RPC**, y ese es el único lugar donde
     esa regla se cumple — ver §3, que explica por qué `listing_contacts` no
     alcanzaba. Desde `20260911000449` valida las **dos** puntas: ni un
@@ -1188,6 +1198,38 @@ y solo al final las convenciones genéricas de los skills.
 
 **Deuda consciente — con disparador de revisión, no "algún día":**
 
+- **La foto de perfil sigue sin poder subirse, y desde "Editar perfil" ya no es
+  "fuera de alcance del onboarding" sino deuda con disparador.** Las dos
+  pantallas que la dibujan —"Completar perfil" y "Editar perfil"— pintan el
+  `.photo-upload-circle` con su `.cam-badge` y **ninguna de las dos responde al
+  toque**: son `View`, no `Pressable`, y sin `accessibilityRole="button"`, para
+  no anunciar como botón algo que no hace nada. `users.foto_url` existe desde la
+  migración inicial y **nadie la escribe ni la lee** (el avatar se dibuja siempre
+  con iniciales). Lo que falta NO es el picker —`elegirFotos()`/`normalizar()` de
+  `src/lib/foto-picker.ts` sirven igual— sino un **bucket propio**: el de
+  `listing-photos` no se puede prestar, porque sus cuatro policies autorizan por
+  carpeta `{listing_id}/` contra el dueño de una publicación, y un avatar no tiene
+  publicación. **Revisar cuando:** se pida de verdad, o cuando el avatar de
+  iniciales se vuelva un problema de confianza entre desconocidos. **Fix:** bucket
+  `avatars` (¿público o privado? — si es privado, todo lo que pinte un avatar pasa
+  por `ListingPhoto`-style con header `Authorization`), sus policies espejo
+  acotadas a `{user_id}/`, su bloque en la suite, y `foto_url` escrito desde estas
+  dos pantallas. Va en su propio plan por fases chicas (§6).
+- **La base no ata `users.campus_id` a `users.universidad_id`, y quien sostiene
+  esa coherencia es el cliente — ahora en DOS lugares.** No hay FK compuesta ni
+  `check` que impida guardar un campus de otra universidad: son dos FKs sueltas
+  (`20260906000438_users_profiles.sql:11-12`). Lo que lo evita es la línea que
+  limpia el campus al cambiar de universidad, que vivía solo en
+  `(onboarding)/_layout.tsx` y ahora también en
+  `(cuenta)/editar-perfil/_layout.tsx`. Es pre-existente —esta pantalla no lo
+  introdujo, solo lo duplicó— y es el mismo tipo de acoplamiento que §3 documenta
+  para `congelada()` ↔ el `using` de `listing_sales_update_seller`: dos copias de
+  una regla que al desincronizarse no dan ningún error, solo dejan un perfil
+  incoherente. **Revisar cuando:** aparezca un TERCER escritor de ese par, o se
+  vea en remoto una fila de `users` con un campus que no es de su universidad.
+  **Fix:** `unique (universidad_id, id)` en `campus` + FK compuesta desde `users`
+  —un `check` con subconsulta no es legal en Postgres—, con su aserción en la
+  suite; de paso vuelve imposible el caso en vez de improbable.
 - **`ErrorState` promete "Reintentar" aunque no haya nada que reintentar.** Su
   `PrimaryButton` lleva el label hardcodeado (`ErrorState.tsx:37`), sin prop para
   cambiarlo, así que el guard de `esDueno` de `editar/[id].tsx` dice "Reintentar"
@@ -1291,7 +1333,10 @@ y solo al final las convenciones genéricas de los skills.
   guarda en E.164, o sea que el costo futuro es acotado. **Revisar cuando:** se
   abra la app a una universidad fuera de México. **Fix:** alterar el `check` +
   agregar el selector de país a los frames de "Publicar (falta teléfono)" y
-  "Editar perfil" (el segundo ya tiene el campo, le faltaría el selector).
+  "Editar perfil" (los dos ya están construidos y ya tienen el campo; les
+  faltaría el selector). Del lado del código es **un solo sitio**: las dos
+  pantallas montan el mismo `PhoneField`, así que el `+52` inerte vive una sola
+  vez — lo caro es el `check` de la base y los frames, no el componente.
 - **El teléfono es no-enumerable-en-bloque, no inaccesible.** `seller_whatsapp`
   evita que un autenticado se baje el directorio entero en un request, que es lo
   que pide RNF-05 — pero `users.id` sí está en el grant de select, así que un
@@ -1393,8 +1438,10 @@ notificaciones" ya pide el permiso REAL** y registra el token (RF-16): el botón
 llama a `registrarPushToken()` y entra al Feed pase lo que pase, incluso si el
 usuario dice que no — es el último paso del onboarding y atorarlo ahí sería
 absurdo. Sin conectar todavía, fuera de alcance por decisión explícita:
-`recuperar-password.tsx` (necesita deep linking), `expo-image-picker` para la
-foto de perfil, íconos nativos de los 4 triggers de `NativeTabs` (siguen siendo
+`recuperar-password.tsx` (necesita deep linking), la subida de la foto de perfil
+—que dejó de ser "pendiente del onboarding" y pasó a deuda con disparador en §8,
+porque "Editar perfil" dibuja el mismo círculo inerte y lo que falta es un bucket,
+no el picker—, íconos nativos de los 4 triggers de `NativeTabs` (siguen siendo
 solo texto).
 
 **Explorar — construido y conectado a Supabase real.** Las 11 pantallas
@@ -1455,6 +1502,18 @@ Detalles que no se ven en el diff:
   (`(tabs)/index.tsx`), vía el `refreshControl` de `Screen`. Categorías y
   campus activo no se refrescan con el gesto — no cambian dentro de una
   sesión y no tienen refetch expuesto hoy.
+- **`campusSeleccionado` sigue al campus DEL PERFIL cuando ese cambia, pero no
+  pisa la elección del selector del Feed** — y esas dos cosas se distinguen con
+  un `ref` (`campusPerfilAplicado`), no con el estado. El efecto que carga el
+  catálogo puede volver a correr por dos razones opuestas: si es una recarga con
+  el mismo campus de perfil, hay que respetar lo que el usuario haya elegido en
+  el bottom sheet (eso es lo que protege el `return actual`); si el campus del
+  PERFIL cambió —solo pasa en "Editar perfil"—, hay que reapuntar, o el Feed se
+  queda en el campus viejo el resto de la sesión aunque el usuario acabe de
+  mudarse. Cambiar de UNIVERSIDAD nunca necesitó esto: el campus viejo ya no
+  aparece en la lista nueva y cae solo. Lo que NO se toca son las publicaciones
+  ya creadas, que conservan su `campus_id` del insert — eso es correcto, no un
+  efecto que haya que compensar.
 - **El hero de Detalle es un CARRUSEL, y su visor a pantalla completa es un
   `Modal`, no una ruta.** Las fotos siempre estuvieron completas en
   `fetchListingById()` (`fotos: string[]`, ordenadas por `orden`); lo que
@@ -1858,8 +1917,8 @@ Detalles que no se ven en el diff:
   pantalla rebota con su guard, así que "Cambiar comprador" nunca llega a pintarse
   en Editar. Se ofrece desde Detalle y desde la hoja de "Mis publicaciones".
 
-**Cuenta — 6 de 8 pantallas, las de "Mis publicaciones", "Favoritos" y
-"Perfil público", construidas y conectadas.** Las de "Mis publicaciones" se hicieron por
+**Cuenta — 7 de 8 pantallas, las de "Mis publicaciones", "Favoritos",
+"Perfil público" y "Editar perfil", construidas y conectadas.** Las de "Mis publicaciones" se hicieron por
 necesidad, no por avanzar el grupo: conectar
 Publicar dejó la app en un estado donde pausar una publicación la volvía
 inalcanzable (el Feed filtra `estado = 'activa'`), y lo mismo pasaba con una que
@@ -1959,8 +2018,10 @@ Feed/Búsqueda.
   al nivel que ya usaba `fetchListings`.
 
 Lo que sigue siendo placeholder de Perfil: avatar, stats y el resto del
-`.menu-list`. Hoy tiene dos afordances reales (cerrar sesión y "Mis
-publicaciones") más el FAB de publicar.
+`.menu-list`. Hoy tiene TRES afordances reales (cerrar sesión, "Mis
+publicaciones" y "Editar perfil") más el FAB de publicar. Las dos filas del menú
+van en el orden del frame, y `menuRowLast` —que quita la línea inferior— vive en
+la de abajo, no fija en "Mis publicaciones".
 
 **"Perfil público" construida y conectada.** Vista de solo lectura del perfil
 de OTRO usuario — distinta de "Perfil" (el propio, sigue siendo placeholder).
@@ -2012,6 +2073,112 @@ Seis cosas que no se ven en el diff:
   completa, sin lista de columnas. Leer reseñas de alguien que no es ninguna de
   las dos partes ya estaba permitido antes de esta tarea: se deja anotado para
   que nadie vuelva a preguntárselo.
+
+**"Editar perfil" construida y conectada.** Vive en
+`src/app/(cuenta)/editar-perfil/` (tres archivos: `_layout.tsx`, `index.tsx` y
+`universidad.tsx`), con `src/lib/perfil.ts` como capa de datos —creció con
+`fetchPerfilEditable`, `guardarPerfil` y `formatTelefonoNacional`—. Se entra por
+un `.menu-row` nuevo en Perfil. **Sin migración**: las cinco columnas ya estaban
+en el grant de update y `users_update_own` ya acota a `auth.uid()`.
+
+Es la pantalla que cierra dos huecos que no se veían: **la otra puerta del
+teléfono** (`docs/product-spec.md:284` lo dice con esas palabras — hasta ahora el
+único punto de captura era el gate de Publicar, así que quien ya había publicado
+no tenía cómo corregirlo) y **el primer camino de código que escribe `carrera`**,
+una columna que existía desde la migración inicial y que nadie llenaba: ni
+"Completar perfil" la pide.
+
+Diez cosas que no se ven en el diff:
+
+- **`telefono` entra al UPDATE solo si el usuario TOCÓ el campo** (un `ref`,
+  `telefonoTocado`), nunca por comparar el texto final contra el precargado. No es
+  quisquillosidad: a un usuario **suspendido** —que SÍ puede editar su perfil,
+  §3— `seller_whatsapp` le devuelve `null` aunque tenga número (valida al
+  llamante), así que su campo se precarga **vacío**. Con el criterio de
+  comparación, cambiar solo la carrera le habría mandado un teléfono vacío encima
+  de un número real. Por lo mismo `CambiosPerfil.telefono` es `string` y no
+  `string | null`: desde aquí no se borra un teléfono, y así ni siquiera es
+  expresable.
+- **El número se PRECARGA por la RPC, no por el select**, y funciona porque
+  `seller_whatsapp` sobre uno mismo pasa sus dos validaciones (llamante activo +
+  objetivo activo). No hay forma de leerlo de otro lado: sigue fuera del grant de
+  columna (RNF-05).
+- **Es un solo UPDATE con las cinco columnas, y NO reusa `guardarTelefono()`.**
+  Aquella escribe una sola columna, correcto en Publicar; aquí partiría el
+  guardado en dos statements y un fallo en el segundo dejaría el perfil a medias
+  sin nada que se lo dijera al usuario. Todas están en el mismo grant
+  (`20260906000438:110` + `20260910000448:62`), así que un solo statement es
+  legal — pero sigue prohibido colar `correo`/`estado`/`rating_promedio`, que lo
+  rechazarían entero con 42501.
+- **Universidad y campus SÍ son editables**, y eso lo decide el frame: los pinta
+  como `.select-field` normal, no `.select-field.disabled` — variante que el mismo
+  archivo usa a 90 líneas de distancia para "Zona de entrega" de Editar
+  publicación. El backend nunca lo impidió.
+- **El selector de universidad es una ruta NUEVA y no la del onboarding**, y no se
+  llama `selector-universidad.tsx`: dos archivos con ese nombre en dos grupos de
+  primer nivel resolverían los dos a `/selector-universidad` — el gotcha de rutas
+  ambiguas de más abajo. Es `/editar-perfil/universidad`. Tampoco se pudo montar
+  `SelectorCatalogo` dentro de un `Modal` como `CampusBottomSheet`: hace
+  `router.back()` adentro al elegir. De ahí el `_layout.tsx` con su contexto, que
+  guarda SOLO universidad/campus — nombre, carrera y teléfono se quedan en el
+  estado local de la pantalla, que no se desmonta al empujar el selector.
+- **Esta pantalla NO recarga al recuperar el foco**, al revés que
+  `mis-publicaciones.tsx` y `(publicar)/editar/[id].tsx`. Su única ruta hija
+  escribe en el borrador, no en la base: un refetch al volver pisaría la
+  universidad que el usuario acaba de elegir con la que sigue guardada.
+- **Cambiar de universidad limpia el campus**, la misma regla que ya estaba en
+  `(onboarding)/_layout.tsx` — ver la deuda consciente de §8 sobre por qué esa
+  coherencia vive en el cliente y ahora en dos lugares.
+- **El círculo de foto es INERTE a propósito** y se pinta completo, con su
+  `.cam-badge`. Es un `View`, no un `Pressable`, y sin
+  `accessibilityRole="button"`: si no pasa nada, no debe anunciarse como botón —
+  el criterio del tile de espera de `PhotoRow`, no el de Compartir/Reportar. Subir
+  la foto necesita un bucket propio (§8, deuda consciente).
+- **El toast dice "Cambios guardados" y no es copy inventado**: está en el frame
+  "Toast de éxito", que usa justamente esta pantalla de fondo.
+- **Ese toast tiene una SEGUNDA rama, para el suspendido que guarda su WhatsApp**
+  — "Cambios guardados. Tu WhatsApp no se mostrará mientras tu cuenta esté
+  suspendida", con la misma variante `'exito'` porque el guardado sí funcionó.
+  Salió de una prueba en dispositivo y NO es un bug de guardado: el UPDATE pasa
+  (`users_update_own` no lleva `is_active_user()`), pero al reabrir la pantalla el
+  campo vuelve a estar vacío, porque `seller_whatsapp` niega el **self-call** por
+  sus dos puntas a la vez —el llamante (`private.is_active_user()`,
+  `20260911000449:35`) y el objetivo (`and u.estado = 'activo'`, `:39`)—, que con
+  `caller = target` son la misma persona. Sin el aviso, el toast de éxito y el
+  campo vacío se contradicen y lo razonable es concluir que no se guardó. La
+  condición es `mandaTelefono && profile?.estado === 'suspendido'`, y esos dos
+  datos ya existían: el primero es el mismo booleano que decide si la columna
+  viaja en el UPDATE, y el segundo sale de `PROFILE_COLUMNS`, igual que el toast
+  de "Esta cuenta no está disponible para contacto" (`detalle/[id].tsx:266`). No
+  se tocó la RPC ni se agregó ninguna lectura de estado.
+  **Lo que SÍ queda abierto** es el hermano de este caso: explicar el campo vacío
+  **al abrir**, antes de guardar nada. Eso sería un `.notice` persistente, o sea
+  copy que el usuario lee con calma, así que exige frame primero (§0 regla 4) y no
+  se resolvió de paso. **Revisar cuando:** un suspendido reporte que "perdió" su
+  número al entrar a Editar perfil.
+
+Componentes nuevos: ninguno de UI — reusa `Field`, `PhoneField`, `SelectField`,
+`FormHeader`, `CampusBottomSheet`, `SelectorCatalogo` y `ErrorState` tal cual. Lo
+único nuevo es `SkeletonPerfilForm` (círculo de 84 + 5 cajas de campo), tercer
+hermano de `SkeletonRows`/`SkeletonNotifRows` por el mismo motivo de siempre: el
+esqueleto anticipa la forma de lo que viene. Y un rol de `Typography`,
+`editAvatarInitials` — ojo con él, es el quinto del racimo de avatares de §2 y el
+que se confunde por los dos lados.
+
+**`OpcionCatalogo` (`{id, nombre}`) vive en `src/lib/catalogos.ts`**, y no en el
+layout de onboarding donde nació: desde esta pantalla hay **dos** borradores que
+eligen universidad/campus —`(onboarding)/_layout.tsx` y
+`(cuenta)/editar-perfil/_layout.tsx`—, y dos definiciones idénticas con el mismo
+nombre en módulos distintos son una invitación a que se separen. El layout de
+onboarding lo **re-exporta** (`export type { OpcionCatalogo }`) para no cambiar su
+superficie pública. Esa sintaxis no es opcional: bajo transpilación archivo por
+archivo (Babel, que es lo que corre Metro), un `export { OpcionCatalogo }` sin
+`type` emitiría un re-export de un binding que no existe en runtime y reventaría
+aunque `tsc` pasara — por eso van con `type` tanto el re-export como el `import
+{ type OpcionCatalogo }`. Medido: el JS que Babel emite para ese layout es
+**byte por byte el mismo** antes y después del movimiento. Ojo, es un tipo
+distinto de `ItemCatalogo` (`src/components/SelectorCatalogo.tsx`), que lleva
+`subtitulo` y es el del selector, no el del borrador.
 
 **Notificaciones — construido y conectado (RF-16).** Las 2 pantallas del grupo
 (el inbox y su vacío) viven en `src/app/(notificaciones)/notificaciones.tsx`, con
@@ -2163,7 +2330,7 @@ Detalles que no se ven en el diff:
   estrellas: lo opcional es el comentario, no el puntaje (`estrellas` es
   `not null check (between 1 and 5)`).
 
-Del grupo Cuenta sigue sin construir *Editar perfil*.
+Del grupo Cuenta sigue sin construir *Perfil* (el propio, todavía placeholder).
 **Sistema** tiene las 3 piezas que Explorar necesitó (arriba) más "Confirmar
 eliminar", cableado con `ConfirmModal` + `DangerButton` tanto en Editar
 publicación como en Mis publicaciones.

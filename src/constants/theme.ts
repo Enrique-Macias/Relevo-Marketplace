@@ -125,6 +125,7 @@ export const Typography = {
   campusChip: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 14 }, // .campus-chip (Feed) — mismo tamaño/peso que .whatsapp-btn pero es un rol distinto
   avatarInitials: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 13 }, // .avatar (iniciales del header del Feed)
   sellerAvatarInitials: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 14 }, // .seller-avatar (Detalle de publicación)
+  editAvatarInitials: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 22 }, // .seller-avatar con el override inline `font-size:22px` del frame "Editar perfil" — el QUINTO vecino del racimo de avatares de CLAUDE.md §2, y el más traicionero: comparte CLASE con `sellerAvatarInitials` (que es 14) y comparte TAMAÑO con `rateAvatarInitials`/`logoMark` (que son 22 pero en fuente DISPLAY). Este es body/22. `profileAvatarInitials` es el otro vecino: display/24.
   reviewAvatarInitials: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 10 }, // .review-avatar (Perfil público)
   input: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 14 }, // .text-field, .textarea-field, .select-field
   emphasis: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 13.5 }, // .detail-section-title, .seller-name, .ghost-btn, .list-row-name

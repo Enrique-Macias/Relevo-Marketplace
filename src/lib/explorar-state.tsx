@@ -14,7 +14,7 @@
  *    query decide *cómo*.
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchCampus, type Campus } from '@/lib/catalogos';
 import { fetchCategorias, type Categoria } from '@/lib/categorias';
@@ -91,6 +91,21 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
   const universidadId = profile?.universidad_id ?? null;
   const campusIdPerfil = profile?.campus_id ?? null;
 
+  /**
+   * El último `campus_id` DE PERFIL que ya se aplicó a la selección.
+   *
+   * Distingue las dos razones por las que este efecto puede volver a correr, que
+   * piden lo contrario una de la otra:
+   *  - se recargó el catálogo con el mismo campus de perfil → hay que respetar lo
+   *    que el usuario haya elegido con el selector del Feed;
+   *  - el campus DEL PERFIL cambió (pasó en "Editar perfil") → hay que
+   *    reapuntar, o el Feed se queda en el campus viejo el resto de la sesión
+   *    aunque el usuario acabe de mudarse.
+   * Sin esto último, cambiar de campus en el perfil no se notaba en ninguna
+   * pantalla hasta el siguiente arranque.
+   */
+  const campusPerfilAplicado = useRef<number | null>(null);
+
   useEffect(() => {
     if (universidadId === null) return;
 
@@ -99,8 +114,12 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
       .then((lista) => {
         if (!vigente) return;
         setCampusDisponibles(lista);
+        // El ref se lee y se escribe AFUERA del updater: React puede invocarlo
+        // dos veces (StrictMode) y un efecto secundario adentro sería frágil.
+        const perfilCambio = campusIdPerfil !== campusPerfilAplicado.current;
+        campusPerfilAplicado.current = campusIdPerfil;
         setCampusSeleccionado((actual) => {
-          if (actual && lista.some((c) => c.id === actual.id)) return actual;
+          if (!perfilCambio && actual && lista.some((c) => c.id === actual.id)) return actual;
           return lista.find((c) => c.id === campusIdPerfil) ?? lista[0] ?? null;
         });
       })

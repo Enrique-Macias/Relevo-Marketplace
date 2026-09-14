@@ -8,6 +8,14 @@
 
 import { supabase } from '@/lib/supabase';
 
+/**
+ * Lo mínimo para pintar un `SelectField` y poder escribir en `public.users`: el
+ * id que va a la base y el nombre que lee el usuario. Lo comparten los dos
+ * borradores de perfil —el de onboarding y el de "Editar perfil"—, que son las
+ * dos pantallas donde se elige universidad/campus.
+ */
+export type OpcionCatalogo = { id: number; nombre: string };
+
 export type Universidad = {
   id: number;
   nombre: string;

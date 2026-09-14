@@ -134,6 +134,34 @@ export function SkeletonNotifRows({ filas = 5, style }: { filas?: number; style?
   );
 }
 
+/**
+ * "Editar perfil" mientras carga: el círculo de foto y los campos vacíos.
+ *
+ * Tercer hermano de `SkeletonRows`/`SkeletonNotifRows` por el mismo motivo que
+ * aquellos: la forma que anticipa es otra —un círculo de 84px centrado y cajas
+ * de campo de 44px con su etiqueta encima, no filas con miniatura—, y un
+ * esqueleto que anticipa la forma equivocada produce justo el salto de layout
+ * que existe para evitar.
+ *
+ * Cinco campos porque cinco tiene el frame (nombre, carrera, WhatsApp,
+ * universidad, campus): los tres `.text-field`/`.phone-field` y los dos
+ * `.select-field` miden exactamente lo mismo (padding 13 + 14px de texto), así
+ * que una sola pieza los cubre a todos.
+ */
+export function SkeletonPerfilForm({ campos = 5 }: { campos?: number }) {
+  return (
+    <View style={styles.perfilForm}>
+      <SkeletonPiece style={styles.skPhotoCircle} />
+      {Array.from({ length: campos }).map((_, i) => (
+        <View key={i} style={styles.perfilCampo}>
+          <SkeletonPiece style={styles.skFieldLabel} />
+          <SkeletonPiece style={styles.skFieldBox} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   // .skeleton{border-radius:8px;} — el gradiente se traduce a color base + pulso.
   piece: {
@@ -267,5 +295,39 @@ const styles = StyleSheet.create({
   skNotifDesc: {
     width: '90%',
     marginBottom: 0,
+  },
+  // `.form-body{padding:18px 20px 100px;}` con el `align-items:center` del frame,
+  // que es lo que centra el círculo.
+  perfilForm: {
+    paddingTop: 18,
+    paddingHorizontal: ScreenPadding,
+    paddingBottom: 100,
+    alignItems: 'center',
+  },
+  // .photo-upload-circle{width:84px; height:84px; border-radius:50%; margin-bottom:22px;}
+  skPhotoCircle: {
+    width: 84,
+    height: 84,
+    borderRadius: Radii.full,
+    marginBottom: 22,
+  },
+  // .field{width:100%; margin-bottom:16px;}
+  perfilCampo: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  // .field-label — 12.5px de texto, con sus 7px de separación al campo.
+  skFieldLabel: {
+    width: '35%',
+    height: 10,
+    borderRadius: 4,
+    marginBottom: 7,
+  },
+  // La caja de `.text-field`/`.select-field`: 13px de padding arriba y abajo
+  // sobre 14px de texto (~18 de line-height) ≈ 44.
+  skFieldBox: {
+    width: '100%',
+    height: 44,
+    borderRadius: Radii.lg,
   },
 });
