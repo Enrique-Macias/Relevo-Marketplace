@@ -248,7 +248,8 @@ reports
   sobrevive al borrado de su objetivo, con snapshot en listing_titulo /
   reported_user_correo para seguir siendo legible). reported_user_correo
   NUNCA es legible por el cliente (mismo criterio que users.correo) — solo
-  service_role lo ve.
+  service_role lo ve. NADIE puede reportarse a sí mismo, y son DOS
+  mecanismos distintos, no uno — ver abajo.
 
 -- Notificaciones (RF-16)
 push_tokens
@@ -434,6 +435,59 @@ el caso viejo (sin venta, o "No fue a través de Relevo") sigue intacto. Se hizo
 con `create or replace` para conservar el OID: un `drop` obligaría a recrear
 `ratings_insert_own`/`ratings_update_own` y su `grant execute`.
 
+**Nadie se reporta a sí mismo, pero son DOS mecanismos distintos y conviene no
+confundirlos** (`20260914000455`, el segundo cambio a una policy del repo). El
+autorreporte de USUARIO lo cierra un `check` de tabla desde el principio
+(`20260906000441:22`, `reported_user_id <> reporter_id`): compara dos columnas de
+la misma fila, así que cabe en la tabla. El de PUBLICACIÓN no podía ir ahí —el
+dueño vive en `listings` y un `check` con subconsulta no es legal en Postgres—,
+así que se sumó al `with check` de `reports_insert_own` como
+`not exists (select 1 from public.listings l where l.id = listing_id and
+l.user_id = reporter_id)`. Tres cosas que no se ven en el diff:
+
+- **Faltaba de verdad, no era teórico.** `reports` nació en la Fase 2, antes de
+  que existiera una UI que reportara publicaciones, y el hueco solo apareció al
+  construir la hoja de RF-14. Hoy la app no lo alcanza (la bandera solo se pinta
+  con `isOwner` false), pero la ruta `/reportar/[id]` sí, por deep link.
+- **El subselect corre bajo la RLS del invocante y aun así es correcto**, que es
+  lo primero que da ganas de "endurecer" con un `SECURITY DEFINER`: el `exists`
+  solo puede ser verdadero cuando el listing es MÍO, y `listings_select` siempre
+  le muestra al dueño los suyos —activos o pausados—. Si es de otra persona y
+  está pausado (invisible para mí), el `exists` da false igual, porque su
+  condición exige `l.user_id = reporter_id`. El único caso que puede dar true es
+  también el único garantizadamente visible.
+- **El rechazo SÍ lanza**, al revés que los dos precedentes que más se le
+  parecen (`listings_update_own` y `listing_sales_update_seller`): un `with
+  check` de INSERT aborta con `42501`, no filtra en silencio como un `using` de
+  UPDATE. Por eso `crearReporte()` no necesita `{count:'exact'}` ni un error
+  propio — le llega la excepción.
+- **Va `not exists` y NO el `<>` contra el subselect, que es más corto y está
+  mal.** `reporter_id <> (select l.user_id … where l.id = listing_id)` cierra el
+  autorreporte igual, pero con `listing_id` en NULL —el reporte de USUARIO— el
+  escalar es NULL, la comparación es NULL, y un `with check` que evalúa a NULL
+  rechaza: rompe esa rama entera en silencio. Con `not exists`, ese caso no
+  machea nada y la cláusula da true.
+
+**T21 tiene TRES aserciones, y son las tres ramas de esa cláusula — la sección se
+sostiene sola a propósito.** Autocontenida con sus propios `:M`/`:N`. Cada una es
+la ÚNICA que caza su fallo, medido corriendo T21 aislada contra las tres
+variantes rotas:
+
+| Variante de la cláusula | T21 sola cae en |
+|---|---|
+| sin la cláusula (permisiva) | **(a)** el dueño reporta lo suyo |
+| sin el `l.user_id = reporter_id` (rechaza TODO reporte de publicación) | **(b)** el tercero ya no puede reportar |
+| el `<>` contra el subselect (rompe el reporte de usuario) | **(c)** `listing_id is null` |
+
+**(c) nació de un hueco medido, no de prolijidad.** La primera versión de T21
+tenía solo (a) y (b) y delegaba la rama `listing_id is null` a T8 —"ya lo cubre,
+no se repite aquí"—: contra la variante del `<>`, T21 entera daba **verde** y la
+cazaba únicamente T8, o sea que la protección de esta migración dependía de una
+sección que no sabe que T21 existe. Hoy T8 la sigue cazando primero por orden de
+archivo (inserta un reporte de publicación en su línea ~296), pero eso es
+redundancia, no la red. Lección hermana de la de `:C` en T11b: una aserción que
+pasa porque otra sección hizo el trabajo no está probando lo que dice.
+
 **`vistas_count` se incrementa solo vía `public.increment_listing_view(id)`**
 (`SECURITY DEFINER`, excluye al dueño para que no infle sus propias vistas).
 La columna en sí no es editable directo por el cliente (grant de columna) —
@@ -604,7 +658,7 @@ de integración en vez de dos, la función no sabe nada del esquema de negocio, 
 `listing_contacts` (§8b) pero esta vez con recuperación. Ver §9 sobre el header
 `apikey` y el esquema real de `pg_net`, que son dos trampas distintas.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 138 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 141 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -707,6 +761,17 @@ confundía dos cosas distintas: lo que tumba T5 es quitarle el `when` al trigger
 fotos (`20260909000447`), que dispara en TODOS los updates; un trigger que
 pregunta `old.estado = 'vendida'` en su cuerpo nunca toca las filas `activa` de
 T5. Fuera de T20 no cae nada en ninguno de los tres.
+
+Y a **141** con las 3 de T21 (nadie reporta su propia publicación, RF-14),
+autocontenida con sus propios `:M`/`:N`. Nada en T12: la migración no toca ningún
+grant, solo el `with check` de una policy que ya existía. Las tres aserciones son
+las tres ramas de la cláusula nueva y ninguna es intercambiable — la tabla de qué
+variante rota caza cada una está arriba, en el bloque de `reports`, medida
+corriendo T21 AISLADA y no dentro de la suite. **Esa distinción importa y es la
+lección de esta sección:** dentro de la suite, T8 llega antes y caza dos de las
+tres, así que una corrida completa en rojo no dice cuál es la red de verdad.
+Correr una sección sola contra cada variante rota es lo que destapó que T21 tenía
+un hueco (le faltaba (c)) mientras la suite entera seguía en verde donde debía.
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -1179,6 +1244,38 @@ y solo al final las convenciones genéricas de los skills.
     corrigieron: el del sticky del vendedor afirmaba que "Editar publicación" se
     quedaba sola a ancho completo, que es justo lo que ya no pasa.
 
+- **RF-14 completo: "Reportar publicación" — con eso el grupo Confianza queda en
+  4/4.** Una migración (`20260914000455`), 2 aserciones (T21), la hoja
+  `src/app/reportar/[id].tsx` y el cableado de los dos íconos del header de
+  Detalle. De paso se conectó **Compartir**, que era inerte en las tres variantes.
+  Lo que no se ve en el diff:
+  - **La tarea parecía 100% de cliente y no lo era.** El frame existía completo y
+    `reports` estaba desde la Fase 2, así que el plan original no tocaba SQL —
+    pero al revisar las policies apareció que **nada impedía que el dueño
+    reportara su propia publicación** (§3). Se cerró en la policy y no con un
+    `if`, que es lo que pide §0 regla 7.
+  - **Es el SEGUNDO cambio a una policy del repo**, después de `20260913000454`.
+    Se siguió su mismo criterio de drop+create (restituir la policy completa a la
+    vista) en vez de `alter policy`.
+  - **El diff de la migración es UNA cláusula.** Las otras tres se transcriben
+    idénticas, incluida la forma envuelta `(select auth.uid())` — que no es un
+    cambio de estilo introducido aquí: ya era la del original y la de 11
+    migraciones (es la optimización de initplan de Supabase). Conviene saberlo
+    antes de leer un drop+create como "reescribieron todo".
+  - **El control negativo corrigió la prueba DOS veces, y la segunda cambió el
+    código de la prueba, no solo un comentario.** Primero: el comentario de
+    T21(b) afirmaba cazar un `not exists` demasiado ancho, y al correrlo resultó
+    que ese caso muere antes en T8. Y después, al preguntarse si T21 se sostenía
+    SOLA —correrla aislada, fuera de la suite—, apareció que le faltaba una
+    aserción entera: contra la variante del `<>` contra el subselect, T21 daba
+    verde y la cazaba únicamente T8. De ahí salió (c). Van tres hitos seguidos en
+    que el control negativo encuentra algo que el razonamiento había dado por
+    bueno, y este agrega una técnica nueva: **correr la sección aislada**, porque
+    dentro de la suite el orden del archivo esconde de quién es la red.
+  - **Ningún frame nuevo ni variante nueva:** el inventario sigue en 54 y el HTML
+    no se tocó. Los toasts son la excepción documentada de §0 regla 4, y son lo
+    único de copy que se escribió en código.
+
 **Pendiente, en este orden de prioridad:**
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
@@ -1284,6 +1381,16 @@ y solo al final las convenciones genéricas de los skills.
   registrado. Es una línea de alcance explícita, no un olvido: `listing_sales`
   no tiene grant ni policy de DELETE, y T12 lo vigila. **Revisar cuando:**
   alguien marque una venta por error y quiera revertirla del todo.
+
+- **Compartir comparte solo texto plano, sin ningún link.** El mensaje es título
+  + precio + "Publicado en Relevo", porque el proyecto no tiene todavía esquema
+  de universal links (iOS) / App Links (Android) ni una página web de respaldo
+  para quien no tiene la app instalada — y un link roto es peor que no poner
+  nada. **Revisar cuando:** se decida invertir en una fase de deep linking real.
+  **Fix:** dominio propio con `apple-app-site-association`/`assetlinks.json`, una
+  página de fallback que muestre la publicación a quien no tiene la app, y la
+  ruta interna `/detalle/[id]` de Expo Router no cambiaría — es su propio plan
+  aparte.
 
 - **`reports.resolved_at` existe y NADIE la escribe.** Está en el esquema desde
   `20260906000441:16` y ningún trigger ni camino de código la llena, así que hoy
@@ -1615,9 +1722,11 @@ Y **`PrimaryButton` creció con `busy`**, que NO es `disabled` con otro nombre:
 `disabled` (0.45) dice "todavía no puedes", `busy` dice "está pasando" y va a
 color pleno — bajarlo apagaría los puntos que comunican el avance.
 
-Botones inertes a propósito (llevan a grupos sin construir): Compartir,
-Reportar, menú kebab y "Marcar como vendida". **"Editar publicación" en
-Detalle ya NO es inerte** — navega a `(publicar)/editar/[id]`. **El botón de
+Botones inertes a propósito: **ya solo el menú kebab** del dueño, que es otra
+tarea. Los demás se fueron cableando y conviene no "restaurarlos": "Editar
+publicación" navega a `(publicar)/editar/[id]`; "Marcar como vendida" lanza el
+flujo de venta (RF-07); **Reportar** abre `/reportar/[id]` (RF-14) y **Compartir**
+llama a `Share.share()` con texto plano (§8, deuda del link). **El botón de
 WhatsApp ya no tiene nada mock**: pide el número real por `seller_whatsapp` y
 registra el contacto en `listing_contacts`, en ese orden.
 
@@ -2324,13 +2433,49 @@ Componentes nuevos: `NotifRow`, `SkeletonNotifRows`, `IconMail`, y dos roles de
 `Typography` (`notifTime`, `notifDesc` — ver §2, se confunden fácil con
 `cardBadge` y `activeChip`).
 
-**Confianza — 3 de 4 pantallas construidas y conectadas (RF-07, RF-12).**
-"¿A quién le vendiste?" (con su vacío y su modo corrección) vive en
-`src/app/(confianza)/vendida/[id].tsx`, "Calificar" en
-`(confianza)/calificar.tsx`, y la capa de datos en `src/lib/confianza.ts`.
-*Reportar publicación* sigue sin construir.
+**Confianza — 4 de 4 pantallas construidas y conectadas: grupo completo
+(RF-07, RF-12, RF-14).** "¿A quién le vendiste?" (con su vacío y su modo
+corrección) vive en `src/app/(confianza)/vendida/[id].tsx`, "Calificar" en
+`(confianza)/calificar.tsx`, "Reportar publicación" en **`src/app/reportar/[id].tsx`**
+(ojo: fuera del grupo, ver abajo), y la capa de datos en `src/lib/confianza.ts`.
+
+**"Reportar publicación" es la única del grupo que NO vive en `(confianza)/`, y
+no es un descuido.** Es una HOJA (`transparentModal`) y se abre desde Detalle,
+que está en `(explorar)`: la transición la ejecuta el Stack RAÍZ, así que la
+presentación tiene que declararse ahí (el gotcha de §9). Es el caso de
+`filtros.tsx`/`selector-campus.tsx`, no el de sus dos hermanas, que son pantallas
+completas empujadas por el stack de su grupo. Si alguien la "ordena" moviéndola a
+`(confianza)/`, deja de verse como hoja y se convierte en una card opaca.
 
 Detalles que no se ven en el diff:
+
+- **El motivo es obligatorio y no nace preseleccionado**, aunque el frame pinte
+  la primera opción marcada: ese marcado documenta el estado seleccionado, y
+  copiarlo haría indistinguibles "no elegí" y "elegí spam". Mismo criterio que
+  las estrellas de Calificar, y por eso "Enviar reporte" arranca `disabled`.
+  El comentario sí es opcional **para cualquier motivo, incluido "Otro"** — el
+  frame pone "(opcional)" en el `.field-label`, no en el placeholder.
+- **La fila de motivo es un componente LOCAL, no `ListRow` ni `BuyerRow`.** Los
+  tres comparten `RadioCircle` —que por eso se exporta desde `ListRow.tsx`— pero
+  ninguno de los dos calza: `ListRow` exige un `sub` que aquí no existe y
+  `BuyerRow` lleva avatar. `.radio-row` es su propia forma (gap 11, padding 13,
+  sin borde en la última).
+- **El guard de autorreporte NO hace fetch**: recibe `sellerId` por param desde
+  Detalle, que ya tiene el dato al decidir si pinta la bandera. Y lee
+  `listing.userId`, el MISMO campo con el que se calcula `isOwner` —no
+  `listing.vendedor.id`, que hoy trae el mismo valor—: dos fuentes para la misma
+  pregunta se desincronizan sin dar ningún error. Cierra la hoja desde un
+  `useEffect` y no desde el cuerpo del render, porque `router.back()` mueve el
+  estado del navegador. **No es el candado**: ese es el `with check` de §3, y el
+  guard solo evita ofrecer un formulario condenado.
+- **El toast del `42501` distingue sus dos causas con `profile.estado`**, que la
+  sesión ya trae — el mismo recurso que el toast de WhatsApp. Sin ese `&&`, el
+  caso adversarial (param manipulado) recibiría un "tu cuenta está suspendida"
+  que sería mentira.
+- **La bandera solo existe para quien NO es el dueño** (el frame la cambia por el
+  kebab en "Detalle (vista vendedor)"), y **el kebab sigue inerte**: es otra
+  tarea. Compartir, en cambio, se pinta en las TRES variantes y nunca dependió de
+  `isOwner`.
 
 - **`accionVenta()` es el derivado de TRES estados de la fila de venta, y vive en
   un solo lugar a propósito.** Lo consumen las tres entradas —"Editar

@@ -2,7 +2,7 @@
 
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GhostButton, PrimaryButton } from '@/components/Buttons';
@@ -212,6 +212,32 @@ export default function DetalleScreen() {
   }, [listing, isOwner]);
 
   /**
+   * Compartir — texto plano y NINGÚN link, a propósito.
+   *
+   * El proyecto todavía no tiene universal links (iOS) / App Links (Android) ni
+   * una página web de respaldo, así que cualquier URL que pusiéramos aquí sería
+   * un link roto para quien no tenga la app instalada — peor que no poner nada.
+   * Ver la deuda consciente de CLAUDE.md §8.
+   *
+   * Va `Share` de react-native y no `expo-sharing`, que es para compartir
+   * ARCHIVOS. Se pinta en las tres variantes de Detalle (comprador, vendida y
+   * vista vendedor) porque el frame lo tiene en las tres: a diferencia de la
+   * bandera, este botón nunca dependió de `isOwner`.
+   */
+  async function compartir() {
+    if (!listing) return;
+    try {
+      await Share.share({
+        message: `${listing.titulo}\n${formatPrecio(listing.precio)}\nPublicado en Relevo`,
+      });
+    } catch (e: any) {
+      // Cancelar la hoja nativa NO entra aquí (resuelve con
+      // `action: 'dismissedAction'`), así que esto es un fallo de verdad.
+      console.warn('[compartir] no se pudo abrir:', e?.message ?? e);
+    }
+  }
+
+  /**
    * RF-13 — el contacto por WhatsApp, en tres pasos y en este orden: conseguir
    * el número, registrar el contacto, abrir el deep link. El porqué de cada uno
    * está en el cuerpo, junto al paso que lo explica.
@@ -359,8 +385,7 @@ export default function DetalleScreen() {
               <IconChevronLeft size={16} color={Colors.ink} />
             </RoundIconButton>
             <View style={styles.navActions}>
-              {/* compartir: backlog, no hay flujo de share nativo definido aún */}
-              <RoundIconButton onPress={() => {}}>
+              <RoundIconButton onPress={compartir}>
                 <IconShare size={15} color={Colors.ink} />
               </RoundIconButton>
               {isOwner ? (
@@ -369,8 +394,19 @@ export default function DetalleScreen() {
                   <IconKebab size={17} color={Colors.ink} />
                 </RoundIconButton>
               ) : (
-                // reportar: pendiente de (confianza)
-                <RoundIconButton onPress={() => {}}>
+                <RoundIconButton
+                  onPress={() =>
+                    router.push({
+                      pathname: '/reportar/[id]',
+                      // `listing.userId` y no `listing.vendedor.id`: es el MISMO
+                      // campo con el que se calcula `isOwner` arriba, que es
+                      // justo la condición que decide pintar esta bandera. Dos
+                      // fuentes distintas para la misma pregunta se
+                      // desincronizan sin dar ningún error.
+                      params: { id: String(listingId), sellerId: listing.userId },
+                    })
+                  }
+                >
                   <IconFlag size={15} color={Colors.ink} />
                 </RoundIconButton>
               )}

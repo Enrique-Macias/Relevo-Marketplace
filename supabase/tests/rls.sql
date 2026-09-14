@@ -1463,6 +1463,97 @@ select pg_temp.assert(
 
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T21 — no se puede reportar la publicación propia (RF-14) =='
+-- Autocontenida por la moraleja de siempre (CLAUDE.md §3). En particular NO
+-- reutiliza nada de T8, que es la otra sección que toca `reports`: aquella borra
+-- la cuenta :C y la publicación `activa` de `t_ids` antes de terminar, justo
+-- para probar que un reporte sobrevive a su objetivo.
+--
+--   :M — el dueño de la publicación. Es quien NO puede reportarla.
+--   :N — un tercero activo. Es el control: la misma publicación, sí reportable.
+--
+-- LAS TRES ASERCIONES SON LAS TRES RAMAS DE LA CLÁUSULA NUEVA, y están las tres
+-- aquí a propósito: esta sección tiene que sostenerse sola. La versión anterior
+-- delegaba la rama de `listing_id is null` a T8 ("ya lo cubre, no se repite
+-- aquí") y eso resultó ser un hueco MEDIDO, no teórico — ver (c).
+\set M '''77777777-0000-0000-0000-000000000077'''
+\set N '''88888888-0000-0000-0000-000000000088'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:M::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-m@tec.mx', '', now(), now(), now()),
+  (:N::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-n@tec.mx', '', now(), now(), now());
+update public.users set nombre = 'Mateo' where id = :M::uuid;
+update public.users set nombre = 'Nadia' where id = :N::uuid;
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values (:M::uuid, 1, 1, 1, 'RLS Autorreporte', 350, 'usado', 'activa');
+
+create temp table t_rep as
+select (select id from public.listings where titulo = 'RLS Autorreporte') as propia;
+
+-- (a) El bloqueo. A diferencia de T20, aquí SÍ va `expect_error`: un `with check`
+-- de INSERT no filtra como un `using` de UPDATE — lanza.
+select pg_temp.expect_error(:M::uuid,
+  format('insert into public.reports (reporter_id, listing_id, motivo)
+          values (%L, %s, ''spam_publicidad'')', :M::uuid, (select propia from t_rep)),
+  'el dueño no puede reportar su propia publicación');
+
+-- (b) CONTROL de (a): la MISMA publicación, en la misma sesión, reportada por
+-- alguien que no es su dueño. Lo que protege es que (a) esté fallando POR LA
+-- PROPIEDAD y no por cualquier otra cosa —:M suspendido, un grant roto, una
+-- fixture mal sembrada—, que son todas formas de que (a) pase por la razón
+-- equivocada.
+--
+-- Lo que NO protege, medido y no supuesto: un `not exists` demasiado ancho (sin
+-- el `l.user_id = reporter_id`, o sea rechazando TODO reporte de publicación) NO
+-- llega hasta aquí — muere antes en T8, que ya inserta un reporte de publicación
+-- en la línea ~296. La primera versión de este comentario afirmaba lo contrario;
+-- se corrigió tras correr ese control en vez de razonarlo.
+select pg_temp.as_user(:N::uuid,
+  format('insert into public.reports (reporter_id, listing_id, motivo, comentario)
+          values (%L, %s, ''sospecha_fraude'', ''Pide depósito por adelantado'')',
+         :N::uuid, (select propia from t_rep)));
+
+select pg_temp.assert(
+  exists (select 1 from public.reports
+          where reporter_id = :N::uuid
+            and listing_id = (select propia from t_rep)
+            and listing_titulo = 'RLS Autorreporte'),
+  'un tercero sí puede reportar esa publicación (el bloqueo es por ser su dueño)');
+
+-- (c) LA TERCERA RAMA: reportar un USUARIO, o sea `listing_id` en NULL. La
+-- cláusula nueva se evalúa también en este camino, y romperlo no se nota desde
+-- la app —ese frame no existe todavía— pero deja la tabla a medias.
+--
+-- No es una aserción defensiva: la reescritura más natural de la cláusula,
+--
+--     and reporter_id <> (select l.user_id from public.listings l
+--                         where l.id = listing_id)
+--
+-- (comparar contra el subselect en vez de un `not exists`) hace exactamente eso:
+-- con `listing_id` null el subselect da NULL, `reporter_id <> NULL` da NULL, y el
+-- with check RECHAZA. MEDIDO: contra esa variante, (a) y (b) pasan las dos y T21
+-- entera daba verde — la cazaba solo T8, o sea que la protección de
+-- 20260914000455 dependía de una sección que no sabe que esta existe. Con (c),
+-- T21 se sostiene sola.
+select pg_temp.as_user(:N::uuid,
+  format('insert into public.reports (reporter_id, reported_user_id, motivo)
+          values (%L, %L, ''no_es_estudiante'')', :N::uuid, :M::uuid));
+
+select pg_temp.assert(
+  exists (select 1 from public.reports
+          where reporter_id = :N::uuid
+            and reported_user_id = :M::uuid
+            and listing_id is null),
+  'reportar a un USUARIO sigue funcionando (la cláusula nueva no toca esa rama)');
+
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges

@@ -93,6 +93,18 @@ export default function RootLayout() {
                 animation: "slide_from_bottom",
               }}
             />
+            {/* "Reportar publicación" (RF-14) es el mismo caso: una hoja que se
+                abre desde Detalle, o sea desde OTRO grupo — (explorar) —, así
+                que la transición la ejecuta este stack y la presentación va
+                aquí. Por eso no vive en (confianza)/ junto a "¿A quién le
+                vendiste?" y "Calificar", que sí son pantallas completas. */}
+            <Stack.Screen
+              name="reportar/[id]"
+              options={{
+                presentation: "transparentModal",
+                animation: "slide_from_bottom",
+              }}
+            />
           </Stack>
         </ToastProvider>
       </ExplorarStateProvider>

@@ -240,6 +240,58 @@ export async function crearRating(input: {
 }
 
 // ---------------------------------------------------------------------------
+// Reportar una publicación (RF-14)
+// ---------------------------------------------------------------------------
+
+/**
+ * Los cinco motivos del enum `report_reason`, en el orden del frame.
+ *
+ * Unión literal local y no `Database['public']['Enums']['report_reason']`, que
+ * es la convención del repo para los enums de Postgres — ver `Condicion` en
+ * `src/lib/listings.ts`.
+ */
+export type ReportReason =
+  | 'spam_publicidad'
+  | 'sospecha_fraude'
+  | 'contenido_inapropiado'
+  | 'no_es_estudiante'
+  | 'otro';
+
+/**
+ * RF-14. Solo reportes de PUBLICACIÓN: el de usuario existe en el esquema
+ * (`reported_user_id`) pero no tiene frame, así que queda fuera de alcance.
+ *
+ * NO se manda `listing_titulo`: lo materializa el trigger
+ * `capture_report_snapshot` (20260906000441), que además pisa lo que venga del
+ * cliente. Es un snapshot a propósito — el reporte tiene que seguir siendo
+ * legible aunque después se borre la publicación.
+ *
+ * Tampoco `estado`, que nace en 'pendiente' por default y solo lo mueve
+ * `service_role` desde Studio (RF-17): el cliente no tiene grant de update
+ * sobre esta tabla.
+ *
+ * DOS rechazos posibles, los dos con SQLSTATE 42501, porque el `with check` de
+ * un INSERT sí lanza (a diferencia del `using` de un UPDATE, que filtra en
+ * silencio — ver `corregirComprador` arriba): el llamante está suspendido, o es
+ * el dueño de la publicación que intenta reportar (20260914000455). Quien los
+ * separa para el copy es la pantalla, con `profile.estado`, que ya tiene.
+ */
+export async function crearReporte(input: {
+  reporterId: string;
+  listingId: number;
+  motivo: ReportReason;
+  comentario: string;
+}): Promise<void> {
+  const { error } = await supabase.from('reports').insert({
+    reporter_id: input.reporterId,
+    listing_id: input.listingId,
+    motivo: input.motivo,
+    comentario: input.comentario.trim() === '' ? null : input.comentario.trim(),
+  });
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
 // El derivado de tres estados de la fila de venta
 // ---------------------------------------------------------------------------
 
