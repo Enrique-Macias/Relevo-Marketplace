@@ -181,8 +181,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 18 migraciones (`supabase/migrations/`) — 17 ya aplicadas al proyecto
-remoto y la de `vendida` terminal pendiente de `db push`—, con RLS activo y
+Definido en 18 migraciones (`supabase/migrations/`) — las 18 ya aplicadas al
+proyecto remoto, incluida la de `vendida` terminal—, con RLS activo y
 probado en las 12 tablas más el bucket de Storage. Este es el esquema **real**, no
 solo la intención original.
 
