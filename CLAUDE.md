@@ -85,7 +85,7 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
 | Backend / BD | Supabase (Postgres), proyecto remoto `ukxfnydfhmryrzhdqkvj`, región Ohio (us-east-2) | Auth + BD relacional + Storage + Row Level Security, sin backend custom |
 | Cliente BD | `@supabase/supabase-js` (versión fijada, sin `^`) | Ver sección 8 para el wrapper (`src/lib/supabase.ts`) y por qué usa `expo-crypto` en vez de `react-native-get-random-values` |
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
-| Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía Database Webhook. El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, §8b) |
+| Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía Database Webhook. El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Admin / moderación | Supabase Studio | Panel de reportes y suspensión de usuarios/publicaciones, sin desarrollo adicional |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
@@ -495,7 +495,7 @@ arriba son variantes del `with check` de `20260914000455`; (d) ejercita el
 desde la Fase 2 y **no tenía control negativo propio**: (c) probaba el camino
 feliz de esa rama y el de rechazo no lo probaba nadie, porque ninguna pantalla
 podía alcanzarlo. RF-14 lo volvió alcanzable desde la bandera de "Perfil
-público" (§8b), así que dejó de ser teórico. **Medido con el control negativo**:
+público" (`cuenta-perfil.md`), así que dejó de ser teórico. **Medido con el control negativo**:
 quitando ese `check`, la suite entera llega hasta T21 sin inmutarse —incluida
 (c), que pasa justo antes— y la única que cae es (d). Y el motivo del rechazo se
 distingue solo con leerlo: (a) dice "rechazado: permiso" (es una policy) y (d)
@@ -572,7 +572,7 @@ algún día alguien afloja `listings_select`, pero no es el candado.
 
 **Una publicación no pasa a `activa` sin al menos una foto** — trigger
 `listings_enforce_activation_has_photos` (`20260909000447`), que llama a
-`private.enforce_activation_has_photos()`. Existe porque el alta atómica (§8b)
+`private.enforce_activation_has_photos()`. Existe porque el alta atómica (`publicar-fotos.md`)
 deja publicaciones `pausada` con 0 fotos cuando la subida falla, y las dos rutas
 de reactivación ("Mis publicaciones" y el toggle de "Editar publicación") las
 volvían `activa` sin validar nada — justo el estado que el modelo atómico existe
@@ -587,10 +587,10 @@ para impedir. Tres cosas que conviene saber antes de tocarlo:
   creadas antes de que existiera la subida o desde Studio), que si no serían
   ineditables.
 - **Solo cubre UPDATE.** Un insert directo con `estado='activa'` y 0 fotos sigue
-  siendo posible — deuda consciente documentada en §8, con su disparador y su
+  siendo posible — deuda consciente documentada en `publicar-fotos.md`, con su disparador y su
   fix. No es que no se pueda: es que cerrarlo cuesta reescribir 4 bloques de
   fixtures de la suite y voltear el default de la columna.
-- El guard equivalente en el cliente (§8b) **no es lógica de autorización
+- El guard equivalente en el cliente (`publicar-fotos.md`, `cuenta-perfil.md`) **no es lógica de autorización
   duplicada**: el candado es este trigger, el cliente solo traduce su
   `raise exception` a un toast con salida.
 
@@ -632,7 +632,7 @@ local con estas policias exactas:
 | `before insert` que libera el token + `do nothing` | una sola fila, del dueño nuevo |
 
 Por eso el cliente hace un **INSERT plano con `ignoreDuplicates`** (igual que
-`favorites`, §8b) y `private.claim_push_token()` borra la fila perdedora. Va
+`favorites`, `explorar.md`) y `private.claim_push_token()` borra la fila perdedora. Va
 como trigger y NO como RPC `SECURITY DEFINER` de `public` deliberadamente: sería
 la cuarta de esas, y sobre todo **movería el punto de enforcement** — con el
 trigger, la policy `with check (user_id = auth.uid())` sigue siendo quien decide
@@ -671,7 +671,7 @@ también el outbox: `private.notify_push()` dispara `net.http_post` a la Edge
 Function `send-push` con **solo el id** en el body. Tres consecuencias: un punto
 de integración en vez de dos, la función no sabe nada del esquema de negocio, y
 **si el push falla el aviso sigue en el inbox** — el mismo fallo suave de
-`listing_contacts` (§8b) pero esta vez con recuperación. Ver §9 sobre el header
+`listing_contacts` (`explorar.md`) pero esta vez con recuperación. Ver §9 sobre el header
 `apikey` y el esquema real de `pg_net`, que son dos trampas distintas.
 
 **Regresión de RLS:** `supabase/tests/rls.sql`, 142 aserciones, corre dentro de
@@ -790,7 +790,7 @@ Correr una sección sola contra cada variante rota es lo que destapó que T21 te
 un hueco (le faltaba (c)) mientras la suite entera seguía en verde donde debía.
 
 Y a **142** con la cuarta de T21, (d), que llegó **sin migración**: al abrir
-"Reportar usuario" desde Perfil público (RF-14, §8b) se volvió alcanzable el
+"Reportar usuario" desde Perfil público (RF-14, `confianza-ventas.md`) se volvió alcanzable el
 `check` de tabla de `20260906000441:22` —nadie se reporta a sí mismo— que hasta
 entonces no tenía control negativo propio. Nada en T12 tampoco: esa tarea no
 toca ningún grant ni ninguna policy, solo cliente, diseño y spec. Es el caso
@@ -809,7 +809,7 @@ correr esta suite antes de comitear.
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
 usa el filtro visual del prototipo. Para el estado de qué grupo ya existe
-como código real (vs. solo diseño), ver sección 8b.
+como código real (vs. solo diseño), ver §8 y las reglas de `.claude/rules/`.
 
 ### Onboarding (15)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
@@ -858,7 +858,7 @@ Publicación creada
 "Publicar (falta teléfono)" es el quinto estado del MISMO componente, y el único
 que se ve ANTES de tocar nada: el campo de WhatsApp aparece solo mientras el
 perfil no tenga número guardado (RF-13), y en cuanto se guarda la pantalla
-vuelve a ser "Publicar" tal cual. Ver §8b.
+vuelve a ser "Publicar" tal cual. Ver `publicar-fotos.md`.
 
 ### Cuenta (8)
 Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío ·
@@ -870,7 +870,7 @@ Reportar publicación · Calificar · ¿A quién le vendiste? ·
 
 El vacío NO es un caso borde: nadie está obligado a tocar "Contactar por
 WhatsApp" antes de que el vendedor marque la venta —pudo acordarse en persona, o
-el registro del contacto pudo fallar (§8, la deuda del log perdido)—, así que se
+el registro del contacto pudo fallar (`confianza-ventas.md`, la deuda del log perdido)—, así que se
 alcanza el primer día. Como "Notificaciones vacío", no lleva `.empty-actions`:
 la única acción posible ya está en el `.sticky-cta`, que se conserva intacto —
 la publicación SÍ se marca como vendida desde ahí; lo único que no ocurre es la
@@ -938,7 +938,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - **`anon` no tiene ni un solo grant en el proyecto remoto** — todo está
   concedido a `authenticated`. Esto significa que el Feed no puede renderizar
   nada antes del login: el auth gating decide qué pantalla se muestra según
-  haya o no sesión activa (ya implementado, ver sección 8).
+  haya o no sesión activa (ya implementado, ver `onboarding-auth.md`).
 
 ---
 
@@ -951,10 +951,13 @@ Toast de éxito · Toast de error · Loading / skeleton
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
-  el patrón que ya siguieron Onboarding y Explorar (sección 8b) — antes de
-  empezar el siguiente grupo, revisa esa sección para no reconstruir
-  componentes que ya existen (`ProductCard`, `SheetScreen`, `Field`,
-  `ConfirmModal`, etc.).
+  el patrón que ya siguieron Onboarding y Explorar — antes de empezar el
+  siguiente grupo, revisa el **inventario de componentes de §8** para no
+  reconstruir los que ya existen (`ProductCard`, `SheetScreen`, `Field`,
+  `ConfirmModal`, etc.), y la regla de ese grupo en `.claude/rules/` para el
+  porqué de cada uno. Ese inventario está en la raíz a propósito: las reglas
+  por feature no cargan hasta que tocas sus archivos, así que no sirven para
+  saber qué existe ANTES de empezar.
 - Si vas a agregar una pantalla o estado que no existe en `relevo-app.html`
   (por ejemplo, un caso borde nuevo), constrúyelo ahí primero.
 - **Para cualquier trabajo de esquema/RLS/backend, usa Plan Mode y aprueba
@@ -1030,7 +1033,29 @@ y solo al final las convenciones genéricas de los skills.
 
 ---
 
-## 8. Estado de implementación del backend
+## 8. Estado de implementación — y dónde vive el detalle
+
+**El detalle por feature ya no vive en este archivo.** Se movió íntegro (sin
+resumir ni recortar) a `.claude/rules/`, donde cada regla declara un `paths:` y
+**carga sola cuando la sesión lee alguno de esos archivos**. Lo transversal se
+quedó aquí: tokens (§2), esquema y RLS (§3), inventario de pantallas (§4),
+cómo pedir trabajo (§6) y los gotchas (§9) — este archivo carga siempre.
+
+**Ojo con los `paths:`:** un patrón que no machea **no da ningún error**, la
+regla simplemente no carga nunca. Valida cualquier `paths:` nuevo contra un
+archivo real antes de darlo por bueno (ver el gotcha de §9 sobre los paréntesis
+de los route groups).
+
+| Regla | Cubre | Dispara al tocar |
+|---|---|---|
+| `onboarding-auth.md` | Onboarding, OTP, gating de sesión, RF-04 | `src/app/(onboarding)/**`, `src/lib/session.tsx`, `src/lib/supabase.ts` |
+| `explorar.md` | Feed, Búsqueda, Categoría, Detalle, favoritos | `src/app/(explorar)/**`, `(tabs)/index.tsx`, `(tabs)/buscar.tsx`, `src/lib/listings.ts` |
+| `publicar-fotos.md` | Publicar atómico, fotos, bucket de Storage | `src/app/(publicar)/**`, `src/lib/{publicar,storage,foto-picker,listing-form}.ts` |
+| `cuenta-perfil.md` | Mis publicaciones, Favoritos, Perfil, Editar perfil, Perfil público, RF-13 | `src/app/(cuenta)/**`, `(tabs)/perfil.tsx`, `(tabs)/favoritos.tsx`, `src/lib/perfil*.ts` |
+| `confianza-ventas.md` | Venta, ¿a quién le vendiste?, Calificar, Reportar | `src/app/(confianza)/**`, `src/app/reportar/**`, `src/lib/confianza.ts` |
+| `notificaciones-push.md` | Inbox, push, Edge Function `send-push` | `src/app/(notificaciones)/**`, `src/lib/{notificaciones,push}.ts`, `supabase/functions/**` |
+| `componentes-compartidos.md` | Qué componente existe ya y qué NO unificar | `src/components/**` |
+| `compartir-deeplinks.md` | Compartir sin link (las dos pantallas) | `detalle/**`, `perfil-publico/**`, `app.json` |
 
 **Hecho:**
 - Esquema aplicado al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio) con RLS y la
@@ -1057,286 +1082,6 @@ y solo al final las convenciones genéricas de los skills.
   propósito.
 - Variables de entorno: `.env.local` (real, ignorado) + `.env.example`
   (commiteado, vacío).
-- **Auth gating cableado end-to-end y confirmado con una cuenta real de Tec
-  de Monterrey**: `SessionProvider` (`src/lib/session.tsx`) escucha
-  `onAuthStateChange` y lee el perfil de `public.users`; el splash decide
-  entre carrusel / login / completar perfil / Feed; `(tabs)/_layout.tsx`
-  impide entrar al Feed con el perfil a medias. Registro passwordless por
-  OTP, contraseña fijada en "Completar perfil". Probado de punta a punta:
-  correo institucional real → código de 6 dígitos → perfil → cerrar sesión →
-  volver a entrar con `signInWithPassword`.
-  - **Ojo con `onAuthStateChange`**: su callback es síncrono a propósito.
-    Cualquier llamada async ahí dentro provoca un deadlock conocido de
-    supabase-js que cuelga la siguiente llamada del cliente. La lectura del
-    perfil vive en un efecto aparte, fuera del lock.
-  - **Nunca `select('*')` sobre `public.users`**: `correo` está fuera del
-    grant de select, y pedir `*` hace fallar la query entera con `42501` en
-    vez de devolverla sin esa columna. Lista las columnas.
-- **Plantilla de correo OTP aplicada y confirmada funcional** en el dashboard
-  remoto (Auth → Email Templates → Magic Link, con `{{ .Token }}`) y
-  versionada en `supabase/templates/magic_link.html` para que `supabase
-  start` local también la use. Ver la nota de SMTP/cuarentena en sección 1.
-- **Búsqueda de texto por tsvector** (migración `20260908000444`). Resolvió de
-  una sola vez las dos cosas: el índice GIN por fin se usa (medido con
-  `explain analyze` a 80 000 filas: Bitmap Index Scan, 0.9 ms, contra Seq Scan
-  de 67 ms con el `ilike` anterior) y desapareció el bug de acentos —
-  buscar "calculo" sobre "Cálculo de Larson" devolvía **0** resultados y ahora
-  devuelve los 3 esperados. De regalo, `websearch_to_tsquery` convierte `*` en
-  una tsquery vacía, así que el bug de "buscar `*` te devuelve el catálogo
-  entero" quedó cerrado por el motor y se pudieron borrar del cliente el
-  `escapaBusqueda()` de dos capas y su corto circuito.
-- **Bucket de Storage `listing-photos` con RLS** (migraciones `20260908000445`
-  y `20260908000446`). Cuatro piezas:
-  - **El bucket**: `listing-photos`, **privado**, `file_size_limit` de **5 MiB**,
-    `allowed_mime_types` `image/jpeg`, `image/png`, `image/webp`. Declarado en
-    `config.toml` y aplicado a remoto con `supabase seed buckets --linked`. El
-    límite y los mime types los aplica el servicio de Storage antes de escribir,
-    no el cliente: son defensa real, no validación cosmética.
-  - **La columna**: `storage_url` → **`storage_path`**, porque en un bucket
-    privado se guarda la ruta del objeto (`{listing_id}/{uuid}.ext`), no una URL.
-  - **El helper**: `private.listing_id_from_object_name(text)`, que traduce la
-    carpeta del objeto a un `listing_id` — la carpeta es la llave de
-    autorización, y esa función es lo único que las policies leen del nombre.
-  - **Las 4 policies sobre `storage.objects`**, espejo de las de la tabla:
-    `listing_photos_objects_select` con el mismo criterio que **`listings_select`**
-    (todas salvo las pausadas, que solo ve su dueño), y las de
-    `insert`/`update`/`delete` con el de **`listing_photos_write_own`** (solo el
-    dueño del listing) más `is_active_user()`, porque un suspendido no puede
-    tocar sus fotos.
-
-  Verificado con 11 aserciones nuevas en la suite (T14) **y** con
-  `scripts/probe-storage.mjs`, que ejercita el Storage API sobre HTTP. Los dos
-  con control negativo: se rompieron las policies a propósito y ambos fallaron
-  donde debían.
-  - **`scripts/probe-storage.mjs` no es un script desechable.** Cubre lo que la
-    suite SQL no puede: `DELETE` (el trigger `storage.protect_delete` de Supabase
-    aborta todo borrado por SQL antes de que la RLS opine, así que una aserción
-    ahí pasaría con la policy borrada) y `move` (el `with_check` de UPDATE, sin el
-    cual un dueño puede renombrar su objeto hacia la carpeta de otro — medido:
-    devuelve **HTTP 200**). **Ya tiene hermano**: `scripts/probe-venta.mjs`, por
-    otra razón (§3) — aquel cubre lo que la RLS de SQL no alcanza, este amarra
-    una condición que vive en dos runtimes. Los dos son parte de la verificación
-    de backend, no extras: ver §6.
-  - **Ya se sube y se pinta.** El grupo Publicar escribe en `listing_photos` y
-    `ListingPhoto` las lee por el endpoint autenticado — ver §8b.
-- **Grupo Explorar conectado a datos reales** (7ª migración incluida:
-  `listing_favorites_count`). Los mocks `src/constants/mock/{listings,campus,
-  categorias}.ts` ya no existen; la capa de datos vive en `src/lib/listings.ts`,
-  `src/lib/categorias.ts` y `src/lib/favoritos.ts`. Ver §8b.
-
-- **"Mis publicaciones" construida y conectada** — cierra el callejón sin salida
-  que había creado conectar Publicar (se podía pausar desde Editar y después la
-  publicación no era alcanzable desde ninguna parte). `fetchMisListings()` /
-  `useMisListings()` en `src/lib/listings.ts`, pantalla en
-  `(cuenta)/mis-publicaciones.tsx`, entrada por un `.menu-row` en Perfil. Ver
-  §8b. Es también lo que desbloqueó el modelo atómico de publicación.
-
-- **"Publicar" migrado al modelo ATÓMICO** — la publicación se crea `pausada`,
-  suben todas sus fotos, y solo si TODAS suben pasa a `activa`. Reemplaza al
-  modelo de "publica ya, recupera fotos después", en el que un fallo parcial
-  dejaba la publicación visible con menos fotos de las que el usuario eligió.
-  Cuatro consecuencias que no son opcionales:
-  - **El aviso persistente de "Publicación creada (fotos faltantes)" se
-    ELIMINÓ**, no se dejó apagado: el camino que lo justificaba —activa con
-    fotos incompletas— ya no existe. Se fueron con él su frame en
-    `relevo-app.html`, el segundo estado de `creada.tsx`, sus params de ruta
-    (`fallidas`/`total`) y las props `belowSub`/`subStyle` de `EmptyState`, que
-    quedaban sin ningún consumidor. El `.notice` no se borró: se mudó al
-    `.sticky-cta` de Publicar, que es donde ahora hay una acción que lo
-    resuelve.
-  - **El fallo se resuelve SIN salir de Publicar**, con "Reintentar", que sube
-    solo lo que faltó. Dos frames nuevos en el diseño: "Publicar (subiendo
-    imágenes)" y "Publicar (error de subida)".
-  - **`guardarFotos()` corre también cuando alguna foto falló**, y eso no es
-    prolijidad: sin esas filas, los objetos que sí subieron quedarían
-    invisibles para "Mis publicaciones" —que lee `listing_photos` para saber
-    qué borrar— y abandonar la pantalla dejaría huérfanos permanentes.
-  - **Lo respalda un trigger en la base**, no solo el cliente: ver §3
-    (`listings_enforce_activation_has_photos`).
-
-- **RF-13 completo: el botón de WhatsApp abre el número REAL del vendedor**
-  (migración `20260910000448`). Se cerró el "HUECO CONOCIDO" que
-  `docs/product-spec.md` arrastraba desde el principio. Cuatro cosas que no se
-  ven en el diff:
-  - **El gate vive en Publicar, NO en el onboarding.** Exigir el teléfono en
-    "Completar perfil" le habría cerrado el Feed a quien solo quiere comprar, y
-    habría bloqueado a toda cuenta existente. El número no hace falta para
-    navegar, hace falta para vender: no se puede publicar sin él.
-  - **Y por eso la captura vive en la MISMA pantalla.** Bloquear en Publicar con
-    la única captura en el onboarding —por donde toda cuenta existente ya
-    pasó— habría dejado al usuario tocando el FAB, bloqueado y sin a dónde ir
-    hasta que exista "Editar perfil". Es el callejón sin salida que este mismo
-    documento describe para "Mis publicaciones". El campo aparece solo cuando
-    `tiene_telefono` es false y desaparece al guardarse.
-  - **El campo NO se agregó a "Completar perfil"**, ni siquiera como opcional:
-    un comprador lo saltaría, así que el gate de Publicar tendría que existir
-    igual, y a cambio costaba tres frames más estado nuevo en el borrador de
-    onboarding. Su casa es "Editar perfil", cuyo frame YA lo tenía —adelantado a
-    propósito para no hacer dos pasadas al HTML— y que **ya está construida**
-    (§8b, grupo Cuenta): ahí el número se precarga por la misma RPC
-    `seller_whatsapp` y se edita, que es lo que por fin le da salida a quien ya
-    publicó con un número equivocado.
-  - **El chequeo de suspensión vive en la RPC**, y ese es el único lugar donde
-    esa regla se cumple — ver §3, que explica por qué `listing_contacts` no
-    alcanzaba. Desde `20260911000449` valida las **dos** puntas: ni un
-    suspendido contacta, ni se le contacta a él.
-
-- **Consecuencia abierta de eso, y es el gancho a una tarea que NO está hecha:
-  las publicaciones de un suspendido siguen visibles en el feed.**
-  `listings_select` no filtra por el estado del dueño (solo esconde las
-  `pausada` a quien no es su dueño), así que desde este cambio el catálogo
-  puede mostrar una publicación que nadie puede contactar: el comprador toca
-  "Contactar por WhatsApp" y recibe "Esta cuenta no está disponible para
-  contacto". No es un bug —la regla de negocio se cumple— pero es un callejón
-  para el comprador. Cerrarlo es **pausar las publicaciones al suspender la
-  cuenta**, y eso es decisión de producto antes que técnica (¿automático con un
-  trigger sobre `users` que escribe en `listings`, o revisión manual de un admin
-  desde Studio?, ¿y qué pasa al reactivar: se despausan solas o no?). Se trata
-  aparte, con su propio plan.
-
-- **RF-16 completo: inbox persistido + push.** Tres migraciones
-  (`20260911000450` push_tokens, `...451` notifications y sus dos triggers,
-  `...452` el webhook), la primera Edge Function del proyecto (`send-push`), y
-  el grupo Notificaciones construido en el cliente. Lo que no se ve en el diff:
-  - **La tarea no era "una Edge Function".** La pantalla del diseño es un inbox
-    persistido (hora relativa + punto de no leído), o sea que la tabla tenía que
-    existir igual — y al existir, ES el outbox del push. Eso eliminó los
-    webhooks colgados de `listings` y `reports`.
-  - **Dos disparadores, no tres.** "Nueva publicación en categoría seguida" es
-    opcional en RF-16 y no tiene modelo (ni tabla ni afordance en el diseño);
-    además es el único fan-out 1→N del campus entero, o sea el único con riesgo
-    real de spam. Queda fuera, documentado abajo.
-  - **El enum nace con dos valores** aunque el frame tenga cuatro filas: "Tu
-    correo fue verificado" no tiene disparador (ocurre en el alta) y la de
-    categoría seguida no tiene modelo. Un valor de enum sin productor solo
-    genera ramas muertas en el cliente.
-  - **El registro del token NO puede vivir solo en el onboarding**, por la misma
-    razón que el gate del teléfono de RF-13: toda cuenta existente ya pasó por
-    esa pantalla. Hay un efecto de re-registro en `SessionProvider`, fuera del
-    callback de `onAuthStateChange` (el deadlock de supabase-js).
-  - **`tsconfig.json` ahora excluye `supabase/functions`**, y no es cosmético:
-    esa carpeta es código **Deno**, con specifiers `npm:` que el tsconfig de
-    Expo no resuelve. Sin el exclude, `npx tsc --noEmit` de la app falla con 4
-    errores que no son errores. Si alguien lo quita "para typechear todo", lo
-    correcto es darle a esa carpeta su propia config de Deno, no devolverla al
-    tsconfig de React Native.
-  - Probado de punta a punta en local: baja de precio → fila con el copy exacto
-    del diseño → webhook (HTTP 200) → la función llamó a Expo, recibió el ticket
-    de error del token falso y **borró ese token** (`limpiados: 1`). Lo único que
-    falta es un aparato de verdad — ver el pendiente de abajo.
-
-- **RF-07 + RF-12 completos: "Marcar como vendida → ¿A quién le vendiste? →
-  Calificar".** Una migración (`20260912000453`), el grupo Confianza construido,
-  y el cuarto disparador de RF-16. Lo que no se ve en el diff:
-  - **La premisa de la tarea estaba mal en dos puntos, y verificarlo antes de
-    planear ahorró rehacer.** El trigger de `rating_promedio` YA existía
-    (`20260906000440:136-158`) y el `unique` de `ratings` también (`:93`), así
-    que ninguno hizo falta. En cambio, la fila "Marcar como vendida" **no
-    estaba** en la hoja de acciones de "Mis publicaciones" —ni en el código ni
-    en el frame—, así que hubo que construirla en el HTML primero.
-  - **El comprador es una tabla, no una columna** (§3). Esa decisión de
-    privacidad cambió la forma de la migración entera.
-  - **Sin el modo corrección, la policy de UPDATE habría sido inalcanzable desde
-    la UI**: al pasar a `vendida` desaparece la entrada "Marcar como vendida" de
-    las tres pantallas. Por eso esa fila tiene **tres** estados derivados de un
-    solo helper (`accionVenta`), no dos.
-  - **El orden de escritura es insert-antes-de-update y no es cosmético.** Al
-    revés, un fallo entre los dos statements deja la publicación `vendida` sin
-    comprador registrado y sin salida. Con este orden el fallo deja una venta
-    sobre una publicación todavía activa: la entrada sigue visible y el
-    reintento es idempotente (`ignoreDuplicates` + la preselección del comprador
-    ya registrado).
-  - Probado en local de punta a punta: las 128 aserciones **de entonces** en
-    verde (hoy son más; este número es el de ese hito, no el actual — la cuenta
-    viva se mide, ver abajo) y **seis
-    controles negativos**, cada uno fallando en su aserción (ver §3), más
-    `scripts/probe-venta.mjs` (13 aserciones) con sus tres controles: romper la
-    policy hace fallar el lado base, "simplificar" `congelada()` a bidireccional
-    hace fallar el tripwire, y derivar el vendedor de la sesión —el bug real que
-    apareció construyendo esto— también. Ese último es el que demostró que
-    tripwire y escenario 3 cubren cosas distintas (§3).
-
-- **RF-08 completo: `vendida` es terminal también para editar**
-  (`20260913000454`). Una migración de una sola policy, 10 aserciones (T20) y tres
-  pantallas. Lo que no se ve en el diff:
-  - **La tarea parecía de UI y el bug real era de base.** Esconder "Editar
-    publicación" era lo pedido; lo que estaba roto era que el toggle de pausa de
-    Editar **resucitaba una venta** (§3). Ninguna pantalla lo delataba.
-  - **Es el primer cambio a una policy del repo.** No había ni un `drop policy`
-    ni un `alter policy` en las 17 migraciones anteriores; el precedente de
-    "restringir un update sobre `listings` según `old.estado`" había ido por
-    trigger, y aquí ese camino está medido como incorrecto (§3).
-  - **El control negativo encontró un defecto en la prueba, no en el código.** La
-    aserción de "no se puede reactivar una vendida" fallaba con el mensaje del
-    trigger de fotos, o sea que no probaba lo que dice; se arregló dándole una
-    foto a esa fixture (§3). Vale como recordatorio de que un control negativo se
-    corre, no se razona.
-  - **Tres variantes nuevas en `relevo-app.html`, ningún frame nuevo:** el
-    inventario sigue en 54. Dos de ellas dibujan contenedores degenerados que
-    antes no existían —un `.sticky-cta` que se quedaría vacío y una hoja de
-    acciones de una sola fila roja—, y la tercera es el guard de Editar.
-  - **Dos comentarios del diseño decían lo contrario de la regla nueva** y se
-    corrigieron: el del sticky del vendedor afirmaba que "Editar publicación" se
-    quedaba sola a ancho completo, que es justo lo que ya no pasa.
-
-- **RF-14 completo: "Reportar publicación" — con eso el grupo Confianza queda en
-  4/4.** Una migración (`20260914000455`), 3 aserciones (T21), la hoja
-  `src/app/reportar/[id].tsx` y el cableado de los dos íconos del header de
-  Detalle. De paso se conectó **Compartir**, que era inerte en las tres variantes.
-  Lo que no se ve en el diff:
-  - **La tarea parecía 100% de cliente y no lo era.** El frame existía completo y
-    `reports` estaba desde la Fase 2, así que el plan original no tocaba SQL —
-    pero al revisar las policies apareció que **nada impedía que el dueño
-    reportara su propia publicación** (§3). Se cerró en la policy y no con un
-    `if`, que es lo que pide §0 regla 7.
-  - **Es el SEGUNDO cambio a una policy del repo**, después de `20260913000454`.
-    Se siguió su mismo criterio de drop+create (restituir la policy completa a la
-    vista) en vez de `alter policy`.
-  - **El diff de la migración es UNA cláusula.** Las otras tres se transcriben
-    idénticas, incluida la forma envuelta `(select auth.uid())` — que no es un
-    cambio de estilo introducido aquí: ya era la del original y la de 11
-    migraciones (es la optimización de initplan de Supabase). Conviene saberlo
-    antes de leer un drop+create como "reescribieron todo".
-  - **El control negativo corrigió la prueba DOS veces, y la segunda cambió el
-    código de la prueba, no solo un comentario.** Primero: el comentario de
-    T21(b) afirmaba cazar un `not exists` demasiado ancho, y al correrlo resultó
-    que ese caso muere antes en T8. Y después, al preguntarse si T21 se sostenía
-    SOLA —correrla aislada, fuera de la suite—, apareció que le faltaba una
-    aserción entera: contra la variante del `<>` contra el subselect, T21 daba
-    verde y la cazaba únicamente T8. De ahí salió (c). Van tres hitos seguidos en
-    que el control negativo encuentra algo que el razonamiento había dado por
-    bueno, y este agrega una técnica nueva: **correr la sección aislada**, porque
-    dentro de la suite el orden del archivo esconde de quién es la red.
-  - **Ningún frame nuevo ni variante nueva:** el inventario sigue en 54 y el HTML
-    no se tocó. Los toasts son la excepción documentada de §0 regla 4, y son lo
-    único de copy que se escribió en código.
-
-- **RF-14 ampliado: "Reportar usuario" desde Perfil público — el segundo
-  objetivo de esa tabla, por fin alcanzable.** **Sin migración**: el `check` de
-  tabla que impide reportarse a uno mismo está desde `20260906000441:22` y el
-  mutuo-excluyente (`num_nonnulls(...) = 1`) desde la misma. Una aserción nueva
-  (T21(d)), la generalización de `reportar/[id].tsx` y de `crearReporte()`, y la
-  bandera del header de "Perfil público". Lo que no se ve en el diff:
-  - **La premisa "no hace falta SQL" se verificó contra el archivo, y esta vez
-    sí era cierta** — al revés que en el hito anterior, donde la misma premisa
-    resultó falsa y apareció la policy de autorreporte. Lo que sí apareció fue
-    un hueco en la SUITE: el `check` de usuario nunca había tenido control
-    negativo, porque hasta hoy ninguna pantalla podía chocar con él. De ahí
-    (d) — ver §3.
-  - **El mutuo-excluyente subió al tipo, no al runtime.** `crearReporte()` toma
-    una unión discriminada con `?: never`; pasar los dos objetivos o ninguno
-    deja de compilar en vez de morir con 42501. El tipo refleja la regla de la
-    base, no la reemplaza — probado con las cuatro combinaciones.
-  - **Dos candados distintos producen dos SQLSTATE distintos**, y eso decide el
-    copy: `42501` (policy) para la publicación propia y la suspensión, `23514`
-    (`check`) para el usuario propio. El `if` del toast de suspensión solo mira
-    el primero, así que el segundo cae al genérico — correcto, es un caso que la
-    UI no ofrece.
-  - **Ningún frame nuevo: el inventario sigue en 54.** El HTML sí se tocó, en
-    dos lugares: la bandera del `.profile-top` de "Perfil público" y una
-    variante etiquetada dentro de "Reportar publicación" para el título alterno,
-    con el patrón de borde punteado que ya usan "modo corrección" y
-    `.photo-add.is-busy`.
 
 **Pendiente, en este orden de prioridad:**
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
@@ -1355,1400 +1100,78 @@ y solo al final las convenciones genéricas de los skills.
    - Por §6 el simulador headless no cuenta como prueba. Es hermano del pendiente
      del header `Authorization` de `expo-image`.
 
-**Deuda consciente — con disparador de revisión, no "algún día":**
+**Deuda consciente — con disparador de revisión, no "algún día":** cada entrada
+vive COMPLETA —con su "Revisar cuando" y su "Fix"— en la regla de su feature, y
+aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 
-- **La foto de perfil sigue sin poder subirse, y desde "Editar perfil" ya no es
-  "fuera de alcance del onboarding" sino deuda con disparador.** Las dos
-  pantallas que la dibujan —"Completar perfil" y "Editar perfil"— pintan el
-  `.photo-upload-circle` con su `.cam-badge` y **ninguna de las dos responde al
-  toque**: son `View`, no `Pressable`, y sin `accessibilityRole="button"`, para
-  no anunciar como botón algo que no hace nada. `users.foto_url` existe desde la
-  migración inicial y **nadie la escribe ni la lee** (el avatar se dibuja siempre
-  con iniciales). Lo que falta NO es el picker —`elegirFotos()`/`normalizar()` de
-  `src/lib/foto-picker.ts` sirven igual— sino un **bucket propio**: el de
-  `listing-photos` no se puede prestar, porque sus cuatro policies autorizan por
-  carpeta `{listing_id}/` contra el dueño de una publicación, y un avatar no tiene
-  publicación. **Revisar cuando:** se pida de verdad, o cuando el avatar de
-  iniciales se vuelva un problema de confianza entre desconocidos. **Fix:** bucket
-  `avatars` (¿público o privado? — si es privado, todo lo que pinte un avatar pasa
-  por `ListingPhoto`-style con header `Authorization`), sus policies espejo
-  acotadas a `{user_id}/`, su bloque en la suite, y `foto_url` escrito desde estas
-  dos pantallas. Va en su propio plan por fases chicas (§6).
-- **La base no ata `users.campus_id` a `users.universidad_id`, y quien sostiene
-  esa coherencia es el cliente — ahora en DOS lugares.** No hay FK compuesta ni
-  `check` que impida guardar un campus de otra universidad: son dos FKs sueltas
-  (`20260906000438_users_profiles.sql:11-12`). Lo que lo evita es la línea que
-  limpia el campus al cambiar de universidad, que vivía solo en
-  `(onboarding)/_layout.tsx` y ahora también en
-  `(cuenta)/editar-perfil/_layout.tsx`. Es pre-existente —esta pantalla no lo
-  introdujo, solo lo duplicó— y es el mismo tipo de acoplamiento que §3 documenta
-  para `congelada()` ↔ el `using` de `listing_sales_update_seller`: dos copias de
-  una regla que al desincronizarse no dan ningún error, solo dejan un perfil
-  incoherente. **Revisar cuando:** aparezca un TERCER escritor de ese par, o se
-  vea en remoto una fila de `users` con un campus que no es de su universidad.
-  **Fix:** `unique (universidad_id, id)` en `campus` + FK compuesta desde `users`
-  —un `check` con subconsulta no es legal en Postgres—, con su aserción en la
-  suite; de paso vuelve imposible el caso en vez de improbable.
-- **`ErrorState` promete "Reintentar" aunque no haya nada que reintentar.** Su
-  `PrimaryButton` lleva el label hardcodeado (`ErrorState.tsx:37`), sin prop para
-  cambiarlo, así que el guard de `esDueno` de `editar/[id].tsx` dice "Reintentar"
-  y ejecuta `router.back()`. Es pre-existente y se detectó al construir RF-08; el
-  guard nuevo de vendida lo esquivó usando `EmptyState` sin botón, que además es
-  el criterio correcto (§4: la única acción posible es volver, y eso ya es el
-  chevron del header). **Revisar cuando:** aparezca un tercer consumidor de
-  `ErrorState` cuyo fallo tampoco sea reintentable, o alguien reporte que el botón
-  no hace lo que dice. **Fix:** una prop `actionLabel` con default `'Reintentar'`,
-  o migrar ese guard a `EmptyState` como el de vendida — pero el copy del botón es
-  persistente, así que el frame va primero (§0 regla 4).
-- **"Omitir por ahora" en Calificar es DEFINITIVO.** La publicación ya es
-  `vendida` y la fila de venta pasa a decir "Cambiar comprador", no "Calificar",
-  así que no hay segunda entrada para el vendedor. El copy promete algo que no
-  ocurre. **Revisar cuando:** alguien reporte que omitió sin querer. **Fix:** un
-  botón "Calificar al comprador" en "Detalle (vista vendedor)" — exige frame
-  primero (§0 regla 4).
-- **La reseña del mal asignado sobrevive y queda inmutable.** Si el vendedor
-  acredita por error a C y C lo califica, esa fila se queda: tras la corrección
-  `can_rate()` ya no la autorizaría, así que **C tampoco puede editarla**
-  (`ratings_update_own` lleva `can_rate()` en su `with check`) y nadie puede
-  borrarla (`ratings` sin delete, y eso es deliberado). Alcance: una reseña de
-  alguien que sí tuvo contacto real, o sea legítima cuando nació. **Revisar
-  cuando:** alguien pida retirar una reseña por venta mal atribuida. **Fix:** un
-  `delete` acotado al autor con la misma ventana de congelamiento — es un cambio
-  de postura sobre "una calificación no se borra", por eso no se tomó de paso.
-- **El vendedor puede reasignar la venta varias veces antes de calificar, y cada
-  cambio dispara una notificación.** Acotado a sus propios contactos (las dos
-  policies exigen fila en `listing_contacts`), así que el máximo es "los N que
-  preguntaron por esa publicación". El comprador anterior conserva su aviso
-  —`notifications` no tiene delete y sus filas son historia— y degrada bien: el
-  tap lo lleva al Detalle, donde el botón está gateado por la fila de venta, que
-  ya no es suya, y ve el `.notice` de "ya se vendió". **Revisar cuando:** un
-  vendedor lo reporte, o alguien note avisos repetidos de "califica tu compra"
-  sin haber comprado nada. **Fix:** throttle por `listing_id` en el trigger de
-  corrección, o no notificar en la corrección y dejar el Detalle como único
-  descubrimiento.
-- **El amarre cliente ↔ RLS se sostiene con dos mecanismos parciales en vez de
-  uno fuerte**, y es una elección, no una carencia. El fuerte sería que el probe
-  ejecutara `congelada()` de verdad, lo que exige extraer la condición a un
-  módulo puro —sin dependencias de React Native— cargable desde Node. Hoy no se
-  paga: es una sola función, tocar la frontera de módulos de `src/lib` cuesta más
-  que el riesgo, y la combinación tripwire + escenario 3 ya cazó la regresión
-  real (§3). **Revisar cuando:** `src/lib/confianza.ts` acumule más lógica de
-  este tipo — condiciones de autorización espejadas contra una policy—, porque
-  ahí el costo se reparte entre varias y el argumento se invierte. **Fix:**
-  extraer el descriptor de filtros a un `.ts` sin imports de RN, consumido por
-  `congelada()` y por el probe vía el type-stripping de Node; el tripwire
-  desaparece con él.
-- **No se puede deshacer una venta entera**, solo corregir a quién. Borrar la
-  fila equivaldría a decir "no fue a través de Relevo" después de haberla
-  registrado. Es una línea de alcance explícita, no un olvido: `listing_sales`
-  no tiene grant ni policy de DELETE, y T12 lo vigila. **Revisar cuando:**
-  alguien marque una venta por error y quiera revertirla del todo.
+- La foto de perfil sigue sin poder subirse, y desde "Editar perfil" ya no es "fuera de alcance del onboarding" sino deuda con disparador → `cuenta-perfil.md`
+- La base no ata `users.campus_id` a `users.universidad_id`, y quien sostiene esa coherencia es el cliente — ahora en DOS lugares → `cuenta-perfil.md`
+- `ErrorState` promete "Reintentar" aunque no haya nada que reintentar → `componentes-compartidos.md`
+- "Omitir por ahora" en Calificar es DEFINITIVO → `confianza-ventas.md`
+- La reseña del mal asignado sobrevive y queda inmutable → `confianza-ventas.md`
+- El vendedor puede reasignar la venta varias veces antes de calificar, y cada cambio dispara una notificación → `confianza-ventas.md`
+- El amarre cliente ↔ RLS se sostiene con dos mecanismos parciales en vez de uno fuerte → `confianza-ventas.md`
+- No se puede deshacer una venta entera → `confianza-ventas.md`
+- Una recuperación de contraseña abandonada a media deja la sesión abierta con la contraseña VIEJA → `onboarding-auth.md`
+- Compartir comparte solo texto plano, sin ningún link — en LAS DOS pantallas que lo tienen → `compartir-deeplinks.md`
+- `reports.resolved_at` existe y NADIE la escribe → `notificaciones-push.md`
+- Sin receipts de Expo → `notificaciones-push.md`
+- `pg_net` es fire-and-forget → `notificaciones-push.md`
+- El inbox no pagina → `notificaciones-push.md`
+- Sin "categoría seguida" → `notificaciones-push.md`
+- El token de push es no-enumerable, pero robable si se conoce → `notificaciones-push.md`
+- La lada del teléfono está fija en `+52` → `cuenta-perfil.md`
+- El teléfono es no-enumerable-en-bloque, no inaccesible → `cuenta-perfil.md`
+- Un insert directo con `estado='activa'` y 0 fotos sigue siendo posible → `publicar-fotos.md`
+- El reintento solo distingue DOS errores deterministas → `publicar-fotos.md`
+- Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila → `publicar-fotos.md`
+- El tope de 5 fotos SIGUE sin aplicar en Storage → `publicar-fotos.md`
+- Borrar una publicación no borra sus fotos de Storage **[CERRADA]** → `publicar-fotos.md`
+- La búsqueda de texto es por palabra completa (websearch/tsvector), no por prefijo → `explorar.md`
+- Scroll infinito sin virtualización → `explorar.md`
+- El log de contactos que falla se pierde → `confianza-ventas.md`
 
-- **Una recuperación de contraseña abandonada a media deja la sesión abierta con
-  la contraseña VIEJA.** `verifyOtp({type:'recovery'})` guarda una sesión real
-  (§8b, RF-04), así que quien verifica el código y mata la app antes de guardar la
-  contraseña nueva reabre la app **dentro del Feed**, sin haber cambiado nada. No
-  es un hueco de seguridad —probó que controla ese correo, que es justo lo que
-  prueba un login— pero el reset quedó a medias y no hay pantalla de "cambiar
-  contraseña" en Perfil, así que la salida es cerrar sesión y repetir el flujo.
-  **El abandono DELIBERADO ya está cubierto**: tanto "Guardar contraseña" como el
-  "Volver a iniciar sesión" del frame cierran sesión, así que lo único que queda
-  abierto es el force-quit. **Por qué no se cerró:** lo obvio sería un flag
-  `recoveryPendiente` en `SessionProvider`, y no sirve — el único caso que
-  resolvería es precisamente el force-quit, y un flag en memoria muere en él.
-  Persistirlo junto a la sesión es meter estado nuevo en el gating por un caso
-  raro. **Revisar cuando:** alguien reporte haber quedado dentro de la app sin
-  haber cambiado su contraseña. **Fix:** persistir la marca de recuperación en el
-  mismo storage que la sesión y que `splash.tsx` la lea, o un `signOut()` al montar
-  `nueva-password` cuando no se llegó por el flujo.
+**Inventario de componentes reutilizables (`src/components/`) — no los
+reconstruyas.** El porqué de cada uno vive en la regla de su feature; lo que es
+del componente y no de la pantalla está en `componentes-compartidos.md`.
 
-- **Compartir comparte solo texto plano, sin ningún link — en LAS DOS pantallas
-  que lo tienen.** En Detalle el mensaje es título + precio + "Publicado en
-  Relevo"; en "Perfil público", nombre + universidad + "Perfil en Relevo"
-  (`.filter(Boolean).join('\n')`, porque ahí `nombre`/`universidadNombre` son
-  nullable). Mismo motivo raíz en las dos: el proyecto no tiene todavía esquema
-  de universal links (iOS) / App Links (Android) ni una página web de respaldo
-  para quien no tiene la app instalada — y un link roto es peor que no poner
-  nada. **Revisar cuando:** se decida invertir en una fase de deep linking real.
-  **Fix:** dominio propio con `apple-app-site-association`/`assetlinks.json`,
-  una página de fallback por cada ruta compartible (`/detalle/[id]` y
-  `/perfil-publico/[id]`, las dos de Expo Router sin cambiar), y el mismo texto
-  plano de hoy pasa a llevar el link real. Es su propio plan aparte.
-
-- **`reports.resolved_at` existe y NADIE la escribe.** Está en el esquema desde
-  `20260906000441:16` y ningún trigger ni camino de código la llena, así que hoy
-  es siempre `null`. Se detectó al construir RF-16 y **se dejó fuera a
-  propósito**: el primer impulso fue llenarla con el mismo trigger que notifica
-  la resolución del reporte, pero esa notificación toma su hora de
-  `notifications.created_at` —escrito en el mismo instante—, así que
-  `resolved_at` no tenía ningún consumidor y habría sido una columna escrita
-  para nadie. **Revisar cuando:** se trabaje la moderación de RF-17, que es
-  donde "¿cuándo se resolvió esto?" empieza a ser una pregunta real. **Fix:** un
-  `before update` con el mismo `when` que `reports_notify_resolved`, modelado
-  sobre `private.set_updated_at()` (`20260906000439:33-46`).
-- **Sin receipts de Expo.** `send-push` maneja los errores a nivel *ticket*, que
-  es donde llega `DeviceNotRegistered` para un token inválido, pero no hace el
-  segundo round-trip a `/push/getReceipts` — donde Expo reporta fallos que solo
-  se conocen después de intentar la entrega. **Revisar cuando:** aparezcan
-  usuarios que no reciben push y cuyo token sigue vivo en la tabla. **Fix:**
-  guardar el `ticket.id` y un job que consulte recibos.
-- **`pg_net` es fire-and-forget.** Si el webhook falla (función caída, secreto de
-  Vault mal puesto, 5xx), la notificación queda en el inbox con
-  `push_enviado_at is null` y el error solo se ve en `net._http_response`. Nadie
-  reintenta. **Revisar cuando:** alguien reporte no haber recibido un push que sí
-  está en su inbox. **Fix:** un barrido de
-  `notifications where push_enviado_at is null and created_at > now() - interval '1 day'`.
-- **El inbox no pagina:** `fetchNotificaciones()` trae las últimas 100 y ya.
-  **Revisar cuando:** una cuenta real pase de ~100 notificaciones — hoy se
-  acumulan de a una por baja de precio de un favorito, o sea decenas al año.
-  **Fix:** el mismo cursor `(created_at, id)` que ya usa `fetchListings`.
-- **Sin "categoría seguida"**, el tercer disparador (opcional) de RF-16. No
-  existe modelo ni afordance en el diseño, y es el único fan-out 1→N del campus
-  entero. **Revisar cuando:** se pida de verdad. **Fix:** tabla
-  `category_follows` + su RLS + su bloque en la suite + la UI de seguir, y
-  **scoping por campus más throttling** antes de encender el disparador — si no,
-  es una notificación por cada publicación nueva del campus.
-- **El token de push es no-enumerable, pero robable si se conoce.** Cualquiera
-  que sepa el token de otra persona puede reasignárselo (el trigger
-  `claim_push_token` no distingue) y dejarla sin push. La precondición no es
-  alcanzable desde el API —el token solo lo lee su dueño y no aparece en ninguna
-  otra respuesta—, así que hoy no hay camino. **Revisar cuando:** un token de
-  push llegue a viajar en alguna respuesta o log accesible. **Fix:** exigir que
-  el insert traiga también algo que solo el aparato tenga.
-
-- **La lada del teléfono está fija en `+52`**, en el `check` de la base
-  (`users_telefono_e164_mx`), en el prefijo inerte del campo y en el
-  `slice(1)` que arma el `wa.me`. Hoy el catálogo es mexicano y nadie pidió
-  otra cosa, así que un selector de país sería UI que nadie usa. El dato ya se
-  guarda en E.164, o sea que el costo futuro es acotado. **Revisar cuando:** se
-  abra la app a una universidad fuera de México. **Fix:** alterar el `check` +
-  agregar el selector de país a los frames de "Publicar (falta teléfono)" y
-  "Editar perfil" (los dos ya están construidos y ya tienen el campo; les
-  faltaría el selector). Del lado del código es **un solo sitio**: las dos
-  pantallas montan el mismo `PhoneField`, así que el `+52` inerte vive una sola
-  vez — lo caro es el `check` de la base y los frames, no el componente.
-- **El teléfono es no-enumerable-en-bloque, no inaccesible.** `seller_whatsapp`
-  evita que un autenticado se baje el directorio entero en un request, que es lo
-  que pide RNF-05 — pero `users.id` sí está en el grant de select, así que un
-  cliente hostil podría iterar ids y llamarla N veces. Son N requests
-  observables y limitables contra 1 invisible. **Revisar cuando:** aparezcan
-  llamadas masivas a esa RPC en los logs del proyecto. **Fix:** rate limit, o
-  anclar la firma a un `listing_id` que el llamante esté viendo (ojo: eso deja
-  fuera el botón de "Perfil público", que no tiene publicación en contexto).
-- **Un insert directo con `estado='activa'` y 0 fotos sigue siendo posible.** El
-  trigger `listings_enforce_activation_has_photos` (§3) solo cubre UPDATE. Es
-  hermano exacto del punto de abajo: el cliente ya no toma ese camino (toda
-  publicación nace `pausada`), así que lo expuesto es Studio, `service_role` o
-  quien pegue al API directo — y es calidad de dato, no seguridad: un
-  autenticado que lo haga solo se ensucia su propia publicación.
-  **No es que no se pueda** —un `before insert` con el mismo
-  `when (new.estado = 'activa')` sería viable y no tocaría el flujo real—, es
-  que hoy no se paga: la suite siembra 6 listings `activa` directo en 4 bloques
-  de fixtures load-bearing (T11b, T13, T14 y las del inicio), y rehacerlos las
-  acopla a `listing_photos` sin relación con lo que prueban; además `estado` es
-  `not null default 'activa'`, así que el trigger reventaría cualquier insert
-  que omita la columna, Studio incluido. **Revisar cuando:** se abra la API a
-  terceros, o aparezca en el feed una publicación sin fotos que no vino de la
-  app. **Fix:** ese trigger + voltear el default a `'pausada'` + reescribir las
-  4 fixtures.
-- **El reintento solo distingue DOS errores deterministas**, `EntityTooLarge` y
-  el formato no soportado. La regla más amplia —"no reintentar ningún 4xx"— se
-  evaluó y se descartó: un 401 puede ser un token en refresco, o sea
-  transitorio, y reintentarlo es lo correcto. **Revisar cuando:** aparezca en
-  los logs un 4xx determinista que no sea de tamaño ni de formato (un
-  `AccessDenied` por suspensión a media subida, por ejemplo). **Fix:** mover el
-  criterio de una lista de errores conocidos a "reintentar solo
-  `StorageUnknownError` y 5xx".
-- **Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila.** El
-  alta atómica escribe las filas de un golpe al final, así que entre las subidas
-  y ese insert hay una ventana. El reintento la cierra (el formulario conserva
-  los paths), pero si el usuario abandona ahí, los archivos quedan huérfanos.
-  Es el caso raro del caso raro: `guardarFotos` fallando, no una foto. **Es el
-  mismo cron de barrido del punto de abajo**, no una deuda aparte.
-- **El tope de 5 fotos SIGUE sin aplicar en Storage** — el disparador se cumplió
-  (se conectó Publicar) y esto es lo que quedó. Lo impone el trigger
-  `enforce_photo_limit()` sobre `listing_photos`; las policies de
-  `storage.objects` solo validan de quién es la carpeta. Lo que sí cambió: el
-  cliente es hoy el único camino de subida y respeta el tope en tres puntos
-  (`elegirFotos()` recorta a los disponibles, `PhotoRow` esconde el `.photo-add`
-  al llegar a 5, `agregarFotos()` hace `slice(0, MAX_FOTOS)`). O sea que la app
-  no genera huérfanos por este camino — salvo la ventana del punto de arriba,
-  que antes se cerraba borrando el objeto cuando fallaba su fila, y dejó de
-  poder hacerse cuando las filas pasaron a escribirse todas juntas al final
-  (ver `subirPendientes()`). Lo que queda expuesto es un cliente hostil
-  llamando al Storage API directo: puede llenar su propia carpeta sin filas.
-  **Revisar cuando:** el costo de almacenamiento aparezca en la factura, o se
-  abra la API a terceros. **Fix:** contar objetos en la policy de insert, o un
-  cron de barrido.
-- ~~**Borrar una publicación no borra sus fotos de Storage.**~~ **CERRADA** al
-  construir "Confirmar eliminar" en Editar publicación. No hizo falta la Edge
-  Function que se había previsto: el cliente borra los objetos **antes** de
-  borrar el listing, y ese orden es obligatorio, no una preferencia —
-  `listing_photos_objects_delete_own` exige que el listing EXISTA para autorizar
-  el borrado del objeto, así que al revés los archivos quedan huérfanos *y* sin
-  forma de borrarlos. Mismo criterio en Editar al quitar una foto. **Lo que
-  sigue abierto:** si el `borrarFotos()` falla (es best-effort, para no dejar al
-  usuario sin poder borrar su publicación) los archivos quedan huérfanos igual;
-  eso sí necesitaría un barrido, y es el mismo cron del punto anterior.
-- **La búsqueda de texto es por palabra completa (websearch/tsvector), no por
-  prefijo** — teclear parcialmente puede mostrar "No encontramos" brevemente
-  antes de completar la palabra (medido: `calc` no encuentra "Cálculo";
-  `calcul` sí). Resolver con RPC dedicada (evaluada: una función que arme la
-  tsquery con `:*` en el último término, ya que `websearch_to_tsquery` no
-  soporta prefijos y `to_tsquery` crudo revienta con input arbitrario) **si se
-  vuelve un problema real de UX medido, no solo teórico**. **Disparador:** que
-  en pruebas con usuarios reales alguien se queje de esto, o abandone una
-  búsqueda a medio escribir.
-- **Scroll infinito sin virtualización.** Búsqueda y Categoría paginan dentro
-  del `ScrollView` de `Screen` (prop `onEndReached`), con el grid armado por
-  `chunkRows()`: todas las filas cargadas quedan montadas, sin el reciclaje de
-  vistas de `FlatList`/`FlashList`. **Revisar cuando:** una sesión típica pase
-  de ~5 páginas cargadas (≈100 tarjetas montadas), o antes si aparece jank
-  medible al hacer scroll en gama media — lo que llegue primero. **Fix:**
-  `FlatList` con `numColumns={2}` (o `FlashList`, cubierto por el skill
-  `vercel-react-native-skills`); cambia el contenedor, no el diseño —
-  `chunkRows()` desaparece a favor de `numColumns` y `Screen` deja de envolver
-  el grid en su `ScrollView` para esas dos pantallas.
-- **El log de contactos que falla se pierde.** Si el insert a
-  `listing_contacts` falla, WhatsApp se abre igual (no se le niega el contacto
-  al usuario por un fallo de log) y el usuario ve un toast de error, pero no
-  hay reintento: falta una cola de escrituras pendientes con persistencia
-  local que se vacíe al recuperar conexión. **Revisar cuando:** se construya
-  el grupo Confianza — es ahí, en "¿A quién le vendiste?", donde una fila
-  faltante deja de ser invisible y se vuelve un candidato ausente de la lista
-  que rompe RF-12.
-
----
-
-## 8b. Estado de implementación del frontend (por grupo)
-
-**Onboarding — construido y conectado a Supabase real.** Las 13 pantallas
-existen como código, con auth gating real (ver sección 8). **"Permiso de
-notificaciones" ya pide el permiso REAL** y registra el token (RF-16): el botón
-llama a `registrarPushToken()` y entra al Feed pase lo que pase, incluso si el
-usuario dice que no — es el último paso del onboarding y atorarlo ahí sería
-absurdo. Sin conectar todavía, fuera de alcance por decisión explícita: la subida
-de la foto de perfil —que dejó de ser "pendiente del onboarding" y pasó a deuda con
-disparador en §8, porque "Editar perfil" dibuja el mismo círculo inerte y lo que
-falta es un bucket, no el picker—, íconos nativos de los 4 triggers de `NativeTabs`
-(siguen siendo solo texto).
-
-**RF-04 completo: "Recuperar contraseña" por OTP, no por enlace.** Eran 13
-pantallas y son 15: `recuperar-codigo.tsx` y `nueva-password.tsx` se suman a
-`recuperar-password.tsx`, que era la única pantalla MUERTA del grupo (su botón
-hacía `router.back()` y no llamaba a Supabase). **Sin migración y sin tocar
-`rls.sql`**: las tres llamadas van a GoTrue, que escribe en `auth.users`, no en
-`public.users` — ni RLS ni grants de columna participan, y el único trigger que
-este repo cuelga de ahí es `after insert` (`20260906000438:42`), que un cambio de
-contraseña no dispara. Seis cosas que no se ven en el diff:
-
-- **Va por OTP y no por enlace para NO depender de deep linking**, que sigue sin
-  montarse (es la misma carencia de la deuda de Compartir en §8: dominio propio +
-  `apple-app-site-association`/`assetlinks.json` + página de respaldo). Un código
-  que se teclea no necesita nada de eso. El frame decía "Te enviaremos un enlace" y
-  se corrigió a "un código de 6 dígitos" — copy persistente, así que el HTML fue
-  primero (§0 regla 4).
-- **`verifyOtp({type:'recovery'})` SÍ emite `PASSWORD_RECOVERY` en nuestra versión**
-  (auth-js 2.115.0, `GoTrueClient.js:2063`) — el bug reportado en otras versiones no
-  nos toca. Lo que importa está una línea arriba (`:2062`, `_saveSession`): **la
-  sesión es real y completa**, indistinguible de la de un login. El nombre del
-  evento es lo único que las separa, y `SessionProvider` lo descarta (`session.tsx:118`,
-  el `_evento` con guion bajo).
-- **Por eso las dos pantallas nuevas NO llaman a `useRedirectSiPerfilCompleto()`**,
-  al revés que `codigo.tsx`/`verificacion.tsx`/`iniciar-sesion.tsx`. Con ese guard,
-  el usuario saldría disparado al Feed en el instante en que el código se verifica,
-  sin llegar nunca a cambiar su contraseña. Es el error natural al copiar el patrón
-  de la pantalla hermana, y por eso está comentado en el archivo.
-- **No se tocó `SessionProvider` ni el gating**, y la alternativa —un flag
-  `recoveryPendiente`— se descartó con un argumento y no por gusto: el único caso
-  que resolvería es el force-quit a media recuperación, y un flag en memoria muere
-  en ese mismo force-quit. Ver la deuda de §8.
-- **El correo viaja por param de ruta, NO por `usePerfilDraft()`.** Ese borrador es
-  el del ALTA y su campo `correo` lo escriben "Verificación"/"Código"; compartirlo
-  dejaría a los dos flujos peleándose por el mismo campo si alguien empieza un alta,
-  vuelve atrás y entra a recuperar.
-- **Al final se cierra sesión y se vuelve a "Iniciar sesión"**, aunque la sesión de
-  recuperación sirva para entrar. Obliga a estrenar la contraseña nueva, o sea que
-  el usuario COMPRUEBA que funciona antes de salir del flujo. El `.auth-link` de
-  "Volver a iniciar sesión" del frame hace lo mismo, y **tiene que cerrar sesión
-  para funcionar**: `iniciar-sesion.tsx:19` llama al guard, así que con la sesión
-  viva rebotaría al Feed en vez de mostrar el formulario.
-
-Componentes nuevos: **`OtpInput`** (`src/components/OtpInput.tsx`), extraído de
-`codigo.tsx` — puramente presentacional, no sabe de `verifyOtp` ni de
-`signInWithOtp`, así que la lógica de alta se quedó intacta donde estaba. Exporta
-también `OTP_LENGTH`. Y dos constantes que dejaron de estar duplicadas antes de
-poder duplicarse: `CORREO_RE` (de `verificacion.tsx`) y `MIN_PASSWORD` (de
-`completar-perfil.tsx`), esta última ahora emparejada con el servidor — ver §9.
-
-**Explorar — construido y conectado a Supabase real.** Las 11 pantallas
-existen como código (7 archivos de ruta, algunos cubren varios estados:
-Categoría 2 estados, Búsqueda 3 estados, Detalle 2 estados comprador/vendedor)
-y leen del proyecto remoto. `src/lib/explorar-state.tsx` sigue siendo el estado
-compartido, pero ahora guarda solo los *valores* (campus elegido, filtros,
-catálogo de categorías, set de favoritos): el filtrado dejó de recorrer un
-arreglo y es una query en `src/lib/listings.ts`.
-
-**Qué quedó conectado:** el catálogo de `listings` (con su join a `categories`,
-`campus` y `listing_photos`), las `categories` reales, el catálogo de `campus`
-filtrado por la universidad del perfil, `favorites` con optimistic update y
-rollback por id, el insert a `listing_contacts` en el botón de WhatsApp, la RPC
-`increment_listing_view` al abrir Detalle, `listing_favorites_count` para el
-stat del vendedor, y la búsqueda de texto completa por tsvector.
-
-**Mocks borrados:** `src/constants/mock/listings.ts` y
-`src/constants/mock/campus.ts` ya no existen. `src/constants/mock/categorias.ts`
-se disolvió en `src/lib/categorias.ts`: el slug y el ciclo de tintes no eran
-datos de prueba sino presentación derivada (la tabla real solo tiene
-`id, nombre`), así que sobrevivieron a la migración de mock a real.
-
-Detalles que no se ven en el diff:
-- **Los ids de Explorar son `number`**, no `string` — `listings.id` y
-  `categories.id` son `bigint`. Los params de `/detalle/[id]` y
-  `/categoria/[id]` llegan como string desde la ruta y se parsean con
-  `Number()`.
-- **Toda query que embeba el vendedor debe desambiguar la relación:**
-  `users!listings_user_id_fkey`. Hay dos caminos entre `listings` y `users` (la
-  FK directa y un many-to-many vía `favorites`), así que sin nombrarla PostgREST
-  responde `PGRST201` y la query entera falla. El `!inner` que va después no es
-  decorativo: habilita ordenar el resultado por `rating_promedio` del vendedor
-  ("Mejor calificados").
-- **Paginación híbrida, encapsulada en `fetchListings()`:** keyset con cursor
-  compuesto `(created_at, id)` para el orden "recientes" —que es append-heavy y
-  con `offset` mostraría tarjetas repetidas al entrar publicaciones nuevas
-  durante el scroll, además de caminar sobre `listings_feed_idx`— y `.range()`
-  para precio/rating, donde la llave de orden cambia y no hay índice compuesto
-  que la soporte. Las pantallas manejan un cursor opaco y no saben cuál corrió.
-- **El Feed no es lista infinita**: el frame es un grid de 6 con "Ver todo".
-  La paginación de RNF-01 vive en Búsqueda y Categoría.
-- **Favoritos con optimistic update y rollback por id.** La RLS de `favorites`
-  no tiene `is_active_user()` y solo compara `user_id = auth.uid()`, así que no
-  existe un rechazo por política para una escritura bien formada sobre la
-  propia fila: los únicos fallos son de transporte. Esperar confirmación en un
-  corazón que se toca desde un grid en scroll no compra nada. El insert va con
-  `ignoreDuplicates: true` porque `favorites` no tiene grant de UPDATE — un
-  upsert normal (`ON CONFLICT DO UPDATE`) fallaría con `42501`.
-- **`refrescar()` es una función nueva y ADITIVA de `useListings`, no
-  reemplaza a `reintentar()`.** `reintentar()` vacía `items` a `[]` y pone
-  `estado` en `'loading'` — correcto para "Reintentar" tras un error, donde
-  tapar el contenido con el skeleton es lo que se quiere. Pull-to-refresh
-  necesita lo contrario: mantener el grid visible mientras refresca. Por eso
-  `refrescar()` pide la página 1 fresca y solo reemplaza
-  `items`/`cursor`/`total` al llegar, sin tocar `estado` (salvo devolverlo a
-  `'ready'` si veía un error previo). Hoy solo la usa el Feed
-  (`(tabs)/index.tsx`), vía el `refreshControl` de `Screen`. Categorías y
-  campus activo no se refrescan con el gesto — no cambian dentro de una
-  sesión y no tienen refetch expuesto hoy.
-- **`campusSeleccionado` sigue al campus DEL PERFIL cuando ese cambia, pero no
-  pisa la elección del selector del Feed** — y esas dos cosas se distinguen con
-  un `ref` (`campusPerfilAplicado`), no con el estado. El efecto que carga el
-  catálogo puede volver a correr por dos razones opuestas: si es una recarga con
-  el mismo campus de perfil, hay que respetar lo que el usuario haya elegido en
-  el bottom sheet (eso es lo que protege el `return actual`); si el campus del
-  PERFIL cambió —solo pasa en "Editar perfil"—, hay que reapuntar, o el Feed se
-  queda en el campus viejo el resto de la sesión aunque el usuario acabe de
-  mudarse. Cambiar de UNIVERSIDAD nunca necesitó esto: el campus viejo ya no
-  aparece en la lista nueva y cae solo. Lo que NO se toca son las publicaciones
-  ya creadas, que conservan su `campus_id` del insert — eso es correcto, no un
-  efecto que haya que compensar.
-- **El hero de Detalle es un CARRUSEL, y su visor a pantalla completa es un
-  `Modal`, no una ruta.** Las fotos siempre estuvieron completas en
-  `fetchListingById()` (`fotos: string[]`, ordenadas por `orden`); lo que
-  faltaba era la UI. `PhotoCarousel` es el mecanismo compartido y `PhotoDots`
-  los puntos; el chrome (`.detail-nav`, `.detail-badge`, los propios dots) vive
-  AFUERA, como hermanos absolutos, o viajaría con el scroll. Seis cosas que no
-  se ven en el diff:
-  - **El visor es `Modal` de RN por el mismo criterio que la hoja de acciones de
-    "Mis publicaciones" y `CampusBottomSheet`**: necesita el ARRAY de fotos y el
-    índice tocado en la mano, y una ruta solo recibe params serializables. De
-    paso esquiva el gotcha de §9 sobre `presentation` en Stacks anidados.
-  - **Lo monta `detalle/[id].tsx` de forma CONDICIONAL, no con un prop
-    `visible`.** Cada apertura tiene que ser un montaje nuevo o `indiceInicial`
-    no se re-aplica: `useState(indiceInicial)` solo lee su argumento al montar,
-    así que abrir en la foto 3 después de haber abierto en la 1 no habría hecho
-    nada.
-  - **`PhotoCarousel` NO guarda índice propio, a propósito.** El dueño
-    (`indiceFoto` en Detalle) es la única fuente de verdad; si el carrusel
-    tuviera el suyo, `irA()` tendría que reconciliar dos.
-  - **La sincronización hero ↔ visor es explícita, no emergente.** Son dos
-    `ScrollView` distintos: al cerrar el visor en la foto 4, el hero se quedaría
-    en la 1 si nadie hiciera nada. Por eso `onCerrar` devuelve el índice final y
-    Detalle hace `setIndiceFoto(i)` + `carruselRef.current?.irA(i)`. El `irA` va
-    sin animar y mientras el Modal todavía tapa, así que no hay tirón visible.
-    **Si alguien "simplifica" ese parámetro, rompe esto sin ningún error.**
-  - **`contentOffset` de ScrollView NO sirve para abrir en la foto tocada: es
-    iOS-only** (`ScrollView.d.ts:406`, dentro de `ScrollViewPropsIOS`, que abre
-    en la 336). En Android se habría ignorado en silencio y el visor siempre
-    habría abierto en la primera. Se usa `onContentSizeChange` + `scrollTo`, con
-    un guard de una sola vez.
-  - **El tamaño de página se MIDE con `onLayout`, no se asume.** El ancho sí
-    sería `useWindowDimensions().width` en los dos usos, pero el alto no (340 en
-    el hero, pantalla completa en el visor), y un `height:'100%'` por página
-    colapsa a 0 dentro del contenedor de contenido de un ScrollView.
-  - El gesto de cierre va con **`PanResponder` + `Animated`**, no con
-    gesture-handler: `react-native-gesture-handler` y `reanimated` están en
-    `package.json` pero no se usan en un solo archivo de `src/`. El reparto de
-    ejes es `|dy| > |dx| * 2 && |dy| > 8` — eso es lo que impide que el arrastre
-    vertical le robe el swipe horizontal entre fotos. **Y el cierre pasa por
-    estado (`cerrando`), no por un ref**: el `PanResponder` se crea una sola vez
-    y por clausura reportaría siempre `indiceInicial`; `react-hooks/refs`
-    además rechaza el ref.
-  - **Con 0 fotos el tap no abre nada** (ahí se ve el ícono de categoría de
-    fallback) y **con ≤1 foto no se pintan dots** — un indicador de paginación
-    de una sola página es ruido. Antes se pintaba uno solo
-    (`Math.max(fotos.length, 1)`), que era razonable cuando el hero no
-    scrolleaba.
-  - Se montan las N páginas de golpe, sin virtualizar: el tope es 5 fotos, ya
-    normalizadas por `normalizar()`, y `ListingPhoto` va con `cachePolicy="disk"`
-    (línea 81), así que el visor las lee de disco sin volver a bajarlas de la
-    red. Ojo: `"disk"` no es `"memory-disk"`, así que sí re-decodifica — si el
-    visor se siente lento al abrir, ese es el ajuste.
-- **La búsqueda NO escapa el término, y es deliberado.** Va por
-  `.textSearch('busqueda', q, {type:'websearch', config:'spanish'})` contra la
-  columna generada: `websearch_to_tsquery` está hecho para input crudo (nunca
-  lanza error de sintaxis), la coma ya no delimita nada porque es un filtro
-  suelto y no un `or=(...)`, y `*` se vuelve una tsquery vacía. Aquí vivió un
-  `escapaBusqueda()` de dos capas más un corto circuito para el asterisco;
-  ambos se borraron al migrar a tsvector. Si vuelves a ver un `replace` sobre
-  el término de búsqueda, es una regresión.
-
-Componentes reusables ya construidos aquí (no los reconstruyas):
-`ProductCard`, `CategoryTile`, `PageHeader`, `EmptyState`,
-`SegmentedControl`, `Chip`, `ActiveFilterChip`, `SheetScreen`,
-`RoundIconButton`, `PhotoCarousel`/`PhotoDots`, `PhotoViewer`,
-más los íconos de categorías. Al conectar datos reales se
-sumaron tres del grupo Sistema, transcritos de sus frames: `SkeletonGrid` /
-`SkeletonCatGrid`, `ErrorState` (con "Reintentar") y `Toast` (`ToastProvider`
-montado en el `_layout.tsx` raíz, con variantes de éxito y error). Se
-construyeron ahora porque conectar la red hace alcanzables por primera vez los
-estados de carga, fallo y aviso no bloqueante. `SheetScreen` es una
-pantalla de Stack con `presentation:'transparentModal'` **declarada en el
-Stack raíz** (`src/app/selector-campus.tsx`, `src/app/filtros.tsx` — no
-dentro de `(explorar)/`, ver el gotcha de sección 9) — es distinto de
-`CampusBottomSheet.tsx` (un `Modal` de RN real, usado solo por Completar
-perfil en Onboarding); no unificar ambos, sirven casos de uso distintos ya
-documentados en sección 5.
-
-Del grupo Publicar se sumaron: **`ListingPhoto`** (arriba), **`PhotoRow`**
-(`.photo-row`/`.photo-thumb`/`.photo-add`/`.photo-remove`, con el contador
-`N/5`) y **`ListingFormFields`**, que es EL formulario de publicación —
-"Publicar" y "Editar publicación" lo comparten porque, tras actualizar el
-diseño, tienen los mismos campos en el mismo orden. `FormHeader` creció con
-`leading` (`'back'`/`'close'`) y `trailing` (la acción "Guardar" en `--brick`).
-
-Al migrar al modelo atómico se sumaron dos más, ambos por EXTRACCIÓN y no
-escritos de cero:
-- **`Notice`** (`.notice`) — el aviso persistente, sacado tal cual de
-  `creada.tsx`. Es hermano del `Toast`, no una variante: el toast se va a los 4s
-  y este trae una acción, así que irse mientras se lee es justo lo que no debe
-  hacer.
-- **`BlinkingDots`** (`.splash-dots`) — los 3 puntos que ya vivían dentro de
-  `(onboarding)/splash.tsx`. Son el ÚNICO indicador de espera del sistema de
-  diseño, así que el botón "Subiendo imágenes" los reusa en vez de estrenar un
-  spinner. Que funcionen sobre `--brick` no es suerte: `.splash-dot` es
-  `--paper` al 50%, el mismo color del texto de `.primary-btn`.
-
-Y **`PrimaryButton` creció con `busy`**, que NO es `disabled` con otro nombre:
-`disabled` (0.45) dice "todavía no puedes", `busy` dice "está pasando" y va a
-color pleno — bajarlo apagaría los puntos que comunican el avance.
-
-Botones inertes a propósito: **ya solo el menú kebab** del dueño, que es otra
-tarea. Los demás se fueron cableando y conviene no "restaurarlos": "Editar
-publicación" navega a `(publicar)/editar/[id]`; "Marcar como vendida" lanza el
-flujo de venta (RF-07); **Reportar** abre `/reportar/[id]` (RF-14) y **Compartir**
-llama a `Share.share()` con texto plano (§8, deuda del link). **El botón de
-WhatsApp ya no tiene nada mock**: pide el número real por `seller_whatsapp` y
-registra el contacto en `listing_contacts`, en ese orden.
-
-**El orden de `contactarPorWhatsapp()` cambió y no es cosmético.** Antes
-registraba primero y abría después, porque el `wa.me` con placeholder no podía
-fallar. Ahora el número puede no llegar —vendedor sin teléfono, o llamante
-suspendido— y en ese caso NO hubo contacto: registrarlo dejaría en "¿A quién le
-vendiste?" (RF-12) a alguien que nunca pudo escribirle. Por eso el número va
-primero y su ausencia corta la función. Lo que NO cambió es el fallo suave del
-registro: si el insert revienta, WhatsApp se abre igual y el usuario ve un toast
-(§8, deuda del log perdido).
-
-**Fotos: construidas, con UN pendiente de dispositivo real.**
-`src/components/ListingPhoto.tsx` es el punto ÚNICO de contacto con el bucket
-privado — envoltura de `expo-image` que arma
-`GET /storage/v1/object/authenticated/listing-photos/<path>` con
-`Authorization: Bearer <access_token>` leído de `useSession()`. Todo lo que
-pinte una foto pasa por ahí (`ProductCard`, Detalle, `PhotoRow`).
-
-**Ojo con lo que esto cambió en Explorar, que estaba dado por cerrado:**
-`ProductCard` y Detalle **ya no usan el ícono de categoría tintado como imagen
-principal** — pasó a ser el `fallback` de `ListingPhoto`, y solo se ve cuando la
-publicación no tiene `storage_path` (las creadas antes de que existiera la
-subida, o dadas de alta desde Studio). No lo "restaures" creyendo que la foto
-sobra.
-
-**PENDIENTE REAL, no un extra:** confirmar que el header `Authorization` de
-`expo-image` llegue en un **Android real**. Por la regla de la sección 6 el
-simulador headless no cuenta como prueba, y todo el patrón de lectura depende de
-ese header. Si no llegara, la respuesta NO es migrar a signed URLs: eso es un
-cambio de semántica de seguridad disfrazado de refactor (§9).
-
-**Publicar — construido, conectado y ATÓMICO.** Las 7 pantallas del grupo viven
-en 3 archivos de ruta: `nueva.tsx` cubre los 5 estados de Publicar (formulario,
-falta teléfono, procesando fotos, subiendo, error de subida), más `creada.tsx`
-—hoy de un solo estado— y `editar/[id].tsx`. (Esta cuenta decía "5 pantallas /
-3 estados": se le había quedado fuera "procesando fotos", que sí es un
-`phone-block` propio y §4 sí contaba.) La capa de datos: `src/lib/storage.ts` (subida,
-borrado y URL autenticada), `src/lib/publicar.ts` (la orquestación y su orden de
-llamadas), `src/lib/listing-form.ts` (estado + validación compartida),
-`src/lib/perfil.ts` (el teléfono: normalización, escritura y la RPC de lectura) y
-`src/lib/foto-picker.ts`.
-
-Detalles que no se ven en el diff:
-
-- **El gate del teléfono (RF-13) se suma a `listoParaGuardar` en `nueva.tsx`, NO
-  a `puedeGuardar` de `listing-form.ts`** — ese booleano lo comparte "Editar
-  publicación", que no debe heredarlo: quien edita una publicación ya publicó, o
-  sea que ya dio su número. `listoParaGuardar` ya existía para exactamente esto
-  (los datos del perfil que el formulario necesita pero no controla), así que el
-  gate no estrenó mecanismo.
-- **El teléfono no vive en `useListingForm`, y no es organización.** No es un
-  campo de la publicación sino del perfil, y se escribe en `public.users`.
-  Dentro del form viajaría hasta `aInput()`, que arma la fila de `listings`.
-  Por lo mismo `ListingFormFields` lo recibe como un prop opcional entero
-  (`telefono`) y no como parte de `form`: sin ese prop el formulario es
-  exactamente el de antes, que es lo que necesita Editar.
-- **`faltaTelefono` es `profile?.tiene_telefono === false`, con el `=== false`
-  a propósito.** Mientras el perfil no ha cargado, `tiene_telefono` llega
-  `undefined`; con un `!profile?.tiene_telefono` el campo parpadearía en la
-  pantalla de todo el mundo durante el primer render.
-- **El teléfono se guarda ANTES de crear la publicación**, mismo criterio que
-  "Completar perfil" con la contraseña: si falla, todavía no se creó nada y no
-  hay qué recuperar. Al revés dejaría una publicación `pausada` cuyo dueño sigue
-  sin ser contactable. Después va un `refreshProfile()`, que es lo que hace
-  desaparecer el campo.
-
-- **No se puede subir una foto antes de crear el listing, y no es una decisión
-  de UX.** La carpeta del objeto ES `{listing_id}/`, y
-  `listing_photos_objects_insert_own` exige que ese listing exista y sea del
-  invocante. Cualquier diseño de "subo mientras el usuario llena el formulario"
-  choca con la policy. Por simetría, Editar también difiere al Guardar: subir al
-  elegir y salir sin guardar dejaría objetos huérfanos que nadie ve ni limpia.
-  Esto sigue aplicando igual bajo el modelo atómico.
-- **Un fallo de fotos NO hace rollback del listing, y tampoco lo activa.** La
-  publicación se queda `pausada` con lo que sí subió, y el usuario reintenta
-  desde la misma pantalla. Borrarla sería peor de las dos maneras: perdería lo
-  que escribió y ni siquiera limpiaría los archivos ya subidos (el cascade se
-  lleva las filas, no los objetos). Si abandona en ese estado, la recupera desde
-  "Mis publicaciones" — esa pantalla es la que hizo viable este modelo.
-- **Publicar y Reintentar son la MISMA función**, y lo único que las distingue
-  es si `nueva.tsx` ya tiene un `listingId` en estado. Por eso
-  `publicarListing()` avisa el id por `onListingCreado` ANTES de subir y no al
-  devolver: al devolver ya sería tarde justo en el caso que lo necesita, y cada
-  reintento crearía una publicación `pausada` huérfana más.
-- **`finalizarPublicacion()` es idempotente a propósito.** Reintentar no es un
-  camino aparte: es volver a llamarla. Las fotos ya subidas se saltan solas
-  (`subirPendientes` ignora las de origen `'storage'`), el delete+insert de
-  `guardarFotos` se repite sin daño y activar dos veces da lo mismo. Eso cubre
-  también los fallos que NO son de subida — si revienta `guardarFotos` o la
-  activación, el mismo botón los resuelve.
-- **El alta ya no inserta las filas de `listing_photos` de a una**, y no es un
-  refactor cosmético: numerar `orden` por foto colisiona en cuanto hay un
-  reintento parcial. Si de 3 fotos falla la 2ª, las que quedaron toman `orden` 0
-  y 1; al reintentar, la foto 2 se insertaría con `orden = 1`, ya tomado, y
-  revienta contra `unique (listing_id, orden)`. La única numeración correcta es
-  la del set final completo, así que las escribe `guardarFotos()` de un golpe.
-  Se fue con eso `insertarFoto()`, que quedó sin usar. Si vuelves a ver un
-  insert por foto en `subirPendientes()`, es esa regresión.
-- **Las fotos se NORMALIZAN al elegirlas**, en `normalizar()`
-  (`src/lib/foto-picker.ts`): siempre re-encode a JPEG `compress: 0.8`, y resize
-  solo si el lado mayor pasa de 1600 px. Sin esto, cualquier screenshot (PNG de
-  6+ MB) falla siempre contra el tope de 5 MiB del bucket — ver §9, el `quality`
-  del picker no comprime PNG. Va **al elegir y no al subir** por lo mismo que el
-  filtro de formato ("con la foto todavía a la vista y pudiendo elegir otra"), y
-  así se paga una vez por foto y no en cada reintento.
-  - **El orden es filtrar-formato → normalizar, no al revés.** Invertirlo
-    dejaría `formatoSoportado()` muerto (el manipulator convertiría un TIFF a
-    JPEG), y si el manipulator falla justo con ese formato exótico caeríamos a
-    la URI original y subiríamos algo que el bucket rechaza, con el error lejos
-    de su causa.
-  - Si el manipulator falla se conserva la URI original en vez de descartar la
-    foto: puede que ya fuera lo bastante chica, y abajo está la red del punto
-    siguiente.
-  - **1600 px** sale del diseño: el frame mide 375 pt y el hero de Detalle es a
-    ancho completo → 1125 px en 3x.
-- **`subirFoto()` distingue el fallo DETERMINISTA del transitorio**, y
-  `subirConReintento()` ya no reintenta el primero. Se detecta con
-  `StorageApiError.code === 'EntityTooLarge'` —el campo que la propia librería
-  documenta para esto, no el `message`, que viene en inglés— y se traduce a
-  `FotoDemasiadoGrandeError`, hermano de `FormatoNoSoportadoError`. Antes de
-  esto, un incidente real de 6 toques generó **12 requests**: el reintento
-  automático duplicaba cada intento condenado.
-- **El motivo se marca EN la foto** (`FotoElegida.fallo`), no en el estado de la
-  pantalla, y de ahí sale todo lo demás:
-  - `subirPendientes()` **salta** las marcadas como deterministas: se reportan
-    con su motivo sin tocar la red. Sin eso, el caso mixto —una foto muy grande
-    y otra caída por conexión— reintroduce el desperdicio, porque "Reintentar"
-    es legítimo por la segunda y arrastraría a la primera.
-  - El aviso y el CTA se **derivan en cada render** de `form.fotos`
-    (`fallosDe()` + `componerAviso()`), nunca se guardan. Es lo que hace que
-    quitar la foto culpable recomponga el texto al instante **y renumere**: si
-    se quita la foto 2, la que era 4 pasa a ser 3. Un texto guardado en estado
-    seguiría nombrando fotos ya quitadas, con las posiciones corridas.
-  - `idFoto()` no incluye `fallo`, así que marcar no remonta miniaturas ni
-    dispara `fotosCambiaron` en Editar: anotar no es editar el set.
-- **`finalizarPublicacion()` no propaga el fallo de `guardarFotos()` ni el de la
-  activación: los devuelve en `falloGeneral`.** Tiene un solo camino de retorno a
-  propósito. Como `guardarFotos()` corre ANTES del early return (tiene que, o
-  quedan huérfanos), una excepción ahí se llevaba el resultado entero — y con él
-  las marcas de las fotos que ya se sabían malas: el usuario veía solo el
-  genérico y cada "Reintentar" volvía a subir la foto condenada.
-- **El congelado está partido, y las dos mitades no comparten razón.**
-  `PhotoRow` se congela solo mientras hay una subida en curso (quitar una foto a
-  media subida rompe el orden); los campos de texto, mientras
-  `listingId !== null` (la publicación ya existe en la base con ese texto y
-  `finalizarPublicacion` no lo reescribe). Tras un fallo lo segundo sigue siendo
-  cierto y lo primero no — y ahí el usuario NECESITA poder quitar la foto. De
-  ahí el prop `fotosDisabled` de `ListingFormFields`.
-- **`guardarFotos()` hace delete + insert, nunca un upsert.**
-  `enforce_photo_limit()` es un trigger BEFORE INSERT y dispara también en la
-  rama `ON CONFLICT DO UPDATE`, así que un upsert sobre una publicación con 5
-  fotos reventaría al EDITARLA. Solo corre si el set de fotos cambió: esa
-  reescritura deja la publicación sin fotos entre el delete y el insert, y
-  editar solo el precio no debe pagar ese riesgo.
-- **El cuerpo del upload es un `ArrayBuffer` con `contentType` explícito.**
-  Verificado contra `node_modules`: el `File` de `expo-file-system` declara
-  `implements Blob` pero no pasa el `instanceof Blob` de storage-js
-  (`dist/index.cjs:622`), y el `contentType` por default de esa librería es
-  `text/plain;charset=UTF-8`, que el bucket rechaza. Sin esa línea no funciona
-  ninguna subida.
-- **`PhotoRow` tiene un tercer estado, `FotoProcesando`, para el momento entre
-  elegir una foto y que `normalizar()` termine con ella** — más urgente desde
-  que cada foto se re-encodea y a veces se redimensiona antes de aparecer:
-  elegir varias fotos grandes de golpe podía tardar segundos sin ninguna señal
-  de que algo estaba pasando. Nuevo frame en `relevo-app.html`: "Publicar
-  (procesando fotos)".
-  - **La miniatura muestra la foto real recién elegida** (la uri cruda del
-    picker, sin esperar a `normalizar()`), con un scrim (`rgba(34,31,28,0.55)`,
-    el mismo tono que ya usa `.photo-remove`) y `BlinkingDots`/`.splash-dots`
-    encima — el mismo indicador que ya usa el botón "Subiendo imágenes", no
-    un skeleton nuevo. Mostrar la foto real responde directo a "parece que no
-    se cargó": si se ve la foto, sí se cargó.
-  - **Es por foto individual, no por lote.** `elegirFotos()` dejó de resolver
-    un array una sola vez al final — ahora toma `callbacks.onPlaceholders`
-    (avisa, tras el filtro de formato, cuántas fotos van a procesarse) y
-    `onFotoLista` (avisa una por una, en cuanto CADA `normalizar()` termina).
-    Sin esto, aunque hubiera loading visual, las 5 miniaturas habrían
-    aparecido nítidas todas al mismo tiempo, tan tarde como la más lenta — que
-    es justo lo que pasaba antes de este cambio. El loop sigue siendo
-    secuencial (sin `Promise.all`, mismo motivo de siempre: pico de memoria).
-  - **La uri cruda del asset es la llave que conecta el placeholder con su
-    resultado** (`reemplazarPlaceholder` en `listing-form.ts`) — no hace falta
-    un id nuevo. No hay colisión posible porque `.photo-add` desaparece
-    mientras hay un lote en curso (prop `procesando` de `PhotoRow`, DERIVADO en
-    cada render de `form.fotos.some(origen === 'procesando')`, no un estado
-    aparte): no puede haber dos lotes generando la misma uri a la vez.
-  - **`puedeGuardar` (`listing-form.ts`) excluye cualquier foto `'procesando'`.**
-    Sin esto, tocar "Publicar artículo"/"Guardar" mientras una foto sigue
-    procesando le pasaría una `FotoProcesando` (sin `path`) a
-    `subirPendientes()`, que solo sabe tratar `'storage'`/`'local'`. De ahí
-    sale `FotoParaGuardar` (`PhotoRow.tsx`), el tipo angosto —sin
-    `'procesando'`— que ahora usan `subirConReintento`, `subirPendientes` y las
-    firmas de `publicarListing`/`finalizarPublicacion`/`guardarEdicion`.
-    `fallosDe` NO se angostó: se sigue llamando en cada render sobre
-    `form.fotos` (`FotoEnEdicion`) para derivar el aviso, incluso mientras hay
-    una foto procesando — su propio filtro (`origen === 'local' && fallo`) ya
-    la excluye sola, sin necesitar el tipo más estrecho.
-    `fotosParaGuardar()` (`publicar.ts`) es la función que hace el angostado en
-    el límite del módulo, en los dos únicos sitios que llaman a
-    `publicarListing`/`finalizarPublicacion`/`guardarEdicion`.
-    **VERIFICADO, no supuesto — hoy NO hay ningún camino de ejecución que la
-    haga lanzar**: `publicar()` (`nueva.tsx`) y `guardar()`
-    (`editar/[id].tsx`) vuelven a chequear `listoParaGuardar`/`puedeGuardar`
-    de forma síncrona en su propio primer renglón, y entre ese chequeo y la
-    llamada a `fotosParaGuardar(form.fotos)` no hay ningún `await` — es la
-    MISMA clausura, sobre el MISMO array de `form.fotos` (React no muta el
-    array de un render viejo), así que no existe secuencia de taps donde el
-    guard vea una cosa y la llamada de abajo vea otra. No es "red por si
-    `puedeGuardar` se saltara": hoy no se puede saltar.
-    **Entonces por qué existe**: `publicarListing`/`finalizarPublicacion`/
-    `guardarEdicion` necesitan `FotoParaGuardar[]`, y `form.fotos` es
-    `FotoEnEdicion[]` — ALGO tiene que angostar ese tipo en la frontera,
-    con o sin este chequeo. La alternativa era un `as FotoParaGuardar[]` mudo
-    en cada call site: mismo costo, cero protección si algún día alguien
-    inserta un `await` entre el guard y la llamada (reintroduciendo la
-    ventana que hoy no existe) o agrega un tercer call site sin el mismo
-    guard. Entre las dos formas de resolver un problema de tipos que había
-    que resolver de todos modos, se eligió la que falla alto en vez de la que
-    corrompe en silencio — no es validación agregada por si acaso sobre un
-    riesgo de hoy.
-  - **`agregarFoto()` (en `nueva.tsx` y `editar/[id].tsx`) gana un guard de
-    reentrada por `useRef`**, no por estado: tiene que valer ANTES del primer
-    `await`, sin esperar a un re-render. Un doble-tap muy rápido en "Agregar"
-    podría, si no, abrir el picker dos veces y generar dos lotes de
-    `elegirFotos()` superpuestos.
-  - **MEDIDO con datos reales (instrumentación temporal de 3 puntos en
-    `elegirFotos()`, `console.log` bajo `__DEV__`, YA RETIRADA del código —
-    esto es el resultado, no una nota de "sigue ahí"): el tiempo del picker
-    NO escala con la cantidad de fotos elegidas** — 1 foto: 5183ms; 4 fotos:
-    7224ms; 5 fotos: 5898ms en un intento y 13767ms en otro. Es altamente
-    variable por foto específica, consistente con que iOS esté descargando
-    esa foto desde iCloud si no estaba ya en el dispositivo — comportamiento
-    del sistema, fuera de control de la app; ni `normalizar()` ni el loop
-    pueden arreglarlo. El loop de `normalizar()` en sí (punto 3/3) y el tramo
-    resolve→`onPlaceholders` (punto 2/3, solo un `.filter()`) confirmaron NO
-    ser donde está el retraso. **Si hace falta volver a medir** (ej. tras un
-    cambio real al picker o a `normalizar()`), reinstalar los 3
-    `console.log` bajo `__DEV__` es rápido — no vale la pena dejarlos
-    permanentes por esa posibilidad.
-  - **De ahí, un segundo hueco de señal visual: `eligiendoFotos`.** El picker
-    puede tardar esos mismos varios segundos DESPUÉS de que el usuario ya
-    confirmó su selección y la pantalla de Publicar vuelve a ser visible —
-    hasta que `launchImageLibraryAsync()` resuelve, `form.fotos` no cambió en
-    nada, así que un `procesando` derivado solo de `form.fotos.some(...)` se
-    quedaba en `false` todo ese rato: "+" se veía tocable aunque
-    `agregarFoto()` ya estuviera bloqueado por el ref de arriba. Por eso
-    `nueva.tsx`/`editar/[id].tsx` ganaron `eligiendoFotos` — SÍ es estado (no
-    ref: tiene que disparar un re-render), cierto desde el tap hasta el
-    `finally` de `agregarFoto()`.
-  - **RESUELTO: `PhotoRow` tiene un CUARTO estado en el slot de `.photo-add`,
-    no solo mostrar/esconder.** `eligiendoFotos` se pasa TAL CUAL a `PhotoRow`
-    (`ListingFormFields` ya no combina nada — se movió adentro, ver abajo por
-    qué), que distingue tres casos con datos que ya tiene todos:
-    - `fotos.some(origen === 'procesando')` (ya hay placeholder) → `.photo-add`
-      sigue escondido del todo, sin reemplazo — el estado ya aprobado, sin
-      cambios.
-    - si NO hay placeholder pero `eligiendoFotos` es cierto (el picker sigue
-      resolviendo, `fotos` no cambió en nada todavía) → el slot 76×76 con
-      borde punteado se queda, pero con `BlinkingDots` centrado en vez del
-      ícono "+" y el texto "Agregar". Frame: variante renderizada de verdad
-      (no solo comentada) dentro de "Publicar (procesando fotos)", separada
-      por un borde punteado y etiquetada "Variante (doc, no es parte del
-      flujo)" — ver `.photo-add.is-busy` en `relevo-app.html`.
-    - ninguno de los dos → el `.photo-add` normal, tocable.
-    **El tile de espera es un `View`, no un `Pressable`** — sin `onPress` ni
-    `accessibilityRole="button"`. `procesandoRef` ya bloqueaba un segundo tap,
-    pero el tile en sí no debía invitar al toque durante la espera.
-    **Por qué la combinación se movió de `ListingFormFields` a `PhotoRow`**:
-    antes `ListingFormFields` hacía `eligiendoFotos ||
-    fotos.some(procesando)` para un solo booleano `procesando` que solo podía
-    decir "mostrar" o "esconder" — no bastaba para elegir ENTRE dos contenidos
-    distintos del mismo slot. `PhotoRow` ya recibe `fotos` completo, así que
-    puede derivar `hayPlaceholder` él mismo sin que se lo pasen aparte.
-- **La entrada a Publicar es el FAB de Perfil**, la única que define el diseño
-  (§0.6: el tab bar tiene 4 ítems, sin "+" central). **Vive en
-  `(tabs)/_layout.tsx` como hermano de `<NativeTabs>`, NO dentro de
-  `perfil.tsx`** — ahí se pintaba pero no recibía el toque; ver el gotcha de §9
-  antes de "acercarlo a su pantalla". El layout decide mostrarlo solo cuando
-  `usePathname() === '/perfil'`.
-- **Asimetría declarada en Editar, no olvido:** su aviso es un toast (mismo
-  `componerAviso()`, calculado una vez al terminar el intento en vez de en cada
-  render), y por eso ahí el botón "Guardar" **no** se deshabilita en el caso
-  determinista, a diferencia de Publicar. Un botón apagado sin un aviso
-  permanente al lado que explique por qué sería un misterio, y darle a Editar un
-  aviso persistente exige un frame nuevo (§0 regla 4). Volver a tocarlo
-  re-muestra el toast y no gasta red: las marcadas se saltan igual.
-  **Revisar cuando:** alguien reporte no entender por qué su publicación no
-  guarda.
-- **"Marcar como vendida" ya NO es inerte en Editar** (lo era antes de RF-07):
-  navega a "¿A quién le vendiste?" del grupo Confianza, con el mismo
-  `accionVenta()` que las otras dos entradas. Cablearla como un update suelto a
-  `'vendida'` saltándose ese paso seguiría rompiendo RF-12.
-  Y desde RF-08 esa fila **solo existe en su primer estado aquí**: al volver de
-  Calificar, el refetch al foco descubre que la publicación ya es vendida y la
-  pantalla rebota con su guard, así que "Cambiar comprador" nunca llega a pintarse
-  en Editar. Se ofrece desde Detalle y desde la hoja de "Mis publicaciones".
-
-**Cuenta — 8 de 8 pantallas construidas y conectadas: grupo completo.** Las de
-"Mis publicaciones" se hicieron por
-necesidad, no por avanzar el grupo: conectar
-Publicar dejó la app en un estado donde pausar una publicación la volvía
-inalcanzable (el Feed filtra `estado = 'activa'`), y lo mismo pasaba con una que
-quedaba sin fotos por un fallo de subida. Eso último dejó de ser un accidente y
-pasó a ser el diseño: el modelo atómico DEPENDE de esta pantalla, porque una
-publicación que se queda `pausada` por un fallo de subida se recupera aquí.
-
-- **`(cuenta)/mis-publicaciones.tsx`** cubre los 3 frames: la lista, su vacío y
-  la hoja de acciones. Lee con `useMisListings()` (`src/lib/listings.ts`), que es
-  hermano de `useListings` pero con su propia query: **sin embed de vendedor**
-  —todas las filas son mías, así que el `PGRST201` de la doble relación ni se
-  plantea— y con **todas** las fotos, no solo la portada.
-- **Ese `fotos: string[]` completo no es de más.** Eliminar tiene que borrar los
-  objetos ANTES que el listing (`listing_photos_objects_delete_own` exige que el
-  listing exista para autorizar el borrado), y para entonces ya no hay de dónde
-  leer las rutas. Es la misma secuencia de `editar/[id].tsx`.
-- **La hoja de acciones es un `Modal` de RN, no un `SheetScreen`**, y por la
-  misma razón: necesita el objeto de la fila en la mano, no params
-  serializables. Es el caso de `CampusBottomSheet`, no el de `filtros.tsx`.
-- **`useMisListings` resetea su estado en RENDER, no dentro del efecto**
-  (compara una `key` contra la anterior) — mismo patrón que ya trae
-  `useListings`, alineado a este cuando se detectó la inconsistencia (ver
-  CLAUDE.md §9 sobre `set-state-in-effect`). Resetear en la primera línea del
-  efecto de carga es equivalente en el resultado final, pero deja pasar un
-  render con la lista VIEJA todavía pintada bajo el filtro/orden nuevo; hacerlo
-  en render lo evita.
-- **`StatusRow` dejó de ser local de `editar/[id].tsx`** y vive en
-  `src/components/StatusRow.tsx`: la hoja es literalmente la `.status-section`
-  de ese frame en otro contenedor. `Toggle` sí se quedó allá.
-- **Reactivar valida que haya al menos una foto, en las DOS rutas** (la hoja de
-  acciones aquí y el toggle de `editar/[id].tsx`). El candado real es el trigger
-  de §3; estos `if` no lo duplican, traducen su `raise exception` a un toast con
-  salida — en "Mis publicaciones", además, abre Editar, que es donde se arregla.
-  El caso es real desde el modelo atómico: una subida que falla entera deja la
-  publicación `pausada` con 0 fotos. El guard sale ANTES del optimistic update,
-  o la fila parpadearía a "Activa" y volvería.
-- **En Editar, ese guard lee `fotosGuardadas`, un estado que se sincroniza tras
-  cada guardado** — no `listing.fotos` (el prop, congelado al abrir la
-  pantalla) ni `form.fotos` (lo que hay en el formulario sin guardar todavía).
-  El toggle escribe directo a la base sin pasar por "Guardar", así que una foto
-  recién elegida no existe todavía para el trigger; y tras un guardado con
-  éxito parcial la pantalla no navega, así que `listing.fotos` deja de
-  reflejar lo que hay en la base mientras la sesión de edición sigue abierta.
-- **Ese mismo `fotosGuardadas` destapó dos bugs latentes, INDEPENDIENTES del
-  modelo atómico** — estaban ahí desde que "Editar" existe, y sencillamente
-  nunca eran alcanzables sin dos guardados en la misma sesión (el modelo atómico
-  no los causó, solo hizo evidente que hacía falta una fuente de verdad
-  sincronizada). Los dos comparaban o borraban contra `listing.fotos`, el prop
-  congelado al abrir la pantalla, en vez de lo que hay en la base ahora mismo:
-  `eliminar()` podía dejar huérfano en Storage cualquier foto agregada en la
-  sesión de edición actual, y `fotosCambiaron` (antes `firmaInicial`) podía
-  hacer que un segundo "Guardar" reescribiera `listing_photos` —con su ventana
-  sin fotos— aunque nadie hubiera tocado el set. Los tres puntos
-  (`pathsOriginales`, `eliminar()`, `fotosCambiaron`) usan ahora
-  `fotosGuardadas`/`firmaGuardada`.
-- `SkeletonRows` (nuevo, en `Skeleton.tsx`) es el esqueleto de una lista plana —
-  `SkeletonGrid` habría anticipado una forma que no es la que llega.
-
-**"Favoritos" (+ su vacío) construida y conectada** —
-`src/app/(tabs)/favoritos.tsx`, con `fetchFavoritos()` nuevo en
-`src/lib/listings.ts`. No hizo falta ninguna migración: `favorites` y su RLS
-ya estaban aplicadas desde el grupo Explorar. Sin componentes nuevos: reusa
-`ProductCard`, `SkeletonGrid`, `EmptyState`/`ErrorState`, igual que
-Feed/Búsqueda.
-
-- **El heading es un `<Text>` suelto, NO `PageHeader`.** El frame usa
-  `.page-heading` a secas, sin chevron, porque esta pantalla es raíz de tab
-  —como Feed y Buscar, que tampoco lo llevan— y `PageHeader` siempre dibuja
-  `router.back()`, que aquí no tendría a dónde volver.
-- **La lista que se pinta se DERIVA, no se mantiene como estado propio.**
-  `items` (lo que trae `fetchFavoritos`) se filtra en cada render contra
-  `favoritos` (el `Set` optimista de `useExplorarState`, la misma fuente que
-  ya gobierna el corazón en Feed/Búsqueda): `items.filter(l =>
-  favoritos.has(l.id))`. El corazón de esta pantalla llama al mismo
-  `toggleFavorito()` del contexto —no a un mecanismo propio—, así que la
-  tarjeta desaparece sola en el siguiente render cuando se destoca, y
-  reaparece sola si la escritura falla y el contexto revierte, porque `items`
-  nunca se tocó, solo se filtró. El vacío también se calcula sobre esa lista
-  derivada, no sobre `items`: destocar el último favorito aquí mismo muestra
-  "Favoritos vacío" al instante, sin esperar un refetch.
-- **`fetchFavoritos()` parte de `favorites` como tabla base, no de
-  `listings`** —al revés que `fetchListings`/`fetchMisListings`—,
-  embebiendo `listing:listings!inner(${SELECT_CARD})`, para poder ordenar el
-  resultado de nivel superior por `favorites.created_at` (cuándo se guardó
-  como favorito) en vez de por la fecha del listing. Filtra
-  `estado = 'activa'`: `ProductCard` no tiene ningún estado visual para
-  "vendida" —esa tarjeta no existe en ningún frame de grid, solo en Detalle
-  y en la fila plana de Mis publicaciones—, así que mostrar una vendida aquí
-  inventaría un estado fuera del diseño (§0 regla 4).
-- **Sin paginación ni pull-to-refresh**, mismo criterio que
-  `fetchFavoritoIds`: es la lista personal de un estudiante, no un catálogo.
-  Refetch al volver al tab (`useFocusEffect` saltando el primer foco, mismo
-  patrón que `mis-publicaciones.tsx`), no al gesto.
-- Ver §9 sobre el hallazgo que hizo falta verificar antes de escribir esta
-  query: si `order`/`limit` por `referencedTable` funcionan con una ruta
-  punteada a DOS niveles de embed (`favorites → listing → fotos`), y no solo
-  al nivel que ya usaba `fetchListings`.
-
-**"Perfil público" construida y conectada.** Vista de solo lectura del perfil
-de OTRO usuario — distinta de "Perfil" (el propio, ver su bloque más abajo).
-Vive en `src/app/(cuenta)/perfil-publico/[id].tsx`, con `src/lib/perfil-publico.ts`
-como capa de datos (`fetchPerfilPublico`, `fetchReviews`). Se entra desde el
-`.seller-card` de "Detalle de publicación", que hasta ahora tenía el chevron
-pero ningún `onPress`.
-
-Seis cosas que no se ven en el diff:
-
-- **Es la PRIMERA pantalla que renderiza `rating_promedio`.** Detalle ya lo
-  trae en el embed de `vendedor` (`VENDEDOR`, `src/lib/listings.ts:40`) pero
-  nunca lo pinta — un grep de `ratingPromedio`/`rating_promedio` en todo `src/`
-  antes de esta tarea solo encontraba el `order('vendedor(rating_promedio)')`
-  de `mejor_calificados`. Sin ningún criterio de Detalle que copiar para "0
-  calificaciones", se decidió aquí: si `total === 0`, todo `.profile-rating`
-  (ícono y texto) desaparece — un vendedor sin historial no debe leerse como
-  "calificación de 0".
-- **El botón de WhatsApp aquí NO llama a `registrarContacto()`.** Esta
-  pantalla no tiene ninguna publicación en contexto y `listing_contacts.listing_id`
-  es NOT NULL — el caso que ya preveía la deuda consciente de RNF-05 más abajo
-  ("eso deja fuera el botón de 'Perfil público'"). El resto de
-  `contactarPorWhatsapp()` es el mismo criterio que Detalle: los mismos 3
-  motivos de `null`, el mismo orden de prioridad, el mismo tono neutro para el
-  vendedor suspendido.
-- **"En Relevo" (`mesesEnRelevo()`, `src/lib/format.ts`) no tiene rama de
-  años.** El frame solo ilustra un ejemplo en meses; sin un estado en
-  `relevo-app.html` con una cuenta de más de un año, no se inventa un formato
-  `Na` sin evidencia (§0 regla 4).
-- **Las reseñas se piden con un tope de 100, sin paginación** — mismo criterio
-  que el inbox de notificaciones: una lista que crece por evento, no un
-  catálogo. El `total` de `.profile-rating` sale del `count:'exact'` de esa
-  misma consulta, no de `items.length`, para que el número sea correcto aunque
-  la lista se corte en el tope.
-- **`ratings` tiene DOS FKs a `users`** (`from_user_id`, `to_user_id`, ninguna
-  con nombre explícito en la migración → default de Postgres
-  `ratings_from_user_id_fkey`/`ratings_to_user_id_fkey`). Embeber `users` desde
-  `ratings` sin desambiguar revienta con `PGRST201`, el mismo problema que ya
-  resuelve `VENDEDOR` en `listings.ts` — aquí hace falta
-  `from_user:users!ratings_from_user_id_fkey(nombre)`.
-- **La RLS de `ratings` no necesitó ninguna policy nueva — verificado, no
-  asumido.** `ratings_select`
-  (`supabase/migrations/20260906000440_favorites_contacts_ratings.sql:163-164`,
-  la misma migración donde nace la tabla en la línea 84) es
-  `for select to authenticated using (true)` — sin restringir a
-  `from_user_id = auth.uid() or to_user_id = auth.uid()` ni ninguna variante
-  que excluya a un tercero — y el grant de la línea 188
-  (`grant select, insert on public.ratings to authenticated;`) es de tabla
-  completa, sin lista de columnas. Leer reseñas de alguien que no es ninguna de
-  las dos partes ya estaba permitido antes de esta tarea: se deja anotado para
-  que nadie vuelva a preguntárselo.
-
-**Su header creció con la bandera de RF-14, y eso cambió la forma del
-`.profile-top`.** Antes tenía dos hijos sueltos (volver + compartir) bajo
-`justify-content:space-between`; con un tercero, compartir se habría ido al
-centro. Los dos de la derecha van ahora agrupados en un `.nav-actions`, la
-misma clase que ya usaba `.detail-nav`. **Van SIN `.round-btn`, al revés que
-Detalle**: allá los íconos se pintan sobre la foto y necesitan el círculo
-blanco para leerse, aquí caen directo sobre `--paper` — que es lo que
-compartir ya hacía solo. La bandera abre `/reportar/[id]` con `tipo:'usuario'`.
-
-**El gap de `.nav-actions` necesitó un override acotado, `.profile-top
-.nav-actions{gap:26px}`, y NO se tocó el `gap:8px` de la clase compartida.**
-Los 8px de `.nav-actions` leen bien en Detalle porque ahí cada ícono va dentro
-de `.round-btn` (36px, ícono de 18px centrado): el espacio ink-a-ink real es
-(36-18)/2 + 8 + (36-18)/2 = **26px**, no 8. Aquí los mismos íconos de 18px van
-bare, así que el gap directo tenía que ser esos 26px para leer igual de
-espaciado — subir el `gap:8px` general habría apretado más a Detalle, que ya
-estaba bien. Medido contra el propio CSS del archivo, no a ojo.
-
-**Compartir ya no está inerte: mismo patrón que Detalle, sin un constructor de
-texto compartido entre los dos** (ninguno de los dos lo tenía; Detalle también
-arma el suyo inline). El mensaje es `nombre + universidad + "Perfil en
-Relevo"`, con `.filter(Boolean).join('\n')` porque las dos primeras partes son
-nullable — un template literal habría podido imprimir "null" en la hoja de
-share. Mismo criterio de "sin link" que Detalle: CLAUDE.md §8 documenta las DOS
-pantallas en la misma entrada de deuda, no dos entradas separadas — es el
-mismo motivo raíz (sin universal links/App Links) y el mismo fix futuro.
-
-**"Editar perfil" construida y conectada.** Vive en
-`src/app/(cuenta)/editar-perfil/` (tres archivos: `_layout.tsx`, `index.tsx` y
-`universidad.tsx`), con `src/lib/perfil.ts` como capa de datos —creció con
-`fetchPerfilEditable`, `guardarPerfil` y `formatTelefonoNacional`—. Se entra por
-un `.menu-row` nuevo en Perfil. **Sin migración**: las cinco columnas ya estaban
-en el grant de update y `users_update_own` ya acota a `auth.uid()`.
-
-Es la pantalla que cierra dos huecos que no se veían: **la otra puerta del
-teléfono** (`docs/product-spec.md:284` lo dice con esas palabras — hasta ahora el
-único punto de captura era el gate de Publicar, así que quien ya había publicado
-no tenía cómo corregirlo) y **el primer camino de código que escribe `carrera`**,
-una columna que existía desde la migración inicial y que nadie llenaba: ni
-"Completar perfil" la pide.
-
-Diez cosas que no se ven en el diff:
-
-- **`telefono` entra al UPDATE solo si el usuario TOCÓ el campo** (un `ref`,
-  `telefonoTocado`), nunca por comparar el texto final contra el precargado. No es
-  quisquillosidad: a un usuario **suspendido** —que SÍ puede editar su perfil,
-  §3— `seller_whatsapp` le devuelve `null` aunque tenga número (valida al
-  llamante), así que su campo se precarga **vacío**. Con el criterio de
-  comparación, cambiar solo la carrera le habría mandado un teléfono vacío encima
-  de un número real. Por lo mismo `CambiosPerfil.telefono` es `string` y no
-  `string | null`: desde aquí no se borra un teléfono, y así ni siquiera es
-  expresable.
-- **El número se PRECARGA por la RPC, no por el select**, y funciona porque
-  `seller_whatsapp` sobre uno mismo pasa sus dos validaciones (llamante activo +
-  objetivo activo). No hay forma de leerlo de otro lado: sigue fuera del grant de
-  columna (RNF-05).
-- **Es un solo UPDATE con las cinco columnas, y NO reusa `guardarTelefono()`.**
-  Aquella escribe una sola columna, correcto en Publicar; aquí partiría el
-  guardado en dos statements y un fallo en el segundo dejaría el perfil a medias
-  sin nada que se lo dijera al usuario. Todas están en el mismo grant
-  (`20260906000438:110` + `20260910000448:62`), así que un solo statement es
-  legal — pero sigue prohibido colar `correo`/`estado`/`rating_promedio`, que lo
-  rechazarían entero con 42501.
-- **Universidad y campus SÍ son editables**, y eso lo decide el frame: los pinta
-  como `.select-field` normal, no `.select-field.disabled` — variante que el mismo
-  archivo usa a 90 líneas de distancia para "Zona de entrega" de Editar
-  publicación. El backend nunca lo impidió.
-- **El selector de universidad es una ruta NUEVA y no la del onboarding**, y no se
-  llama `selector-universidad.tsx`: dos archivos con ese nombre en dos grupos de
-  primer nivel resolverían los dos a `/selector-universidad` — el gotcha de rutas
-  ambiguas de más abajo. Es `/editar-perfil/universidad`. Tampoco se pudo montar
-  `SelectorCatalogo` dentro de un `Modal` como `CampusBottomSheet`: hace
-  `router.back()` adentro al elegir. De ahí el `_layout.tsx` con su contexto, que
-  guarda SOLO universidad/campus — nombre, carrera y teléfono se quedan en el
-  estado local de la pantalla, que no se desmonta al empujar el selector.
-- **Esta pantalla NO recarga al recuperar el foco**, al revés que
-  `mis-publicaciones.tsx` y `(publicar)/editar/[id].tsx`. Su única ruta hija
-  escribe en el borrador, no en la base: un refetch al volver pisaría la
-  universidad que el usuario acaba de elegir con la que sigue guardada.
-- **Cambiar de universidad limpia el campus**, la misma regla que ya estaba en
-  `(onboarding)/_layout.tsx` — ver la deuda consciente de §8 sobre por qué esa
-  coherencia vive en el cliente y ahora en dos lugares.
-- **El círculo de foto es INERTE a propósito** y se pinta completo, con su
-  `.cam-badge`. Es un `View`, no un `Pressable`, y sin
-  `accessibilityRole="button"`: si no pasa nada, no debe anunciarse como botón —
-  el criterio del tile de espera de `PhotoRow`, no el de Compartir/Reportar. Subir
-  la foto necesita un bucket propio (§8, deuda consciente).
-- **El toast dice "Cambios guardados" y no es copy inventado**: está en el frame
-  "Toast de éxito", que usa justamente esta pantalla de fondo.
-- **Ese toast tiene una SEGUNDA rama, para el suspendido que guarda su WhatsApp**
-  — "Cambios guardados. Tu WhatsApp no se mostrará mientras tu cuenta esté
-  suspendida", con la misma variante `'exito'` porque el guardado sí funcionó.
-  Salió de una prueba en dispositivo y NO es un bug de guardado: el UPDATE pasa
-  (`users_update_own` no lleva `is_active_user()`), pero al reabrir la pantalla el
-  campo vuelve a estar vacío, porque `seller_whatsapp` niega el **self-call** por
-  sus dos puntas a la vez —el llamante (`private.is_active_user()`,
-  `20260911000449:35`) y el objetivo (`and u.estado = 'activo'`, `:39`)—, que con
-  `caller = target` son la misma persona. Sin el aviso, el toast de éxito y el
-  campo vacío se contradicen y lo razonable es concluir que no se guardó. La
-  condición es `mandaTelefono && profile?.estado === 'suspendido'`, y esos dos
-  datos ya existían: el primero es el mismo booleano que decide si la columna
-  viaja en el UPDATE, y el segundo sale de `PROFILE_COLUMNS`, igual que el toast
-  de "Esta cuenta no está disponible para contacto" (`detalle/[id].tsx:266`). No
-  se tocó la RPC ni se agregó ninguna lectura de estado.
-  **Lo que SÍ queda abierto** es el hermano de este caso: explicar el campo vacío
-  **al abrir**, antes de guardar nada. Eso sería un `.notice` persistente, o sea
-  copy que el usuario lee con calma, así que exige frame primero (§0 regla 4) y no
-  se resolvió de paso. **Revisar cuando:** un suspendido reporte que "perdió" su
-  número al entrar a Editar perfil.
-
-Componentes nuevos: ninguno de UI — reusa `Field`, `PhoneField`, `SelectField`,
-`FormHeader`, `CampusBottomSheet`, `SelectorCatalogo` y `ErrorState` tal cual. Lo
-único nuevo es `SkeletonPerfilForm` (círculo de 84 + 5 cajas de campo), tercer
-hermano de `SkeletonRows`/`SkeletonNotifRows` por el mismo motivo de siempre: el
-esqueleto anticipa la forma de lo que viene. Y un rol de `Typography`,
-`editAvatarInitials` — ojo con él, es el quinto del racimo de avatares de §2 y el
-que se confunde por los dos lados.
-
-**`OpcionCatalogo` (`{id, nombre}`) vive en `src/lib/catalogos.ts`**, y no en el
-layout de onboarding donde nació: desde esta pantalla hay **dos** borradores que
-eligen universidad/campus —`(onboarding)/_layout.tsx` y
-`(cuenta)/editar-perfil/_layout.tsx`—, y dos definiciones idénticas con el mismo
-nombre en módulos distintos son una invitación a que se separen. El layout de
-onboarding lo **re-exporta** (`export type { OpcionCatalogo }`) para no cambiar su
-superficie pública. Esa sintaxis no es opcional: bajo transpilación archivo por
-archivo (Babel, que es lo que corre Metro), un `export { OpcionCatalogo }` sin
-`type` emitiría un re-export de un binding que no existe en runtime y reventaría
-aunque `tsc` pasara — por eso van con `type` tanto el re-export como el `import
-{ type OpcionCatalogo }`. Medido: el JS que Babel emite para ese layout es
-**byte por byte el mismo** antes y después del movimiento. Ojo, es un tipo
-distinto de `ItemCatalogo` (`src/components/SelectorCatalogo.tsx`), que lleva
-`subtitulo` y es el del selector, no el del borrador.
-
-**"Perfil" (el propio) construida y conectada — cierra el grupo Cuenta (8/8).**
-Vive en `src/app/(tabs)/perfil.tsx`, sin ningún archivo nuevo de datos: reusa
-`fetchPerfilPublico`/`fetchReviews` (`src/lib/perfil-publico.ts`, SIN
-modificar) para el bloque de avatar/nombre/rating, y
-`fetchActivasVendedor`/`fetchVentasVendedor` (`src/lib/listings.ts`) para dos
-de los tres stat-cards — las cuatro llamadas con el propio `session.user.id`.
-La única función nueva es `fetchFavoritosCount` en `src/lib/favoritos.ts`.
-
-Seis cosas que no se ven en el diff:
-
-- **Reusar `fetchPerfilPublico`/`fetchReviews` para el propio usuario no es un
-  atajo improvisado: la RLS ya lo permitía.** `users_select` y `ratings_select`
-  son `using (true)` — la misma razón por la que "Perfil público" puede leer a
-  un DESCONOCIDO ya cubre leerse a uno mismo. Eso da gratis `universidadNombre`
-  (que `PROFILE_COLUMNS` de `session.tsx` no trae, solo `universidad_id`) sin
-  agregar ningún join a la sesión global.
-- **`favorites` no tiene columna `id`** — su PK es compuesta
-  (`user_id, listing_id`), a diferencia de `listings`, sobre la que sí corren
-  `fetchActivasVendedor`/`fetchVentasVendedor` con `select('id', {head:true})`.
-  Copiar ese mismo patrón a ciegas sobre `favorites` habría fallado: la primera
-  versión de `fetchFavoritosCount` seleccionaba `id` y se corrigió a
-  `listing_id` (`count:'exact', head:true` sobre la columna que sí existe) antes
-  de correr nada. Solo sirve para el propio usuario: la RLS de `favorites` es
-  `user_id = auth.uid()`.
-- **Son DOS efectos de carga, no uno — a diferencia de "Perfil público", al que
-  le basta un solo `useEffect`.** Aquella es una ruta de Stack que REMONTA cada
-  vez que se navega a ella, así que un solo efecto en `[id, recargas]` alcanza.
-  "Perfil" es un TAB que nunca se desmonta mientras la sesión sigue activa, así
-  que necesita el mismo patrón de dos piezas que ya usa `mis-publicaciones.tsx`:
-  el `useEffect` en `[userId, recargas]` que de verdad pide los datos (y que SÍ
-  dispara en el primer montaje, porque `recargas` arranca en 0) más un
-  `useFocusEffect` aparte cuyo único trabajo es `setRecargas((r) => r + 1)` en
-  cada foco POSTERIOR al primero — con un `useRef` que salta esa primera
-  invocación a propósito, para no disparar una segunda carga sobre el mismo
-  montaje que el primer efecto ya cubrió. Sin el segundo efecto, volver del tab
-  Favoritos o de Editar publicación dejaría los números y la mini-grid
-  desactualizados hasta cerrar y reabrir la app.
-- **`MiniListingCard` no reusa `ProductCard`, y no es evitar una prop.** El
-  frame de Perfil es la PRIMERA vez que el diseño pinta `.sold-badge` sobre una
-  tarjeta de GRID — hasta ahora ese overlay solo existía en la fila plana de
-  `MiListingRow` (`mis-publicaciones.tsx`), y esta misma sección documenta que
-  `ProductCard` no tiene ese estado a propósito (Favoritos, arriba, filtra las
-  vendidas en vez de pintarlas por esa razón). No es una invención: el frame
-  dibuja la tarjeta con `.info` reducido a solo precio+título —sin corazón, sin
-  badge de condición, sin meta de campus/fecha—, así que es una tarjeta más
-  simple que `ProductCard`, no una variante suya. Se construyó como componente
-  LOCAL a `perfil.tsx` (un solo consumidor), copiando el patrón de
-  `ListingPhoto` + `CategoryIcon` de fallback + overlay `.sold-badge` que ya
-  existía en `MiListingRow`.
-- **Sin publicaciones, la sección "Mis publicaciones" desaparece entera** —
-  mismo criterio que el bloque de rating en 0 (`reviews.total === 0`): no hay
-  frame de "Perfil" con 0 publicaciones en el inventario de 54, así que se seguía
-  un patrón ya existente en esta misma pantalla en vez de inventar uno. Con
-  exactamente 1 publicación, la segunda celda del grid queda vacía (`flex:1` sin
-  contenido) en vez de estirar la primera — mismo criterio de conteo impar que
-  Categoría/Búsqueda.
-- **"Cerrar sesión" se corrigió al construir esta pantalla, no solo se movió.**
-  El placeholder la pintaba FUERA de `.menu-list`, en `Typography.emphasis`/
-  `Colors.brick` (una fila roja aparte). El frame no le da ningún tratamiento
-  especial: es la fila 5 de `.menu-list`, mismo `.menu-icon`/`.menu-label` que
-  las otras cuatro, sin chevron (es una acción terminal, no navegación) y sin
-  color de alerta. Eso se corrigió aquí porque era la primera vez que se
-  construía la pantalla real contra el frame — no un cambio de comportamiento
-  fuera de alcance.
-  "Verificación" y "Ayuda y soporte" —sin pantalla propia en el inventario de
-  54 ni en `product-spec.md`— y el engrane de `.profile-top` (ajustes) quedan
-  inertes con el mismo patrón ya usado en Detalle para Compartir/Reportar/kebab:
-  `onPress={() => {}}` con un comentario de una línea, no un `View` sin
-  `accessibilityRole` — esa fila SÍ es un control que algún día podría hacer
-  algo, a diferencia del círculo de foto de "Editar perfil"/"Completar perfil".
-
-Componentes nuevos: `SkeletonPerfil` (círculo 76 + 3 cajas de stat + 2 tarjetas
-de grid + 5 filas de menú — cuarto hermano de `SkeletonRows`/
-`SkeletonNotifRows`/`SkeletonPerfilForm`, mismo motivo de siempre), `IconSettings`
-e `IconHelpCircle` (el segundo, distinto de `IconAlertCircle`: círculo + `M12
-16v-4M12 8h.01`, no la variante de exclamación), y un rol de `Typography`,
-`profileWordmark` (`.wordmark` con el override inline `font-size:20px` del
-frame "Perfil" — mismo valor numérico que `otp`, pero rol separado a propósito,
-mismo criterio que `campusChip`/`buttonWhatsapp`).
-
-**Notificaciones — construido y conectado (RF-16).** Las 2 pantallas del grupo
-(el inbox y su vacío) viven en `src/app/(notificaciones)/notificaciones.tsx`, con
-`src/lib/notificaciones.ts` como capa de datos y `src/lib/push.ts` como el único
-punto de contacto con `expo-notifications`.
-
-Detalles que no se ven en el diff:
-
-- **Dos rutas se renombraron, y NO es cosmético: `(notificaciones)/index.tsx`
-  colisionaba con `(tabs)/index.tsx`.** Un `index.tsx` dentro de un grupo de
-  primer nivel resuelve a `/` con el nombre del grupo eliminado, así que había
-  DOS rutas reclamando la raíz de la app — verificado leyendo
-  `.expo/types/router.d.ts`, que generaba `` `/(tabs)` | `/` `` **y**
-  `` `/(notificaciones)` | `/` ``. Funcionaba de milagro, porque la campana
-  navegaba con el prefijo explícito del grupo y `/` caía en `(tabs)` por orden
-  de declaración. Arreglo, que además alinea las rutas con los nombres de los
-  frames del diseño:
-  - `(onboarding)/notificaciones.tsx` → **`permiso-notificaciones.tsx`**
-    (`/permiso-notificaciones`) — el frame se llama "Permiso de notificaciones".
-  - `(notificaciones)/index.tsx` → **`notificaciones.tsx`** (`/notificaciones`),
-    que quedó libre — el frame se llama "Notificaciones".
-  Ahora una sola ruta reclama `/`, y el inbox tiene URL propia, que es lo que
-  hace posible el deep link del tap sobre un push. Si alguien "simplifica"
-  cualquiera de los dos a `index.tsx`, vuelve la ambigüedad.
-- **La campana del Feed dejó de ser inerte** (`(tabs)/index.tsx`) y **su `.dot`
-  pasó a ser condicional** al conteo de no leídas — antes se pintaba siempre. El
-  conteo se recuenta al ENFOCAR (`useFocusEffect`) y no solo al montar: el Feed
-  es un tab, así que vuelve del inbox sin desmontarse, y ese regreso es
-  justamente cuando el número cambió. Nada de Realtime: sería una suscripción
-  abierta toda la sesión para un dato que cambia un puñado de veces al día.
-- **El tap sobre un push navega desde `(tabs)/_layout.tsx`, NO desde el layout
-  raíz**, por dos razones de orden: ese layout solo se monta cuando el gating ya
-  pasó (que es cuando `/detalle/<id>` es alcanzable), y el raíz devuelve `null`
-  mientras cargan las fuentes, así que una navegación disparada ahí podría
-  ejecutarse antes de que exista el navegador y perderse sin rastro.
-  `useRespuestaANotificacion()` cubre los DOS caminos —`addNotificationResponse…`
-  (app viva) y `getLastNotificationResponseAsync` (el tap ABRIÓ la app)—; sin el
-  segundo, el caso más común de todos aterriza en el Feed como si nada.
-- **`borrarPushToken()` corre ANTES de `supabase.auth.signOut()`**, y el orden no
-  es estético: la policy de delete es `user_id = auth.uid()`, así que sin sesión
-  ya no hay quién autorice el borrado y el teléfono seguiría mostrando en su
-  pantalla de bloqueo los avisos de la cuenta que acaba de salir.
-- **`formatRelativo` (`src/lib/format.ts`) ganó una rama de minutos, y eso
-  CORRIGE a sus tres consumidores viejos** (`ProductCard`, Detalle, Mis
-  publicaciones), no solo sirve al inbox. Antes todo lo de menos de una hora
-  decía "hace un momento" — una cadena que **no aparece ni una vez** en
-  `relevo-app.html`, o sea una invención del código; el diseño usa minutos
-  explícitos ("hace 12m").
-- **`SkeletonNotifRows` es hermano de `SkeletonRows`, no una variante suya**, por
-  el mismo motivo por el que aquella no reusó `SkeletonGrid`: la forma que
-  anticipa es distinta (círculo de 36 y dos líneas, contra thumb de 76 y tres).
-- **Las notificaciones de reporte no llevan `listing_id`** aunque el reporte sí
-  apunte a una publicación: el tap devolvería al reportante al contenido que
-  denunció. Sin `listing_id`, `NotifRow` no recibe `onPress` y **ni siquiera se
-  anuncia como botón**.
-- El inbox **marca todo como leído al terminar de cargar**, con update optimista
-  sin rollback — mismo criterio que el corazón de favoritos: la policy solo
-  compara `user_id = auth.uid()` sobre filas propias, así que no hay rechazo por
-  política posible y el costo de equivocarse es que el punto reaparezca.
-
-- **El tercer tipo, `compra_calificable`, NO cambió ni `destino()`
-  (`src/lib/push.ts`) ni el `onPress` del inbox.** Trae `listing_id`, así que el
-  tap ya cae en `/detalle/<id>`, que es donde vive "Calificar al vendedor". La
-  notificación es el *descubrimiento*; Detalle es la *afordancia*. Su tinte es
-  `--gold` porque es el color de `.rate-stars`; lo comparte con la fila de
-  "categoría seguida" del frame, que no tiene disparador y está ahí solo como
-  documentación.
-
-Componentes nuevos: `NotifRow`, `SkeletonNotifRows`, `IconMail`, y dos roles de
-`Typography` (`notifTime`, `notifDesc` — ver §2, se confunden fácil con
-`cardBadge` y `activeChip`).
-
-**Confianza — 4 de 4 pantallas construidas y conectadas: grupo completo
-(RF-07, RF-12, RF-14).** "¿A quién le vendiste?" (con su vacío y su modo
-corrección) vive en `src/app/(confianza)/vendida/[id].tsx`, "Calificar" en
-`(confianza)/calificar.tsx`, "Reportar publicación" en **`src/app/reportar/[id].tsx`**
-(ojo: fuera del grupo, ver abajo), y la capa de datos en `src/lib/confianza.ts`.
-
-**Esa cuarta pantalla sirve DOS objetivos, no uno, y sigue siendo UNA pantalla.**
-`reportar/[id].tsx` reporta una publicación (bandera de Detalle) o a una persona
-(bandera de "Perfil público"), según un param `tipo`. No son dos frames: lo único
-que cambia en toda la hoja es el `.sheet-title` —los cinco motivos salen del
-mismo enum `report_reason`, que no distingue objetivo—, así que va como variante
-etiquetada dentro del frame "Reportar publicación" y **el inventario sigue en
-54** (§4). Cinco cosas que conviene saber antes de tocarla:
-
-- **`tipo` es opcional y cae a `'listing'`.** Es lo que deja intacta la llamada
-  de Detalle, que era el único call site cuando la hoja solo sabía de
-  publicaciones. El `id` de la ruta se REINTERPRETA según el modo: es un
-  `listings.id` (bigint, de ahí el `Number(id)`) en uno y un `users.id` (uuid,
-  sin parsear) en el otro.
-- **El modo usuario no necesita el `sellerId`** que sí usa el otro: el `id` de
-  la ruta ES la persona reportada, así que el guard compara contra él
-  directamente y no hay dos fuentes que puedan desincronizarse.
-- **Los candados son DOS y distintos**, ver §3: el `with check` de
-  `reports_insert_own` para la publicación propia, y el `check` de tabla de
-  `20260906000441:22` para la persona propia. Se notan distinto en la respuesta
-  — el primero llega como `42501` y el segundo como `23514`
-  (`reports_check1`)—, y por eso el autorreporte de usuario cae al toast
-  genérico y no al de suspensión: ese `if` solo mira `42501`. Es correcto, es un
-  caso que la UI ya no ofrece.
-- **`crearReporte()` toma una unión discriminada**, no dos campos opcionales:
-  `{ listingId } | { reportedUserId }` con `?: never` en la rama contraria. La
-  base ya exige el mutuo-excluyente (`num_nonnulls(...) = 1`); el tipo solo lo
-  sube a compilación para que pasar ambos o ninguno no llegue nunca al 42501.
-  **Verificado con las cuatro combinaciones**, no supuesto: ambos y ninguno no
-  compilan, cada uno solo sí.
-- **`nombre` viaja por param solo para el título**, desde una pantalla que ya lo
-  tiene pintado — no se vuelve a pedir a la base. Sin nombre (`users.nombre` es
-  nullable) cae a "Reportar usuario", que es preferible a un "Reportar a "
-  colgando.
-
-**"Reportar publicación" es la única del grupo que NO vive en `(confianza)/`, y
-no es un descuido.** Es una HOJA (`transparentModal`) y se abre desde Detalle,
-que está en `(explorar)`: la transición la ejecuta el Stack RAÍZ, así que la
-presentación tiene que declararse ahí (el gotcha de §9). Es el caso de
-`filtros.tsx`/`selector-campus.tsx`, no el de sus dos hermanas, que son pantallas
-completas empujadas por el stack de su grupo. Si alguien la "ordena" moviéndola a
-`(confianza)/`, deja de verse como hoja y se convierte en una card opaca.
-
-Detalles que no se ven en el diff:
-
-- **El motivo es obligatorio y no nace preseleccionado**, aunque el frame pinte
-  la primera opción marcada: ese marcado documenta el estado seleccionado, y
-  copiarlo haría indistinguibles "no elegí" y "elegí spam". Mismo criterio que
-  las estrellas de Calificar, y por eso "Enviar reporte" arranca `disabled`.
-  El comentario sí es opcional **para cualquier motivo, incluido "Otro"** — el
-  frame pone "(opcional)" en el `.field-label`, no en el placeholder.
-- **La fila de motivo es un componente LOCAL, no `ListRow` ni `BuyerRow`.** Los
-  tres comparten `RadioCircle` —que por eso se exporta desde `ListRow.tsx`— pero
-  ninguno de los dos calza: `ListRow` exige un `sub` que aquí no existe y
-  `BuyerRow` lleva avatar. `.radio-row` es su propia forma (gap 11, padding 13,
-  sin borde en la última).
-- **El guard de autorreporte NO hace fetch**: recibe `sellerId` por param desde
-  Detalle, que ya tiene el dato al decidir si pinta la bandera. Y lee
-  `listing.userId`, el MISMO campo con el que se calcula `isOwner` —no
-  `listing.vendedor.id`, que hoy trae el mismo valor—: dos fuentes para la misma
-  pregunta se desincronizan sin dar ningún error. Cierra la hoja desde un
-  `useEffect` y no desde el cuerpo del render, porque `router.back()` mueve el
-  estado del navegador. **No es el candado**: ese es el `with check` de §3, y el
-  guard solo evita ofrecer un formulario condenado.
-- **El toast del `42501` distingue sus dos causas con `profile.estado`**, que la
-  sesión ya trae — el mismo recurso que el toast de WhatsApp. Sin ese `&&`, el
-  caso adversarial (param manipulado) recibiría un "tu cuenta está suspendida"
-  que sería mentira. Su copy dice "enviar reportes" y no "reportar
-  publicaciones" desde que la hoja sirve los dos objetivos; los toasts son la
-  excepción de §0 regla 4, así que ese texto vive en código y no en el frame.
-- **La bandera solo existe para quien NO es el dueño** (el frame la cambia por el
-  kebab en "Detalle (vista vendedor)"), y **el kebab sigue inerte**: es otra
-  tarea. Compartir, en cambio, se pinta en las TRES variantes y nunca dependió de
-  `isOwner`. **En "Perfil público" rige el mismo reparto**: la bandera se esconde
-  en el perfil propio (`profile?.id === id`), compartir se pinta siempre. Hoy no
-  se llega a la propia —el `.seller-card` que navega ahí ya está gateado por
-  `!isOwner`, y es el único call site—, pero la ruta es alcanzable por deep link
-  y el guard cuesta una línea.
-
-- **`accionVenta()` es el derivado de TRES estados de la fila de venta, y vive en
-  un solo lugar a propósito.** Lo consumen las tres entradas —"Editar
-  publicación", "Detalle (vista vendedor)" y la hoja de "Mis publicaciones"—:
-  calcularlo tres veces es la forma de que se desincronicen. Los estados son
-  "Marcar como vendida" / "Cambiar comprador" / ausente.
-  **Ojo: desde que vendida es terminal (RF-08), "Cambiar comprador" perdió una de
-  esas tres entradas.** La de "Editar publicación" quedó inalcanzable sobre una
-  vendida —esa pantalla ahora rebota con su guard— y eso es correcto, no una
-  regresión: las otras dos siguen ofreciéndola. `accionVenta()` no cambió.
-- **"Editar publicación" se esconde sobre una vendida en las DOS entradas que la
-  ofrecen** (`mis-publicaciones.tsx`, con `puedeEditar` hermano de
-  `puedeAlternar`; y `detalle/[id].tsx`, en la rama `isOwner`), más un guard
-  dentro de la propia pantalla para el deep link. Ninguno es el candado: lo es el
-  `using` de `listings_update_own` (§3). Dos consecuencias que no se ven:
-  - **En Detalle el reparto del `.sticky-cta` pasó de cuatro a seis**, y el del
-    dueño ahora tiene tres: ghost+primary, solo el ghost ("Cambiar comprador", a
-    ancho completo por su propio `flex:1`), o el `.notice` de "ya se vendió"
-    —extraído a `VendidoNotice`, local del archivo, porque pasó a tener dos
-    consumidores—. Sin ese tercero el contenedor quedaría **vacío**.
-  - **El estilo `editBtnSolo` dejó de aplicarse al botón del dueño**, y no por
-    gusto: `accionVenta()` devuelve `'marcar'` para todo estado distinto de
-    vendida, así que cuando ese botón se pinta el ghost está siempre al lado. La
-    rama era inalcanzable; el estilo sigue vivo para las ramas del comprador.
-- **Detalle y Editar recargan al recuperar el foco** (`useFocusEffect` + el ref
-  que salta el primer foco, el patrón de `mis-publicaciones.tsx`), y no es
-  frescura general: es lo único que hace que esconder el botón sirva. El flujo de
-  venta se lanza DESDE esas pantallas y vuelve con `router.back()`, así que nunca
-  se desmontan — sin el refetch seguirían ofreciendo "Editar publicación" sobre
-  algo que acaba de venderse. En Editar además no destruye trabajo:
-  `FormularioCargado` está keyed por `listing.id`, no por `recargas`.
-  **`useVentaDetalle` recibe ese mismo contador** (§ su firma ganó un cuarto
-  parámetro): con el listing fresco y la venta vieja, `accionVenta()` vería
-  `estado='vendida'` + `venta=null` y pintaría el aviso en vez de "Cambiar
-  comprador" justo después de registrar al comprador.
-- **El congelamiento que lee el cliente (`congelada()`) es DIRECCIONAL**, y tiene
-  que ser la misma condición que el `using` de `listing_sales_update_seller`:
-  `listing_id` de la venta, `from_user_id` = el dueño del listing,
-  `to_user_id` = el `comprador_id` de la fila. **NO** "existe reseña entre las dos
-  partes". Si el único rating es el del comprador mal asignado hacia el vendedor,
-  la policy **sí** deja corregir — y un cliente que lo leyera bidireccional
-  escondería "Cambiar comprador" por completo, dejando al vendedor sin camino de
-  vuelta. **El cliente no puede ser más estricto que la base.** El filtro por
-  vendedor va explícito porque `ratings_select` es `using (true)`: la RLS no
-  acota nada ahí, y un `count` sin ese `eq` contaría justo la reseña que NO debe
-  congelar.
-- **"Soy el comprador" no se deduce del estado sino de la fila de venta.** La RLS
-  de `listing_sales` solo se la devuelve a las dos partes, así que esa pregunta
-  ya la contestó la base — el cliente no vuelve a decidirla.
-- **`useVentaDetalle` es hermano de `useVenta`, no el mismo.** Aquel trae también
-  los contactos, que en Detalle no se usan (no se ofrece elegir comprador) y que
-  el comprador además solo vería a medias. Su fallo es SUAVE: si revienta, el
-  Detalle se pinta sin el botón de calificar en vez de romperse entero — lo único
-  que se pierde es una afordancia que el inbox vuelve a ofrecer.
-- **La selección no se preselecciona en el alta, pero sí en la corrección.** El
-  frame pinta la primera fila marcada para documentar el estado seleccionado;
-  sin elección explícita, "nada" y "No fue a través de Relevo" serían
-  indistinguibles. En corrección nace en el comprador ya registrado, y se
-  **deriva** en vez de sembrarse con un efecto: `venta` llega asíncrona, así que
-  un `setElegido` en un efecto pintaría un render con todo sin marcar.
-- **En modo corrección NO se navega a Calificar**, y se esconde "No fue a través
-  de Relevo": deshacer la venta es el DELETE que quedó fuera de alcance (§8).
-- **`BuyerRow` reusa `RadioCircle`** de `ListRow.tsx` pero **no** `ListRow`:
-  `.list-row` no tiene avatar y su padding es 14, no 13.
-- **`IconStar` es el único icono del set con dos anchos de trazo** (1 rellena,
-  1.3 vacía), y sale del prototipo: el trazo más grueso es lo que hace que la
-  estrella vacía pese lo mismo que la llena.
-- **La pantalla Calificar no lleva `.form-header`**: es un `.auth-body` centrado,
-  la misma forma que las pantallas de auth. Y el botón se deshabilita sin
-  estrellas: lo opcional es el comentario, no el puntaje (`estrellas` es
-  `not null check (between 1 and 5)`).
-
-El grupo Cuenta está completo (8/8).
-**Sistema** tiene las 3 piezas que Explorar necesitó (arriba) más "Confirmar
-eliminar", cableado con `ConfirmModal` + `DangerButton` tanto en Editar
-publicación como en Mis publicaciones.
+| Archivo | Exporta | Rol |
+|---|---|---|
+| `ActiveFilterChip` | `ActiveFilterChip` | Chip de filtro activo, con la ✕ para quitarlo |
+| `AuthBody` | `AuthBody`, `AuthLogo`, `AuthHeadline`, `AuthSub`, `AuthLink`, `AuthLinkStrong`, `AuthTerms` | Las piezas de las pantallas de auth (`.auth-body`) |
+| `BlinkingDots` | `BlinkingDots` | EL indicador de espera del sistema de diseño (`.splash-dots`) |
+| `Buttons` | `PrimaryButton`, `GhostButton`, `DangerButton` | Los tres botones; `PrimaryButton` tiene `busy` ≠ `disabled` |
+| `BuyerRow` | `BuyerRow`, `BuyerRowAvatarNeutro` | Fila de comprador con avatar y radio |
+| `CampusBottomSheet` | `CampusBottomSheet` | `Modal` de RN real — **no** es `SheetScreen` |
+| `CategoryTile` | `CategoryTile` | Tile de categoría con su tinte |
+| `Chip` | `Chip` | Chip genérico |
+| `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" |
+| `EmptyState` | `EmptyState` | Estado vacío, con `.empty-actions` opcional |
+| `ErrorState` | `ErrorState` | Estado de fallo con "Reintentar" (label hardcodeado — ver deuda) |
+| `Field` | `Field`, `PhoneField`, `SelectField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio |
+| `ListRow` | `FormHeader`, `SearchField`, `ListRow`, `RadioCircle` | Fila de lista, header de formulario y el radio que reusan 3 pantallas |
+| `ListingFormFields` | `ListingFormFields` | EL formulario de publicación, compartido por Publicar y Editar |
+| `ListingPhoto` | `ListingPhoto` | Punto ÚNICO de contacto con el bucket privado (header `Authorization`) |
+| `Notice` | `Notice` | Aviso persistente (`.notice`) — hermano del `Toast`, no una variante |
+| `NotifRow` | `NotifRow` | Fila del inbox de notificaciones |
+| `OtpInput` | `OtpInput`, `OTP_LENGTH` | Los 6 dígitos; puramente presentacional |
+| `PageHeader` | `PageHeader` | Header con chevron — **no** para pantallas raíz de tab |
+| `PhotoCarousel` | `PhotoCarousel`, `PhotoDots` | Carrusel del hero y sus puntos; no guarda índice propio |
+| `PhotoRow` | `PhotoRow`, `idFoto` | Fila de fotos con sus 4 estados y el contador `N/5` |
+| `PhotoViewer` | `PhotoViewer` | Visor a pantalla completa (`Modal`, montado condicionalmente) |
+| `ProductCard` | `ProductCard` | Tarjeta de grid — sin estado "vendida", a propósito |
+| `PublicarFab` | `PublicarFab` | El FAB de Perfil; vive como hermano de `NativeTabs` (§9) |
+| `RoundIconButton` | `RoundIconButton` | Botón circular de los headers sobre foto |
+| `Screen` | `Screen`, `useScreenScrollViewRef` | Contenedor de pantalla con su `ScrollView` |
+| `SectionHead` | `SectionHead` | Encabezado de sección con "Ver todo" |
+| `SegmentedControl` | `SegmentedControl` | Control segmentado |
+| `SelectorCatalogo` | `SelectorCatalogo` | Selector de pantalla completa con buscador |
+| `SheetScreen` | `SheetScreen` | Hoja de Stack `transparentModal` **declarada en el Stack raíz** |
+| `Skeleton` | `SkeletonPiece`, `SkeletonGrid`, `SkeletonCatGrid`, `SkeletonRows`, `SkeletonNotifRows`, `SkeletonPerfilForm`, `SkeletonPerfil` | Un esqueleto por FORMA de lo que viene |
+| `StarRating` | `StarRating` | Estrellas de Calificar |
+| `StatusRow` | `StatusRow` | La `.status-section` fuera de Editar publicación |
+| `Toast` | `ToastProvider`, `useToast` | Avisos efímeros; montado en el `_layout.tsx` raíz |
+| `icons/` | `index.tsx`, `categories.tsx` | Todos los íconos del set |
 
 ---
 
@@ -2829,7 +1252,7 @@ publicación como en Mis publicaciones.
   elige seq scan por costo y el plan no prueba nada en ninguna dirección.
 - **`order`/`limit` por `referencedTable` SÍ soportan una ruta punteada a DOS
   niveles de embed, no solo al nivel que ya usaba `fetchListings` (`fotos`
-  directo sobre `listings`).** Hacía falta para `fetchFavoritos()` (§8b,
+  directo sobre `listings`).** Hacía falta para `fetchFavoritos()` (`cuenta-perfil.md`,
   grupo Cuenta): la query parte de `favorites`, embebe
   `listing:listings!inner(...)`, y dentro de ese embed va otro,
   `fotos:listing_photos(...)` — o sea que acotar la portada a la de menor
@@ -2902,7 +1325,7 @@ publicación como en Mis publicaciones.
   elegir una foto tomada con el teléfono falla de dos formas (vistas en
   dispositivo real): `FailedToReadImageException: Cannot load representation of
   type public.heic` al leerla, o —si sí se lee— llega con `mimeType:
-  image/heic` y Storage la rechaza. **Corregido** (§8, deja de ser el motivo
+  image/heic` y Storage la rechaza. **Corregido** (`publicar-fotos.md`, deja de ser el motivo
   dominante de fallos de subida — ver pendiente 1).
   Lo que hay que saber antes de "simplificar" esto:
   · El default REAL es `.current` (`ios/ImagePickerOptions.swift:44`), que
@@ -3069,3 +1492,23 @@ publicación como en Mis publicaciones.
   corrección. **No asumas que un hook que no marca la regla está libre de
   esto** — pruébalo aislado (un archivo con variantes mínimas, linteado y
   borrado) antes de concluir que hay una diferencia real de fondo.
+
+- **Los `paths:` de `.claude/rules/` toleran los paréntesis de los route groups
+  hoy, pero picomatch crudo NO — y si eso cambia, las reglas dejan de cargar en
+  silencio.** Medido con cuatro reglas-sonda: `src/app/(onboarding)/**` sin
+  escapar, `src/app/\(onboarding\)/**` escapada y `src/app/*onboarding*/**`
+  paren-free **las tres cargaron** al leer `src/app/(onboarding)/splash.tsx`,
+  mientras que una sonda con `paths: ["supabase/tests/**"]` no cargó hasta leer
+  `rls.sql` — o sea que la carga condicional es real y Claude Code no pasa el
+  patrón crudo a picomatch. **Pero picomatch 4.0.7 sí lo rompe**: compila
+  `(onboarding)` como grupo de captura, así que `src/app/(onboarding)/**` genera
+  `^(?:src\/app\/(onboarding)…)$` y machea `src/app/onboarding/…`, una ruta que
+  no existe. Y falla de forma **inconsistente**: un path exacto sin comodín sí
+  machea, porque `is-glob` devuelve false y picomatch cae a comparación literal.
+  Importa porque la doc del propio binario dice que los patrones de exclusión de
+  memoria SÍ se matchean con picomatch, y el changelog registra haber tenido que
+  arreglar paréntesis en reglas de permisos: la semántica no es uniforme entre
+  subsistemas. **Revisar cuando:** una regla de feature deje de aparecer en
+  `/context` al abrir su pantalla. **Detectar:** con las mismas sondas — una
+  regla con un `paths:` que no machea **no da ningún error**, simplemente no
+  carga nunca. **Fix:** escapar los paréntesis o pasar a `*grupo*`.
