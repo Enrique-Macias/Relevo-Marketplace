@@ -187,7 +187,12 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+# 8 para empatar a `MIN_PASSWORD` de src/app/(onboarding)/completar-perfil.tsx, que
+# lo consumen esa pantalla y "Nueva contraseña" (RF-04). ESTE es el candado: el
+# botón apagado del cliente solo traduce esta regla (CLAUDE.md §0 regla 7).
+# Ojo: no viaja con `db push`, y `supabase config push` NO se usa en este repo —
+# ver CLAUDE.md §9. En remoto se pone a mano: Auth → Sign In / Providers → Email.
+minimum_password_length = 8
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = ""
@@ -259,6 +264,14 @@ otp_expiry = 3600
 [auth.email.template.magic_link]
 subject = "Tu código de Relevo"
 content_path = "./supabase/templates/magic_link.html"
+
+# Plantilla del OTP de RECUPERACIÓN (RF-04). Mismo mecanismo que la de arriba: sin
+# `{{ .Token }}` Supabase manda el link de reset en vez del código de 6 dígitos que
+# espera "Código de recuperación" — y un link exigiría deep linking, que no está
+# montado. En remoto, la del dashboard es Auth → Email Templates → Reset Password.
+[auth.email.template.recovery]
+subject = "Restablece tu contraseña de Relevo"
+content_path = "./supabase/templates/recovery.html"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]

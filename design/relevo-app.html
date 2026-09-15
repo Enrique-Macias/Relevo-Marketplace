@@ -2863,14 +2863,89 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
           </div>
           <div class="auth-headline">Recupera tu contraseña</div>
-          <div class="auth-sub">Te enviaremos un enlace a tu correo institucional para que la restablezcas.</div>
+          <div class="auth-sub">Te enviaremos un código de 6 dígitos a tu correo institucional para que la restablezcas.</div>
 
           <div class="field">
             <label class="field-label">Correo institucional</label>
             <input class="text-field" type="text" placeholder="nombre@estudiante.tec.mx">
           </div>
 
-          <button class="primary-btn">Enviar enlace</button>
+          <button class="primary-btn">Enviar código</button>
+
+          <div class="auth-link"><b>Volver a iniciar sesión</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Código de recuperación</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="auth-body">
+          <div class="auth-logo" style="background:var(--forest);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+          </div>
+          <div class="auth-headline">Ingresa el código</div>
+          <div class="auth-sub">Te enviamos un código de 6 dígitos a nombre@estudiante.tec.mx</div>
+
+          <div class="otp-row">
+            <div class="otp-box filled">4</div>
+            <div class="otp-box filled">8</div>
+            <div class="otp-box filled">2</div>
+            <div class="otp-box">–</div>
+            <div class="otp-box">–</div>
+            <div class="otp-box">–</div>
+          </div>
+
+          <button class="primary-btn">Verificar</button>
+
+          <div class="auth-link">¿No llegó el código? <b>Reenviar</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Nueva contraseña</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="auth-body">
+          <div class="auth-logo" style="background:var(--forest);">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+          </div>
+          <div class="auth-headline">Crea una contraseña nueva</div>
+          <div class="auth-sub">Elige una contraseña que no hayas usado antes en Relevo.</div>
+
+          <div class="field">
+            <label class="field-label">Nueva contraseña</label>
+            <input class="text-field" type="text" placeholder="••••••••">
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label class="field-label">Confirma tu contraseña</label>
+            <input class="text-field" type="text" placeholder="••••••••">
+          </div>
+          <div class="auth-terms" style="margin-top:6px;">Usa al menos 8 caracteres.</div>
+
+          <button class="primary-btn" style="margin-top:28px;">Guardar contraseña</button>
 
           <div class="auth-link"><b>Volver a iniciar sesión</b></div>
         </div>

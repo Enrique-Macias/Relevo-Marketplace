@@ -13,8 +13,14 @@ import { supabase } from '@/lib/supabase';
 
 import { usePerfilDraft } from './_layout';
 
-/** Un correo mínimamente válido; la validación real la hace Supabase Auth. */
-const CORREO_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * Un correo mínimamente válido; la validación real la hace Supabase Auth.
+ *
+ * Se exporta porque "Recuperar contraseña" (RF-04) pide lo mismo: dos regex
+ * idénticas en dos archivos se separan sin dar ningún error, solo dejando que
+ * una pantalla acepte lo que la otra rechaza.
+ */
+export const CORREO_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Frame "Verificación". Registro passwordless: solo correo + OTP. */
 export default function VerificacionScreen() {

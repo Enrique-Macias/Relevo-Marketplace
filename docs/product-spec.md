@@ -91,7 +91,18 @@ vez validado.
   calificación promedio. Este es también el paso donde se fija la contraseña
   (ver RF-01/RF-02) — no es un campo de perfil visible para otros usuarios,
   pero se establece en la misma pantalla ("Completar perfil").
-- **RF-04** Recuperación de contraseña.
+- **RF-04** Recuperación de contraseña. **✅ Implementado** — "Recuperar
+  contraseña" → "Código de recuperación" → "Nueva contraseña", en tres pasos
+  dentro de la app.
+  **Va por OTP de 6 dígitos, NO por el enlace de correo** que describía el diseño
+  original, y es una decisión de alcance: un enlace exige deep linking (dominio
+  propio + `apple-app-site-association`/`assetlinks.json` + una página de respaldo
+  para quien no tiene la app instalada), que sigue sin montarse y es su propio
+  proyecto — el mismo bloqueo que hoy deja a "Compartir" sin link. Un código que se
+  teclea no necesita nada de eso, y reusa el mecanismo de RF-01.
+  Al guardar la contraseña nueva se cierra sesión y se vuelve a "Iniciar sesión":
+  obliga a estrenarla, así que el usuario comprueba que funciona antes de salir del
+  flujo.
 
 ### Publicaciones (listings)
 - **RF-05** Crear publicación con título, descripción, categoría, precio,

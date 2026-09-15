@@ -135,6 +135,12 @@ async function crearUsuario(E, correo) {
     method: 'POST',
     headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}`,
                'Content-Type': 'application/json' },
+    // Este probe es INMUNE a `minimum_password_length` (supabase/config.toml), y no
+    // por los 10 caracteres de `probe-1234`: el admin API está EXENTO de esa
+    // validación. Medido contra el stack local con el mínimo en 8 — `signup` y
+    // `PUT /user` devuelven 422 `weak_password` con 7 caracteres, y este mismo
+    // `POST /admin/users` devuelve 200. El corte es por llave, no por endpoint: lo
+    // que exige la secret key no valida fortaleza. Ver CLAUDE.md §9.
     body: JSON.stringify({ email: correo, password: 'probe-1234', email_confirm: true }),
   });
   if (!res.ok) throw new Error(`crearUsuario ${correo}: ${res.status} ${await res.text()}`);

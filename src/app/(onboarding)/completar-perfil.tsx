@@ -15,8 +15,18 @@ import { supabase } from '@/lib/supabase';
 
 import { usePerfilDraft } from './_layout';
 
-/** Mínimo de la pantalla; el servidor tiene el suyo (`minimum_password_length`). */
-const MIN_PASSWORD = 8;
+/**
+ * Mínimo de contraseña. NO es "el de la pantalla": es el MISMO que el de la base
+ * (`minimum_password_length` en `supabase/config.toml`, y el ajuste equivalente en
+ * el dashboard remoto). El candado real es aquél — un `updateUser` con 7
+ * caracteres lo rechaza GoTrue, mire el cliente lo que mire; esto solo traduce esa
+ * regla a un botón apagado, que es lo que pide CLAUDE.md §0 regla 7.
+ *
+ * Se exporta para que "Nueva contraseña" (RF-04) no declare su propio número: si
+ * se duplicara y alguien moviera uno, las dos pantallas de contraseña de la app
+ * dejarían de coincidir sin que nada fallara.
+ */
+export const MIN_PASSWORD = 8;
 
 /** Frame "Completar perfil". Sin `.auth-logo`: el frame no lo tiene. */
 export default function CompletarPerfilScreen() {

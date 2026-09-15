@@ -1,0 +1,29 @@
+<!--
+  Plantilla del correo de RECUPERACIÓN de contraseña (RF-04).
+
+  IMPORTANTE — igual que `magic_link.html`, esta plantilla es lo que decide si el
+  correo lleva un CÓDIGO o un LINK. Supabase manda el link de reset por defecto;
+  solo envía el OTP de 6 dígitos si la plantilla incluye `{{ .Token }}`. Por eso
+  aquí NO se usa `{{ .ConfirmationURL }}`: la pantalla "Código de recuperación"
+  espera un código que el usuario teclea. Un link exigiría deep linking, que en
+  este proyecto no está montado (ver CLAUDE.md §8).
+
+  Este archivo solo aplica al stack local (`supabase start`). El proyecto remoto
+  usa la plantilla del dashboard: Auth → Email Templates → **Reset Password**, que
+  hay que dejar con el mismo contenido o el flujo de código no funciona en remoto.
+-->
+<html>
+  <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #221F1C; background: #F3F0EA; padding: 32px;">
+    <h2 style="font-size: 20px; margin-bottom: 8px;">Tu código para restablecer tu contraseña</h2>
+    <p style="font-size: 14px; color: #6B6660; margin-bottom: 24px;">
+      Ingresa este código en Relevo para crear una contraseña nueva.
+    </p>
+    <p style="font-size: 32px; font-weight: 600; letter-spacing: 6px; color: #C1440E; margin-bottom: 24px;">
+      {{ .Token }}
+    </p>
+    <p style="font-size: 12px; color: #A8A29A;">
+      El código expira en una hora. Si no pediste restablecer tu contraseña, ignora
+      este correo — tu contraseña actual sigue funcionando.
+    </p>
+  </body>
+</html>

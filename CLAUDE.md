@@ -181,7 +181,7 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 18 migraciones (`supabase/migrations/`) — las 18 ya aplicadas al
+Definido en 19 migraciones (`supabase/migrations/`) — las 19 ya aplicadas al
 proyecto remoto, incluida la de `vendida` terminal—, con RLS activo y
 probado en las 12 tablas más el bucket de Storage. Este es el esquema **real**, no
 solo la intención original.
@@ -804,19 +804,28 @@ correr esta suite antes de comitear.
 
 ---
 
-## 4. Inventario completo de pantallas (54)
+## 4. Inventario completo de pantallas (56)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
 usa el filtro visual del prototipo. Para el estado de qué grupo ya existe
 como código real (vs. solo diseño), ver sección 8b.
 
-### Onboarding (13)
+### Onboarding (15)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
 Código de verificación · Completar perfil ·
 Completar perfil (estado inicial) · Completar perfil (selector de campus) ·
 Selector de universidad · Permiso de notificaciones ·
-Iniciar sesión · Recuperar contraseña
+Iniciar sesión · Recuperar contraseña · **Código de recuperación** ·
+**Nueva contraseña**
+
+Las dos últimas llegaron con RF-04, y son el segundo y tercer paso del reset por
+OTP. "Código de recuperación" es casi gemela de "Código de verificación" —misma
+`.otp-row`— con una diferencia deliberada: su `.auth-logo` es el candado en
+`--forest`, no la "R" en `--ink`. **La identidad visual la marca el FLUJO**, así
+que las tres pantallas del reset comparten el candado; quien viera la "R" del alta
+a mitad de una recuperación no sabría en cuál de los dos está. Por eso son frames
+distintos y no una variante etiquetada.
 
 ### Explorar (14)
 Feed · Selector de campus · Categoría · Categoría sin resultados ·
@@ -1435,6 +1444,24 @@ y solo al final las convenciones genéricas de los skills.
   no tiene grant ni policy de DELETE, y T12 lo vigila. **Revisar cuando:**
   alguien marque una venta por error y quiera revertirla del todo.
 
+- **Una recuperación de contraseña abandonada a media deja la sesión abierta con
+  la contraseña VIEJA.** `verifyOtp({type:'recovery'})` guarda una sesión real
+  (§8b, RF-04), así que quien verifica el código y mata la app antes de guardar la
+  contraseña nueva reabre la app **dentro del Feed**, sin haber cambiado nada. No
+  es un hueco de seguridad —probó que controla ese correo, que es justo lo que
+  prueba un login— pero el reset quedó a medias y no hay pantalla de "cambiar
+  contraseña" en Perfil, así que la salida es cerrar sesión y repetir el flujo.
+  **El abandono DELIBERADO ya está cubierto**: tanto "Guardar contraseña" como el
+  "Volver a iniciar sesión" del frame cierran sesión, así que lo único que queda
+  abierto es el force-quit. **Por qué no se cerró:** lo obvio sería un flag
+  `recoveryPendiente` en `SessionProvider`, y no sirve — el único caso que
+  resolvería es precisamente el force-quit, y un flag en memoria muere en él.
+  Persistirlo junto a la sesión es meter estado nuevo en el gating por un caso
+  raro. **Revisar cuando:** alguien reporte haber quedado dentro de la app sin
+  haber cambiado su contraseña. **Fix:** persistir la marca de recuperación en el
+  mismo storage que la sesión y que `splash.tsx` la lea, o un `signOut()` al montar
+  `nueva-password` cuando no se llegó por el flujo.
+
 - **Compartir comparte solo texto plano, sin ningún link — en LAS DOS pantallas
   que lo tienen.** En Detalle el mensaje es título + precio + "Publicado en
   Relevo"; en "Perfil público", nombre + universidad + "Perfil en Relevo"
@@ -1600,12 +1627,59 @@ existen como código, con auth gating real (ver sección 8). **"Permiso de
 notificaciones" ya pide el permiso REAL** y registra el token (RF-16): el botón
 llama a `registrarPushToken()` y entra al Feed pase lo que pase, incluso si el
 usuario dice que no — es el último paso del onboarding y atorarlo ahí sería
-absurdo. Sin conectar todavía, fuera de alcance por decisión explícita:
-`recuperar-password.tsx` (necesita deep linking), la subida de la foto de perfil
-—que dejó de ser "pendiente del onboarding" y pasó a deuda con disparador en §8,
-porque "Editar perfil" dibuja el mismo círculo inerte y lo que falta es un bucket,
-no el picker—, íconos nativos de los 4 triggers de `NativeTabs` (siguen siendo
-solo texto).
+absurdo. Sin conectar todavía, fuera de alcance por decisión explícita: la subida
+de la foto de perfil —que dejó de ser "pendiente del onboarding" y pasó a deuda con
+disparador en §8, porque "Editar perfil" dibuja el mismo círculo inerte y lo que
+falta es un bucket, no el picker—, íconos nativos de los 4 triggers de `NativeTabs`
+(siguen siendo solo texto).
+
+**RF-04 completo: "Recuperar contraseña" por OTP, no por enlace.** Eran 13
+pantallas y son 15: `recuperar-codigo.tsx` y `nueva-password.tsx` se suman a
+`recuperar-password.tsx`, que era la única pantalla MUERTA del grupo (su botón
+hacía `router.back()` y no llamaba a Supabase). **Sin migración y sin tocar
+`rls.sql`**: las tres llamadas van a GoTrue, que escribe en `auth.users`, no en
+`public.users` — ni RLS ni grants de columna participan, y el único trigger que
+este repo cuelga de ahí es `after insert` (`20260906000438:42`), que un cambio de
+contraseña no dispara. Seis cosas que no se ven en el diff:
+
+- **Va por OTP y no por enlace para NO depender de deep linking**, que sigue sin
+  montarse (es la misma carencia de la deuda de Compartir en §8: dominio propio +
+  `apple-app-site-association`/`assetlinks.json` + página de respaldo). Un código
+  que se teclea no necesita nada de eso. El frame decía "Te enviaremos un enlace" y
+  se corrigió a "un código de 6 dígitos" — copy persistente, así que el HTML fue
+  primero (§0 regla 4).
+- **`verifyOtp({type:'recovery'})` SÍ emite `PASSWORD_RECOVERY` en nuestra versión**
+  (auth-js 2.115.0, `GoTrueClient.js:2063`) — el bug reportado en otras versiones no
+  nos toca. Lo que importa está una línea arriba (`:2062`, `_saveSession`): **la
+  sesión es real y completa**, indistinguible de la de un login. El nombre del
+  evento es lo único que las separa, y `SessionProvider` lo descarta (`session.tsx:118`,
+  el `_evento` con guion bajo).
+- **Por eso las dos pantallas nuevas NO llaman a `useRedirectSiPerfilCompleto()`**,
+  al revés que `codigo.tsx`/`verificacion.tsx`/`iniciar-sesion.tsx`. Con ese guard,
+  el usuario saldría disparado al Feed en el instante en que el código se verifica,
+  sin llegar nunca a cambiar su contraseña. Es el error natural al copiar el patrón
+  de la pantalla hermana, y por eso está comentado en el archivo.
+- **No se tocó `SessionProvider` ni el gating**, y la alternativa —un flag
+  `recoveryPendiente`— se descartó con un argumento y no por gusto: el único caso
+  que resolvería es el force-quit a media recuperación, y un flag en memoria muere
+  en ese mismo force-quit. Ver la deuda de §8.
+- **El correo viaja por param de ruta, NO por `usePerfilDraft()`.** Ese borrador es
+  el del ALTA y su campo `correo` lo escriben "Verificación"/"Código"; compartirlo
+  dejaría a los dos flujos peleándose por el mismo campo si alguien empieza un alta,
+  vuelve atrás y entra a recuperar.
+- **Al final se cierra sesión y se vuelve a "Iniciar sesión"**, aunque la sesión de
+  recuperación sirva para entrar. Obliga a estrenar la contraseña nueva, o sea que
+  el usuario COMPRUEBA que funciona antes de salir del flujo. El `.auth-link` de
+  "Volver a iniciar sesión" del frame hace lo mismo, y **tiene que cerrar sesión
+  para funcionar**: `iniciar-sesion.tsx:19` llama al guard, así que con la sesión
+  viva rebotaría al Feed en vez de mostrar el formulario.
+
+Componentes nuevos: **`OtpInput`** (`src/components/OtpInput.tsx`), extraído de
+`codigo.tsx` — puramente presentacional, no sabe de `verifyOtp` ni de
+`signInWithOtp`, así que la lógica de alta se quedó intacta donde estaba. Exporta
+también `OTP_LENGTH`. Y dos constantes que dejaron de estar duplicadas antes de
+poder duplicarse: `CORREO_RE` (de `verificacion.tsx`) y `MIN_PASSWORD` (de
+`completar-perfil.tsx`), esta última ahora emparejada con el servidor — ver §9.
 
 **Explorar — construido y conectado a Supabase real.** Las 11 pantallas
 existen como código (7 archivos de ruta, algunos cubren varios estados:
@@ -2943,6 +3017,43 @@ publicación como en Mis publicaciones.
   monta esa ruta — moverla de un grupo anidado a una ruta de nivel raíz
   (como se hizo con `selector-campus.tsx`/`filtros.tsx`) resuelve esto sin
   tener que migrar a un `Modal` de RN.
+- **`supabase config push` empuja el `config.toml` ENTERO, y en este repo eso
+  puede tumbar el correo de producción.** La config de Auth no viaja con
+  `db push` (eso son solo migraciones); el comando que la lleva a remoto es
+  `supabase config push`, y **no se usa aquí**. El motivo no es genérico: nuestro
+  `config.toml` es un archivo de desarrollo local, así que empujarlo se llevaría
+  `[auth.email.smtp]` **comentado** —y remoto usa **Resend** como SMTP custom
+  (§1), o sea que un push podría dejar al proyecto sin mailer y romper el OTP de
+  RF-01 y el de RF-04 a la vez—, más `email_sent = 2` (2 correos por HORA),
+  `site_url = "http://127.0.0.1:3000"` y la plantilla de magic link que está puesta
+  a mano en el dashboard. Lo que haya que cambiar en remoto se cambia en el
+  dashboard, misma categoría que los secretos de Vault de push: Auth → Email
+  Templates para las plantillas, Auth → Sign In / Providers → Email para el mínimo
+  de contraseña.
+- **`minimum_password_length` NO se aplica en el admin API de GoTrue — el corte es
+  por LLAVE, no por endpoint.** Medido contra el stack local con el mínimo en 8, con
+  una contraseña de 7 caracteres:
+
+  | Endpoint | Llave | Resultado |
+  |---|---|---|
+  | `POST /auth/v1/signup` | publishable | **422** `weak_password` |
+  | `PUT /auth/v1/user` (`updateUser`) | bearer de sesión | **422** `weak_password` |
+  | `POST /auth/v1/admin/users` | **secret** | **200** — la crea |
+
+  Todo lo alcanzable con la publishable o con una sesión valida; lo que exige la
+  secret key está exento. Es coherente —quien tiene esa llave ya puede crear
+  usuarios, cambiar correos y borrar cuentas— pero **es comportamiento medido, no
+  intención documentada**: los docs de Supabase no mencionan la exención.
+
+  Dos consecuencias prácticas. La primera: subir el mínimo **no impide** crear una
+  cuenta con una contraseña débil desde Studio o `service_role`, así que no es un
+  candado contra un admin descuidado, solo contra los usuarios. La segunda:
+  `scripts/probe-{storage,venta}.mjs` crean sus usuarios por ese admin API, así que
+  son **inmunes** a este valor — y el comentario que decía que los salvaban los 10
+  caracteres de `'probe-1234'` era falso; está corregido en los dos archivos. Lo que
+  sí importa es que `PUT /user` valide, porque es el ÚNICO camino donde la app fija
+  una contraseña ("Completar perfil" y "Nueva contraseña"): ahí el `MIN_PASSWORD`
+  del cliente traduce la regla, no la sustituye.
 - **La regla `react-hooks/set-state-in-effect` no detecta el patrón cuando el
   guard lee un ref antes del `setState`.** Verificado con 4 variantes mínimas
   linteadas una por una: un `if (!valor) return` sobre un `useState`/prop normal
