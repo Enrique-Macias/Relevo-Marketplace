@@ -12,7 +12,14 @@ import { useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ErrorState } from '@/components/ErrorState';
-import { IconChevronLeft, IconCheck, IconShare, IconStar, IconWhatsapp } from '@/components/icons';
+import {
+  IconChevronLeft,
+  IconCheck,
+  IconFlag,
+  IconShare,
+  IconStar,
+  IconWhatsapp,
+} from '@/components/icons';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
@@ -126,6 +133,8 @@ export default function PerfilPublicoScreen() {
   // Sin skeleton propio: el frame no tiene uno — mismo criterio que Detalle.
   if (estado === 'loading' || !perfil) return null;
 
+  const esPropio = profile?.id === id;
+
   return (
     <Screen
       header={
@@ -133,11 +142,41 @@ export default function PerfilPublicoScreen() {
           <Pressable onPress={() => router.back()} accessibilityRole="button" hitSlop={12}>
             <IconChevronLeft size={18} color={Colors.ink} />
           </Pressable>
-          {/* compartir: backlog, sin flujo de share nativo definido — mismo
-              criterio que "Compartir" en Detalle. */}
-          <Pressable onPress={() => {}} accessibilityRole="button" hitSlop={12}>
-            <IconShare size={18} color={Colors.ink} />
-          </Pressable>
+          {/* Los dos íconos de la derecha van agrupados, como en `.detail-nav`:
+              con `space-between`, tres hijos sueltos empujarían compartir al
+              centro. */}
+          <View style={styles.navActions}>
+            {/* compartir: backlog, sin flujo de share nativo definido — mismo
+                criterio que "Compartir" en Detalle. Se pinta siempre, también
+                en el perfil propio, igual que allá. */}
+            <Pressable onPress={() => {}} accessibilityRole="button" hitSlop={12}>
+              <IconShare size={18} color={Colors.ink} />
+            </Pressable>
+            {/* RF-14, objetivo USUARIO. Guard de UX nada más: el candado es el
+                `check` de tabla de 20260906000441 (`reported_user_id <>
+                reporter_id`). Se esconde en el perfil propio con el mismo
+                criterio con el que Detalle esconde su bandera cuando `isOwner`
+                — hoy no se llega aquí con el id propio (el `.seller-card` que
+                navega acá ya está gateado por `!isOwner`), pero la ruta sí es
+                alcanzable por deep link. */}
+            {!esPropio && (
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: '/reportar/[id]',
+                    // El `id` de ESTA ruta es la persona reportada, así que la
+                    // hoja no necesita un param aparte para su guard. `nombre`
+                    // viaja solo para el título, que ya está en pantalla aquí.
+                    params: { id, tipo: 'usuario', nombre: perfil.nombre ?? '' },
+                  })
+                }
+                accessibilityRole="button"
+                hitSlop={12}
+              >
+                <IconFlag size={18} color={Colors.ink} />
+              </Pressable>
+            )}
+          </View>
         </View>
       }
     >
@@ -241,6 +280,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 16,
+  },
+  // .nav-actions{display:flex; gap:8px;}
+  navActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   // .profile-block{display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 20px 20px;}
   block: {

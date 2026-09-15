@@ -468,10 +468,11 @@ l.user_id = reporter_id)`. Tres cosas que no se ven en el diff:
   rechaza: rompe esa rama entera en silencio. Con `not exists`, ese caso no
   machea nada y la cláusula da true.
 
-**T21 tiene TRES aserciones, y son las tres ramas de esa cláusula — la sección se
-sostiene sola a propósito.** Autocontenida con sus propios `:M`/`:N`. Cada una es
-la ÚNICA que caza su fallo, medido corriendo T21 aislada contra las tres
-variantes rotas:
+**Las TRES primeras aserciones de T21 son las tres ramas de esa cláusula — la
+sección se sostiene sola a propósito.** (Son las tres de ESA cláusula, no las
+tres de la sección: T21 tiene una cuarta, (d), que prueba el otro candado —ver
+abajo—.) Autocontenida con sus propios `:M`/`:N`. Cada una es la ÚNICA que caza
+su fallo, medido corriendo T21 aislada contra las tres variantes rotas:
 
 | Variante de la cláusula | T21 sola cae en |
 |---|---|
@@ -487,6 +488,21 @@ sección que no sabe que T21 existe. Hoy T8 la sigue cazando primero por orden d
 archivo (inserta un reporte de publicación en su línea ~296), pero eso es
 redundancia, no la red. Lección hermana de la de `:C` en T11b: una aserción que
 pasa porque otra sección hizo el trabajo no está probando lo que dice.
+
+**(d) prueba el OTRO candado, y por eso no entra en esa tabla.** Las tres de
+arriba son variantes del `with check` de `20260914000455`; (d) ejercita el
+`check` de tabla de `20260906000441:22` —el autorreporte de USUARIO—, que existe
+desde la Fase 2 y **no tenía control negativo propio**: (c) probaba el camino
+feliz de esa rama y el de rechazo no lo probaba nadie, porque ninguna pantalla
+podía alcanzarlo. RF-14 lo volvió alcanzable desde la bandera de "Perfil
+público" (§8b), así que dejó de ser teórico. **Medido con el control negativo**:
+quitando ese `check`, la suite entera llega hasta T21 sin inmutarse —incluida
+(c), que pasa justo antes— y la única que cae es (d). Y el motivo del rechazo se
+distingue solo con leerlo: (a) dice "rechazado: permiso" (es una policy) y (d)
+dice `violates check constraint "reports_check1"` (es una restricción de tabla).
+Son dos mecanismos distintos porque tienen que serlo — el de usuario compara dos
+columnas de la misma fila y cabe en un `check`; el de publicación necesita mirar
+`listings`, y un `check` con subconsulta no es legal en Postgres.
 
 **`vistas_count` se incrementa solo vía `public.increment_listing_view(id)`**
 (`SECURITY DEFINER`, excluye al dueño para que no infle sus propias vistas).
@@ -658,7 +674,7 @@ de integración en vez de dos, la función no sabe nada del esquema de negocio, 
 `listing_contacts` (§8b) pero esta vez con recuperación. Ver §9 sobre el header
 `apikey` y el esquema real de `pg_net`, que son dos trampas distintas.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 141 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 142 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -772,6 +788,16 @@ lección de esta sección:** dentro de la suite, T8 llega antes y caza dos de la
 tres, así que una corrida completa en rojo no dice cuál es la red de verdad.
 Correr una sección sola contra cada variante rota es lo que destapó que T21 tenía
 un hueco (le faltaba (c)) mientras la suite entera seguía en verde donde debía.
+
+Y a **142** con la cuarta de T21, (d), que llegó **sin migración**: al abrir
+"Reportar usuario" desde Perfil público (RF-14, §8b) se volvió alcanzable el
+`check` de tabla de `20260906000441:22` —nadie se reporta a sí mismo— que hasta
+entonces no tenía control negativo propio. Nada en T12 tampoco: esa tarea no
+toca ningún grant ni ninguna policy, solo cliente, diseño y spec. Es el caso
+inverso del resto de esta lista, donde la aserción llega detrás de una migración:
+aquí la regla ya estaba en la base y lo que cambió fue que por fin hay una
+pantalla que puede chocar con ella.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -1275,6 +1301,33 @@ y solo al final las convenciones genéricas de los skills.
   - **Ningún frame nuevo ni variante nueva:** el inventario sigue en 54 y el HTML
     no se tocó. Los toasts son la excepción documentada de §0 regla 4, y son lo
     único de copy que se escribió en código.
+
+- **RF-14 ampliado: "Reportar usuario" desde Perfil público — el segundo
+  objetivo de esa tabla, por fin alcanzable.** **Sin migración**: el `check` de
+  tabla que impide reportarse a uno mismo está desde `20260906000441:22` y el
+  mutuo-excluyente (`num_nonnulls(...) = 1`) desde la misma. Una aserción nueva
+  (T21(d)), la generalización de `reportar/[id].tsx` y de `crearReporte()`, y la
+  bandera del header de "Perfil público". Lo que no se ve en el diff:
+  - **La premisa "no hace falta SQL" se verificó contra el archivo, y esta vez
+    sí era cierta** — al revés que en el hito anterior, donde la misma premisa
+    resultó falsa y apareció la policy de autorreporte. Lo que sí apareció fue
+    un hueco en la SUITE: el `check` de usuario nunca había tenido control
+    negativo, porque hasta hoy ninguna pantalla podía chocar con él. De ahí
+    (d) — ver §3.
+  - **El mutuo-excluyente subió al tipo, no al runtime.** `crearReporte()` toma
+    una unión discriminada con `?: never`; pasar los dos objetivos o ninguno
+    deja de compilar en vez de morir con 42501. El tipo refleja la regla de la
+    base, no la reemplaza — probado con las cuatro combinaciones.
+  - **Dos candados distintos producen dos SQLSTATE distintos**, y eso decide el
+    copy: `42501` (policy) para la publicación propia y la suspensión, `23514`
+    (`check`) para el usuario propio. El `if` del toast de suspensión solo mira
+    el primero, así que el segundo cae al genérico — correcto, es un caso que la
+    UI no ofrece.
+  - **Ningún frame nuevo: el inventario sigue en 54.** El HTML sí se tocó, en
+    dos lugares: la bandera del `.profile-top` de "Perfil público" y una
+    variante etiquetada dentro de "Reportar publicación" para el título alterno,
+    con el patrón de borde punteado que ya usan "modo corrección" y
+    `.photo-add.is-busy`.
 
 **Pendiente, en este orden de prioridad:**
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
@@ -2176,6 +2229,16 @@ Seis cosas que no se ven en el diff:
   las dos partes ya estaba permitido antes de esta tarea: se deja anotado para
   que nadie vuelva a preguntárselo.
 
+**Su header creció con la bandera de RF-14, y eso cambió la forma del
+`.profile-top`.** Antes tenía dos hijos sueltos (volver + compartir) bajo
+`justify-content:space-between`; con un tercero, compartir se habría ido al
+centro. Los dos de la derecha van ahora agrupados en un `.nav-actions`
+(`flexDirection:'row', gap:8`), la misma clase que ya usaba `.detail-nav`. **Van
+SIN `.round-btn`, al revés que Detalle**: allá los íconos se pintan sobre la foto
+y necesitan el círculo blanco para leerse, aquí caen directo sobre `--paper` —
+que es lo que compartir ya hacía solo. La bandera abre `/reportar/[id]` con
+`tipo:'usuario'`; compartir **sigue inerte**, mismo backlog que en Detalle.
+
 **"Editar perfil" construida y conectada.** Vive en
 `src/app/(cuenta)/editar-perfil/` (tres archivos: `_layout.tsx`, `index.tsx` y
 `universidad.tsx`), con `src/lib/perfil.ts` como capa de datos —creció con
@@ -2439,6 +2502,40 @@ corrección) vive en `src/app/(confianza)/vendida/[id].tsx`, "Calificar" en
 `(confianza)/calificar.tsx`, "Reportar publicación" en **`src/app/reportar/[id].tsx`**
 (ojo: fuera del grupo, ver abajo), y la capa de datos en `src/lib/confianza.ts`.
 
+**Esa cuarta pantalla sirve DOS objetivos, no uno, y sigue siendo UNA pantalla.**
+`reportar/[id].tsx` reporta una publicación (bandera de Detalle) o a una persona
+(bandera de "Perfil público"), según un param `tipo`. No son dos frames: lo único
+que cambia en toda la hoja es el `.sheet-title` —los cinco motivos salen del
+mismo enum `report_reason`, que no distingue objetivo—, así que va como variante
+etiquetada dentro del frame "Reportar publicación" y **el inventario sigue en
+54** (§4). Cinco cosas que conviene saber antes de tocarla:
+
+- **`tipo` es opcional y cae a `'listing'`.** Es lo que deja intacta la llamada
+  de Detalle, que era el único call site cuando la hoja solo sabía de
+  publicaciones. El `id` de la ruta se REINTERPRETA según el modo: es un
+  `listings.id` (bigint, de ahí el `Number(id)`) en uno y un `users.id` (uuid,
+  sin parsear) en el otro.
+- **El modo usuario no necesita el `sellerId`** que sí usa el otro: el `id` de
+  la ruta ES la persona reportada, así que el guard compara contra él
+  directamente y no hay dos fuentes que puedan desincronizarse.
+- **Los candados son DOS y distintos**, ver §3: el `with check` de
+  `reports_insert_own` para la publicación propia, y el `check` de tabla de
+  `20260906000441:22` para la persona propia. Se notan distinto en la respuesta
+  — el primero llega como `42501` y el segundo como `23514`
+  (`reports_check1`)—, y por eso el autorreporte de usuario cae al toast
+  genérico y no al de suspensión: ese `if` solo mira `42501`. Es correcto, es un
+  caso que la UI ya no ofrece.
+- **`crearReporte()` toma una unión discriminada**, no dos campos opcionales:
+  `{ listingId } | { reportedUserId }` con `?: never` en la rama contraria. La
+  base ya exige el mutuo-excluyente (`num_nonnulls(...) = 1`); el tipo solo lo
+  sube a compilación para que pasar ambos o ninguno no llegue nunca al 42501.
+  **Verificado con las cuatro combinaciones**, no supuesto: ambos y ninguno no
+  compilan, cada uno solo sí.
+- **`nombre` viaja por param solo para el título**, desde una pantalla que ya lo
+  tiene pintado — no se vuelve a pedir a la base. Sin nombre (`users.nombre` es
+  nullable) cae a "Reportar usuario", que es preferible a un "Reportar a "
+  colgando.
+
 **"Reportar publicación" es la única del grupo que NO vive en `(confianza)/`, y
 no es un descuido.** Es una HOJA (`transparentModal`) y se abre desde Detalle,
 que está en `(explorar)`: la transición la ejecuta el Stack RAÍZ, así que la
@@ -2471,11 +2568,17 @@ Detalles que no se ven en el diff:
 - **El toast del `42501` distingue sus dos causas con `profile.estado`**, que la
   sesión ya trae — el mismo recurso que el toast de WhatsApp. Sin ese `&&`, el
   caso adversarial (param manipulado) recibiría un "tu cuenta está suspendida"
-  que sería mentira.
+  que sería mentira. Su copy dice "enviar reportes" y no "reportar
+  publicaciones" desde que la hoja sirve los dos objetivos; los toasts son la
+  excepción de §0 regla 4, así que ese texto vive en código y no en el frame.
 - **La bandera solo existe para quien NO es el dueño** (el frame la cambia por el
   kebab en "Detalle (vista vendedor)"), y **el kebab sigue inerte**: es otra
   tarea. Compartir, en cambio, se pinta en las TRES variantes y nunca dependió de
-  `isOwner`.
+  `isOwner`. **En "Perfil público" rige el mismo reparto**: la bandera se esconde
+  en el perfil propio (`profile?.id === id`), compartir se pinta siempre. Hoy no
+  se llega a la propia —el `.seller-card` que navega ahí ya está gateado por
+  `!isOwner`, y es el único call site—, pero la ruta es alcanzable por deep link
+  y el guard cuesta una línea.
 
 - **`accionVenta()` es el derivado de TRES estados de la fila de venta, y vive en
   un solo lugar a propósito.** Lo consumen las tres entradas —"Editar

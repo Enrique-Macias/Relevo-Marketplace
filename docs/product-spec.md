@@ -152,9 +152,19 @@ vez validado.
   **✅ Implementado** — el número es real, se captura al publicar (no se puede
   publicar sin él) y se lee de a uno por RPC para no exponerlo en el perfil
   público (RNF-05). Ver el bloque de `users` en §Modelo de datos.
-- **RF-14** Reporte de publicaciones hacia moderación, con motivo
-  seleccionable: spam o publicidad, sospecha de fraude, contenido
+- **RF-14** Reporte de publicaciones **y de usuarios** hacia moderación, con
+  motivo seleccionable: spam o publicidad, sospecha de fraude, contenido
   inapropiado, no es un estudiante, u otro (con comentario libre).
+  **✅ Implementado, DOS objetivos** — el de publicación se dispara desde la
+  bandera del header de "Detalle de publicación"; el de usuario, desde la
+  bandera de "Perfil público". Comparten hoja y motivos (el enum
+  `report_reason` no distingue objetivo); lo único que cambia es el título.
+  Son **mutuamente excluyentes por esquema** —`reports.listing_id` /
+  `reports.reported_user_id`, con `num_nonnulls(...) = 1` en el `with check`
+  de `reports_insert_own`—, nunca los dos a la vez. Nadie puede reportarse a
+  sí mismo por ninguno de los dos caminos, y son dos candados distintos: un
+  `check` de tabla para el de usuario, una cláusula en la policy para el de
+  publicación (ver `CLAUDE.md` §3).
 
 ### Favoritos y notificaciones
 - **RF-15** Guardar publicaciones como favoritas. **✅ Implementado** — el

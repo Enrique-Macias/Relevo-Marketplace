@@ -1552,6 +1552,29 @@ select pg_temp.assert(
             and listing_id is null),
   'reportar a un USUARIO sigue funcionando (la cláusula nueva no toca esa rama)');
 
+-- (d) NADIE SE REPORTA A SÍ MISMO COMO USUARIO. Ojo: esto NO es una cuarta
+-- variante de la tabla de arriba — las tres de (a)/(b)/(c) son ramas del `with
+-- check` de 20260914000455, y esta prueba OTRO candado, el `check` de tabla de
+-- 20260906000441 (`reported_user_id is null or reported_user_id <> reporter_id`).
+-- Son dos mecanismos distintos porque tienen que serlo: el autorreporte de
+-- usuario compara dos columnas de la MISMA fila y cabe en un `check`; el de
+-- publicación necesita mirar `listings`, y un `check` con subconsulta no es
+-- legal en Postgres.
+--
+-- Ese check existe desde la Fase 2 y hasta hoy no tenía control negativo propio:
+-- ninguna pantalla podía alcanzarlo, así que (c) probaba el camino feliz de esta
+-- rama y nadie probaba el de rechazo. RF-14 acaba de volverlo alcanzable desde
+-- la bandera de "Perfil público", así que la aserción deja de ser teórica.
+--
+-- Va con `expect_error` como (a) y no con `assert`, pero por un motivo distinto:
+-- (a) lanza porque un `with check` de INSERT aborta; esta lanza porque una
+-- violación de `check` aborta (23514). Las dos abortan, ninguna filtra en
+-- silencio como el `using` de un UPDATE.
+select pg_temp.expect_error(:N::uuid,
+  format('insert into public.reports (reporter_id, reported_user_id, motivo)
+          values (%L, %L, ''otro'')', :N::uuid, :N::uuid),
+  'nadie puede reportarse a sí mismo como usuario');
+
 -- ---------------------------------------------------------------------------
 \echo ''
 \echo '== T12 — invariantes de grants =='

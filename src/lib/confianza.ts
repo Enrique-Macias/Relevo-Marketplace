@@ -240,7 +240,7 @@ export async function crearRating(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Reportar una publicación (RF-14)
+// Reportar una publicación o a un usuario (RF-14)
 // ---------------------------------------------------------------------------
 
 /**
@@ -258,33 +258,54 @@ export type ReportReason =
   | 'otro';
 
 /**
- * RF-14. Solo reportes de PUBLICACIÓN: el de usuario existe en el esquema
- * (`reported_user_id`) pero no tiene frame, así que queda fuera de alcance.
+ * Un reporte apunta a UNA publicación o a UN usuario, nunca a los dos ni a
+ * ninguno. Eso ya lo exige la base —`num_nonnulls(listing_id, reported_user_id)
+ * = 1` en el `with check` de `reports_insert_own`—, y esta unión lo sube al
+ * tipo: con `?: never` en la rama contraria, pasar ambos objetivos (o ninguno)
+ * no compila, en vez de fallar hasta el 42501 en runtime. El tipo REFLEJA la
+ * regla de la base, no la reemplaza — el candado sigue siendo la policy.
+ */
+type CrearReporteInput = {
+  reporterId: string;
+  motivo: ReportReason;
+  comentario: string;
+} & (
+  | { listingId: number; reportedUserId?: never }
+  | { reportedUserId: string; listingId?: never }
+);
+
+/**
+ * RF-14, los DOS objetivos: la hoja de Detalle reporta una publicación, la de
+ * Perfil público reporta a la persona. Comparten motivos porque el enum
+ * `report_reason` no distingue objetivo.
  *
  * NO se manda `listing_titulo`: lo materializa el trigger
  * `capture_report_snapshot` (20260906000441), que además pisa lo que venga del
  * cliente. Es un snapshot a propósito — el reporte tiene que seguir siendo
- * legible aunque después se borre la publicación.
+ * legible aunque después se borre la publicación. Por el mismo motivo tampoco
+ * se manda `reported_user_correo`, el snapshot hermano: el cliente ni siquiera
+ * puede leer esa columna (queda fuera del grant de select, RNF-05).
  *
  * Tampoco `estado`, que nace en 'pendiente' por default y solo lo mueve
  * `service_role` desde Studio (RF-17): el cliente no tiene grant de update
  * sobre esta tabla.
  *
- * DOS rechazos posibles, los dos con SQLSTATE 42501, porque el `with check` de
- * un INSERT sí lanza (a diferencia del `using` de un UPDATE, que filtra en
- * silencio — ver `corregirComprador` arriba): el llamante está suspendido, o es
- * el dueño de la publicación que intenta reportar (20260914000455). Quien los
+ * Los rechazos posibles son TRES, todos con SQLSTATE 42501, porque el `with
+ * check` de un INSERT sí lanza (a diferencia del `using` de un UPDATE, que
+ * filtra en silencio — ver `corregirComprador` arriba): el llamante está
+ * suspendido; es el dueño de la publicación que intenta reportar
+ * (20260914000455); o es la persona que intenta reportarse a sí misma
+ * (el `check` de tabla de 20260906000441, otro candado distinto). Quien los
  * separa para el copy es la pantalla, con `profile.estado`, que ya tiene.
  */
-export async function crearReporte(input: {
-  reporterId: string;
-  listingId: number;
-  motivo: ReportReason;
-  comentario: string;
-}): Promise<void> {
+export async function crearReporte(input: CrearReporteInput): Promise<void> {
   const { error } = await supabase.from('reports').insert({
     reporter_id: input.reporterId,
-    listing_id: input.listingId,
+    // Las dos columnas se mandan siempre, una de ellas en null: el `with check`
+    // cuenta no-nulos, así que omitir la que no aplica y mandarla null son lo
+    // mismo para la base, y mandarlas explícitas deja ver el mutuo-excluyente.
+    listing_id: input.listingId ?? null,
+    reported_user_id: input.reportedUserId ?? null,
     motivo: input.motivo,
     comentario: input.comentario.trim() === '' ? null : input.comentario.trim(),
   });

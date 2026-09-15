@@ -3200,9 +3200,23 @@
         </div>
       </div>
       <div class="screen">
+        <!-- Compartir y bandera van agrupados en `.nav-actions` (la misma clase
+             que usa `.detail-nav`), no sueltos: con `justify-content:space-between`
+             en `.profile-top`, tres hijos directos repartirían el ancho y
+             pondrían compartir en el centro. Van SIN `.round-btn`, al revés que
+             Detalle: allá los íconos se pintan sobre la foto y necesitan el
+             círculo blanco para leerse; aquí caen directo sobre `--paper`, que
+             es lo que compartir ya hacía antes de tener compañía.
+
+             La bandera NO se pinta cuando el perfil es el propio — el mismo
+             criterio de "Detalle (vista vendedor)", donde `isOwner` la cambia
+             por el kebab. Compartir sí se pinta siempre, igual que allá. -->
         <div class="profile-top">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+          <div class="nav-actions">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h13l-3.5 5L18 14H5"/></svg>
+          </div>
         </div>
 
         <div class="profile-block">
@@ -4261,6 +4275,33 @@
           <div class="field" style="margin-bottom:0;">
             <label class="field-label">Cuéntanos más (opcional)</label>
             <textarea class="textarea-field" placeholder="Da más contexto para que podamos revisarlo…"></textarea>
+          </div>
+
+          <!-- REPORTAR A UN USUARIO — la MISMA hoja, no una pantalla nueva. Se
+               llega desde la bandera de "Perfil público" (que reporta a la
+               persona, no a una publicación suya), y lo ÚNICO que cambia en
+               toda la pantalla es el `.sheet-title`: los cinco motivos son los
+               mismos —el enum `report_reason` no distingue objetivo—, el
+               comentario sigue siendo opcional y el CTA sigue diciendo "Enviar
+               reporte". Por eso el bloque de abajo repinta solo el header y no
+               la hoja entera.
+
+               El nombre va en el título y no un genérico ("Reportar usuario")
+               porque a esta hoja se llega desde un perfil concreto y ya se
+               tiene el dato a la mano; sin nombre —un perfil sin `nombre`— cae
+               al genérico.
+
+               Los dos objetivos son mutuamente excluyentes por esquema
+               (`reports.listing_id` / `reported_user_id`, `num_nonnulls = 1`):
+               una hoja reporta una publicación o una persona, nunca las dos. -->
+          <div style="margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:9px;">
+              Variante (doc, no es parte del flujo): reportar a un usuario
+            </div>
+            <div class="sheet-header" style="padding:6px 0 14px;">
+              <div class="sheet-title">Reportar a Jorge Muñoz</div>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </div>
           </div>
         </div>
       </div>
