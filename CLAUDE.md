@@ -1245,7 +1245,7 @@ y solo al final las convenciones genéricas de los skills.
     quedaba sola a ancho completo, que es justo lo que ya no pasa.
 
 - **RF-14 completo: "Reportar publicación" — con eso el grupo Confianza queda en
-  4/4.** Una migración (`20260914000455`), 2 aserciones (T21), la hoja
+  4/4.** Una migración (`20260914000455`), 3 aserciones (T21), la hoja
   `src/app/reportar/[id].tsx` y el cableado de los dos íconos del header de
   Detalle. De paso se conectó **Compartir**, que era inerte en las tres variantes.
   Lo que no se ve en el diff:
