@@ -1435,15 +1435,18 @@ y solo al final las convenciones genéricas de los skills.
   no tiene grant ni policy de DELETE, y T12 lo vigila. **Revisar cuando:**
   alguien marque una venta por error y quiera revertirla del todo.
 
-- **Compartir comparte solo texto plano, sin ningún link.** El mensaje es título
-  + precio + "Publicado en Relevo", porque el proyecto no tiene todavía esquema
+- **Compartir comparte solo texto plano, sin ningún link — en LAS DOS pantallas
+  que lo tienen.** En Detalle el mensaje es título + precio + "Publicado en
+  Relevo"; en "Perfil público", nombre + universidad + "Perfil en Relevo"
+  (`.filter(Boolean).join('\n')`, porque ahí `nombre`/`universidadNombre` son
+  nullable). Mismo motivo raíz en las dos: el proyecto no tiene todavía esquema
   de universal links (iOS) / App Links (Android) ni una página web de respaldo
   para quien no tiene la app instalada — y un link roto es peor que no poner
   nada. **Revisar cuando:** se decida invertir en una fase de deep linking real.
-  **Fix:** dominio propio con `apple-app-site-association`/`assetlinks.json`, una
-  página de fallback que muestre la publicación a quien no tiene la app, y la
-  ruta interna `/detalle/[id]` de Expo Router no cambiaría — es su propio plan
-  aparte.
+  **Fix:** dominio propio con `apple-app-site-association`/`assetlinks.json`,
+  una página de fallback por cada ruta compartible (`/detalle/[id]` y
+  `/perfil-publico/[id]`, las dos de Expo Router sin cambiar), y el mismo texto
+  plano de hoy pasa a llevar el link real. Es su propio plan aparte.
 
 - **`reports.resolved_at` existe y NADIE la escribe.** Está en el esquema desde
   `20260906000441:16` y ningún trigger ni camino de código la llena, así que hoy
@@ -2232,12 +2235,29 @@ Seis cosas que no se ven en el diff:
 **Su header creció con la bandera de RF-14, y eso cambió la forma del
 `.profile-top`.** Antes tenía dos hijos sueltos (volver + compartir) bajo
 `justify-content:space-between`; con un tercero, compartir se habría ido al
-centro. Los dos de la derecha van ahora agrupados en un `.nav-actions`
-(`flexDirection:'row', gap:8`), la misma clase que ya usaba `.detail-nav`. **Van
-SIN `.round-btn`, al revés que Detalle**: allá los íconos se pintan sobre la foto
-y necesitan el círculo blanco para leerse, aquí caen directo sobre `--paper` —
-que es lo que compartir ya hacía solo. La bandera abre `/reportar/[id]` con
-`tipo:'usuario'`; compartir **sigue inerte**, mismo backlog que en Detalle.
+centro. Los dos de la derecha van ahora agrupados en un `.nav-actions`, la
+misma clase que ya usaba `.detail-nav`. **Van SIN `.round-btn`, al revés que
+Detalle**: allá los íconos se pintan sobre la foto y necesitan el círculo
+blanco para leerse, aquí caen directo sobre `--paper` — que es lo que
+compartir ya hacía solo. La bandera abre `/reportar/[id]` con `tipo:'usuario'`.
+
+**El gap de `.nav-actions` necesitó un override acotado, `.profile-top
+.nav-actions{gap:26px}`, y NO se tocó el `gap:8px` de la clase compartida.**
+Los 8px de `.nav-actions` leen bien en Detalle porque ahí cada ícono va dentro
+de `.round-btn` (36px, ícono de 18px centrado): el espacio ink-a-ink real es
+(36-18)/2 + 8 + (36-18)/2 = **26px**, no 8. Aquí los mismos íconos de 18px van
+bare, así que el gap directo tenía que ser esos 26px para leer igual de
+espaciado — subir el `gap:8px` general habría apretado más a Detalle, que ya
+estaba bien. Medido contra el propio CSS del archivo, no a ojo.
+
+**Compartir ya no está inerte: mismo patrón que Detalle, sin un constructor de
+texto compartido entre los dos** (ninguno de los dos lo tenía; Detalle también
+arma el suyo inline). El mensaje es `nombre + universidad + "Perfil en
+Relevo"`, con `.filter(Boolean).join('\n')` porque las dos primeras partes son
+nullable — un template literal habría podido imprimir "null" en la hoja de
+share. Mismo criterio de "sin link" que Detalle: CLAUDE.md §8 documenta las DOS
+pantallas en la misma entrada de deuda, no dos entradas separadas — es el
+mismo motivo raíz (sin universal links/App Links) y el mismo fix futuro.
 
 **"Editar perfil" construida y conectada.** Vive en
 `src/app/(cuenta)/editar-perfil/` (tres archivos: `_layout.tsx`, `index.tsx` y

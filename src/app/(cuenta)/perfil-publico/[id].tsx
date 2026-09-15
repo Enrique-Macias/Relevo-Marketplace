@@ -9,7 +9,7 @@
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 
 import { ErrorState } from '@/components/ErrorState';
 import {
@@ -115,6 +115,34 @@ export default function PerfilPublicoScreen() {
     void Linking.openURL(urlWhatsapp(telefono, 'Hola, te escribo desde Relevo'));
   }
 
+  /**
+   * Mismo criterio que `compartir()` de Detalle: texto plano y NINGÚN link,
+   * porque el proyecto sigue sin universal links/App Links ni página de
+   * respaldo (CLAUDE.md §8, deuda consciente de "Compartir"). No hay un
+   * constructor de texto compartido que reusar — Detalle también lo arma
+   * inline —, así que este sigue el mismo patrón en vez de estrenar una
+   * abstracción para un solo consumidor más.
+   *
+   * `.filter(Boolean).join('\n')` en vez de un template literal: `carrera` y
+   * `universidadNombre` son nullable, y un template con `${perfil.nombre}`
+   * sobre un perfil sin nombre imprimiría literalmente "null" en la hoja de
+   * share nativa.
+   */
+  async function compartir() {
+    if (!perfil) return;
+    try {
+      await Share.share({
+        message: [perfil.nombre, perfil.universidadNombre, 'Perfil en Relevo']
+          .filter(Boolean)
+          .join('\n'),
+      });
+    } catch (e: any) {
+      // Cancelar la hoja nativa NO entra aquí (resuelve con
+      // `action: 'dismissedAction'`), así que esto es un fallo de verdad.
+      console.warn('[perfil-publico] no se pudo compartir:', e?.message ?? e);
+    }
+  }
+
   if (!id || estado === 'error') {
     return (
       <Screen>
@@ -146,10 +174,9 @@ export default function PerfilPublicoScreen() {
               con `space-between`, tres hijos sueltos empujarían compartir al
               centro. */}
           <View style={styles.navActions}>
-            {/* compartir: backlog, sin flujo de share nativo definido — mismo
-                criterio que "Compartir" en Detalle. Se pinta siempre, también
-                en el perfil propio, igual que allá. */}
-            <Pressable onPress={() => {}} accessibilityRole="button" hitSlop={12}>
+            {/* Texto plano, sin link — ver `compartir()` arriba. Se pinta
+                siempre, también en el perfil propio, igual que en Detalle. */}
+            <Pressable onPress={compartir} accessibilityRole="button" hitSlop={12}>
               <IconShare size={18} color={Colors.ink} />
             </Pressable>
             {/* RF-14, objetivo USUARIO. Guard de UX nada más: el candado es el
@@ -281,11 +308,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
   },
-  // .nav-actions{display:flex; gap:8px;}
+  // .profile-top .nav-actions{gap:26px;} — override acotado sobre
+  // `.nav-actions{gap:8px}`. Sin `.round-btn` (a diferencia de `.detail-nav`),
+  // el espacio ink-a-ink de Detalle con gap:8 es en realidad 26px por el
+  // padding de los círculos; aquí, con íconos bare del mismo tamaño, hace
+  // falta ese mismo valor directo en el gap. NO tocar `.detail-nav`/`RoundIconButton`
+  // con este número: es un ajuste local a este header.
   navActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 26,
   },
   // .profile-block{display:flex; flex-direction:column; align-items:center; text-align:center; padding:12px 20px 20px;}
   block: {

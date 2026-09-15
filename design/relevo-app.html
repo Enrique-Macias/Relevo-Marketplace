@@ -397,6 +397,16 @@
     display:flex; align-items:center; justify-content:center;
   }
   .nav-actions{display:flex; gap:8px;}
+  /* Override acotado, NO un cambio a `.nav-actions` en general: en Detalle cada
+     ícono va dentro de `.round-btn` (36px, ícono de 18px centrado), así que el
+     espacio ink-a-ink real entre los dos círculos es
+     (36-18)/2 [padding del primer círculo] + 8 [gap] + (36-18)/2 [padding del
+     segundo] = 26px — no los 8px que dice el gap. `.profile-top` pinta los
+     mismos íconos de 18px pero SIN `.round-btn` (van directo sobre `--paper`,
+     ver el comentario del frame), así que con gap:8 el espacio ink-a-ink real
+     era de solo 8px: mucho más apretado que Detalle, no igual de apretado.
+     Este override iguala el resultado visual (26px) sin tocar `.detail-nav`. */
+  .profile-top .nav-actions{gap:26px;}
   .detail-dots{
     position:absolute; bottom:14px; left:0; right:0;
     display:flex; justify-content:center; gap:5px;
@@ -3207,6 +3217,14 @@
              Detalle: allá los íconos se pintan sobre la foto y necesitan el
              círculo blanco para leerse; aquí caen directo sobre `--paper`, que
              es lo que compartir ya hacía antes de tener compañía.
+
+             SIN `.round-btn` el gap de 8px de `.nav-actions` se sentía apretado
+             —en Detalle el espacio ink-a-ink real es 26px por el padding de los
+             círculos, no los 8px del gap—, así que hay un override acotado,
+             `.profile-top .nav-actions{gap:26px}`, justo arriba de la
+             definición de `.nav-actions`. NO se tocó `.nav-actions` en general
+             ni `.detail-nav`: es un ajuste local a este header, sin efecto en
+             Detalle.
 
              La bandera NO se pinta cuando el perfil es el propio — el mismo
              criterio de "Detalle (vista vendedor)", donde `isOwner` la cambia
