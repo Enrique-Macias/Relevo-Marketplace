@@ -1,8 +1,13 @@
 /**
- * Fotos de publicaciones — subida, borrado y lectura del bucket privado
- * `listing-photos`.
+ * Storage — subida, borrado y lectura de los DOS buckets del proyecto:
+ * `listing-photos` (privado, fotos de publicaciones) y `avatars` (público,
+ * foto de perfil).
  *
- * Todo lo de este archivo depende de tres decisiones que ya están tomadas en la
+ * Que sean distintos no es organización: `listing-photos` autoriza por carpeta
+ * `{listing_id}/` contra el dueño de una publicación, y un avatar no tiene
+ * publicación. Y son de visibilidad opuesta a propósito — ver `BUCKET_AVATARS`.
+ *
+ * Lo de `listing-photos` depende de tres decisiones que ya están tomadas en la
  * base y NO son negociables desde el cliente (ver CLAUDE.md §3 y §9):
  *
  *  1. El bucket es PRIVADO. Es lo único que hace real la regla de que las fotos
@@ -23,6 +28,31 @@ import { env } from '@/lib/env';
 import { supabase } from '@/lib/supabase';
 
 export const BUCKET = 'listing-photos';
+
+/**
+ * Foto de perfil (RF-03). Es PÚBLICO, al revés que `BUCKET` — y eso es una
+ * decisión, no el default (`config.toml`, migración `20260916000456`).
+ *
+ * El motivo por el que `listing-photos` es privado no se traslada: allá el
+ * criterio de lectura es VARIABLE (`estado <> 'pausada' or eres el dueño`) y un
+ * bucket público lo saltaría. Para un avatar no hay estado equivalente —
+ * `users_select` es `using (true)` y `fetchPerfilPublico()` ni filtra por
+ * `estado`—, así que su policy de SELECT sería una constante: ceremonia, a
+ * cambio de que las 9 superficies que pintan un avatar cargaran el header
+ * `Authorization` y parpadearan a iniciales en cada arranque en frío.
+ *
+ * Consecuencia práctica: NO hay un `AvatarPhoto` con token. Ver `Avatar.tsx`.
+ */
+export const BUCKET_AVATARS = 'avatars';
+
+/**
+ * El `file_size_limit` del bucket `avatars`, en bytes. Mismo criterio que
+ * `MAX_BYTES`: no se valida contra esto, sirve para poder DECIR el tope.
+ *
+ * Es 1 MiB y no 5: tras `normalizar()` a `LADO_MAXIMO_AVATAR` un avatar pesa
+ * ~50-120 KB, así que sigue siendo un orden de magnitud de holgura.
+ */
+export const MAX_BYTES_AVATAR = 1 * 1024 * 1024;
 
 /** Tope de `listing_photos.orden` (0-4) y del trigger `enforce_photo_limit()`. */
 export const MAX_FOTOS = 5;
@@ -151,14 +181,34 @@ function rutaFoto(listingId: number, ext: string): string {
  * distinguirlo de cualquier otro rechazo.
  */
 export async function subirFoto(listingId: number, foto: FotoLocal): Promise<string> {
+  const { mime, ext } = formatoDe(foto);
+  const path = rutaFoto(listingId, ext);
+  await subirObjeto(BUCKET, path, foto, mime);
+  return path;
+}
+
+/** El mime de la foto y su extensión, o `FormatoNoSoportadoError`. */
+function formatoDe(foto: FotoLocal): { mime: string; ext: string } {
   const mime = mimeDe(foto);
   const ext = MIME_A_EXT[mime];
   if (!ext) throw new FormatoNoSoportadoError(mime);
+  return { mime, ext };
+}
 
-  const path = rutaFoto(listingId, ext);
+/**
+ * El cuerpo de la subida, compartido por los dos buckets. Todo lo que explica
+ * el bloque de arriba (ArrayBuffer, `contentType`, el `code`) vale igual aquí:
+ * cambia el bucket y la ruta, no el mecanismo.
+ */
+async function subirObjeto(
+  bucket: string,
+  path: string,
+  foto: FotoLocal,
+  mime: string
+): Promise<void> {
   const bytes = await new File(foto.uri).arrayBuffer();
 
-  const { error } = await supabase.storage.from(BUCKET).upload(path, bytes, {
+  const { error } = await supabase.storage.from(bucket).upload(path, bytes, {
     contentType: mime,
     // Cada subida estrena UUID, así que nunca hay colisión que sobrescribir.
     // Dejarlo en false convierte una colisión (que sería un bug nuestro) en un
@@ -172,8 +222,6 @@ export async function subirFoto(listingId: number, foto: FotoLocal): Promise<str
     }
     throw error;
   }
-
-  return path;
 }
 
 /**
@@ -217,4 +265,72 @@ export async function borrarFotos(paths: string[]): Promise<void> {
 export function urlFotoAutenticada(storagePath: string): string {
   const segmentos = storagePath.split('/').map(encodeURIComponent).join('/');
   return `${env.supabaseUrl}/storage/v1/object/authenticated/${BUCKET}/${segmentos}`;
+}
+
+// ---------------------------------------------------------------------------
+// Avatares (RF-03)
+// ---------------------------------------------------------------------------
+
+/**
+ * `{user_id}/{uuid}.{ext}`.
+ *
+ * La carpeta es la llave de autorización, igual que en `rutaFoto()` — solo que
+ * aquí las policies la comparan como TEXTO contra `auth.uid()::text`, sin
+ * ningún cast que pueda fallar, así que este bucket no necesita el helper
+ * `private.listing_id_from_object_name()` ni nada parecido.
+ *
+ * UUID NUEVO EN CADA SUBIDA, y no una ruta estable tipo `{user_id}/avatar.jpg`
+ * con `upsert: true`: el bucket es público, así que el CDN cachea el objeto y
+ * una ruta estable seguiría sirviendo la foto VIEJA hasta que expire. Un uuid
+ * nuevo es cache-busting gratis, y a cambio obliga a borrar el anterior — que
+ * es justo lo que le da consumidor a `avatars_objects_delete_own`.
+ */
+function rutaAvatar(userId: string, ext: string): string {
+  return `${userId}/${Crypto.randomUUID()}.${ext}`;
+}
+
+/** Sube el avatar y devuelve su ruta, la que va en `users.foto_url`. */
+export async function subirAvatar(userId: string, foto: FotoLocal): Promise<string> {
+  const { mime, ext } = formatoDe(foto);
+  const path = rutaAvatar(userId, ext);
+  await subirObjeto(BUCKET_AVATARS, path, foto, mime);
+  return path;
+}
+
+/**
+ * Borra el avatar anterior. Best-effort como `borrarFotos()`, y por lo mismo:
+ * quien llama ya escribió `foto_url` apuntando al nuevo, así que propagar el
+ * fallo dejaría al usuario sin poder cambiar su foto por un problema de red.
+ *
+ * REVISA EL ARRAY, NO SOLO `error`, y eso NO es prolijidad — es un modo de
+ * fallo medido. `remove()` resuelve primero qué objetos VE el invocante y borra
+ * esos; si la RLS de SELECT no se los muestra, devuelve **HTTP 200 con `[]` y
+ * `error` en null**, dejando el objeto intacto sin que nada se entere. Con un
+ * `if (error)` a secas este caso sería invisible. Ver CLAUDE.md §9.
+ */
+export async function borrarAvatar(path: string): Promise<void> {
+  const { data, error } = await supabase.storage.from(BUCKET_AVATARS).remove([path]);
+
+  if (error) {
+    console.warn(`[storage] no se pudo borrar el avatar ${path}: ${error.message}`);
+    return;
+  }
+  if (!data || data.length === 0) {
+    console.warn(
+      `[storage] el borrado de ${path} no afectó ningún objeto (200 con lista vacía). ` +
+        'Suele ser la policy de SELECT del bucket — ver CLAUDE.md §9.'
+    );
+  }
+}
+
+/**
+ * URL de lectura del avatar. SIN header `Authorization`, al revés que
+ * `urlFotoAutenticada()`: el bucket es público y este endpoint ni pasa por RLS.
+ *
+ * Esa es toda la simplificación que compra el bucket público, y la razón por la
+ * que `Avatar.tsx` no necesita `useSession()`.
+ */
+export function urlAvatarPublica(storagePath: string): string {
+  const segmentos = storagePath.split('/').map(encodeURIComponent).join('/');
+  return `${env.supabaseUrl}/storage/v1/object/public/${BUCKET_AVATARS}/${segmentos}`;
 }

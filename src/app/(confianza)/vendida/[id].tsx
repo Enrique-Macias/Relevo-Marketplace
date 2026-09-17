@@ -123,6 +123,7 @@ export default function VendidaScreen() {
           toUserId: eleccion,
           listingId: String(listingId),
           nombre: comprador?.nombre ?? '',
+          fotoUrl: comprador?.fotoUrl ?? '',
         },
       });
     } catch (e: any) {
@@ -187,6 +188,7 @@ export default function VendidaScreen() {
                 <BuyerRow
                   key={c.userId}
                   nombre={c.nombre}
+                  fotoUrl={c.fotoUrl}
                   contactoAt={c.createdAt}
                   selected={seleccionEfectiva === c.userId}
                   last={corrigiendo && i === contactos.length - 1}

@@ -15,7 +15,18 @@
  * de las cinco columnas editables.
  */
 
+import { useCallback, useRef, useState } from 'react';
+
 import { type OpcionCatalogo } from '@/lib/catalogos';
+import { LADO_MAXIMO_AVATAR, PermisoDenegadoError, elegirFotos } from '@/lib/foto-picker';
+import {
+  FormatoNoSoportadoError,
+  FotoDemasiadoGrandeError,
+  MAX_BYTES_AVATAR,
+  borrarAvatar,
+  subirAvatar,
+  type FotoLocal,
+} from '@/lib/storage';
 import { supabase } from '@/lib/supabase';
 
 /** Lada fija de México — ver la deuda consciente de CLAUDE.md §8. */
@@ -96,6 +107,49 @@ export async function guardarTelefono(userId: string, texto: string): Promise<vo
 }
 
 /**
+ * Sube la foto de perfil y la deja guardada (RF-03). Devuelve la ruta nueva.
+ *
+ * SE PERSISTE AL SUBIRLA, NO AL TOCAR "GUARDAR", y la diferencia con Publicar
+ * —que sí difiere la subida hasta el final— tiene una causa concreta: allá la
+ * carpeta del objeto ES `{listing_id}/` y la policy exige que ese listing ya
+ * exista, así que no hay dónde subir antes. Aquí la fila de `users` SIEMPRE
+ * existe (la crea `private.handle_new_user()` al verificarse el correo), así
+ * que no hay precondición que esperar — y diferir reintroduciría el huérfano
+ * que `publicar-fotos.md` ya tiene como deuda abierta: el usuario sube, se
+ * arrepiente, sale sin guardar y el objeto queda sin que nadie lo apunte.
+ * Por lo mismo `foto_url` NO entra en `CambiosPerfil`/`guardarPerfil()`.
+ *
+ * EL ORDEN ES LOAD-BEARING: subir el nuevo → escribir `foto_url` → borrar el
+ * anterior. Al revés, un fallo del update dejaría `foto_url` apuntando a un
+ * objeto ya borrado, o sea un avatar roto que degrada a iniciales para siempre.
+ * El borrado va al final y es best-effort (ver `borrarAvatar`): un huérfano es
+ * caro, no incorrecto, y propagarlo dejaría al usuario sin poder cambiar su
+ * foto por un problema de red.
+ *
+ * Solo la columna `foto_url`, mismo motivo que `guardarTelefono()`: colar
+ * `correo`/`estado`/`rating_promedio` rechaza el statement entero con 42501.
+ */
+export async function guardarFotoPerfil(
+  userId: string,
+  foto: FotoLocal,
+  fotoAnterior: string | null
+): Promise<string> {
+  const path = await subirAvatar(userId, foto);
+
+  const { error } = await supabase.from('users').update({ foto_url: path }).eq('id', userId);
+  if (error) {
+    // El objeto ya subió pero nadie lo apunta: se limpia antes de propagar, que
+    // es la única ventana en la que todavía sabemos su ruta.
+    await borrarAvatar(path);
+    throw error;
+  }
+
+  if (fotoAnterior) await borrarAvatar(fotoAnterior);
+
+  return path;
+}
+
+/**
  * El número de otro usuario, para abrir WhatsApp con él.
  *
  * Devuelve `null` en DOS casos que el llamador tiene que saber distinguir, y no
@@ -117,6 +171,13 @@ export async function fetchTelefonoVendedor(userId: string): Promise<string | nu
 
 export type PerfilEditable = {
   nombre: string;
+  /**
+   * RUTA dentro del bucket PÚBLICO `avatars`, o null (RF-03). Se lee aquí y no
+   * de `useSession()` por lo mismo que el resto de este tipo: la pantalla ya
+   * hace este fetch, y `PROFILE_COLUMNS` sí la trae pero el perfil de la sesión
+   * solo se refresca con `refreshProfile()`.
+   */
+  fotoUrl: string | null;
   carrera: string;
   universidad: OpcionCatalogo | null;
   campus: OpcionCatalogo | null;
@@ -143,7 +204,7 @@ export type PerfilEditable = {
 export async function fetchPerfilEditable(userId: string): Promise<PerfilEditable | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('nombre, carrera, universidad:universidades(id, nombre), campus:campus(id, nombre)')
+    .select('nombre, foto_url, carrera, universidad:universidades(id, nombre), campus:campus(id, nombre)')
     .eq('id', userId)
     .maybeSingle();
 
@@ -155,6 +216,7 @@ export async function fetchPerfilEditable(userId: string): Promise<PerfilEditabl
   const row = data as any;
   return {
     nombre: row.nombre ?? '',
+    fotoUrl: row.foto_url ?? null,
     carrera: row.carrera ?? '',
     universidad: row.universidad ?? null,
     campus: row.campus ?? null,
@@ -212,4 +274,89 @@ export async function guardarPerfil(userId: string, cambios: CambiosPerfil): Pro
     .eq('id', userId);
 
   if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// El círculo de foto de "Completar perfil" y "Editar perfil" (RF-03)
+// ---------------------------------------------------------------------------
+
+const MB_AVATAR = Math.round(MAX_BYTES_AVATAR / (1024 * 1024));
+
+/** Traduce lo que lanzó la subida al aviso que lee el usuario. */
+function avisoDe(e: unknown): string {
+  if (e instanceof PermisoDenegadoError) {
+    return 'Necesitamos permiso para abrir tus fotos';
+  }
+  if (e instanceof FotoDemasiadoGrandeError) {
+    return `Esa foto pesa más de ${MB_AVATAR} MB. Elige otra.`;
+  }
+  if (e instanceof FormatoNoSoportadoError) {
+    return 'Ese formato de imagen no es compatible';
+  }
+  return 'No pudimos actualizar tu foto. Intenta de nuevo.';
+}
+
+/**
+ * El estado del círculo de foto, compartido por las DOS pantallas que lo pintan.
+ *
+ * Vive aquí y no en cada pantalla porque el flujo es idéntico —elegir, subir,
+ * escribir `foto_url`, refrescar la sesión— y el copy de los cuatro avisos es el
+ * mismo; duplicarlo lo dejaría desincronizado al primer ajuste.
+ *
+ * NO importa `useToast`: ningún módulo de `src/lib/` importa un componente en
+ * runtime (solo tipos), así que el aviso sale por `onAviso` y la pantalla decide
+ * con qué lo muestra.
+ *
+ * `LADO_MAXIMO_AVATAR` y no el default de 1600: ver su doc en `foto-picker.ts`.
+ *
+ * El guard de reentrada va en un `ref` y no en el estado, mismo motivo que
+ * `agregarFoto()` de Publicar: tiene que valer ANTES del primer `await`, sin
+ * esperar a un re-render, o un doble tap abre el picker dos veces.
+ */
+export function useFotoPerfil({
+  userId,
+  inicial,
+  onAviso,
+  onGuardada,
+}: {
+  userId: string;
+  inicial: string | null;
+  onAviso: (texto: string, variante?: 'exito' | 'error') => void;
+  /** Se llama tras escribir `foto_url`. Las pantallas hacen `refreshProfile()`. */
+  onGuardada?: () => void | Promise<void>;
+}) {
+  const [fotoUrl, setFotoUrl] = useState<string | null>(inicial);
+  const [subiendo, setSubiendo] = useState(false);
+  const enCurso = useRef(false);
+
+  const cambiar = useCallback(async () => {
+    if (enCurso.current) return;
+    enCurso.current = true;
+    setSubiendo(true);
+
+    try {
+      const { fotos, descartadas } = await elegirFotos(1, undefined, {
+        ladoMaximo: LADO_MAXIMO_AVATAR,
+      });
+
+      // Sin fotos y sin descartadas = canceló, que no es un error.
+      if (fotos.length === 0) {
+        if (descartadas > 0) onAviso('Ese formato de imagen no es compatible', 'error');
+        return;
+      }
+
+      const anterior = fotoUrl;
+      const path = await guardarFotoPerfil(userId, fotos[0], anterior);
+      setFotoUrl(path);
+      await onGuardada?.();
+    } catch (e: any) {
+      console.warn('[foto-perfil] no se pudo actualizar:', e?.message ?? e);
+      onAviso(avisoDe(e), 'error');
+    } finally {
+      enCurso.current = false;
+      setSubiendo(false);
+    }
+  }, [fotoUrl, onAviso, onGuardada, userId]);
+
+  return { fotoUrl, subiendo, cambiar };
 }

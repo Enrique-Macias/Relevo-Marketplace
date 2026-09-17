@@ -23,7 +23,8 @@ import {
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
-import { iniciales, mesesEnRelevo } from '@/lib/format';
+import { Avatar } from '@/components/Avatar';
+import { mesesEnRelevo } from '@/lib/format';
 import { fetchActivasVendedor, fetchVentasVendedor } from '@/lib/listings';
 import { fetchTelefonoVendedor, urlWhatsapp } from '@/lib/perfil';
 import { fetchPerfilPublico, fetchReviews, type PerfilPublico, type Review } from '@/lib/perfil-publico';
@@ -208,9 +209,12 @@ export default function PerfilPublicoScreen() {
       }
     >
       <View style={styles.block}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{iniciales(perfil.nombre)}</Text>
-        </View>
+        <Avatar
+          path={perfil.fotoUrl}
+          nombre={perfil.nombre}
+          style={styles.avatar}
+          textStyle={styles.avatarText}
+        />
         <View style={styles.nameRow}>
           <Text style={styles.name}>{perfil.nombre ?? ''}</Text>
           {/* Decorativo: toda fila de `users` pasó por OTP — mismo criterio
@@ -280,9 +284,12 @@ export default function PerfilPublicoScreen() {
               ]}
             >
               <View style={styles.reviewTop}>
-                <View style={styles.reviewAvatar}>
-                  <Text style={styles.reviewAvatarText}>{iniciales(r.fromNombre)}</Text>
-                </View>
+                <Avatar
+                  path={r.fromFotoUrl}
+                  nombre={r.fromNombre}
+                  style={styles.reviewAvatar}
+                  textStyle={styles.reviewAvatarText}
+                />
                 <Text style={styles.reviewName}>{r.fromNombre ?? ''}</Text>
                 <View style={styles.reviewStars}>
                   {[1, 2, 3, 4, 5].map((n) => (

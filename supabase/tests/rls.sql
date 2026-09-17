@@ -1577,6 +1577,120 @@ select pg_temp.expect_error(:N::uuid,
 
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T22 — bucket público `avatars` (RLS de storage.objects, RF-03) =='
+-- Autocontenida, mismo criterio que T11b, T13, T14, T15, T16, T17 y T19: siembra
+-- sus propios usuarios. A esta altura del archivo :A es el único activo sin
+-- publicaciones, :B lleva suspendido desde T10 y :C está borrado — reutilizar
+-- cualquiera haría que una aserción pueda pasar por la razón equivocada (la
+-- lección de :C en T11b).
+--
+--   :O — usuario ACTIVO. El camino feliz y el intruso.
+--   :P — usuario SUSPENDIDO. Existe por (e), que es la razón de ser de esta
+--        sección: aquí un suspendido SÍ puede escribir, al revés que en T14.
+--
+-- QUÉ CUBRE Y QUÉ NO: esto prueba las POLICIES. Que el bucket se sirva público,
+-- que no sea enumerable por `anon` y que el DELETE funcione lo prueba
+-- `scripts/probe-storage.mjs` contra el API HTTP — el DELETE no se puede probar
+-- aquí por el trigger `storage.protect_delete`, mismo motivo que en T14.
+\set O '''99999999-0000-0000-0000-000000000099'''
+\set P '''aaaaaaaa-1111-1111-1111-0000000000a1'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:O::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-o@tec.mx', '', now(), now(), now()),
+  (:P::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-p@tec.mx', '', now(), now(), now());
+update public.users set nombre = 'Olivia'  where id = :O::uuid;
+update public.users set nombre = 'Pablo', estado = 'suspendido' where id = :P::uuid;
+
+-- El bucket es una fila, no esquema: ninguna migración lo crea. Mismo apaño que
+-- T14, para que la suite corra en una base que venga de otro lado.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', true, 1048576,
+        array['image/jpeg','image/png','image/webp'])
+on conflict (id) do nothing;
+
+-- Para el control del guard `bucket_id`. T14 ya lo siembra, pero esta sección no
+-- depende de que T14 haya corrido.
+insert into storage.buckets (id, name, public)
+values ('otro-bucket', 'otro-bucket', false)
+on conflict (id) do nothing;
+
+-- --- Escritura ---------------------------------------------------------------
+-- (a) El camino feliz.
+select pg_temp.as_user(:O::uuid,
+  format('insert into storage.objects (bucket_id, name) values (''avatars'', ''%s/foto.jpg'')',
+         :O::uuid));
+select pg_temp.assert(
+  (select count(*) from storage.objects
+   where bucket_id = 'avatars' and name = :O || '/foto.jpg') = 1,
+  'O sube su avatar a su propia carpeta');
+
+-- (b) La carpeta ES la llave de autorización. Sin esta condición cualquiera
+-- podría plantarle una foto de perfil a otra persona.
+select pg_temp.expect_error(:O::uuid,
+  format('insert into storage.objects (bucket_id, name) values (''avatars'', ''%s/intruso.jpg'')',
+         :P::uuid),
+  'O no puede subir a la carpeta de otro usuario');
+
+-- (c) Una ruta sin carpeta de usuario. Aquí no hay cast que pueda reventar —la
+-- comparación es de TEXTO contra auth.uid()::text—, así que este bucket no
+-- necesita el helper `listing_id_from_object_name()` de T14: simplemente no
+-- machea.
+select pg_temp.expect_error(:O::uuid,
+  'insert into storage.objects (bucket_id, name) values (''avatars'', ''basura.jpg'')',
+  'una ruta sin carpeta de usuario es rechazada por la policy');
+
+-- (d) Control del guard `bucket_id`: la MISMA ruta, que en `avatars` sí está
+-- permitida, pero en otro bucket. Sin ese guard estas policies concederían
+-- acceso a todo bucket que se agregue después.
+select pg_temp.expect_error(:O::uuid,
+  format('insert into storage.objects (bucket_id, name) values (''otro-bucket'', ''%s/foto.jpg'')',
+         :O::uuid),
+  'la misma ruta en otro bucket no queda cubierta por estas policies');
+
+-- (e) LA ASERCIÓN QUE JUSTIFICA ESTA SECCIÓN, y la única que no tiene gemela en
+-- T14 — ahí la equivalente es la CONTRARIA ("un suspendido no puede subir fotos
+-- ni a su propia publicación").
+--
+-- Es POSITIVA a propósito: un suspendido SÍ puede editar su propio perfil,
+-- incluida su foto y su teléfono (CLAUDE.md §3, tabla de decisión), y
+-- `users_update_own` tampoco lleva `is_active_user()`. Copiar de T14 el
+-- `is_active_user()` a las policies de `avatars` —que es exactamente lo que
+-- invita a hacer la simetría entre las dos migraciones— sería una REGRESIÓN de
+-- un comportamiento ya decidido, y sin esta aserción no la cazaría nada.
+--
+-- MEDIDO con el control negativo: agregando `is_active_user()` a la policy de
+-- insert, (a) (b) (c) (d) pasan las cuatro y la suite muere AQUÍ, en ningún otro
+-- lado. Ojo al leerlo: muere con el error CRUDO de Postgres («new row violates
+-- row-level security policy for table "objects"»), no con el texto de la
+-- aserción de abajo — el `as_user` aborta antes de llegar a ella. Es el mismo
+-- patrón que T14 y no un descuido, pero conviene saberlo para no buscar el
+-- mensaje bonito que no va a aparecer.
+select pg_temp.as_user(:P::uuid,
+  format('insert into storage.objects (bucket_id, name) values (''avatars'', ''%s/mia.jpg'')',
+         :P::uuid));
+select pg_temp.assert(
+  (select count(*) from storage.objects
+   where bucket_id = 'avatars' and name = :P || '/mia.jpg') = 1,
+  'un usuario SUSPENDIDO sí puede subir su propio avatar');
+
+-- --- Lectura -----------------------------------------------------------------
+-- (f) La policy de SELECT es constante para `authenticated`, y NO es el control
+-- de acceso en lectura: eso lo hace `public = true` sobre /object/public/, que
+-- ni pasa por RLS. Lo que esta policy habilita es el camino del API — sin ella
+-- el `remove()` del avatar anterior devuelve 200 con lista vacía y no borra
+-- nada, en silencio (CLAUDE.md §9). Por eso se vigila que exista.
+select pg_temp.assert(
+  pg_temp.as_user_int(:P::uuid,
+    format('select count(*) from storage.objects where name = ''%s/foto.jpg''',
+           :O::uuid)) = 1,
+  'cualquier authenticated ve el objeto por la policy de SELECT');
+
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges

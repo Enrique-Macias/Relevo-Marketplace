@@ -1,6 +1,6 @@
 /**
- * `.buyer-row` del frame "¿A quién le vendiste?" — avatar de iniciales, nombre,
- * cuándo contactó, y el radio de selección.
+ * `.buyer-row` del frame "¿A quién le vendiste?" — avatar, nombre, cuándo
+ * contactó, y el radio de selección.
  *
  * NO reusa `ListRow` (`src/components/ListRow.tsx`) aunque se parezcan: aquel es
  * `.list-row`, no tiene avatar y su padding vertical es 14, no 13. Lo que SÍ
@@ -12,10 +12,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { RadioCircle } from '@/components/ListRow';
 import { Colors, Radii, Typography } from '@/constants/theme';
-import { formatRelativo, iniciales } from '@/lib/format';
+import { Avatar } from '@/components/Avatar';
+import { formatRelativo } from '@/lib/format';
 
 type BuyerRowProps = {
   nombre: string | null;
+  /** `users.foto_url` del contacto. Ignorado si se pasa `leading`. */
+  fotoUrl?: string | null;
   /** Cuándo tocó "Contactar por WhatsApp". Ausente en la fila de salida. */
   contactoAt?: string;
   selected: boolean;
@@ -30,6 +33,7 @@ type BuyerRowProps = {
 
 export function BuyerRow({
   nombre,
+  fotoUrl,
   contactoAt,
   selected,
   last,
@@ -44,9 +48,12 @@ export function BuyerRow({
       accessibilityState={{ selected }}
     >
       {leading ?? (
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{iniciales(nombre)}</Text>
-        </View>
+        <Avatar
+          path={fotoUrl}
+          nombre={nombre}
+          style={styles.avatar}
+          textStyle={styles.avatarText}
+        />
       )}
 
       <View style={styles.info}>

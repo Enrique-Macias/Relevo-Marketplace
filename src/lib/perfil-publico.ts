@@ -12,6 +12,8 @@ import { supabase } from '@/lib/supabase';
 export type PerfilPublico = {
   id: string;
   nombre: string | null;
+  /** RUTA dentro del bucket PÚBLICO `avatars`, o null. La pinta `Avatar`. */
+  fotoUrl: string | null;
   carrera: string | null;
   ratingPromedio: number;
   estado: 'activo' | 'suspendido';
@@ -29,7 +31,7 @@ export async function fetchPerfilPublico(userId: string): Promise<PerfilPublico 
   const { data, error } = await supabase
     .from('users')
     .select(
-      'id, nombre, carrera, rating_promedio, estado, created_at, universidad:universidades(nombre)'
+      'id, nombre, foto_url, carrera, rating_promedio, estado, created_at, universidad:universidades(nombre)'
     )
     .eq('id', userId)
     .maybeSingle();
@@ -41,6 +43,7 @@ export async function fetchPerfilPublico(userId: string): Promise<PerfilPublico 
   return {
     id: row.id,
     nombre: row.nombre,
+    fotoUrl: row.foto_url,
     carrera: row.carrera,
     ratingPromedio: Number(row.rating_promedio),
     estado: row.estado,
@@ -52,6 +55,8 @@ export async function fetchPerfilPublico(userId: string): Promise<PerfilPublico 
 export type Review = {
   id: number;
   fromNombre: string | null;
+  /** El avatar de quien escribió la reseña (`.review-avatar`, 26px). */
+  fromFotoUrl: string | null;
   estrellas: number;
   comentario: string | null;
   createdAt: string;
@@ -84,7 +89,7 @@ export async function fetchReviews(
   const { data, error, count } = await supabase
     .from('ratings')
     .select(
-      'id, estrellas, comentario, created_at, from_user:users!ratings_from_user_id_fkey(nombre)',
+      'id, estrellas, comentario, created_at, from_user:users!ratings_from_user_id_fkey(nombre, foto_url)',
       { count: 'exact' }
     )
     .eq('to_user_id', userId)
@@ -96,6 +101,7 @@ export async function fetchReviews(
   const items = (data ?? []).map((row: any) => ({
     id: row.id,
     fromNombre: row.from_user?.nombre ?? null,
+    fromFotoUrl: row.from_user?.foto_url ?? null,
     estrellas: row.estrellas,
     comentario: row.comentario,
     createdAt: row.created_at,

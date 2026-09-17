@@ -427,23 +427,126 @@ mismo criterio que `campusChip`/`buttonWhatsapp`).
   desde Studio?, ¿y qué pasa al reactivar: se despausan solas o no?). Se trata
   aparte, con su propio plan.
 
-- **La foto de perfil sigue sin poder subirse, y desde "Editar perfil" ya no es
-  "fuera de alcance del onboarding" sino deuda con disparador.** Las dos
-  pantallas que la dibujan —"Completar perfil" y "Editar perfil"— pintan el
-  `.photo-upload-circle` con su `.cam-badge` y **ninguna de las dos responde al
-  toque**: son `View`, no `Pressable`, y sin `accessibilityRole="button"`, para
-  no anunciar como botón algo que no hace nada. `users.foto_url` existe desde la
-  migración inicial y **nadie la escribe ni la lee** (el avatar se dibuja siempre
-  con iniciales). Lo que falta NO es el picker —`elegirFotos()`/`normalizar()` de
-  `src/lib/foto-picker.ts` sirven igual— sino un **bucket propio**: el de
-  `listing-photos` no se puede prestar, porque sus cuatro policies autorizan por
-  carpeta `{listing_id}/` contra el dueño de una publicación, y un avatar no tiene
-  publicación. **Revisar cuando:** se pida de verdad, o cuando el avatar de
-  iniciales se vuelva un problema de confianza entre desconocidos. **Fix:** bucket
-  `avatars` (¿público o privado? — si es privado, todo lo que pinte un avatar pasa
-  por `ListingPhoto`-style con header `Authorization`), sus policies espejo
-  acotadas a `{user_id}/`, su bloque en la suite, y `foto_url` escrito desde estas
-  dos pantallas. Va en su propio plan por fases chicas (§6).
+- **Cambiar el avatar puede dejar el anterior huérfano en Storage.** El reemplazo
+  es subir → escribir `foto_url` → borrar el anterior, y ese tercer paso es
+  best-effort a propósito: propagarlo dejaría al usuario sin poder cambiar su foto
+  por un fallo de red. Es el gemelo de `borrarFotos()` (`publicar-fotos.md`), con
+  **un modo de fallo extra que aquel no documentaba**: si la policy de SELECT del
+  bucket desapareciera, `remove()` devuelve `200` con `[]` y sin `error` —el
+  mecanismo vive en CLAUDE.md §9, no aquí, porque no es específico de avatares—,
+  y por eso `borrarAvatar()` compara el array en vez de solo mirar `error`. A
+  diferencia de las fotos de publicación, aquí el huérfano es **como máximo uno
+  por cambio de avatar**, no uno por foto. **Revisar cuando:** el costo de
+  almacenamiento aparezca en la factura, o los logs muestren `[storage]` avisando
+  de borrados de avatar que no afectaron nada. **Fix:** es el MISMO cron de
+  barrido que ya piden las dos deudas de `publicar-fotos.md` — no es una tarea
+  aparte, y cuando se haga tiene que cubrir los dos buckets.
+**Foto de perfil (RF-03) construida — el círculo de las dos pantallas ya no es
+inerte.** Bucket `avatars` (`config.toml` + migración `20260916000456`), el
+componente `Avatar` (`src/components/Avatar.tsx`), `useFotoPerfil()` +
+`guardarFotoPerfil()` en `src/lib/perfil.ts`, y las funciones de bucket en
+`src/lib/storage.ts`. Cierra RF-03, el último requisito sin `✅ Implementado`.
+
+Lo que no se ve en el diff:
+
+- **El bucket es PÚBLICO, y esa es la decisión de la tarea — no el default.** El
+  motivo por el que `listing-photos` es privado NO se traslada: allá el criterio
+  de SELECT es **variable** (`estado <> 'pausada' or eres el dueño`) y un bucket
+  público lo saltaría; T14 tiene una aserción dedicada a eso. Para un avatar no
+  existe estado equivalente, y se verificó en el repo antes de decidirlo:
+  `users_select` es `using (true)` (`20260906000438:78-79`) y
+  `fetchPerfilPublico()` **no filtra por `estado`**, así que el perfil de un
+  suspendido se abre igual. La única "revocación" posible de un avatar es borrar
+  el objeto, y eso funciona idéntico en los dos tipos de bucket. O sea que la
+  policy de SELECT de un `avatars` privado sería `bucket_id = 'avatars'` y nada
+  más: una constante — ceremonia, no candado — a cambio de que **las 9
+  superficies** que pintan un avatar cargaran el header `Authorization`,
+  incluidas las de LISTA (reseñas de 26px, `BuyerRow` de 38px), y de que el guard
+  `token !== null` que `ListingPhoto` ya documenta las hiciera parpadear a
+  iniciales en cada arranque en frío.
+- **Alcance honesto, medido y no supuesto:** público significa que el objeto se
+  sirve por `/object/public/` **sin ninguna autenticación** a quien tenga la URL
+  (medido: 200 sin `apikey` ni `Authorization`). No es descubrible —la ruta son
+  dos uuids, `foto_url` solo la lee `authenticated` y `anon` no tiene un solo
+  grant en el proyecto— ni **enumerable**: `list` como `anon` devuelve `[]`
+  incluso con la policy de SELECT puesta, porque va `to authenticated`. Pero
+  tampoco es revocable salvo borrando el objeto. El probe vigila las dos cosas,
+  para no tener que volver a medirlas a mano si Storage cambia de versión.
+- **Un `authenticated` SÍ puede listar las carpetas** y con eso saber quién tiene
+  foto. No agrega exposición —`users.id` y `foto_url` ya están los dos en el
+  `grant select` de `20260906000438:102-104`— y es el precio de que el borrado
+  funcione: sin esa policy, `remove()` no borra nada **y no avisa**.
+- **Son TRES policies, no cuatro, y las tres diferencias con `listing-photos` son
+  deliberadas.** (1) Sin `private.is_active_user()`: un suspendido SÍ puede
+  editar su propio perfil, incluida su foto — copiarlo de allá sería una
+  regresión, y T22-(e) es una aserción POSITIVA que se pone en rojo si alguien lo
+  "endurece". (2) Sin función de parsing de ruta: la carpeta se compara como
+  TEXTO contra `auth.uid()::text`, no hay cast que pueda reventar con `22P02`, así
+  que no hay nada que envolver en el `case` de
+  `private.listing_id_from_object_name()`. (3) Sin policy de UPDATE: ninguna ruta
+  del cliente mueve ni sobrescribe un avatar, así que no tendría consumidor —
+  mover queda denegado por AUSENCIA de policy, y el probe lo dice con esas
+  palabras en vez de fingir que prueba un `with_check`.
+- **Nombre de archivo nuevo en cada subida** (`{user_id}/{uuid}.jpg`,
+  `upsert: false`), y no una ruta estable con `upsert: true`: el bucket es
+  público, así que el CDN cachearía el objeto y la foto nueva no se vería hasta
+  que expirara. Un uuid nuevo es cache-busting gratis, y a cambio obliga a borrar
+  el anterior — que es justo lo que le da consumidor a la policy de DELETE.
+- **`users.foto_url` guarda la RUTA, no una URL**, igual que
+  `listing_photos.storage_path`. El nombre de la columna miente y se queda así:
+  renombrarla tocaría `database.types.ts`, `PROFILE_COLUMNS` y el diagrama de
+  `docs/product-spec.md:291` sin comprar nada. Guardar la URL completa metería el
+  project-ref en cada fila y volvería una migración de proyecto una migración de
+  datos.
+- **Sin migración de grants, verificado contra REMOTO y no solo contra el
+  archivo:** `foto_url` está nombrada explícitamente en los dos grants de
+  `20260906000438:104` y `:110`, ninguna migración posterior repite el
+  `revoke all`, y `information_schema.column_privileges` en el proyecto remoto
+  devuelve `SELECT` y `UPDATE` para `authenticated` sobre esa columna.
+- **La foto se persiste AL ELEGIRLA, no al tocar "Guardar"**, al revés que
+  Publicar. La diferencia tiene causa: allá la carpeta ES `{listing_id}/` y la
+  policy exige que el listing exista, así que no hay dónde subir antes. Aquí la
+  fila de `users` **siempre existe** (la crea `private.handle_new_user()` al
+  verificarse el correo), así que no hay precondición — y diferir reintroduciría
+  el huérfano que `publicar-fotos.md` ya tiene como deuda. Por eso `foto_url` NO
+  entra en `CambiosPerfil`/`guardarPerfil()`, y salir sin guardar la conserva.
+- **El orden subir → `update foto_url` → borrar el anterior es load-bearing.** Al
+  revés, un fallo del update dejaría `foto_url` apuntando a un objeto ya borrado,
+  o sea un avatar roto para siempre. Si el update falla, `guardarFotoPerfil()`
+  limpia el objeto recién subido antes de propagar: es la única ventana en la que
+  todavía se conoce su ruta.
+- **`useFotoPerfil()` vive en `src/lib/perfil.ts` y NO importa `useToast`.**
+  Ningún módulo de `src/lib/` importa un componente en runtime (solo tipos), así
+  que el aviso sale por un callback `onAviso` y la pantalla decide con qué lo
+  muestra. El hook es compartido porque el flujo y los cuatro textos de error son
+  idénticos en las dos pantallas.
+- **En "Completar perfil" el aviso va por TOAST y no por el `<Text style={error}>`
+  que esa pantalla ya tiene.** Aquél es copy persistente —el usuario lo lee con
+  calma— y estrenar texto ahí exigiría un frame (§0 regla 4); un toast es la
+  excepción explícita de esa regla, y de paso deja el mismo copy que "Editar
+  perfil".
+- **El fallback del círculo es distinto en cada pantalla, y es la única de las 9
+  superficies donde cambia:** "Editar perfil" cae a iniciales, "Completar perfil"
+  al ícono de cámara — ahí el nombre todavía se está escribiendo, así que
+  abreviarlo daría "?" o media inicial. De ahí el prop `fallback` de `Avatar`,
+  mismo recurso que el de `ListingPhoto`.
+- **`LADO_MAXIMO_AVATAR` es 512 y no los 1600 de las publicaciones.** El avatar
+  más grande que la app pinta es el círculo de 84 pt → 252 px en 3x, y
+  `[storage.image_transformation]` está comentado en `config.toml` porque es de
+  plan Pro: el cliente es el ÚNICO lugar donde un avatar se puede dimensionar.
+  Con 1600, cada fila de la lista de reseñas se bajaría un JPEG de 1600 px para
+  pintarlo a 26.
+- **No existe "quitar foto"**, porque el diseño no dibuja esa acción: cambiarla es
+  reemplazarla. El `.cam-badge` se conserva con foto justamente por eso.
+- **Diseño: dos variantes etiquetadas, ningún frame nuevo.** "con foto" y
+  "subiendo" viven dentro de los frames "Completar perfil" y "Editar perfil",
+  con el mismo recurso que `.photo-add.is-busy`. El inventario de §4 sigue en 56.
+- **Verificación:** 6 aserciones nuevas en la suite (T22, autocontenida con sus
+  propios `:O`/`:P`) y 7 en `scripts/probe-storage.mjs`. **Nada en T12**: esta
+  tarea no crea funciones, no toca grants y no agrega ningún `EXECUTE`. Los seis
+  controles negativos se corrieron uno por uno y cada uno cae en un solo sitio —
+  ver la tabla en CLAUDE.md §3.
+
 - **La base no ata `users.campus_id` a `users.universidad_id`, y quien sostiene
   esa coherencia es el cliente — ahora en DOS lugares.** No hay FK compuesta ni
   `check` que impida guardar un campus de otra universidad: son dos FKs sueltas

@@ -16,6 +16,8 @@ import { supabase } from '@/lib/supabase';
 export type Contacto = {
   userId: string;
   nombre: string | null;
+  /** RUTA dentro del bucket PÚBLICO `avatars`, o null. La pinta `Avatar`. */
+  fotoUrl: string | null;
   createdAt: string;
 };
 
@@ -49,7 +51,7 @@ export type Venta = {
 export async function fetchContactos(listingId: number): Promise<Contacto[]> {
   const { data, error } = await supabase
     .from('listing_contacts')
-    .select('user_id, created_at, usuario:users(id, nombre)')
+    .select('user_id, created_at, usuario:users(id, nombre, foto_url)')
     .eq('listing_id', listingId)
     .order('created_at', { ascending: false });
 
@@ -58,6 +60,7 @@ export async function fetchContactos(listingId: number): Promise<Contacto[]> {
   return (data ?? []).map((c: any) => ({
     userId: c.user_id,
     nombre: c.usuario?.nombre ?? null,
+    fotoUrl: c.usuario?.foto_url ?? null,
     createdAt: c.created_at,
   }));
 }

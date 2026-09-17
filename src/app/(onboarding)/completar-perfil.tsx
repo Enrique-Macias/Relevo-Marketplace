@@ -1,15 +1,19 @@
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AuthBody, AuthHeadline, AuthSub, AuthTerms } from '@/components/AuthBody';
+import { Avatar } from '@/components/Avatar';
+import { BlinkingDots } from '@/components/BlinkingDots';
 import { PrimaryButton } from '@/components/Buttons';
 import { CampusBottomSheet } from '@/components/CampusBottomSheet';
 import { Field, SelectField } from '@/components/Field';
 import { IconCamera, IconPlus } from '@/components/icons';
 import { Screen } from '@/components/Screen';
+import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { useFotoPerfil } from '@/lib/perfil';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 
@@ -30,7 +34,7 @@ export const MIN_PASSWORD = 8;
 
 /** Frame "Completar perfil". Sin `.auth-logo`: el frame no lo tiene. */
 export default function CompletarPerfilScreen() {
-  const { session, refreshProfile } = useSession();
+  const { session, profile, refreshProfile } = useSession();
   const {
     nombre,
     setNombre,
@@ -46,6 +50,33 @@ export default function CompletarPerfilScreen() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [campusSheetVisible, setCampusSheetVisible] = useState(false);
+
+  /**
+   * El aviso del fallo de foto va por TOAST y no por el `<Text style={error}>`
+   * de abajo, aunque esta pantalla ya tenga ese slot: aquél es copy persistente
+   * —el usuario lo lee con calma— y estrenar un texto ahí exigiría un frame
+   * (§0 regla 4). Un toast es la excepción explícita de esa regla, y además deja
+   * el mismo copy que "Editar perfil", que es la otra pantalla del círculo.
+   */
+  const { mostrar } = useToast();
+  const {
+    fotoUrl,
+    subiendo: subiendoFoto,
+    cambiar: cambiarFoto,
+  } = useFotoPerfil({
+    // La ruta del objeto ES la llave de autorización, así que sin sesión no hay
+    // carpeta válida a la que subir. En la práctica no se llega aquí sin ella
+    // —el gating de `(onboarding)/_layout.tsx` exige sesión—, pero el `''` haría
+    // una request condenada en vez de no hacer ninguna; el `disabled` de abajo
+    // es lo que la evita.
+    userId: session?.user.id ?? '',
+    // Esta pantalla no precarga: se llega con el perfil recién creado por el
+    // trigger, o sea `foto_url` en null. Si alguien vuelve tras haberla puesto,
+    // el `refreshProfile()` de abajo ya dejó el dato en la sesión.
+    inicial: profile?.foto_url ?? null,
+    onAviso: mostrar,
+    onGuardada: refreshProfile,
+  });
 
   const passwordOk = password.length >= MIN_PASSWORD && password === passwordConfirm;
   const puedeGuardar =
@@ -102,14 +133,48 @@ export default function CompletarPerfilScreen() {
           Esto lo verán otros estudiantes cuando les contactes por una publicación.
         </AuthSub>
 
-        {/* .photo-upload-circle{width:84px; height:84px; border:1.5px dashed var(--line); margin-bottom:22px;} */}
-        <View style={styles.photoCircle}>
-          <IconCamera size={24} color={Colors.inkSoft} />
-          {/* .cam-badge{bottom:0; right:0; width:26px; height:26px; background:var(--brick); border:2px solid var(--paper);} */}
+        {/*
+          .photo-upload-circle{width:84px; height:84px; border:1.5px dashed var(--line); margin-bottom:22px;}
+
+          YA NO ES INERTE (RF-03): era un `View` sin `accessibilityRole` mientras
+          no hacía nada, y ahora abre el carrete. El borde pasa de DASHED a SOLID
+          en cuanto hay foto —variante `.photo-upload-circle.has-photo` del
+          frame—: el círculo deja de estar vacío, que es el mismo criterio por el
+          que "Editar perfil" ya traía ese override.
+
+          El fallback NO son iniciales sino el ícono de cámara, y es la única de
+          las 9 superficies donde cambia: aquí el nombre todavía se está
+          escribiendo, así que abreviarlo daría "?" o media inicial.
+
+          La foto se guarda AL ELEGIRLA, no con el resto del formulario: la fila
+          de `users` ya existe (la creó `private.handle_new_user()` al verificarse
+          el correo), así que no hay nada que esperar. Ver `guardarFotoPerfil()`.
+        */}
+        <Pressable
+          style={[styles.photoCircle, fotoUrl ? styles.photoCircleConFoto : null]}
+          onPress={cambiarFoto}
+          disabled={subiendoFoto || !session?.user}
+          accessibilityRole="button"
+          accessibilityLabel="Agregar foto de perfil"
+        >
+          <Avatar
+            path={fotoUrl}
+            nombre={nombre}
+            style={styles.avatar}
+            fallback={<IconCamera size={24} color={Colors.inkSoft} />}
+          >
+            {subiendoFoto ? (
+              <View style={styles.avatarScrim}>
+                <BlinkingDots style={styles.avatarScrimDots} />
+              </View>
+            ) : null}
+          </Avatar>
+          {/* .cam-badge{bottom:0; right:0; width:26px; height:26px; background:var(--brick); border:2px solid var(--paper);}
+              Fuera del `Avatar`, que recorta con `overflow:'hidden'`. */}
           <View style={styles.camBadge}>
             <IconPlus size={12} color={Colors.paper} />
           </View>
-        </View>
+        </Pressable>
 
         <Field
           label="Nombre completo"
@@ -198,6 +263,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 22,
+  },
+  // `.photo-upload-circle.has-photo` — con foto el borde deja de ser punteado.
+  photoCircleConFoto: {
+    borderStyle: 'solid',
+  },
+  // `.seller-avatar` a la escala del círculo, igual que en "Editar perfil", pero
+  // SIN `backgroundColor`: sin foto aquí va el ícono de cámara sobre el fondo de
+  // la pantalla, no el forest-tint de un avatar de iniciales.
+  avatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: Radii.full,
+  },
+  // `.photo-upload-circle.is-busy .avatar-scrim` — mismo tono que el scrim de
+  // `PhotoRow` y que `.photo-remove`, no un color nuevo.
+  avatarScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: Radii.full,
+    backgroundColor: 'rgba(34,31,28,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarScrimDots: {
+    marginTop: 0,
   },
   camBadge: {
     position: 'absolute',

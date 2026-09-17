@@ -131,6 +131,35 @@ public = false
 file_size_limit = "5MiB"
 allowed_mime_types = ["image/jpeg", "image/png", "image/webp"]
 
+# Foto de perfil (RF-03). Mismo recordatorio que arriba: NO viaja con `db push`.
+#
+# public = true, y AQUÍ SÍ ES UNA DECISIÓN, no el default. El motivo por el que
+# `listing-photos` es privado no se traslada: allá el criterio de lectura es
+# VARIABLE (`estado <> 'pausada' or eres el dueño`), y un bucket público lo
+# saltaría. Para un avatar no existe estado equivalente — `users_select` es
+# `using (true)` y `fetchPerfilPublico()` ni filtra por `estado`, así que el
+# perfil de un suspendido se abre igual. La policy de SELECT de un `avatars`
+# privado sería `bucket_id = 'avatars'` y nada más: una constante, o sea
+# ceremonia, a cambio de que las 9 superficies que pintan un avatar cargaran el
+# header `Authorization` (incluidas las de LISTA) y parpadearan a iniciales en
+# cada arranque en frío, mientras la sesión resuelve.
+#
+# ALCANCE HONESTO: el objeto se sirve por /object/public/ SIN autenticación a
+# quien tenga la URL. No es descubrible (la ruta son dos uuids, `foto_url` solo
+# la lee `authenticated` y `anon` no tiene ni un grant en el proyecto) ni
+# enumerable — medido: `list` como anon devuelve `[]` incluso con la policy de
+# SELECT puesta para `authenticated`. Pero tampoco es revocable salvo borrando
+# el objeto. Ese es el trade.
+#
+# 1 MiB y no los 5 de arriba: tras `normalizar()` a 512px/JPEG 0.8 un avatar
+# pesa ~50-120 KB. Los mismos 3 mime types aunque `normalizar()` siempre emita
+# JPEG, porque su `catch` devuelve la URI original con su mime original — sin
+# png/webp, un fallo del manipulator se volvería un fallo de subida.
+[storage.buckets.avatars]
+public = true
+file_size_limit = "1MiB"
+allowed_mime_types = ["image/jpeg", "image/png", "image/webp"]
+
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
 enabled = true

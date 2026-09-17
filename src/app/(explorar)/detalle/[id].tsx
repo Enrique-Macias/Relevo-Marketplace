@@ -31,7 +31,8 @@ import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { accionVenta, LABEL_ACCION_VENTA, useVentaDetalle } from '@/lib/confianza';
 import { useExplorarState } from '@/lib/explorar-state';
-import { formatPrecio, formatRelativo, iniciales } from '@/lib/format';
+import { Avatar } from '@/components/Avatar';
+import { formatPrecio, formatRelativo } from '@/lib/format';
 import {
   fetchListingById,
   fetchStatsPropias,
@@ -445,9 +446,12 @@ export default function DetalleScreen() {
               }
               accessibilityRole="button"
             >
-              <View style={styles.sellerAvatar}>
-                <Text style={styles.sellerAvatarText}>{iniciales(listing.vendedor.nombre)}</Text>
-              </View>
+              <Avatar
+                path={listing.vendedor.fotoUrl}
+                nombre={listing.vendedor.nombre}
+                style={styles.sellerAvatar}
+                textStyle={styles.sellerAvatarText}
+              />
               <View style={styles.sellerInfo}>
                 <View style={styles.sellerNameRow}>
                   <Text style={styles.sellerName}>{listing.vendedor.nombre ?? ''}</Text>
@@ -580,6 +584,7 @@ export default function DetalleScreen() {
                         toUserId: listing.vendedor.id,
                         listingId: String(listing.id),
                         nombre: listing.vendedor.nombre ?? '',
+                        fotoUrl: listing.vendedor.fotoUrl ?? '',
                       },
                     })
                   }

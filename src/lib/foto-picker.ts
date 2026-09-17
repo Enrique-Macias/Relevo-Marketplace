@@ -69,6 +69,20 @@ const MODO_REPRESENTACION = ImagePicker.UIImagePickerPreferredAssetRepresentatio
  */
 const LADO_MAXIMO = 1600;
 
+/**
+ * Lo mismo para la foto de PERFIL, y es mucho más chico por una razón medible.
+ *
+ * El avatar más grande que la app pinta es el `.photo-upload-circle` de 84 pt →
+ * 252 px en un dispositivo 3x, así que 512 deja el doble de margen. Y no se
+ * puede delegar al servidor: `[storage.image_transformation]` está comentado en
+ * `config.toml` porque es de plan Pro, o sea que el cliente es el ÚNICO lugar
+ * donde un avatar se puede dimensionar.
+ *
+ * Con los 1600 de arriba, cada fila de la lista de reseñas se bajaría un JPEG
+ * de 1600 px para pintarlo a 26.
+ */
+export const LADO_MAXIMO_AVATAR = 512;
+
 /** Compresión JPEG de salida. `1` = sin comprimir, `0` = máxima compresión. */
 const CALIDAD_JPEG = 0.8;
 
@@ -91,6 +105,11 @@ const CALIDAD_JPEG = 0.8;
  * pérdida (esa ES la causa raíz) y el soporte de WEBP es desigual entre
  * plataformas. La transparencia que se pierde no aplica a fotos de producto.
  *
+ * EL TOPE LLEGA POR PARÁMETRO (`LADO_MAXIMO` para publicaciones,
+ * `LADO_MAXIMO_AVATAR` para la foto de perfil) y no es una constante del módulo:
+ * son dos destinos con dos buckets, dos límites de tamaño y dos escalas de
+ * render distintas.
+ *
  * EL RESIZE ES CONDICIONAL y el `width`/`height` del asset puede venir en 0
  * (`ImagePicker.types.d.ts:248-254` lo advierte). Cuando no se conocen las
  * dimensiones NO se redimensiona: pasarle solo `width` a `resize()` escalaría
@@ -101,7 +120,10 @@ const CALIDAD_JPEG = 0.8;
  * que ya fuera lo bastante chica. Quien la sube distingue el fallo determinista
  * y lo reporta con su motivo (ver `subirFoto`), así que hay red abajo.
  */
-async function normalizar(asset: ImagePicker.ImagePickerAsset): Promise<FotoElegida> {
+async function normalizar(
+  asset: ImagePicker.ImagePickerAsset,
+  ladoMaximo: number
+): Promise<FotoElegida> {
   let contexto: ImageManipulatorContext | null = null;
   let render: ImageRef | null = null;
 
@@ -109,11 +131,11 @@ async function normalizar(asset: ImagePicker.ImagePickerAsset): Promise<FotoEleg
     contexto = ImageManipulator.manipulate(asset.uri);
 
     const ladoMayor = Math.max(asset.width, asset.height);
-    if (ladoMayor > LADO_MAXIMO) {
+    if (ladoMayor > ladoMaximo) {
       // Se fija SOLO el lado mayor; el otro lo calcula el módulo conservando la
       // proporción (`ImageManipulatorContext.resize`).
       contexto.resize(
-        asset.width >= asset.height ? { width: LADO_MAXIMO } : { height: LADO_MAXIMO }
+        asset.width >= asset.height ? { width: ladoMaximo } : { height: ladoMaximo }
       );
     }
 
@@ -175,10 +197,18 @@ export type ElegirFotosCallbacks = {
   onFotoLista?: (uri: string, foto: FotoElegida) => void;
 };
 
+export type ElegirFotosOpciones = {
+  /** Lado mayor de salida. Default `LADO_MAXIMO`; el avatar pasa el suyo. */
+  ladoMaximo?: number;
+};
+
 export async function elegirFotos(
   disponibles: number,
-  callbacks?: ElegirFotosCallbacks
+  callbacks?: ElegirFotosCallbacks,
+  opciones?: ElegirFotosOpciones
 ): Promise<Seleccion> {
+  const ladoMaximo = opciones?.ladoMaximo ?? LADO_MAXIMO;
+
   const permiso = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permiso.granted) throw new PermisoDenegadoError();
 
@@ -217,7 +247,7 @@ export async function elegirFotos(
   // esperar a las que siguen en la fila.
   const fotos: FotoElegida[] = [];
   for (const asset of soportadas) {
-    const foto = await normalizar(asset);
+    const foto = await normalizar(asset, ladoMaximo);
     callbacks?.onFotoLista?.(asset.uri, foto);
     fotos.push(foto);
   }

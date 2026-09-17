@@ -91,6 +91,11 @@ vez validado.
   calificación promedio. Este es también el paso donde se fija la contraseña
   (ver RF-01/RF-02) — no es un campo de perfil visible para otros usuarios,
   pero se establece en la misma pantalla ("Completar perfil").
+  **✅ Implementado** — incluida la **foto**, que era lo último que faltaba: se
+  sube desde "Completar perfil" y "Editar perfil" al bucket `avatars`, se guarda
+  en `users.foto_url` (la RUTA del objeto, no una URL) y se ve en las 9
+  superficies que dibujan un avatar. Sigue siendo **opcional**: sin foto, el
+  fallback de iniciales es el de siempre.
 - **RF-04** Recuperación de contraseña. **✅ Implementado** — "Recuperar
   contraseña" → "Código de recuperación" → "Nueva contraseña", en tres pasos
   dentro de la app.

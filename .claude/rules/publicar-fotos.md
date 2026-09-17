@@ -23,8 +23,10 @@ en 3 archivos de ruta: `nueva.tsx` cubre los 5 estados de Publicar (formulario,
 falta teléfono, procesando fotos, subiendo, error de subida), más `creada.tsx`
 —hoy de un solo estado— y `editar/[id].tsx`. (Esta cuenta decía "5 pantallas /
 3 estados": se le había quedado fuera "procesando fotos", que sí es un
-`phone-block` propio y §4 sí contaba.) La capa de datos: `src/lib/storage.ts` (subida,
-borrado y URL autenticada), `src/lib/publicar.ts` (la orquestación y su orden de
+`phone-block` propio y §4 sí contaba.) La capa de datos: `src/lib/storage.ts`
+(subida, borrado y URL autenticada — desde RF-03 habla con los DOS buckets del
+proyecto, así que ojo: `BUCKET` es el privado y `BUCKET_AVATARS` el público),
+`src/lib/publicar.ts` (la orquestación y su orden de
 llamadas), `src/lib/listing-form.ts` (estado + validación compartida),
 `src/lib/perfil.ts` (el teléfono: normalización, escritura y la RPC de lectura) y
 `src/lib/foto-picker.ts`.
@@ -428,3 +430,8 @@ cambio de semántica de seguridad disfrazado de refactor (§9).
   sigue abierto:** si el `borrarFotos()` falla (es best-effort, para no dejar al
   usuario sin poder borrar su publicación) los archivos quedan huérfanos igual;
   eso sí necesitaría un barrido, y es el mismo cron del punto anterior.
+  **Y hay un modo de fallo que esta nota no decía, medido después:** si el orden
+  se invierte, `remove()` no devuelve error — devuelve **200 con una lista
+  vacía**, así que el `if (error)` de `borrarFotos()` ni siquiera imprime su
+  `console.warn` y el huérfano se genera **en silencio**. El mecanismo está en
+  CLAUDE.md §9; no es específico de este bucket.

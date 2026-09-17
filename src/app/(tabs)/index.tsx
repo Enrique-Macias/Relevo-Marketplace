@@ -17,7 +17,7 @@ import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
 import { categoriasFeed } from '@/lib/categorias';
 import { useExplorarState } from '@/lib/explorar-state';
-import { iniciales } from '@/lib/format';
+import { Avatar } from '@/components/Avatar';
 import { chunkRows } from '@/lib/grid';
 import { useListings } from '@/lib/listings';
 import { useNoLeidas } from '@/lib/notificaciones';
@@ -97,8 +97,15 @@ export default function InicioScreen() {
                   permanente no informa nada y entrena a ignorarlo. */}
               {noLeidas > 0 ? <View style={styles.dot} /> : null}
             </Pressable>
-            <Pressable style={styles.avatar} onPress={() => router.push('/perfil')} accessibilityRole="button">
-              <Text style={styles.avatarText}>{iniciales(profile?.nombre)}</Text>
+            {/* El Pressable envuelve al Avatar y no al revés: `Avatar` es la
+                caja del avatar (tamaño, tinte, recorte), no un control. */}
+            <Pressable onPress={() => router.push('/perfil')} accessibilityRole="button">
+              <Avatar
+                path={profile?.foto_url}
+                nombre={profile?.nombre}
+                style={styles.avatar}
+                textStyle={styles.avatarText}
+              />
             </Pressable>
           </View>
         </View>

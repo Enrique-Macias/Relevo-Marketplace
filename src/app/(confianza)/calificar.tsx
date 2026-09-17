@@ -16,9 +16,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { AuthBody, AuthHeadline, AuthLink, AuthLinkStrong, AuthSub } from '@/components/AuthBody';
+import { Avatar } from '@/components/Avatar';
 import { PrimaryButton } from '@/components/Buttons';
 import { Field } from '@/components/Field';
 import { Screen } from '@/components/Screen';
@@ -26,14 +27,20 @@ import { StarRating } from '@/components/StarRating';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { crearRating } from '@/lib/confianza';
-import { iniciales } from '@/lib/format';
 import { useSession } from '@/lib/session';
 
 export default function CalificarScreen() {
-  const { toUserId, listingId, nombre } = useLocalSearchParams<{
+  const { toUserId, listingId, nombre, fotoUrl } = useLocalSearchParams<{
     toUserId: string;
     listingId: string;
     nombre?: string;
+    /**
+     * `users.foto_url` de la persona a calificar. Viaja por param igual que
+     * `nombre` y por el mismo motivo: las dos entradas (Detalle y "¿A quién le
+     * vendiste?") ya tienen el dato en la mano, así que pedirlo otra vez sería
+     * un round trip para pintar un avatar. Cadena vacía = sin foto.
+     */
+    fotoUrl?: string;
   }>();
   const { session } = useSession();
   const { mostrar } = useToast();
@@ -88,9 +95,12 @@ export default function CalificarScreen() {
         {/* .rate-avatar{width:64px; height:64px; background:var(--forest-tint);
             color:var(--forest);} — es --forest y no --slate como .buyer-avatar:
             aquí el gesto es de confianza, no de selección. */}
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{iniciales(nombre)}</Text>
-        </View>
+        <Avatar
+          path={fotoUrl || null}
+          nombre={nombre}
+          style={styles.avatar}
+          textStyle={styles.avatarText}
+        />
 
         <AuthHeadline>
           {nombrePila

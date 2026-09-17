@@ -37,7 +37,7 @@ export type Orden = 'recientes' | 'precio_asc' | 'precio_desc' | 'mejor_califica
  * concepto más a mantener por nada.
  */
 const VENDEDOR =
-  'vendedor:users!listings_user_id_fkey!inner(id, nombre, carrera, rating_promedio, estado)';
+  'vendedor:users!listings_user_id_fkey!inner(id, nombre, foto_url, carrera, rating_promedio, estado)';
 
 /**
  * OJO — este embed NO lleva `!inner`, al revés que `VENDEDOR`.
@@ -102,6 +102,8 @@ export type ListingDetalle = ListingCard & {
   vendedor: {
     id: string;
     nombre: string | null;
+    /** RUTA dentro del bucket PÚBLICO `avatars`, o null. La pinta `Avatar`. */
+    fotoUrl: string | null;
     carrera: string | null;
     ratingPromedio: number;
     /** Solo lo usa el toast de "Contactar por WhatsApp" — ver `VENDEDOR`. */
@@ -306,6 +308,7 @@ export async function fetchListingById(id: number): Promise<ListingDetalle | nul
     vendedor: {
       id: row.vendedor.id,
       nombre: row.vendedor.nombre,
+      fotoUrl: row.vendedor.foto_url,
       carrera: row.vendedor.carrera,
       ratingPromedio: Number(row.vendedor.rating_promedio),
       estado: row.vendedor.estado,

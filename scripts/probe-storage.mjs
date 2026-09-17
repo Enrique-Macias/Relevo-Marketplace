@@ -37,6 +37,7 @@
 import { execFileSync } from 'node:child_process';
 
 const BUCKET = 'listing-photos';
+const BUCKET_AVATARS = 'avatars';
 const RUN = Date.now();
 
 // ---------------------------------------------------------------------------
@@ -125,8 +126,10 @@ async function crearListing(E, userId, titulo, estado) {
   return (await res.json())[0].id;
 }
 
-const subir = (E, tok, ruta) =>
-  fetch(`${E.API_URL}/storage/v1/object/${BUCKET}/${ruta}`, {
+// Los cuatro helpers toman el bucket: el proyecto tiene DOS y son de
+// visibilidad opuesta (`listing-photos` privado, `avatars` público).
+const subir = (E, tok, ruta, bucket = BUCKET) =>
+  fetch(`${E.API_URL}/storage/v1/object/${bucket}/${ruta}`, {
     method: 'POST',
     headers: { apikey: E.PUBLISHABLE, Authorization: `Bearer ${tok}`,
                'Content-Type': 'image/jpeg' },
@@ -135,23 +138,57 @@ const subir = (E, tok, ruta) =>
 
 // El camino real de lectura del cliente: endpoint autenticado + header, no una
 // URL firmada. La policy se re-evalúa en CADA request.
-const leer = (E, tok, ruta) =>
-  fetch(`${E.API_URL}/storage/v1/object/authenticated/${BUCKET}/${ruta}`, {
+const leer = (E, tok, ruta, bucket = BUCKET) =>
+  fetch(`${E.API_URL}/storage/v1/object/authenticated/${bucket}/${ruta}`, {
     headers: { apikey: E.PUBLISHABLE, Authorization: `Bearer ${tok}` },
   });
 
-const borrar = (E, tok, ruta) =>
-  fetch(`${E.API_URL}/storage/v1/object/${BUCKET}/${ruta}`, {
+// OJO: este es el endpoint de UN objeto, y NO es el que usa el cliente.
+// `supabase.storage.from(b).remove([...])` pega al de abajo, `removeJs`, que
+// falla de otra manera — ver su comentario. Los dos se ejercitan a propósito.
+const borrar = (E, tok, ruta, bucket = BUCKET) =>
+  fetch(`${E.API_URL}/storage/v1/object/${bucket}/${ruta}`, {
     method: 'DELETE',
     headers: { apikey: E.PUBLISHABLE, Authorization: `Bearer ${tok}` },
   });
 
-const mover = (E, tok, desde, hacia) =>
+/**
+ * Lo que de verdad hace `supabase-js` al borrar: DELETE al BUCKET con un body
+ * de `prefixes`. Importa distinguirlo del de arriba porque NO fallan igual —
+ * medido: sin visibilidad de SELECT sobre el objeto, éste responde **200 con un
+ * array vacío** y deja el archivo intacto, mientras que el de un solo objeto
+ * contesta 400 `AccessDenied`. Ver CLAUDE.md §9.
+ *
+ * Consecuencia para las aserciones: un `permitido(res)` sobre esta llamada
+ * pasaría en verde con la policy de SELECT borrada. Hay que contar objetos.
+ */
+const removeJs = (E, tok, rutas, bucket = BUCKET) =>
+  fetch(`${E.API_URL}/storage/v1/object/${bucket}`, {
+    method: 'DELETE',
+    headers: { apikey: E.PUBLISHABLE, Authorization: `Bearer ${tok}`,
+               'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefixes: rutas }),
+  });
+
+/** Lectura pública: sin `apikey` y sin `Authorization`. Eso ES "público". */
+const leerPublico = (E, ruta, bucket) =>
+  fetch(`${E.API_URL}/storage/v1/object/public/${bucket}/${ruta}`);
+
+/** `list` del bucket. Con la publishable a secas se ejecuta como `anon`. */
+const listar = (E, auth, bucket) =>
+  fetch(`${E.API_URL}/storage/v1/object/list/${bucket}`, {
+    method: 'POST',
+    headers: { apikey: E.PUBLISHABLE, Authorization: `Bearer ${auth}`,
+               'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefix: '', limit: 100, offset: 0 }),
+  });
+
+const mover = (E, tok, desde, hacia, bucket = BUCKET) =>
   fetch(`${E.API_URL}/storage/v1/object/move`, {
     method: 'POST',
     headers: { apikey: E.PUBLISHABLE, Authorization: `Bearer ${tok}`,
                'Content-Type': 'application/json' },
-    body: JSON.stringify({ bucketId: BUCKET, sourceKey: desde, destinationKey: hacia }),
+    body: JSON.stringify({ bucketId: bucket, sourceKey: desde, destinationKey: hacia }),
   });
 
 // ---------------------------------------------------------------------------
@@ -210,10 +247,77 @@ async function main() {
       await borrar(E, tAjeno, `${activa}/foto.jpg`));
     permitido('el dueño SÍ puede borrar la foto de su publicación',
       await borrar(E, tDueno, `${activa}/foto.jpg`));
+
+    // -----------------------------------------------------------------------
+    // Avatares (RF-03). Bucket `avatars`, PÚBLICO — al revés que el de arriba.
+    //
+    // Esta sección existe porque casi nada de lo que sostiene esa decisión se
+    // puede ver desde SQL: que el objeto se sirva sin auth, que `anon` no pueda
+    // enumerarlo, y el borrado (que la suite no puede probar por
+    // `storage.protect_delete`). T22 cubre las policies; esto cubre el
+    // servicio.
+    // -----------------------------------------------------------------------
+    console.log('\n== Avatares (bucket público) ==');
+
+    permitido('el dueño sube su avatar a su propia carpeta',
+      await subir(E, tDueno, `${dueno}/a.jpg`, BUCKET_AVATARS));
+    denegado('un ajeno NO puede subir a la carpeta de otro usuario',
+      await subir(E, tAjeno, `${dueno}/intruso.jpg`, BUCKET_AVATARS));
+
+    // ESTA es la que prueba que el bucket es público de verdad: sin `apikey` y
+    // sin `Authorization`. Si alguien lo pasara a privado "por consistencia con
+    // listing-photos", cae aquí y en ningún otro lado.
+    permitido('el avatar se sirve SIN autenticación por /object/public/',
+      await leerPublico(E, `${dueno}/a.jpg`, BUCKET_AVATARS));
+
+    // Y ESTA es la que sostiene el "alcance honesto" de la decisión: público
+    // significa servible con la URL, no enumerable. Si `anon` pudiera listar,
+    // el bucket estaría filtrando qué user_id tiene foto y la decisión de §3
+    // tendría que revisarse. Se mira el CUERPO, no el status: `list` contesta
+    // 200 con `[]` cuando no ve nada.
+    const listaAnon = await listar(E, E.PUBLISHABLE, BUCKET_AVATARS);
+    const cuerpoAnon = listaAnon.ok ? await listaAnon.json() : null;
+    ok('anon NO puede enumerar el bucket público',
+      Array.isArray(cuerpoAnon) && cuerpoAnon.length === 0,
+      `status ${listaAnon.status}, cuerpo ${JSON.stringify(cuerpoAnon)}`);
+
+    // Mover: denegado por AUSENCIA de policy de UPDATE, no por un `with_check`
+    // — a diferencia de `listing-photos`, que sí tiene una. Ninguna ruta del
+    // cliente mueve un avatar (cada subida estrena uuid), así que una policy de
+    // UPDATE no tendría consumidor. Si algún día alguien mete `upsert: true`,
+    // tiene que agregarla CON su `with_check` de carpeta, o esto deja de ser
+    // cierto en silencio.
+    denegado('nadie mueve su avatar a la carpeta de otro usuario',
+      await mover(E, tDueno, `${dueno}/a.jpg`, `${ajeno}/robado.jpg`, BUCKET_AVATARS));
+
+    denegado('un ajeno NO puede borrar el avatar de otra persona',
+      await borrar(E, tAjeno, `${dueno}/a.jpg`, BUCKET_AVATARS));
+
+    // EL BORRADO DEL DUEÑO SE COMPRUEBA CONTANDO, NO POR EL STATUS, y no es
+    // prolijidad: `remove()` —el que de verdad usa el cliente— responde 200 con
+    // `[]` cuando la RLS de SELECT no le muestra el objeto, sin `error`. Un
+    // `permitido(res)` aquí pasaría en verde con `avatars_objects_select`
+    // borrada, o sea por la razón equivocada. Ver CLAUDE.md §9.
+    const borradoRes = await removeJs(E, tDueno, [`${dueno}/a.jpg`], BUCKET_AVATARS);
+    const borrados = borradoRes.ok ? await borradoRes.json() : null;
+    ok('el dueño SÍ borra su avatar (y remove() dice cuál, no solo 200)',
+      Array.isArray(borrados) && borrados.length === 1,
+      `status ${borradoRes.status}, ${Array.isArray(borrados) ? borrados.length : '?'} objeto(s)`);
   } finally {
     for (const [id, ruta] of [[pausada, 'oculta.jpg'], [activa, 'foto.jpg']]) {
       if (id) await fetch(`${E.API_URL}/storage/v1/object/${BUCKET}/${id}/${ruta}`, {
         method: 'DELETE', headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
+      }).catch(() => {});
+    }
+    // Los avatares: lo que subió el dueño más lo que alguna aserción haya
+    // dejado a medias. Con la SECRET, que no pasa por RLS.
+    for (const id of [dueno, ajeno]) {
+      if (!id) continue;
+      await fetch(`${E.API_URL}/storage/v1/object/${BUCKET_AVATARS}`, {
+        method: 'DELETE',
+        headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}`,
+                   'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefixes: [`${id}/a.jpg`, `${id}/intruso.jpg`, `${id}/robado.jpg`] }),
       }).catch(() => {});
     }
     for (const id of [activa, pausada, deAjeno]) {

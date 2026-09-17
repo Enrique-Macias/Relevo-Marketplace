@@ -16,8 +16,10 @@
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Avatar } from '@/components/Avatar';
+import { BlinkingDots } from '@/components/BlinkingDots';
 import { CampusBottomSheet } from '@/components/CampusBottomSheet';
 import { ErrorState } from '@/components/ErrorState';
 import { Field, PhoneField, SelectField } from '@/components/Field';
@@ -27,13 +29,13 @@ import { Screen } from '@/components/Screen';
 import { SkeletonPerfilForm } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
-import { iniciales } from '@/lib/format';
 import {
   fetchPerfilEditable,
   fetchTelefonoVendedor,
   formatTelefonoNacional,
   guardarPerfil,
   telefonoValido,
+  useFotoPerfil,
   type PerfilEditable,
 } from '@/lib/perfil';
 import { useSession } from '@/lib/session';
@@ -135,6 +137,22 @@ function Formulario({
   );
   const [guardando, setGuardando] = useState(false);
   const [campusSheetVisible, setCampusSheetVisible] = useState(false);
+
+  // La foto se persiste al elegirla, NO al tocar "Guardar" — ver
+  // `guardarFotoPerfil()`. Por eso no pasa por `puedeGuardar` ni por el UPDATE
+  // de abajo, y por eso salir sin guardar la conserva.
+  const {
+    fotoUrl,
+    subiendo: subiendoFoto,
+    cambiar: cambiarFoto,
+  } = useFotoPerfil({
+    userId,
+    inicial: perfil.fotoUrl,
+    onAviso: mostrar,
+    // El avatar del header del Feed y el de Perfil salen de `PROFILE_COLUMNS`,
+    // así que sin esto seguirían con la foto vieja hasta el próximo arranque.
+    onGuardada: refreshProfile,
+  });
 
   /**
    * Si el usuario TOCÓ el campo de teléfono. Es lo único que decide si la columna
@@ -241,25 +259,46 @@ function Formulario({
           {/*
             `.photo-upload-circle` con los overrides del frame
             (`border-style:solid; border-color:var(--line)`) porque aquí no está
-            vacío: contiene el avatar de iniciales.
+            vacío: contiene el avatar (foto o iniciales).
 
-            INERTE A PROPÓSITO — subir la foto de perfil sigue fuera de alcance
-            (CLAUDE.md §8): exige un bucket propio con sus policies, que
-            `listing-photos` no puede prestar (autoriza por carpeta
-            `{listing_id}/`). Es un `View` y no un `Pressable`, sin
-            `accessibilityRole="button"`: si no pasa nada, no debe anunciarse ni
-            sentirse como un botón — el mismo criterio del tile de espera de
-            `PhotoRow`.
+            YA NO ES INERTE (RF-03). Era un `View` sin `accessibilityRole`
+            mientras no hacía nada —el criterio del tile de espera de
+            `PhotoRow`—; ahora abre el carrete, así que es un `Pressable` que SÍ
+            se anuncia como botón. El bucket propio que le faltaba es `avatars`
+            (migración `20260916000456`): `listing-photos` no se podía prestar
+            porque autoriza por carpeta `{listing_id}/` y un avatar no tiene
+            publicación.
+
+            Se deshabilita mientras sube: el scrim ya lo dice visualmente, pero
+            sin esto un segundo tap encolaría otra subida. El `enCurso` de
+            `useFotoPerfil` es la red que no depende del render.
           */}
-          <View style={styles.photoCircle}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{iniciales(nombre)}</Text>
-            </View>
-            {/* .cam-badge{bottom:0; right:0; width:26px; height:26px; background:var(--brick); border:2px solid var(--paper);} */}
+          <Pressable
+            style={styles.photoCircle}
+            onPress={cambiarFoto}
+            disabled={subiendoFoto}
+            accessibilityRole="button"
+            accessibilityLabel="Cambiar foto de perfil"
+          >
+            <Avatar
+              path={fotoUrl}
+              nombre={nombre}
+              style={styles.avatar}
+              textStyle={styles.avatarText}
+            >
+              {subiendoFoto ? (
+                <View style={styles.avatarScrim}>
+                  <BlinkingDots style={styles.avatarScrimDots} />
+                </View>
+              ) : null}
+            </Avatar>
+            {/* .cam-badge{bottom:0; right:0; width:26px; height:26px; background:var(--brick); border:2px solid var(--paper);}
+                Va FUERA del `Avatar`, que recorta con `overflow:'hidden'` para
+                que la foto respete el círculo — dentro quedaría cortado. */}
             <View style={styles.camBadge}>
               <IconCamera size={12} color={Colors.paper} />
             </View>
-          </View>
+          </Pressable>
 
           {/* El frame mete los campos en un contenedor `width:100%` — sin él, el
               `align-items:center` del cuerpo los encogería a su contenido. */}
@@ -357,6 +396,24 @@ const styles = StyleSheet.create({
   avatarText: {
     ...Typography.editAvatarInitials,
     color: Colors.forest,
+  },
+  // `.photo-upload-circle.is-busy .avatar-scrim` — mismo tono que el scrim de
+  // `PhotoRow` y que `.photo-remove`, no un color nuevo.
+  avatarScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: Radii.full,
+    backgroundColor: 'rgba(34,31,28,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // `.splash-dots` trae un margin-top pensado para el Splash; centrado aquí se
+  // anula, igual que en `.primary-btn.is-busy` y en `PhotoRow`.
+  avatarScrimDots: {
+    marginTop: 0,
   },
   camBadge: {
     position: 'absolute',

@@ -42,7 +42,8 @@ import { SectionHead } from '@/components/SectionHead';
 import { SkeletonPerfil } from '@/components/Skeleton';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
-import { formatPrecio, iniciales } from '@/lib/format';
+import { Avatar } from '@/components/Avatar';
+import { formatPrecio } from '@/lib/format';
 import { fetchActivasVendedor, fetchMisListings, fetchVentasVendedor, type MiListing } from '@/lib/listings';
 import { fetchPerfilPublico, fetchReviews, type PerfilPublico, type Review } from '@/lib/perfil-publico';
 import { fetchFavoritosCount } from '@/lib/favoritos';
@@ -172,9 +173,12 @@ export default function PerfilScreen() {
         ) : (
           <>
             <View style={styles.block}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{iniciales(perfil.nombre)}</Text>
-              </View>
+              <Avatar
+                path={perfil.fotoUrl}
+                nombre={perfil.nombre}
+                style={styles.avatar}
+                textStyle={styles.avatarText}
+              />
               <View style={styles.nameRow}>
                 <Text style={styles.name}>{perfil.nombre ?? ''}</Text>
                 {/* Decorativo: toda fila de `users` pasó por OTP — mismo

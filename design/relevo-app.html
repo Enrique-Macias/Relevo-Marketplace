@@ -783,6 +783,36 @@
     display:flex; align-items:center; justify-content:center;
   }
 
+  /* Variantes de `.photo-upload-circle`, NO frames nuevos: los dos estados que
+     estrena la subida de foto de perfil (RF-03), en "Completar perfil" y en
+     "Editar perfil". Mismo recurso que `.photo-add.is-busy`.
+
+     .has-photo — hay foto guardada (`users.foto_url` no es null). El borde pasa
+     a SOLID porque el círculo ya no está vacío: es el mismo override que
+     "Editar perfil" ya trae inline para su avatar de iniciales. El `.cam-badge`
+     SE CONSERVA — con foto sigue siendo el affordance de cambiarla, y no hay
+     ninguna acción de "quitar foto" en el diseño: cambiarla es reemplazarla.
+     La foto real se representa con un tinte + glifo, el mismo idioma con el que
+     `.thumb` representa la foto de una publicación en el feed.
+
+     .is-busy — la subida está en curso. Scrim rgba(34,31,28,0.55), el MISMO
+     tono de `.photo-remove`, con `.splash-dots` encima: el único indicador de
+     espera del sistema de diseño, igual que `.photo-add.is-busy`. En el
+     componente real el círculo queda sin tocar mientras dura (Pressable
+     deshabilitado), no solo apagado visualmente. */
+  .photo-upload-circle.has-photo{border-style:solid; border-color:var(--line);}
+  .photo-upload-circle .avatar-photo{
+    width:100%; height:100%; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  .photo-upload-circle .avatar-scrim{
+    position:absolute; inset:0; border-radius:50%;
+    background:rgba(34,31,28,0.55);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .photo-upload-circle .avatar-scrim .splash-dots{margin-top:0;}
+
   /* Listing status actions (edit listing) */
   .status-section{padding:6px 20px 100px;}
   .status-row{
@@ -3811,6 +3841,50 @@
             </div>
           </div>
 
+          <!-- Variantes de ESTE círculo, no pantallas aparte: el mismo frame
+               "Completar perfil" cuando el usuario ya eligió una foto. Hasta
+               RF-03 el círculo era inerte (un `View`, sin
+               `accessibilityRole="button"`) porque no hacía nada; ahora abre el
+               carrete, así que estrena estos dos estados.
+               El borde pasa de DASHED a SOLID en cuanto hay foto — el círculo
+               deja de estar vacío, que es el mismo criterio por el que "Editar
+               perfil" ya traía ese override inline para sus iniciales. El
+               `.cam-badge` con "+" se conserva en los dos: con foto sigue
+               siendo la forma de cambiarla, y no existe acción de quitarla.
+               Todo lo demás del frame (campos, CTA, contraseña) se queda
+               EXACTAMENTE como está pintado arriba: el único elemento que
+               cambia en toda la pantalla es este círculo. -->
+          <div style="margin:-6px 0 22px; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): con foto / subiendo
+            </div>
+            <div style="display:flex; gap:26px; align-items:flex-start;">
+              <div class="photo-upload-circle has-photo" style="margin-bottom:0;">
+                <div class="avatar-photo" style="background:var(--slate-tint);">
+                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><circle cx="12" cy="9" r="3.4"/><path d="M4.8 20a7.6 7.6 0 0114.4 0"/></svg>
+                </div>
+                <div class="cam-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                </div>
+              </div>
+              <div class="photo-upload-circle has-photo is-busy" style="margin-bottom:0;">
+                <div class="avatar-photo" style="background:var(--slate-tint);">
+                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><circle cx="12" cy="9" r="3.4"/><path d="M4.8 20a7.6 7.6 0 0114.4 0"/></svg>
+                </div>
+                <div class="avatar-scrim">
+                  <span class="splash-dots">
+                    <span class="splash-dot"></span>
+                    <span class="splash-dot"></span>
+                    <span class="splash-dot"></span>
+                  </span>
+                </div>
+                <div class="cam-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="field">
             <label class="field-label">Nombre completo</label>
             <input class="text-field" type="text" placeholder="Ej. Enrique Macías">
@@ -4154,6 +4228,46 @@
             <div class="seller-avatar" style="width:100%; height:100%; font-size:22px;">EM</div>
             <div class="cam-badge">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4"><circle cx="12" cy="13" r="4"/><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/></svg>
+            </div>
+          </div>
+
+          <!-- Variantes de ESTE círculo, no pantallas aparte: el mismo frame
+               "Editar perfil" cuando el perfil ya tiene `users.foto_url`. El
+               avatar de iniciales de arriba es el estado SIN foto, y sigue
+               siendo el de toda cuenta existente — nadie escribió esa columna
+               hasta RF-03. Aquí el borde ya era solid, así que lo único que
+               cambia es el contenido: la foto reemplaza a las iniciales.
+               El `.cam-badge` de cámara se conserva en los dos. El resto del
+               frame (Nombre, Carrera, Guardar) no cambia en nada: la foto se
+               persiste al subirla, no al tocar "Guardar". -->
+          <div style="margin:-6px 0 22px; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): con foto / subiendo
+            </div>
+            <div style="display:flex; gap:26px; align-items:flex-start;">
+              <div class="photo-upload-circle has-photo" style="margin-bottom:0;">
+                <div class="avatar-photo" style="background:var(--slate-tint);">
+                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><circle cx="12" cy="9" r="3.4"/><path d="M4.8 20a7.6 7.6 0 0114.4 0"/></svg>
+                </div>
+                <div class="cam-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4"><circle cx="12" cy="13" r="4"/><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/></svg>
+                </div>
+              </div>
+              <div class="photo-upload-circle has-photo is-busy" style="margin-bottom:0;">
+                <div class="avatar-photo" style="background:var(--slate-tint);">
+                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><circle cx="12" cy="9" r="3.4"/><path d="M4.8 20a7.6 7.6 0 0114.4 0"/></svg>
+                </div>
+                <div class="avatar-scrim">
+                  <span class="splash-dots">
+                    <span class="splash-dot"></span>
+                    <span class="splash-dot"></span>
+                    <span class="splash-dot"></span>
+                  </span>
+                </div>
+                <div class="cam-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4"><circle cx="12" cy="13" r="4"/><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/></svg>
+                </div>
+              </div>
             </div>
           </div>
 

@@ -181,10 +181,17 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 19 migraciones (`supabase/migrations/`) — las 19 ya aplicadas al
-proyecto remoto, incluida la de `vendida` terminal—, con RLS activo y
-probado en las 12 tablas más el bucket de Storage. Este es el esquema **real**, no
+Definido en 20 migraciones (`supabase/migrations/`), con RLS activo y probado en
+las 12 tablas más los DOS buckets de Storage. Este es el esquema **real**, no
 solo la intención original.
+
+**Ojo con ese 20: en remoto hay 19.** La de `avatars` (`20260916000456`) está
+escrita, aplicada en local y verificada, pero **todavía no se hizo `db push`** —
+justo el caso que esta misma sección advierte más abajo (una migración recién
+escrita no viaja hasta el push, así que `mcp__supabase__list_migrations` puede
+devolver menos que `ls supabase/migrations`). Cuando se empuje, este párrafo
+pierde la salvedad y el bucket necesita además `supabase seed buckets --linked`,
+porque un bucket es una FILA y no viaja con `db push`.
 
 ```
 -- Enums
@@ -570,6 +577,29 @@ viene filtrado por `listings_select`. Medido: quitarla no cambia el
 comportamiento. Lo portante es el `exists`. Se conserva por legibilidad y por si
 algún día alguien afloja `listings_select`, pero no es el candado.
 
+**El bucket `avatars` es PÚBLICO, y eso tampoco es una preferencia — es la
+decisión opuesta a la de arriba, por la razón opuesta** (`20260916000456`,
+RF-03). El motivo por el que `listing-photos` es privado NO se traslada: allá el
+criterio de SELECT es **variable** (`estado <> 'pausada' or eres el dueño`), y es
+justo lo que un bucket público saltaría. Para un avatar no existe estado
+equivalente —`users_select` es `using (true)` y `fetchPerfilPublico()` ni filtra
+por `estado`, así que el perfil de un suspendido se abre igual—, de modo que la
+policy de SELECT de un `avatars` privado sería `bucket_id = 'avatars'` y nada
+más: una constante. Eso no es un candado, es ceremonia, y se paga con el header
+`Authorization` en las 9 superficies que pintan un avatar (dos de ellas LISTAS) y
+con un parpadeo a iniciales en cada arranque en frío, mientras la sesión resuelve.
+**Alcance honesto:** el objeto se sirve sin autenticación a quien tenga la URL; no
+es descubrible ni enumerable (`list` como `anon` devuelve `[]`, medido), pero
+tampoco es revocable salvo borrándolo.
+
+Son **tres** policies, no cuatro, y las tres diferencias con `listing-photos` son
+deliberadas: sin `is_active_user()` (un suspendido SÍ edita su propio perfil, §3
+arriba), sin función de parsing de ruta (la carpeta se compara como TEXTO contra
+`auth.uid()::text`, sin cast que pueda reventar) y sin policy de UPDATE (nada
+mueve ni sobrescribe un avatar: cada subida estrena uuid y borra el anterior, que
+es lo que le da consumidor a la de DELETE). La de SELECT existe aunque el bucket
+sea público, y no por simetría: es lo que hace que el borrado funcione — ver §9.
+
 **Una publicación no pasa a `activa` sin al menos una foto** — trigger
 `listings_enforce_activation_has_photos` (`20260909000447`), que llama a
 `private.enforce_activation_has_photos()`. Existe porque el alta atómica (`publicar-fotos.md`)
@@ -674,7 +704,7 @@ de integración en vez de dos, la función no sabe nada del esquema de negocio, 
 `listing_contacts` (`explorar.md`) pero esta vez con recuperación. Ver §9 sobre el header
 `apikey` y el esquema real de `pg_net`, que son dos trampas distintas.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 142 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 148 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -797,6 +827,35 @@ toca ningún grant ni ninguna policy, solo cliente, diseño y spec. Es el caso
 inverso del resto de esta lista, donde la aserción llega detrás de una migración:
 aquí la regla ya estaba en la base y lo que cambió fue que por fin hay una
 pantalla que puede chocar con ella.
+
+Y a **148** con las 6 de T22 (bucket `avatars`, RF-03), autocontenida con sus
+propios `:O`/`:P`. Nada en T12: la tarea no crea ninguna función, no toca ningún
+grant —`foto_url` ya estaba en los dos grants desde `20260906000438:104` y
+`:110`— y no agrega ningún `EXECUTE`. **La aserción que justifica la sección es
+(e), y es POSITIVA**: un suspendido SÍ sube su avatar. Es la única sin gemela en
+T14, donde la equivalente dice lo contrario — sin ella, copiar el
+`is_active_user()` de aquellas policies (que es exactamente lo que invita a hacer
+la simetría entre las dos migraciones) sería una regresión silenciosa. Los seis
+controles negativos se corrieron **uno a la vez**, y cada uno cae en un solo
+sitio:
+
+| Variante rota | Cae en |
+|---|---|
+| sin el chequeo de carpeta en el INSERT | T22 (b) |
+| con `is_active_user()` en el INSERT | T22 **(e)**, y en ningún otro lado |
+| sin el guard `bucket_id` | T22 (d) |
+| sin `avatars_objects_delete_own` | el probe: "el dueño SÍ borra su avatar" |
+| sin `avatars_objects_select` | el probe: la MISMA, con `0 objeto(s)` |
+| el bucket puesto en privado | el probe: "se sirve SIN autenticación" |
+
+Dos cosas de esa tabla que conviene no suponer. **(e) muere con el error CRUDO de
+Postgres**, no con el texto de su aserción: el `as_user` que siembra la foto
+aborta antes de llegar al `assert` — mismo patrón que T14, pero no busques el
+mensaje bonito. Y **las dos últimas del probe caen en aserciones distintas por
+motivos distintos**, pero las dos primeras del probe caen en la MISMA: quitar la
+policy de DELETE y quitar la de SELECT se ven igual desde ahí, porque las dos
+dejan el borrado sin efecto. Lo que las distingue es el cuerpo — con SELECT
+borrada el status sigue siendo 200 y el array viene vacío (§9).
 
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
@@ -969,9 +1028,17 @@ Toast de éxito · Toast de error · Loading / skeleton
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
   `postgres`/superusuario. Son TRES pasos, no uno:
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
-  2. `node scripts/probe-storage.mjs` — lo que la suite SQL no puede ver del
-     bucket: `DELETE` (el trigger `storage.protect_delete` aborta antes que la
-     RLS) y `move` (el `with_check` de UPDATE).
+     **`psql` puede no estar instalado en la máquina** (no lo está en la de
+     desarrollo actual, aunque este comando lo dé por supuesto). El contenedor
+     de Postgres sí lo trae, y es la forma que de verdad funciona:
+     `docker exec -i supabase_db_relevo-marketplace psql -v ON_ERROR_STOP=1
+     -U postgres -d postgres < supabase/tests/rls.sql` — que es, además, lo que
+     ya dice la cabecera de `rls.sql`.
+  2. `node scripts/probe-storage.mjs` — lo que la suite SQL no puede ver de los
+     buckets: `DELETE` (el trigger `storage.protect_delete` aborta antes que la
+     RLS), `move` (el `with_check` de UPDATE en `listing-photos`; la ausencia de
+     policy de UPDATE en `avatars`) y, para el bucket público, que se sirva sin
+     autenticación y que `anon` NO pueda enumerarlo.
   3. `node scripts/probe-venta.mjs` — el amarre entre `congelada()`
      (`src/lib/confianza.ts`) y el `using` de `listing_sales_update_seller`: la
      MISMA condición escrita en dos runtimes, que al desincronizarse no da
@@ -1104,7 +1171,7 @@ de los route groups).
 vive COMPLETA —con su "Revisar cuando" y su "Fix"— en la regla de su feature, y
 aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 
-- La foto de perfil sigue sin poder subirse, y desde "Editar perfil" ya no es "fuera de alcance del onboarding" sino deuda con disparador → `cuenta-perfil.md`
+- Cambiar el avatar puede dejar el anterior huérfano en Storage → `cuenta-perfil.md`
 - La base no ata `users.campus_id` a `users.universidad_id`, y quien sostiene esa coherencia es el cliente — ahora en DOS lugares → `cuenta-perfil.md`
 - `ErrorState` promete "Reintentar" aunque no haya nada que reintentar → `componentes-compartidos.md`
 - "Omitir por ahora" en Calificar es DEFINITIVO → `confianza-ventas.md`
@@ -1139,6 +1206,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 |---|---|---|
 | `ActiveFilterChip` | `ActiveFilterChip` | Chip de filtro activo, con la ✕ para quitarlo |
 | `AuthBody` | `AuthBody`, `AuthLogo`, `AuthHeadline`, `AuthSub`, `AuthLink`, `AuthLinkStrong`, `AuthTerms` | Las piezas de las pantallas de auth (`.auth-body`) |
+| `Avatar` | `Avatar` | Punto ÚNICO de contacto con el bucket PÚBLICO `avatars`. **No** es `ListingPhoto` con otro nombre: sin token, por diseño |
 | `BlinkingDots` | `BlinkingDots` | EL indicador de espera del sistema de diseño (`.splash-dots`) |
 | `Buttons` | `PrimaryButton`, `GhostButton`, `DangerButton` | Los tres botones; `PrimaryButton` tiene `busy` ≠ `disabled` |
 | `BuyerRow` | `BuyerRow`, `BuyerRowAvatarNeutro` | Fila de comprador con avatar y radio |
@@ -1313,6 +1381,34 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   pero arrastra bugs abiertos en Android/Fresco, varios reportando que funcionan
   en la arquitectura vieja y no en la nueva, y este proyecto corre RN 0.86 con New
   Architecture.
+- **`remove()` de Storage no falla: devuelve 200 con una lista vacía.** El
+  endpoint que usa `supabase.storage.from(b).remove(paths)` —`DELETE
+  /storage/v1/object/{bucket}` con `{prefixes}`— resuelve primero qué objetos
+  **VE** el invocante y borra esos. Si la RLS de **SELECT** no se los muestra, la
+  lista sale vacía, responde **HTTP 200 con `[]`** y `error` llega **null**: el
+  objeto sigue ahí y el cliente no tiene de qué enterarse. No es el
+  comportamiento del endpoint de un solo objeto (`DELETE
+  /object/{bucket}/{ruta}`), que sí contesta **400 `AccessDenied`** — medidos los
+  dos, en local, contra el mismo estado. Dos consecuencias que ya aplican hoy:
+  - **La policy de SELECT de un bucket es parte del camino de BORRADO**, no solo
+    de lectura. "Endurecerla" o quitarla convierte cada borrado en un huérfano
+    silencioso. Es la razón por la que `avatars_objects_select` existe en un
+    bucket que ni siquiera necesita RLS para leerse (es público), y por la que su
+    aserción en `probe-storage.mjs` cuenta objetos en vez de mirar el status:
+    medido, un `permitido(res)` pasa en verde con la policy borrada.
+  - **En `listing-photos` ya pasa**, sin cambiarle nada. El orden invertido que
+    `src/lib/storage.ts` prohíbe —borrar el listing ANTES que sus objetos, lo que
+    rompe el `exists` de `listing_photos_objects_select`— falla exactamente así:
+    medido con las policies intactas, `200 []`, el objeto en su sitio, cero
+    avisos. La nota de `publicar-fotos.md` decía que quedaban huérfanos; lo que
+    le faltaba es que además **no avisa**.
+
+  Corolario para cualquier borrado nuevo: **revisar el ARRAY devuelto, no solo
+  `error`**. Es la misma familia que el `ON CONFLICT DO NOTHING → INSERT 0 0` de
+  `push_tokens`, el `using` de UPDATE que filtra en vez de lanzar
+  (`listings_update_own`, `listing_sales_update_seller`) y el `expect_error` que
+  acepta cualquier error: en este repo, *lo que no lanza* es lo que hay que mirar
+  dos veces.
 - **No se puede borrar de `storage.objects` por SQL, ni siquiera como
   `postgres`.** El trigger `storage.protect_delete` aborta con *"Direct deletion
   from storage tables is not allowed. Use the Storage API instead."* y se dispara
