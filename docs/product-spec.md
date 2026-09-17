@@ -321,10 +321,23 @@ users
   --   puede contactar (se valida quién llama) ni ser contactada (se valida el
   --   dueño del número). Devuelve null en ambos casos.
   --
-  --   PENDIENTE LIGADO A ESTO: las publicaciones de una cuenta suspendida
-  --   siguen visibles en el catálogo, así que un comprador puede llegar a una
-  --   publicación que no podrá contactar. Pausarlas al suspender es decisión
-  --   de producto (¿automático o revisión manual?) y se trata aparte.
+  --   RESUELTO (20260917000457): las publicaciones de una cuenta suspendida ya
+  --   no se quedan visibles en el catálogo. Un trigger sobre `users` pasa a
+  --   `pausada` todas sus publicaciones `activa` en la misma transacción que la
+  --   suspensión, así que el comprador deja de poder llegar a una publicación
+  --   que no va a poder contactar. Las decisiones de producto quedaron así:
+  --
+  --     · AUTOMÁTICO, no revisión manual de un admin, y se dispara sin importar
+  --       CÓMO se escriba `estado` (hoy edición de celda en Studio; mañana, la
+  --       plataforma de RF-17 si llega a existir).
+  --     · Al REACTIVAR la cuenta NO se despausan solas: el vendedor las
+  --       reactiva a mano desde "Mis publicaciones", que ya exige al menos una
+  --       foto. Despausarlas automáticamente saltaría esa validación justo en
+  --       las publicaciones viejas que no tienen ninguna.
+  --     · NO se distingue "pausada por suspensión" de "pausada por el usuario":
+  --       es el mismo estado `pausada`. Ese distingo exigiría una pantalla nueva
+  --       y casi seguro una columna, y no hace falta para cerrar esto.
+  --     · Las `vendida` no se tocan: siguen siendo un estado terminal.
 
 universidades
   id, nombre           -- Tec de Monterrey, UANL, UDEM, U-ERRE, UVM…

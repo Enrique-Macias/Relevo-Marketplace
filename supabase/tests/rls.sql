@@ -1691,6 +1691,213 @@ select pg_temp.assert(
 
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T23 — suspender una cuenta pausa sus publicaciones activas (RF-17) =='
+-- Autocontenida, mismo criterio que T11b, T13, T14, T15, T16, T17, T19, T21 y
+-- T22: siembra sus propios usuarios. A esta altura del archivo :B lleva
+-- suspendido desde T10, :C está borrado por T8 y :A arrastra estado de medio
+-- archivo — reutilizar cualquiera haría que una aserción pueda pasar por la
+-- razón equivocada (la lección de :C en T11b).
+--
+--   :Q — la cuenta que se suspende. Lleva las TRES situaciones posibles a la
+--        vez: una publicación `activa`, una `pausada` por su propio dueño y una
+--        `vendida`. Las tres hacen falta: el update del trigger va acotado y
+--        cada estado prueba una mitad distinta de ese `where`.
+--   :R — otro vendedor ACTIVO con una publicación `activa`. Es el control de
+--        radio: suspender a :Q no puede tocar el catálogo de nadie más.
+--
+-- LAS OCHO ASERCIONES TIENEN SU PROPIO CONTROL NEGATIVO, y ninguna es
+-- intercambiable. MEDIDO corriendo cada variante por separado, y cada una contra
+-- la suite completa Y contra esta sección aislada:
+--
+--   | Variante rota                                           | Cae en |
+--   |--------------------------------------------------------|--------|
+--   | sin trigger (el repo antes de esta tarea)               |  (a)   |
+--   | `listings_select` aflojada a `using (true)`             | (a2)*  |
+--   | sin el `and estado = 'activa'`                          |  (b)   |
+--   | `estado <> 'pausada'` en vez de `= 'activa'`            |  (c)   |
+--   | sin el `where user_id = new.id`                         |  (d)   |
+--   | sin `old.estado is distinct from new.estado`            |  (e)   |
+--   | sin el `when` ENTERO                                    |  (e)   |
+--   | sin `new.estado = 'suspendido'`                         |  (g)   |
+--   | cuerpo simétrico: despausa al reactivar                 |  (f)   |
+--
+-- Dos cosas de esa tabla que conviene no suponer, porque las dos contradicen lo
+-- que este archivo predijo antes de medir:
+--
+--   · (f) NO caza "sin `new.estado = 'suspendido'`", que era la predicción
+--     obvia: esa variante no despausa nada, pausa de MÁS otra fila. La suite
+--     entera daba verde hasta que se agregó (g). Es la lección de :C en T11b
+--     otra vez — una aserción que pasa sin probar lo que dice.
+--   · el (*): esa fila es la ÚNICA donde las dos corridas difieren. Aislada la
+--     caza (a2); dentro de la suite completa muere mucho antes, en T2 ("A ve
+--     solo la publicación activa de B"), que es la sección dueña de
+--     `listings_select`. O sea que para las siete variantes de la MIGRACIÓN T23
+--     es la red completa y se sostiene sola, pero para la policy de la que
+--     depende su efecto visible la red de primera línea vive en T2 — y por eso
+--     (a2) igual tiene que estar aquí: sin ella, romper esa policy dejaría esta
+--     sección en verde afirmando algo que dejó de ser cierto.
+\set Q '''bbbbbbbb-1111-1111-1111-0000000000b1'''
+\set R '''cccccccc-1111-1111-1111-0000000000c1'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:Q::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-q@tec.mx', '', now(), now(), now()),
+  (:R::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-r@tec.mx', '', now(), now(), now());
+update public.users set nombre = 'Quique' where id = :Q::uuid;
+update public.users set nombre = 'Rita'   where id = :R::uuid;
+
+-- EL `updated_at` DE LA PAUSADA SE SIEMBRA EN EL PASADO A PROPÓSITO, y no es
+-- decoración: toda la suite corre dentro de UNA transacción, así que `now()` es
+-- constante y `listings_set_updated_at` —que reescribe `updated_at := now()` en
+-- absolutamente todo update— dejaría el mismo valor que ya tenía. Sin este
+-- desfase, (b) no podría distinguir "no se tocó" de "se tocó y quedó igual".
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado, updated_at)
+values
+  (:Q::uuid, 1, 1, 1, 'RLS Susp activa',   100, 'nuevo', 'activa',  now()),
+  (:Q::uuid, 1, 1, 1, 'RLS Susp pausada',  200, 'usado', 'pausada', now() - interval '1 day'),
+  (:Q::uuid, 1, 1, 1, 'RLS Susp vendida',  300, 'nuevo', 'vendida', now()),
+  (:R::uuid, 1, 1, 1, 'RLS Susp ajena',    400, 'nuevo', 'activa',  now());
+
+create temp table t_susp as
+select
+  (select id from public.listings where titulo = 'RLS Susp activa')  as activa,
+  (select id from public.listings where titulo = 'RLS Susp pausada') as pausada,
+  (select id from public.listings where titulo = 'RLS Susp vendida') as vendida,
+  (select id from public.listings where titulo = 'RLS Susp ajena')   as ajena,
+  (select updated_at from public.listings where titulo = 'RLS Susp pausada') as ts_pausada;
+
+-- ESTAS DOS FOTOS NO SON DECORADO, y es la misma lección que la foto de T20 (d),
+-- reencontrada aquí midiendo: sin ellas, el control negativo de (f) —el cuerpo
+-- que despausa al reactivar— muere con «Una publicación no puede activarse sin
+-- fotos». O sea que quien bloquearía la reactivación sería
+-- `listings_enforce_activation_has_photos` y no la ausencia de esa rama, y la
+-- aserción no probaría lo que dice. Con ellas, (f) cae por su propio mensaje.
+insert into public.listing_photos (listing_id, storage_path, orden)
+values ((select activa  from t_susp), 'susp-activa.jpg',  0),
+       ((select pausada from t_susp), 'susp-pausada.jpg', 0);
+
+-- EL HECHO QUE DISPARA TODO. Va directo y no vía as_user porque `estado` no
+-- está en el grant de update de authenticated (20260906000438:110): la única vía
+-- real es service_role/Studio, y postgres es su equivalente aquí.
+update public.users set estado = 'suspendido' where id = :Q::uuid;
+
+-- (a) El camino feliz, y la razón de ser de la migración: lo que el comprador
+-- veía en el feed de una cuenta que ya no puede contactar.
+select pg_temp.assert(
+  (select estado from public.listings where id = (select activa from t_susp)) = 'pausada',
+  'la publicación activa de Q queda pausada al suspender la cuenta');
+
+-- (a2) LA CONSECUENCIA VISIBLE, y la ÚNICA aserción de la sección que lee el
+-- catálogo COMO OTRO USUARIO en vez de mirar la columna `estado` como postgres.
+-- Es el motivo por el que existe la migración: el comprador deja de poder llegar
+-- a una publicación que no va a poder contactar.
+--
+-- POR QUÉ NO ES REDUNDANTE con (a) + T2, que es lo que parece a primera vista:
+-- T2 sí prueba que una `pausada` no la ve quien no es su dueño, pero sobre una
+-- fila SEMBRADA así — nadie prueba la transitividad completa (dueño suspendido →
+-- el trigger la pasa a `pausada` → desaparece del catálogo ajeno), que es
+-- justamente la cadena que esta migración introduce. Componer dos aserciones de
+-- secciones distintas para dar por probada una tercera es exactamente lo que la
+-- lección de (c) en T21 desaconseja.
+--
+-- Va AUTOGUARDADA, con las dos mitades en la misma aserción: sin la segunda,
+-- cualquier rotura que le escondiera el catálogo entero a :R —un grant, la
+-- policy de select, una fixture mal sembrada— la dejaría pasar en verde por la
+-- razón equivocada.
+select pg_temp.assert(
+  pg_temp.as_user_int(:R::uuid,
+    format('select count(*) from public.listings where id = %s',
+           (select activa from t_susp))) = 0
+  and pg_temp.as_user_int(:R::uuid,
+    format('select count(*) from public.listings where id = %s',
+           (select ajena from t_susp))) = 1,
+  'R deja de ver en el catálogo la publicación de la cuenta suspendida (y sigue viendo el resto)');
+
+-- (b) LA QUE YA ESTABA PAUSADA NI SE TOCA. No es lo mismo que "quedó pausada":
+-- sin el `and estado = 'activa'` del where, esta fila se reescribiría con el
+-- mismo valor y se le movería el `updated_at`, o sea que el vendedor vería
+-- "modificada hoy" una publicación que nadie modificó.
+select pg_temp.assert(
+  (select updated_at from public.listings where id = (select pausada from t_susp))
+    = (select ts_pausada from t_susp),
+  'la que ya estaba pausada no se toca (su updated_at no se movió)');
+
+-- (c) `vendida` ES TERMINAL (20260913000454) y este código corre ELEVADO, así
+-- que la policy que lo impide no lo frena: el único candado aquí es el `where`.
+-- Sin él, suspender resucitaría una venta a `pausada` por la puerta de atrás.
+select pg_temp.assert(
+  (select estado from public.listings where id = (select vendida from t_susp)) = 'vendida',
+  'la vendida sigue vendida: el pausado no rompe el estado terminal');
+
+-- (d) CONTROL DE RADIO: sin el `user_id = new.id`, el update alcanzaría el
+-- catálogo entero y suspender a una persona vaciaría el feed del campus.
+select pg_temp.assert(
+  (select estado from public.listings where id = (select ajena from t_susp)) = 'activa',
+  'las publicaciones de otro usuario activo no se tocan');
+
+-- --- Las dos mitades del `when`, que son candados distintos -------------------
+
+-- Para que (e) sea observable hace falta que Q vuelva a tener algo `activa`
+-- ESTANDO YA SUSPENDIDO. Se inserta directo: el trigger de fotos solo cubre
+-- UPDATE (deuda consciente documentada en publicar-fotos.md) y la policy no
+-- aplica porque esto corre como postgres, igual que el resto de las fixtures
+-- posteriores a T10.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values (:Q::uuid, 1, 1, 1, 'RLS Susp posterior', 500, 'nuevo', 'activa');
+
+-- (e) `old.estado is distinct from new.estado`. Editar el propio perfil es de
+-- las cosas que un suspendido CONSERVA (tabla de decisión de CLAUDE.md §3, y
+-- T10/T22 lo prueban), así que este update no es hipotético: es lo que pasa cada
+-- vez que una cuenta suspendida guarda su nombre, su teléfono o su avatar. Sin
+-- esta mitad del `when`, cada uno de esos guardados volvería a pausarle todo.
+update public.users set nombre = 'Quique corregido' where id = :Q::uuid;
+
+select pg_temp.assert(
+  (select estado from public.listings
+    where titulo = 'RLS Susp posterior') = 'activa',
+  'un update ordinario sobre una cuenta ya suspendida no vuelve a pausar');
+
+-- Reactivar la cuenta. Las DOS aserciones que siguen miran filas distintas a
+-- propósito, y hasta medirlo eran una sola que pasaba por la razón equivocada.
+update public.users set estado = 'activo' where id = :Q::uuid;
+
+-- (f) LA DECISIÓN DE PRODUCTO, escrita como aserción: reactivar NO despausa
+-- nada. El vendedor las reactiva a mano desde "Mis publicaciones", que ya exige
+-- al menos una foto (`listings_enforce_activation_has_photos`) — despausarlas
+-- solas saltaría esa validación justo en las publicaciones viejas que no tienen
+-- ninguna.
+--
+-- QUÉ VIGILA, con precisión: ninguna variante rota del `when` ni del `where` la
+-- caza, y no es un descuido — ningún camino de esta función escribe `'activa'`,
+-- así que la propiedad es cierta por construcción. Su control negativo es un
+-- CUERPO futuro con la rama simétrica ("al reactivar, despausar"), que es la
+-- regresión realista, y MEDIDO contra esa variante cae aquí y solo aquí. Pero
+-- solo gracias a las fotos sembradas arriba: sin ellas esa variante ni siquiera
+-- llega, la mata antes el trigger de fotos.
+select pg_temp.assert(
+  (select estado from public.listings where id = (select activa from t_susp)) = 'pausada',
+  'reactivar la cuenta NO despausa: el vendedor las reactiva a mano');
+
+-- (g) `new.estado = 'suspendido'`, LA OTRA MITAD DEL `when` — y la aserción que
+-- de verdad la vigila. Sin esa condición el trigger se dispara en TODA
+-- transición de estado, reactivación incluida, y entonces levantar la suspensión
+-- pausa lo que el vendedor tuviera activo en ese momento: el castigo sobrevive
+-- al castigo.
+--
+-- Esta aserción existe porque el plan predijo que (f) cazaría esa variante y la
+-- MEDICIÓN dijo que no: (f) mira la fila que ya estaba pausada, que esa variante
+-- no despausa. La suite entera daba verde. Es la lección de :C en T11b otra vez,
+-- encontrada esta vez por correr el control en vez de razonarlo.
+select pg_temp.assert(
+  (select estado from public.listings where titulo = 'RLS Susp posterior') = 'activa',
+  'reactivar la cuenta tampoco pausa de más lo que el vendedor tenga activo');
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges
@@ -1712,11 +1919,14 @@ select pg_temp.assert(
         'private.listing_id_from_object_name(text)', 'execute'),
   'authenticated puede ejecutar las 3 funciones invocadas desde policies');
 
--- Estas nueve sí son de seguridad: solo disparan por trigger y nadie debe poder
+-- Estas sí son de seguridad: solo disparan por trigger y nadie debe poder
 -- invocarlas. Postgres verifica EXECUTE al crear el trigger, no al dispararlo.
--- Dos de las nuevas importan más que el resto: `claim_push_token`, que invocable
--- a mano sería un borrado arbitrario de la fila de cualquiera cuyo token se
--- conozca, y `notify_push`, que lee la secret key de Vault.
+-- Tres importan más que el resto: `claim_push_token`, que invocable a mano sería
+-- un borrado arbitrario de la fila de cualquiera cuyo token se conozca;
+-- `notify_push`, que lee la secret key de Vault; y `pause_listings_on_suspend`,
+-- que invocable a mano pausaría el catálogo de cualquier vendedor con solo
+-- pasarle su id —es SECURITY DEFINER y no mira quién llama, porque su `when`
+-- ya decidió eso por ella.
 select pg_temp.assert(
   not has_function_privilege('authenticated', 'private.handle_new_user()', 'execute')
   and not has_function_privilege('authenticated', 'private.enforce_photo_limit()', 'execute')
@@ -1729,8 +1939,10 @@ select pg_temp.assert(
   and not has_function_privilege('authenticated', 'private.notify_report_resolved()', 'execute')
   and not has_function_privilege('authenticated', 'private.notify_push()', 'execute')
   and not has_function_privilege('authenticated',
-        'private.notify_compra_calificable()', 'execute'),
-  'las 10 funciones que solo disparan por trigger siguen revocadas');
+        'private.notify_compra_calificable()', 'execute')
+  and not has_function_privilege('authenticated',
+        'private.pause_listings_on_suspend()', 'execute'),
+  'las 11 funciones que solo disparan por trigger siguen revocadas');
 
 -- El webhook no puede quedar como un grant abierto sobre Vault: si
 -- `authenticated` pudiera leer `vault.decrypted_secrets`, la secret key del

@@ -181,17 +181,20 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 20 migraciones (`supabase/migrations/`), con RLS activo y probado en
+Definido en 21 migraciones (`supabase/migrations/`), con RLS activo y probado en
 las 12 tablas más los DOS buckets de Storage. Este es el esquema **real**, no
 solo la intención original.
 
-**Ojo con ese 20: en remoto hay 19.** La de `avatars` (`20260916000456`) está
-escrita, aplicada en local y verificada, pero **todavía no se hizo `db push`** —
-justo el caso que esta misma sección advierte más abajo (una migración recién
-escrita no viaja hasta el push, así que `mcp__supabase__list_migrations` puede
-devolver menos que `ls supabase/migrations`). Cuando se empuje, este párrafo
-pierde la salvedad y el bucket necesita además `supabase seed buckets --linked`,
-porque un bucket es una FILA y no viaja con `db push`.
+**Repo y remoto están a la par: 21 y 21**, medido con `ls supabase/migrations |
+wc -l` y `mcp__supabase__list_migrations` el mismo día. Aquí vivía una salvedad
+—"en remoto hay 19, falta pushear la de `avatars`"— que resultó estar
+**desactualizada**: al hacer `db push` con la de suspensión, el CLI aplicó
+únicamente `20260917000457`, o sea que `20260916000456` ya había viajado antes y
+el bucket `avatars` ya existía en remoto (`select count(*) from storage.buckets
+where id = 'avatars'` → 1). Moraleja para la próxima vez que se lea un conteo en
+esta sección: son números que se MIDEN con su comando, y cuando la prosa y el
+comando discrepan gana el comando — incluso cuando la prosa es una advertencia
+que suena prudente.
 
 ```
 -- Enums
@@ -294,8 +297,11 @@ decidir en el render si mostrar el campo, sin round trip ni parpadeo.
 perfiles y reseñas; puede editar su propio perfil (**incluido su teléfono**) y
 usar favoritos. NO puede publicar, editar/pausar/borrar sus publicaciones
 existentes, tocar sus fotos, contactar por WhatsApp **ni ser contactado**,
-calificar, ni reportar. Casi todo vía el helper `private.is_active_user()` — la
-excepción es "ni ser contactado", que no puede usarlo y se explica abajo.
+calificar, ni reportar. Y además, **todas sus publicaciones `activa` pasan a
+`pausada` en el acto de suspenderlo** — al reactivar la cuenta NO se despausan
+solas (ver el bloque del trigger más abajo). Casi todo vía el helper
+`private.is_active_user()` — las excepciones son "ni ser contactado" y ese
+pausado automático, que no pueden usarlo y se explican abajo.
 
 Las tres primeras **sí tienen policy real detrás**, por si alguien lo duda:
 `listings_insert_own`, `listings_update_own` y `listings_delete_own`
@@ -336,6 +342,67 @@ para contacto"): el dato es consultable, pero anunciar en pantalla que una cuent
 está sancionada es otra cosa. Nada de esto es autorización duplicada: la RPC ya
 negó el número mire el cliente lo que mire, y lo único que se elige aquí es el
 texto.
+
+**Suspender una cuenta PAUSA sus publicaciones activas, y el trigger es lo
+contrario de lo que hizo el precedente más parecido** (`20260917000457`, RF-17).
+Cerrarlo era lo que faltaba para que la regla de arriba tuviera sentido de punta
+a punta: `listings_select` no mira el estado del DUEÑO —solo esconde las
+`pausada` a quien no es su dueño—, así que el catálogo seguía ofreciendo
+publicaciones que nadie podía contactar. El comprador tocaba "Contactar por
+WhatsApp" y recibía el toast neutro de arriba, sin haber podido saberlo antes.
+`private.pause_listings_on_suspend()` pasa a `pausada` todas las `activa` de esa
+cuenta en la misma transacción que la suspensión.
+
+- **SÍ un trigger, cuando para `vendida` se descartó DELIBERADAMENTE uno**
+  (`20260913000454`, arriba): allá el problema era que un trigger alcanza también
+  a `service_role` y eso habría cerrado Studio, la única vía de corrección. Aquí
+  esa misma propiedad es el requisito: `estado` no está en el `grant update` de
+  `authenticated` (`20260906000438:110`), así que la ÚNICA vía por la que hoy
+  alguien se suspende ES `service_role`/Studio. Un mecanismo que no lo alcanzara
+  no se dispararía nunca. **No copies el precedente por analogía: son el mismo
+  argumento con el signo cambiado.**
+- **Tampoco una policy.** `listings_select` tendría que mirar el estado del dueño
+  (un join por fila en el camino caliente del feed) y, sobre todo, la fila
+  seguiría `activa` en la base: "Mis publicaciones" le seguiría mintiendo al
+  vendedor sobre en qué estado está su catálogo.
+- **`SECURITY DEFINER`, y la decisión está MEDIDA, no deducida.** Hoy `invoker`
+  alcanzaría: el único rol que escribe `estado` es `service_role`/`postgres` y
+  los dos tienen `bypassrls`. Lo que compra `definer` es que la regla no dependa
+  de eso — con un rol de moderación con `grant update` sobre las dos tablas pero
+  SIN `bypassrls` (el escenario de RF-17 con plataforma propia), medido en local:
+  **invoker → 0 filas afectadas, la publicación sigue `activa`, SIN ERROR**;
+  definer → 1 fila, `pausada`. O sea que el invoker cae en la familia de fallos
+  silenciosos de §9. De paso coincide con el criterio que el repo ya tenía
+  escrito en `20260906000439:31`: `set_updated_at()` es la ÚNICA función de
+  `private` que no es definer, y lo es "porque no lee ni escribe otras filas".
+- **El `when` son DOS candados, no uno**, y cada mitad tiene su propia aserción
+  porque cada una deja pasar lo que la otra caza: sin `old.estado is distinct
+  from new.estado`, CADA guardado de "Editar perfil" de una cuenta suspendida
+  —ruta que un suspendido conserva abierta— volvería a pausarle todo (T23 (e));
+  sin `new.estado = 'suspendido'`, levantar la suspensión pausaría lo que el
+  vendedor tuviera activo en ese momento (T23 (g)).
+- **El update va acotado a `estado = 'activa'`**, y no es prolijidad: este código
+  corre ELEVADO, así que la policy que hace terminal a `vendida` no lo frena —
+  sin el filtro, suspender resucitaría una venta a `pausada` por la puerta de
+  atrás (T23 (c)). Y una `pausada` ni se toca, o se le movería el `updated_at` y
+  el vendedor vería "modificada hoy" algo que nadie modificó (T23 (b)).
+- **Al REACTIVAR no se despausan solas**, y es decisión de producto, no una
+  simplificación: el vendedor las reactiva a mano desde "Mis publicaciones", que
+  ya exige al menos una foto. Tampoco se distingue en la UI "pausada por
+  suspensión" de "pausada por el usuario" — mismo estado, y diferenciarlo pediría
+  frame nuevo (§0 regla 4) y casi seguro una columna.
+- **Solo cubre UPDATE**, igual que el trigger de fotos y con el mismo matiz de
+  siempre: un insert directo de `users` con `estado='suspendido'` no lo dispara
+  (inofensivo por sí solo — esa fila aún no puede tener publicaciones), pero una
+  publicación creada `activa` para una cuenta YA suspendida se queda `activa`.
+  Deuda consciente documentada en la migración, con su disparador y su fix.
+- **Consecuencia de segundo orden, medida:** en remoto hay **26** publicaciones
+  `activa` sin una sola foto (filas viejas, anteriores a que existiera la
+  subida). Hoy nadie las valida, porque `listings_enforce_activation_has_photos`
+  solo mira la TRANSICIÓN hacia `activa`. En cuanto una de ellas se pause por
+  suspensión, su dueño no podrá reactivarla sin subirle una foto primero. Es el
+  estado que el modelo atómico existe para imponer y tiene salida dentro de la
+  app, así que no es deuda — pero no se ve en el diff.
 
 **Quién compró NO es una columna de `listings`, y la razón no es de estilo**
 (`20260912000453`). `listings` tiene `grant select` **a nivel tabla**
@@ -704,7 +771,7 @@ de integración en vez de dos, la función no sabe nada del esquema de negocio, 
 `listing_contacts` (`explorar.md`) pero esta vez con recuperación. Ver §9 sobre el header
 `apikey` y el esquema real de `pg_net`, que son dos trampas distintas.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 148 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 156 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -753,7 +820,7 @@ columna, `push_tokens` sin UPDATE por ningún lado, y `vault` inaccesible para
 Y a **128** con las de RF-07/RF-12: 19 de T19 (`listing_sales`, su corrección y
 el apriete de `can_rate()`) más 1 en T12 (sin DELETE, y UPDATE solo sobre
 `comprador_id`); la de funciones-solo-trigger pasó de 9 a **10** sin cambiar la
-cuenta. T19 siembra sus propios `:G`/`:H`/`:I` —vendedor, comprador real y un
+cuenta (y a **11** con la de T23, más abajo). T19 siembra sus propios `:G`/`:H`/`:I` —vendedor, comprador real y un
 tercer contacto que preguntó y no compró—, y ese tercero no es adorno: es el que
 prueba las dos ramas apretadas de `can_rate()`.
 **Y aquí hay una lección nueva, hermana de la de `:C` en T11b: el ORDEN de las
@@ -856,6 +923,51 @@ motivos distintos**, pero las dos primeras del probe caen en la MISMA: quitar la
 policy de DELETE y quitar la de SELECT se ven igual desde ahí, porque las dos
 dejan el borrado sin efecto. Lo que las distingue es el cuerpo — con SELECT
 borrada el status sigue siendo 200 y el array viene vacío (§9).
+
+Y a **156** con las 8 de T23 (suspender pausa las publicaciones activas, RF-17),
+autocontenida con sus propios `:Q`/`:R` y cuatro publicaciones. Nada en T12: la
+migración no toca ningún grant ni ninguna policy; la función entra en la
+invariante de las que solo disparan por trigger, que pasó de 10 a **11** sin
+cambiar la cuenta. Las NUEVE variantes rotas se corrieron una a la vez, cada una
+contra la suite completa **y** contra T23 aislada.
+
+| Variante rota | Cae en |
+|---|---|
+| sin trigger (el repo antes de la tarea) | T23 (a) |
+| `listings_select` aflojada a `using (true)` | T23 (a2) **aislada**; en la suite, T2 |
+| sin el `and estado = 'activa'` | T23 (b) |
+| `estado <> 'pausada'` en vez de `= 'activa'` | T23 (c) |
+| sin el `where user_id = new.id` | T23 (d) |
+| sin `old.estado is distinct from new.estado` | T23 (e) |
+| sin el `when` ENTERO | T23 (e) |
+| sin `new.estado = 'suspendido'` | T23 **(g)** |
+| cuerpo simétrico: despausa al reactivar | T23 **(f)** |
+
+**Esa tabla contradice en dos puntos lo que el plan había predicho, y las dos
+correcciones son la lección de la sección.** La primera: se predijo que (f)
+—"reactivar NO despausa"— cazaría la variante sin `new.estado = 'suspendido'`.
+**No la caza**: esa variante no despausa nada, pausa de MÁS otra fila, así que
+(f) seguía en verde y la suite ENTERA daba verde. Es la lección de `:C` en T11b
+otra vez, y obligó a agregar (g), que mira una publicación distinta —una que el
+vendedor tenía activa al momento de reactivarse— en vez de la que ya estaba
+pausada. La segunda: el control de (f) —el cuerpo simétrico— al principio moría
+con el error CRUDO «Una publicación no puede activarse sin fotos», o sea que
+quien bloqueaba la reactivación era `listings_enforce_activation_has_photos` y no
+la ausencia de esa rama. Es **exactamente** el caso de la foto load-bearing de
+T20 (d), reencontrado midiendo: por eso T23 siembra dos filas en
+`listing_photos` que parecen decorado y no lo son.
+
+**Y una tercera corrección, de la propia prosa de arriba:** esta sección llegó a
+afirmar que las dos columnas de la medición coincidían siempre —"ninguna sección
+anterior adelanta ninguna variante"—, y dejó de ser cierto en cuanto se agregó
+(a2), la única aserción de T23 que lee el catálogo COMO OTRO USUARIO en vez de
+mirar la columna `estado` como `postgres`. Su control negativo es aflojar
+`listings_select`, y ahí sí manda T2. (a2) existe porque **nadie probaba la
+transitividad completa** que introduce esta migración: dueño suspendido → el
+trigger la pasa a `pausada` → desaparece del catálogo ajeno. T2 prueba la
+segunda flecha sobre una fila SEMBRADA `pausada`; componer dos aserciones de
+secciones distintas para dar por probada una tercera es justo lo que la lección
+de (c) en T21 desaconseja.
 
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe

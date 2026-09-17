@@ -414,18 +414,27 @@ mismo criterio que `campusChip`/`buttonWhatsapp`).
     alcanzaba. Desde `20260911000449` valida las **dos** puntas: ni un
     suspendido contacta, ni se le contacta a él.
 
-- **Consecuencia abierta de eso, y es el gancho a una tarea que NO está hecha:
-  las publicaciones de un suspendido siguen visibles en el feed.**
-  `listings_select` no filtra por el estado del dueño (solo esconde las
-  `pausada` a quien no es su dueño), así que desde este cambio el catálogo
-  puede mostrar una publicación que nadie puede contactar: el comprador toca
-  "Contactar por WhatsApp" y recibe "Esta cuenta no está disponible para
-  contacto". No es un bug —la regla de negocio se cumple— pero es un callejón
-  para el comprador. Cerrarlo es **pausar las publicaciones al suspender la
-  cuenta**, y eso es decisión de producto antes que técnica (¿automático con un
-  trigger sobre `users` que escribe en `listings`, o revisión manual de un admin
-  desde Studio?, ¿y qué pasa al reactivar: se despausan solas o no?). Se trata
-  aparte, con su propio plan.
+- **Consecuencia de eso, ya CERRADA (`20260917000457`): las publicaciones de un
+  suspendido ya no se quedan visibles en el feed.** `listings_select` sigue sin
+  filtrar por el estado del dueño —solo esconde las `pausada` a quien no es su
+  dueño—, así que durante un tiempo el catálogo pudo mostrar una publicación que
+  nadie podía contactar: el comprador tocaba "Contactar por WhatsApp" y recibía
+  "Esta cuenta no está disponible para contacto". No era un bug —la regla de
+  negocio se cumplía— pero sí un callejón. Lo cierra un trigger sobre `users`
+  que pasa a `pausada` todas las `activa` de esa cuenta en la misma transacción
+  que la suspensión; el mecanismo y el porqué viven en CLAUDE.md §3, y la
+  regresión en T23.
+  **Lo que hay que saber desde esta pantalla es la otra mitad de la decisión:
+  al levantar la suspensión las publicaciones NO se despausan solas.** El
+  vendedor las reactiva a mano desde "Mis publicaciones", con el mismo toggle de
+  siempre — que ya exige al menos una foto
+  (`listings_enforce_activation_has_photos`). Es deliberado, no un olvido:
+  despausarlas automáticamente saltaría esa validación justo en las
+  publicaciones viejas que no tienen ninguna, y el vendedor se merece decidir
+  qué vuelve al catálogo después de una sanción. Cero código de cliente: la
+  pantalla ya hacía todo esto. Tampoco se distingue en la UI "pausada por
+  suspensión" de "pausada por el usuario" — es el mismo estado, y diferenciarlo
+  exigiría frame nuevo (§0 regla 4) y casi seguro una columna.
 
 - **Cambiar el avatar puede dejar el anterior huérfano en Storage.** El reemplazo
   es subir → escribir `foto_url` → borrar el anterior, y ese tercer paso es
