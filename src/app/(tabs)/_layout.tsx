@@ -9,8 +9,10 @@ import { useSession } from '@/lib/session';
 
 // Tab bar de Relevo: 4 ítems fijos, sin botón central de "+"
 // (publicar vive como FAB en Perfil — ver CLAUDE.md §0.6).
-// Sin íconos todavía: se deciden al construir esta pantalla de verdad
-// (SF Symbol vs. el SVG de línea de relevo-app.html exportado a PNG).
+// Íconos: PNGs con el color de stroke horneado por estado (activo/inactivo),
+// generados por scripts/generate-tab-icons.mjs a partir de las mismas formas
+// de design/relevo-app.html — NativeTabs.Trigger.Icon no acepta un <Svg> de
+// react-native-svg como `src` (solo VectorIcon), ver CLAUDE.md §9.
 export default function TabsLayout() {
   const { status, session, isProfileComplete } = useSession();
   const pathname = usePathname();
@@ -57,17 +59,44 @@ export default function TabsLayout() {
 
   return (
     <View style={styles.contenedor}>
-      <NativeTabs backgroundColor={Colors.paper} labelStyle={{ selected: { color: Colors.ink } }}>
+      <NativeTabs
+        backgroundColor={Colors.paper}
+        labelStyle={{ color: Colors.placeholder, selected: { color: Colors.ink } }}
+      >
         <NativeTabs.Trigger name="index">
+          <NativeTabs.Trigger.Icon
+            src={{
+              default: require('../../../assets/images/tab-icons/inicio-inactivo.png'),
+              selected: require('../../../assets/images/tab-icons/inicio-activo.png'),
+            }}
+          />
           <NativeTabs.Trigger.Label>Inicio</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="buscar">
+          <NativeTabs.Trigger.Icon
+            src={{
+              default: require('../../../assets/images/tab-icons/buscar-inactivo.png'),
+              selected: require('../../../assets/images/tab-icons/buscar-activo.png'),
+            }}
+          />
           <NativeTabs.Trigger.Label>Buscar</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="favoritos">
+          <NativeTabs.Trigger.Icon
+            src={{
+              default: require('../../../assets/images/tab-icons/favoritos-inactivo.png'),
+              selected: require('../../../assets/images/tab-icons/favoritos-activo.png'),
+            }}
+          />
           <NativeTabs.Trigger.Label>Favoritos</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="perfil">
+          <NativeTabs.Trigger.Icon
+            src={{
+              default: require('../../../assets/images/tab-icons/perfil-inactivo.png'),
+              selected: require('../../../assets/images/tab-icons/perfil-activo.png'),
+            }}
+          />
           <NativeTabs.Trigger.Label>Perfil</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
       </NativeTabs>

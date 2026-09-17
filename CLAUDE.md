@@ -1528,6 +1528,52 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   `NativeTabs` — este no expone su altura a JS, así que despejar la barra exige
   constantes por plataforma (ver `src/components/PublicarFab.tsx`). La doc
   oficial de Expo no cubre el caso.
+- **`NativeTabs.Trigger.Icon` no acepta un componente SVG de
+  `react-native-svg` como `src` — solo `VectorIcon` o una imagen estática.**
+  `node_modules/expo-router/build/native-tabs/utils/icon.js:50-67`
+  (`convertComponentSrcToImageSource`) solo reconoce dos tipos de elemento
+  React en `src`: `NativeTabs.Trigger.VectorIcon` (wrapper de
+  `@expo/vector-icons`) o un `PromiseIcon` interno que **no está exportado
+  públicamente** desde `expo-router/unstable-native-tabs` (verificado con
+  grep sobre los `.d.ts` públicos). Cualquier otro elemento —incluido un
+  `<Svg>` propio— cae al `else` y produce
+  `console.warn('Only VectorIcon is supported as a React element in
+  Icon.src')`, con el ícono quedando `undefined` en silencio (sin error, sin
+  crash — otro más de los fallos silenciosos que este proyecto ya viene
+  coleccionando). La única vía soportada para un ícono custom es `src` como
+  `ImageSourcePropType` (`require(...)` de un PNG), en la forma
+  `{ default, selected }` que documenta el tipo `SrcIcon`
+  (`node_modules/expo-router/build/native-tabs/common/elements.d.ts:19-47`).
+  Por eso los 4 íconos del tab bar (`scripts/generate-tab-icons.mjs`) se
+  generan como bitmaps con `sharp` en vez de reusar los componentes `Icon*`
+  de `src/components/icons/index.tsx` directamente.
+
+  **Esas formas viven ahora en TRES lugares que pueden desincronizarse, sin
+  ningún import que los conecte:** `design/relevo-app.html` (fuente de
+  verdad del diseño), `src/components/icons/index.tsx`
+  (`IconSearch`/`IconHeart`, que sirven a otro frame — el search field y el
+  botón de favorito, no el tab bar) y `scripts/generate-tab-icons.mjs` (copia
+  inline de las mismas shapes, con `stroke-linecap`/`stroke-linejoin`
+  agregados a propósito porque el `.tabbar` del HTML los lleva y esos dos
+  componentes no). Un cambio futuro al `d` de `IconSearch` o `IconHeart` —o
+  al HTML del `.tabbar`— **no se propaga solo** a los otros dos lugares:
+  **revisar los tres a mano** si el diseño de Buscar/Favoritos cambia.
+
+  **Segundo hallazgo, medido en simulador y no en el código: un PNG local sin
+  sufijo de densidad (`@2x`/`@3x`) lo trata Metro como la versión `@1x` sin
+  importar sus píxeles reales.** El primer intento generó un solo archivo de
+  84×84 por ícono (pensando que el tab bar nativo iba a decidir el tamaño
+  final igual que decide el de un SF Symbol) y el resultado en el simulador
+  fue un ícono de **84 puntos**, no de 21 — desbordó la tab bar entera y
+  empujó el contenido de arriba. Este proyecto no tenía, hasta esta tarea,
+  ningún precedente de imagen local embebida en el bundle de JS (las fotos y
+  avatares son remotos, vía Supabase Storage — ver §3), así que no había
+  ningún caso ya resuelto para copiar. El fix es generar el trío
+  `nombre.png`/`nombre@2x.png`/`nombre@3x.png` (21/42/63px para el tamaño de
+  21px del HTML) — `scripts/generate-tab-icons.mjs` ya lo hace así. Si algún
+  día se agrega OTRO ícono/imagen local al bundle (no remota), este es el
+  primer punto a revisar: un solo archivo sin sufijo de densidad **no falla
+  ni avisa**, simplemente se renderiza al tamaño equivocado.
 - **`presentation:'transparentModal'` de un Stack anidado no funciona si el
   Stack padre ya presenta esa ruta como card opaca.** El navegador que de
   verdad ejecuta el `push` (a menudo el Stack raíz, no el Stack del grupo
