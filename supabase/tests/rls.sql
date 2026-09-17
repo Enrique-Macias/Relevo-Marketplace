@@ -1898,6 +1898,245 @@ select pg_temp.assert(
   'reactivar la cuenta tampoco pausa de más lo que el vendedor tenga activo');
 -- ---------------------------------------------------------------------------
 \echo ''
+\echo '== T24 — pendiente/bloqueada no son públicos ni los levanta su dueño (moderación) =='
+-- Autocontenida, mismo criterio que T11b, T13, T14, T15, T16, T17, T19, T21, T22
+-- y T23: siembra sus propios usuarios y no reutiliza fixtures de secciones
+-- anteriores.
+--
+--   :S — el dueño, activo. Publica una vez en CADA uno de los 5 valores del
+--        enum. Es la única forma de que "escritura" y "lectura" compartan
+--        exactamente el mismo universo de filas.
+--   :U — un ajeno cualquiera, autenticado y activo. Es quien lee (1) y quien
+--        invoca la RPC de vistas en (3) — igual que en T5 y T20(i), la función
+--        excluye al dueño por diseño y hay que llamarla desde otra cuenta.
+--
+-- CUATRO de las cinco llevan foto sembrada, y NO es decorado: es la misma
+-- lección de T20(d) y T23(f), medida otra vez aquí. `pausada`, `vendida`,
+-- `pendiente` y `bloqueada` intentan una transición HACIA 'activa' en (2), y sin
+-- foto esa transición muere con «Una publicación no puede activarse sin fotos»
+-- —el trigger de 20260909000447— en vez de con el mensaje de esta sección. Solo
+-- `activa` se queda sin foto: nunca intenta volverse `activa`, ya lo es.
+--
+-- T_MOD ES DE SOLO LECTURA DE AQUÍ EN ADELANTE, y no por prolijidad: (1) y (3)
+-- asumen que cada fila SIGUE en el estado con que nació. La primera versión de
+-- esta sección reutilizaba `t_mod.activa`/`t_mod.pausada` para los controles
+-- de pausar/reactivar de (2) — que SÍ escriben `estado` — y (3) leía esas MISMAS
+-- filas después esperando que siguieran 'activa'/'pausada'. Medido: (3) fallaba
+-- ("activa y vendida siguen contando vistas... " en 0) porque la fila que (1)
+-- y (3) llaman "activa" ya era 'pausada' para cuando (3) corría. Es la misma
+-- familia de error que la reordenada de T19 (l2): una sección con estado que
+-- avanza necesita fijarse en CUÁNDO corre cada aserción, no solo contra quién.
+-- La salida es la misma que ahí: filas dedicadas para lo que muta, y las de
+-- lectura/vistas jamás se tocan.
+\set S '''24242424-0000-0000-0000-000000002424'''
+\set U '''42424242-0000-0000-0000-000000004242'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:S::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-s@tec.mx', '', now(), now(), now()),
+  (:U::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-u@tec.mx', '', now(), now(), now());
+update public.users set nombre = 'Selena' where id = :S::uuid;
+update public.users set nombre = 'Ulises' where id = :U::uuid;
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values
+  (:S::uuid, 1, 1, 1, 'RLS Mod activa',    100, 'nuevo', 'activa'),
+  (:S::uuid, 1, 1, 1, 'RLS Mod pausada',   100, 'nuevo', 'pausada'),
+  (:S::uuid, 1, 1, 1, 'RLS Mod vendida',   100, 'nuevo', 'vendida'),
+  (:S::uuid, 1, 1, 1, 'RLS Mod pendiente', 100, 'nuevo', 'pendiente'),
+  (:S::uuid, 1, 1, 1, 'RLS Mod bloqueada', 100, 'nuevo', 'bloqueada');
+
+create temp table t_mod as
+select
+  (select id from public.listings where titulo = 'RLS Mod activa')    as activa,
+  (select id from public.listings where titulo = 'RLS Mod pausada')   as pausada,
+  (select id from public.listings where titulo = 'RLS Mod vendida')   as vendida,
+  (select id from public.listings where titulo = 'RLS Mod pendiente') as pendiente,
+  (select id from public.listings where titulo = 'RLS Mod bloqueada') as bloqueada;
+
+insert into public.listing_photos (listing_id, storage_path, orden)
+values
+  ((select pausada   from t_mod), 'rls-mod/pausada.jpg',   0),
+  ((select vendida   from t_mod), 'rls-mod/vendida.jpg',   0),
+  ((select pendiente from t_mod), 'rls-mod/pendiente.jpg', 0),
+  ((select bloqueada from t_mod), 'rls-mod/bloqueada.jpg', 0);
+
+-- Par DEDICADO para (2)(d)/(2)(e): las dos únicas transiciones de esta sección
+-- que SÍ escriben `estado`. Separado de t_mod a propósito, por la razón de
+-- arriba.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values
+  (:S::uuid, 1, 1, 1, 'RLS Mod ctrl-pausa',    100, 'nuevo', 'activa'),
+  (:S::uuid, 1, 1, 1, 'RLS Mod ctrl-reactiva', 100, 'nuevo', 'pausada');
+
+create temp table t_mod_ctrl as
+select
+  (select id from public.listings where titulo = 'RLS Mod ctrl-pausa')    as ctrl_pausa,
+  (select id from public.listings where titulo = 'RLS Mod ctrl-reactiva') as ctrl_reactiva;
+
+insert into public.listing_photos (listing_id, storage_path, orden)
+values ((select ctrl_reactiva from t_mod_ctrl), 'rls-mod/ctrl-reactiva.jpg', 0);
+
+-- ---------------------------------------------------------------------------
+-- (1) LECTURA — listings_select. No la pidió la matriz original (esa cubría
+-- solo escritura y vistas), pero SIN esto el control negativo de esta guardia
+-- —pedido explícitamente— no tendría dónde fallar: quitar la condición nueva
+-- no rompe ninguna aserción de escritura ni de vistas, y T2 (la dueña de
+-- listings_select) solo conoce 'pausada', no 'pendiente'/'bloqueada'. Es
+-- exactamente el caso de T23 (a2): la sección que introduce el efecto es la
+-- que tiene que vigilarlo, aunque el mecanismo (una policy, no un trigger)
+-- viva en otra migración.
+
+-- (a) CONTROL: activa y vendida se siguen viendo. Sin este control, (b) podría
+-- pasar por una razón equivocada — por ejemplo si is_active_user() o la
+-- suspensión de S rompieran la visibilidad entera en vez de solo estos dos
+-- valores.
+select pg_temp.assert(
+  pg_temp.as_user_int(:U::uuid,
+    format('select count(*) from public.listings where id = %s',
+           (select activa from t_mod))) = 1
+  and pg_temp.as_user_int(:U::uuid,
+    format('select count(*) from public.listings where id = %s',
+           (select vendida from t_mod))) = 1,
+  'un ajeno sigue viendo activa y vendida (control)');
+
+-- (b) LO NUEVO: pendiente y bloqueada quedan tan ocultas para un ajeno como
+-- pausada.
+select pg_temp.assert(
+  pg_temp.as_user_int(:U::uuid,
+    format('select count(*) from public.listings where id = %s',
+           (select pausada from t_mod))) = 0
+  and pg_temp.as_user_int(:U::uuid,
+    format('select count(*) from public.listings where id = %s',
+           (select pendiente from t_mod))) = 0
+  and pg_temp.as_user_int(:U::uuid,
+    format('select count(*) from public.listings where id = %s',
+           (select bloqueada from t_mod))) = 0,
+  'un ajeno no ve pausada, pendiente ni bloqueada');
+
+-- (c) El dueño ve las 5, sin importar el estado — igual que con `pausada`
+-- desde siempre: "Mis publicaciones" no puede mentirle sobre su propio
+-- catálogo.
+-- id IN (…) contra t_mod y NO `titulo like 'RLS Mod %'`: ese patrón también
+-- machea a t_mod_ctrl (dos filas más), que no son parte de este universo de 5.
+select pg_temp.assert(
+  pg_temp.as_user_int(:S::uuid,
+    format('select count(*) from public.listings where id in (%s,%s,%s,%s,%s)',
+           (select activa from t_mod), (select pausada from t_mod),
+           (select vendida from t_mod), (select pendiente from t_mod),
+           (select bloqueada from t_mod))) = 5,
+  'el dueño ve sus 5 publicaciones sin importar el estado');
+
+-- ---------------------------------------------------------------------------
+-- (2) ESCRITURA — listings_update_own. Matriz medida antes de escribir esta
+-- migración: con la policy vieja, pendiente->activa y bloqueada->activa
+-- afectaban 1 fila (el dueño se auto-aprobaba). Con la lista nueva, 0.
+
+-- (d) CONTROL: pausar y reactivar siguen siendo el flujo normal. Van sobre
+-- t_mod_ctrl, NO sobre t_mod: (3) todavía necesita leer t_mod.activa/pausada
+-- en su estado ORIGINAL, y estas dos SÍ escriben `estado`.
+select pg_temp.assert(
+  pg_temp.as_user_int(:S::uuid,
+    format('with u as (update public.listings set estado = ''pausada''
+                        where id = %s returning 1)
+            select count(*) from u', (select ctrl_pausa from t_mod_ctrl))) = 1,
+  'el dueño sigue pudiendo pausar una publicación activa (control)');
+
+select pg_temp.assert(
+  pg_temp.as_user_int(:S::uuid,
+    format('with u as (update public.listings set estado = ''activa''
+                        where id = %s returning 1)
+            select count(*) from u', (select ctrl_reactiva from t_mod_ctrl))) = 1,
+  'el dueño sigue pudiendo reactivar una publicación pausada (control)');
+
+-- (e) CONTROL: `vendida` sigue terminal — esto ya lo prueba T20, y se repite
+-- aquí en el mismo universo de filas que (f) y (g) para que las tres midan
+-- exactamente la misma cosa con la misma vara.
+select pg_temp.assert(
+  pg_temp.as_user_int(:S::uuid,
+    format('with u as (update public.listings set estado = ''activa''
+                        where id = %s returning 1)
+            select count(*) from u', (select vendida from t_mod))) = 0,
+  'ni el dueño puede reactivar una publicación vendida (control)');
+
+-- (f) LO NUEVO: pendiente->activa. Sin la guardia nueva, esto era el hueco —
+-- el dueño se auto-aprobaba y se saltaba la revisión entera.
+select pg_temp.assert(
+  pg_temp.as_user_int(:S::uuid,
+    format('with u as (update public.listings set estado = ''activa''
+                        where id = %s returning 1)
+            select count(*) from u', (select pendiente from t_mod))) = 0,
+  'el dueño no puede saltarse la revisión: pendiente->activa queda bloqueado');
+
+-- (g) LO NUEVO: bloqueada->activa. Sin la guardia nueva, el dueño deshacía la
+-- moderación por su cuenta.
+select pg_temp.assert(
+  pg_temp.as_user_int(:S::uuid,
+    format('with u as (update public.listings set estado = ''activa''
+                        where id = %s returning 1)
+            select count(*) from u', (select bloqueada from t_mod))) = 0,
+  'el dueño no puede deshacer una moderación: bloqueada->activa queda bloqueado');
+
+-- (h) Y ninguno de los tres intentos bloqueados dejó rastro — el mismo
+-- candado que T20(g): un `using` que filtra no lanza, así que "0 filas" y "0
+-- filas pero algo cambió" se verían igual sin esta aserción.
+select pg_temp.assert(
+  (select estado = 'vendida'   and titulo = 'RLS Mod vendida'   from public.listings
+    where id = (select vendida   from t_mod))
+  and (select estado = 'pendiente' and titulo = 'RLS Mod pendiente' from public.listings
+    where id = (select pendiente from t_mod))
+  and (select estado = 'bloqueada' and titulo = 'RLS Mod bloqueada' from public.listings
+    where id = (select bloqueada from t_mod)),
+  'los tres intentos bloqueados no dejaron rastro en las filas');
+
+-- ---------------------------------------------------------------------------
+-- (3) VISTAS — public.increment_listing_view. Es la ÚNICA de las tres guardias
+-- que NO se arregla sola con (1): es SECURITY DEFINER sobre una tabla sin
+-- `force row level security`, así que bypasea RLS. Medido antes del fix: con
+-- listings_select YA corregida, un ajeno igual subía vistas_count de una
+-- bloqueada.
+
+select pg_temp.as_user(:U::uuid,
+  format('select public.increment_listing_view(%s)', (select activa from t_mod)));
+select pg_temp.as_user(:U::uuid,
+  format('select public.increment_listing_view(%s)', (select vendida from t_mod)));
+select pg_temp.as_user(:U::uuid,
+  format('select public.increment_listing_view(%s)', (select pausada from t_mod)));
+select pg_temp.as_user(:U::uuid,
+  format('select public.increment_listing_view(%s)', (select pendiente from t_mod)));
+select pg_temp.as_user(:U::uuid,
+  format('select public.increment_listing_view(%s)', (select bloqueada from t_mod)));
+
+-- (i) CONTROL: activa y vendida siguen contando vistas de un ajeno — vendida ya
+-- lo prueba T20(i), y se repite aquí por la misma razón que (e): que las tres
+-- midan sobre el mismo universo de filas.
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = (select activa from t_mod)) = 1
+  and (select vistas_count from public.listings where id = (select vendida from t_mod)) = 1,
+  'activa y vendida siguen contando vistas de un ajeno (control)');
+
+-- (j) LO YA CONOCIDO + LO NUEVO en una sola aserción: pausada seguía sin
+-- contar desde siempre; pendiente y bloqueada son el cambio de esta
+-- migración.
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = (select pausada from t_mod)) = 0
+  and (select vistas_count from public.listings where id = (select pendiente from t_mod)) = 0
+  and (select vistas_count from public.listings where id = (select bloqueada from t_mod)) = 0,
+  'pausada, pendiente y bloqueada no cuentan vistas de un ajeno');
+
+-- ---------------------------------------------------------------------------
+-- LO QUE T24 NO CUBRE, a propósito: que un cliente pueda INSERTAR directo en
+-- 'activa'/'vendida'/'bloqueada' (listings_insert_own no restringe `estado`).
+-- Es real y está medido, pero no es un candado que esta migración rompa o
+-- arregle — no hay guardia nueva que probar. Queda en el índice de deuda
+-- consciente de CLAUDE.md §8, con su propio disparador de revisión.
+-- ---------------------------------------------------------------------------
+\echo ''
 \echo '== T12 — invariantes de grants =='
 select pg_temp.assert(
   not exists (select 1 from information_schema.table_privileges

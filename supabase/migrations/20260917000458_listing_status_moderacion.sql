@@ -1,0 +1,35 @@
+-- Relevo — dos valores nuevos de `listing_status` para la moderación
+-- pre-publicación: `pendiente` (esperando revisión) y `bloqueada` (rechazada).
+--
+-- ESTE ARCHIVO EXISTE SOLO PARA EL `ALTER TYPE`, Y ESO NO ES ESTILO.
+-- Postgres prohíbe usar un valor de enum en la MISMA transacción que lo crea, y
+-- el CLI corre cada migración en su propia transacción, así que las policies que
+-- nombran 'pendiente'/'bloqueada' tienen que vivir en el archivo siguiente.
+-- Medido en local contra PG 17.6 (el mismo de remoto), los cuatro casos:
+--
+--   begin; alter type … add value 'pendiente';
+--          select 'pendiente'::listing_status;              -> ERROR 55P03-like:
+--          "unsafe use of new value "pendiente" of enum type listing_status"
+--          HINT: New enum values must be committed before they can be used.
+--   begin; alter type … add value 'bloqueada';
+--          update listings set estado='bloqueada' where false; -> el MISMO error
+--   begin; alter type … add value 'x';  (sin usarlo)         -> OK
+--   begin; create type t as enum('a'); alter type t add value 'b';
+--          select 'b'::t;                                    -> OK
+--
+-- El último es la excepción de PG12+ (el enum creado en la misma transacción) y
+-- NO nos aplica: `listing_status` nació en 20260906000437.
+--
+-- Y por qué basta con separarlos en dos archivos del MISMO `db push`: medido,
+-- el CLI aplica un archivo por transacción, no el lote entero en una. Dos
+-- migraciones sonda en la misma corrida de `migration up` reportaron
+-- txid_current() 3183 y 3185. El `add value` commitea al cerrar este archivo.
+--
+-- ORDEN DE LOS VALORES: van al final del enum. `enumsortorder` solo afecta a
+-- `order by estado` y a las comparaciones `<`/`>`, y el proyecto no hace
+-- ninguna de las dos sobre esta columna — se compara siempre por igualdad o
+-- pertenencia. No se usa `before`/`after` para no sugerir un orden de flujo que
+-- la columna no tiene.
+
+alter type public.listing_status add value 'pendiente';
+alter type public.listing_status add value 'bloqueada';
