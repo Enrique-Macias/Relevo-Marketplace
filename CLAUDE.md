@@ -85,7 +85,7 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
 | Backend / BD | Supabase (Postgres), proyecto remoto `ukxfnydfhmryrzhdqkvj`, región Ohio (us-east-2) | Auth + BD relacional + Storage + Row Level Security, sin backend custom |
 | Cliente BD | `@supabase/supabase-js` (versión fijada, sin `^`) | Ver sección 8 para el wrapper (`src/lib/supabase.ts`) y por qué usa `expo-crypto` en vez de `react-native-get-random-values` |
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
-| Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía Database Webhook. El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
+| Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Admin / moderación | Supabase Studio | Panel de reportes y suspensión de usuarios/publicaciones, sin desarrollo adicional |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
@@ -770,6 +770,23 @@ de integración en vez de dos, la función no sabe nada del esquema de negocio, 
 **si el push falla el aviso sigue en el inbox** — el mismo fallo suave de
 `listing_contacts` (`explorar.md`) pero esta vez con recuperación. Ver §9 sobre el header
 `apikey` y el esquema real de `pg_net`, que son dos trampas distintas.
+
+**Y "webhook" aquí es un apodo, no el mecanismo de Supabase que lleva ese
+nombre.** Un *Database Webhook* del Dashboard es un trigger que llama a
+`supabase_functions.http_request()`, y este proyecto **no tiene ninguno**:
+`20260911000452_notifications_webhook.sql` declara un trigger propio que invoca
+`net.http_post` directo. La distinción no es de vocabulario, y conviene tenerla
+antes de agregar el siguiente disparador HTTP:
+
+- **El payload lo eliges tú.** `http_request()` manda siempre
+  `{type, table, schema, record, old_record}` con la fila entera;
+  `private.notify_push()` manda **solo el id**, que es justo lo que le permite a
+  `send-push` no saber nada del esquema.
+- **La condición se puede escribir.** El UI del Dashboard crea el trigger para la
+  tabla completa, sin cláusula `WHEN`; a mano sí hay `WHEN`, que es lo que haría
+  viable filtrar por `bucket_id` un disparador sobre `storage.objects`.
+- **La autorización es la de §9**, no la del Dashboard: header `apikey` con la
+  secret key (no `Bearer`) y `verify_jwt = false` en `config.toml`.
 
 **Regresión de RLS:** `supabase/tests/rls.sql`, 156 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
@@ -1460,14 +1477,23 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
     autorización (42501). Con `authenticated` (el rol real del cliente) ese
     42501 no ocurre —`favorites` sí tiene `grant select` para
     `authenticated`—, así que la consulta completa corre hasta el final.
-- **`postgres` no es dueño de `storage.objects` y aun así puede politiquearla.**
-  La dueña es `supabase_storage_admin` y `postgres` ni siquiera es miembro de ese
-  rol, así que `create policy` debería fallar con 42501 "must be owner of table
-  objects". No falla porque `supautils.policy_grants` lista `storage.objects` para
-  `postgres` — verificado en `pg_settings` en local **y** en remoto. Por eso las
-  policies de Storage viven en una migración versionada normal y no hay que
-  crearlas a mano en el Dashboard. Si algún día una migración de Storage sí
-  revienta con 42501, ese ajuste es lo primero que hay que mirar.
+- **`postgres` no es dueño de `storage.objects` y aun así puede politiquearla
+  — Y TAMBIÉN ponerle triggers.** La dueña es `supabase_storage_admin` y
+  `postgres` ni siquiera es miembro de ese rol, así que `create policy` debería
+  fallar con 42501 "must be owner of table objects". No falla porque
+  `supautils.policy_grants` lista `storage.objects` para `postgres` — verificado
+  en `pg_settings` en local **y** en remoto. Por eso las policies de Storage
+  viven en una migración versionada normal y no hay que crearlas a mano en el
+  Dashboard. Si algún día una migración de Storage sí revienta con 42501, ese
+  ajuste es lo primero que hay que mirar.
+  **El nombre del setting engaña: no se limita a las policies.** Medido en local,
+  `postgres` crea sin error un trigger sobre `storage.objects`, incluso con
+  cláusula `WHEN` filtrando por `bucket_id` — que es lo que haría viable un
+  disparador HTTP por bucket sin pasar por el Dashboard. Eso NO está medido en
+  remoto (crearlo ahí es una escritura, no una consulta); lo único verificado en
+  remoto es que el `supautils.policy_grants` es idéntico, así que la expectativa
+  es razonable pero no comprobada. Si una migración de trigger sobre Storage
+  revienta con 42501 en remoto, esta es la diferencia que hay que mirar primero.
 - **Un bucket no viaja por `supabase db push`.** Buckets y objetos son FILAS de
   las tablas de `storage`, no esquema. Se declaran en `config.toml` y se aplican a
   remoto con `supabase seed buckets --linked`. En local los crea `supabase start`
