@@ -1302,6 +1302,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - La lada del teléfono está fija en `+52` → `cuenta-perfil.md`
 - El teléfono es no-enumerable-en-bloque, no inaccesible → `cuenta-perfil.md`
 - Un insert directo con `estado='activa'` y 0 fotos sigue siendo posible → `publicar-fotos.md`
+- El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
 - El reintento solo distingue DOS errores deterministas → `publicar-fotos.md`
 - Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila → `publicar-fotos.md`
 - El tope de 5 fotos SIGUE sin aplicar en Storage → `publicar-fotos.md`

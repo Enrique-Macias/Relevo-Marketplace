@@ -127,11 +127,10 @@ create trigger users_pause_listings_on_suspend
 --     `activa` (medido; es justo la fixture con la que T23 hace observable (e)).
 -- Solo alcanzable por service_role/Studio, porque `listings_insert_own` ya exige
 -- `is_active_user()` — o sea que es un vector de calidad de dato de la
--- moderación, no de seguridad. Deuda consciente, mismo trato que su gemela: no se
--- cierra aquí. **Revisar cuando:** exista la plataforma de admin de RF-17, que es
--- donde alguien podría dar de alta publicaciones fuera del flujo de la app.
--- **Fix:** el mismo `when` sobre un `before insert` de `listings`, o un `check`
--- que niegue `estado = 'activa'` si el dueño no está activo.
+-- moderación, no de seguridad. Queda como deuda consciente CON disparador de
+-- revisión, igual que su gemela y por el mismo recurso que usa `20260909000447`:
+-- el "Revisar cuando" y el "Fix" viven en UN solo lugar, `cuenta-perfil.md`,
+-- indexados desde CLAUDE.md §8. Aquí no se repiten para que no se desincronicen.
 
 -- SIN BACKFILL, a propósito. Medido contra remoto antes de escribir esto: las 6
 -- cuentas existentes están las 6 en `activo`, así que un

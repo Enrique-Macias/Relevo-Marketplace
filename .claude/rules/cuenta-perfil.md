@@ -436,6 +436,26 @@ mismo criterio que `campusChip`/`buttonWhatsapp`).
   suspensión" de "pausada por el usuario" — es el mismo estado, y diferenciarlo
   exigiría frame nuevo (§0 regla 4) y casi seguro una columna.
 
+- **El pausado automático solo cubre UPDATE: una publicación creada `activa`
+  para una cuenta YA suspendida se queda `activa`.** El trigger de
+  `20260917000457` es `after update on public.users`, así que nada vuelve a mirar
+  después del acto de suspender. Medido, en dos mitades que no pesan igual: un
+  insert directo de `users` con `estado = 'suspendido'` tampoco lo dispara, pero
+  eso por sí solo es inofensivo —la fila es nueva y todavía no puede tener
+  publicaciones, porque `listings.user_id` es FK a `users`—; la que sí deja
+  hueco es la segunda. Es la gemela exacta del insert con `estado='activa'` y 0
+  fotos (`publicar-fotos.md`), incluido el motivo por el que no se cierra: hoy
+  **no es alcanzable desde la app**, porque `listings_insert_own` exige
+  `is_active_user()`, así que solo llega por `service_role`/Studio — un vector de
+  calidad de dato de la moderación, no de seguridad, y quien lo dispararía sería
+  la misma persona que está moderando. **Revisar cuando:** exista la plataforma
+  de admin de RF-17, que es donde alguien podría dar de alta publicaciones fuera
+  del flujo de la app, o cuando aparezca un segundo escritor de `listings` que no
+  sea el cliente. **Fix:** el mismo `when` sobre un `before insert` de
+  `listings`, o un `check` que niegue `estado = 'activa'` cuando el dueño no esté
+  activo — y ojo, es el mismo tipo de cambio que su gemela, así que si algún día
+  se cierran, se cierran juntas y con las fixtures de la suite en la mano.
+
 - **Cambiar el avatar puede dejar el anterior huérfano en Storage.** El reemplazo
   es subir → escribir `foto_url` → borrar el anterior, y ese tercer paso es
   best-effort a propósito: propagarlo dejaría al usuario sin poder cambiar su foto
