@@ -181,20 +181,25 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 21 migraciones (`supabase/migrations/`), con RLS activo y probado en
+Definido en 23 migraciones (`supabase/migrations/`), con RLS activo y probado en
 las 12 tablas más los DOS buckets de Storage. Este es el esquema **real**, no
 solo la intención original.
 
-**Repo y remoto están a la par: 21 y 21**, medido con `ls supabase/migrations |
-wc -l` y `mcp__supabase__list_migrations` el mismo día. Aquí vivía una salvedad
-—"en remoto hay 19, falta pushear la de `avatars`"— que resultó estar
-**desactualizada**: al hacer `db push` con la de suspensión, el CLI aplicó
-únicamente `20260917000457`, o sea que `20260916000456` ya había viajado antes y
-el bucket `avatars` ya existía en remoto (`select count(*) from storage.buckets
-where id = 'avatars'` → 1). Moraleja para la próxima vez que se lea un conteo en
-esta sección: son números que se MIDEN con su comando, y cuando la prosa y el
-comando discrepan gana el comando — incluso cuando la prosa es una advertencia
-que suena prudente.
+**Repo y remoto YA NO están a la par: 23 y 21**, medido con
+`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations` el mismo
+día. Las dos de más son `20260917000458` y `20260917000459` (moderación
+pre-publicación: `pendiente`/`bloqueada`), escritas y validadas en local pero
+sin pushear todavía. Antes de este punto vivía una salvedad —"en remoto hay 19,
+falta pushear la de `avatars`"— que resultó estar **desactualizada**: al hacer
+`db push` con la de suspensión, el CLI aplicó únicamente `20260917000457`, o sea
+que `20260916000456` ya había viajado antes y el bucket `avatars` ya existía en
+remoto (`select count(*) from storage.buckets where id = 'avatars'` → 1).
+Moraleja para la próxima vez que se lea un conteo en esta sección: son números
+que se MIDEN con su comando, y cuando la prosa y el comando discrepan gana el
+comando — incluso cuando la prosa es una advertencia que suena prudente. Y
+ahora hay una segunda moraleja, más simple: un repo y un remoto en par es un
+estado transitorio, no una invariante — vuelve a discreparse en cuanto se
+escribe la siguiente migración y no se pushea de inmediato.
 
 ```
 -- Enums
@@ -788,7 +793,7 @@ antes de agregar el siguiente disparador HTTP:
 - **La autorización es la de §9**, no la del Dashboard: header `apikey` con la
   secret key (no `Bearer`) y `verify_jwt = false` en `config.toml`.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 156 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 167 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -985,6 +990,33 @@ trigger la pasa a `pausada` → desaparece del catálogo ajeno. T2 prueba la
 segunda flecha sobre una fila SEMBRADA `pausada`; componer dos aserciones de
 secciones distintas para dar por probada una tercera es justo lo que la lección
 de (c) en T21 desaconseja.
+
+Y a **167** con las 11 de T24 (`pendiente`/`bloqueada` no son públicos ni los
+levanta su dueño, moderación pre-publicación), autocontenida con sus propios
+`:S`/`:U`. Nada en T12: la migración no toca ningún grant, solo dos policies ya
+existentes y el cuerpo de una función que ya tenía su `grant execute`. Cubre
+TRES guardias con un solo universo de filas (`t_mod`, 5 publicaciones — una por
+valor del enum), y cada una se corrió rota, contra la suite completa **y**
+contra T24 aislada:
+
+| Guardia rota | Cae en |
+|---|---|
+| `listings_select` sin la condición nueva | T24 (b), en ningún otro lado |
+| `listings_update_own` sin `pendiente`/`bloqueada` en el `not in` | T24 (f) |
+| `increment_listing_view()` sin su fix | T24 (j) |
+
+**La primera versión reutilizaba las mismas filas para lectura, escritura y
+vistas, y eso rompió (3) por la razón exacta que ya documenta la sección de
+`listing_sales` más arriba: el ORDEN importa cuando el estado avanza.** Las
+aserciones de escritura (2) mutan `estado` en dos de sus filas (pausar y
+reactivar son el flujo normal, y SÍ escriben) — reutilizar esas mismas filas en
+(3) hacía que "la publicación activa" ya no lo fuera para cuando (3) leía su
+`vistas_count`. Medido: (3) fallaba con la RPC devolviendo 0 vistas sobre una
+fila que (1) y (3) seguían llamando "activa" pero que (2) ya había pausado. El
+fix es el mismo que en `listing_sales`: las filas que se leen y las que se
+escriben no pueden ser las mismas — de ahí `t_mod` (solo lectura, para (1) y
+(3)) y `t_mod_ctrl` (dos filas dedicadas, solo para los dos controles de (2)
+que sí mutan `estado`).
 
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
@@ -1319,6 +1351,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - La lada del teléfono está fija en `+52` → `cuenta-perfil.md`
 - El teléfono es no-enumerable-en-bloque, no inaccesible → `cuenta-perfil.md`
 - Un insert directo con `estado='activa'` y 0 fotos sigue siendo posible → `publicar-fotos.md`
+- `listings_insert_own` no restringe `estado`: un INSERT de cliente crea directo en cualquier valor del enum, y el flujo actual de `publicar.ts` también llega a `activa` sin pasar por `pendiente` → `publicar-fotos.md`
 - El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
 - El reintento solo distingue DOS errores deterministas → `publicar-fotos.md`
 - Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila → `publicar-fotos.md`

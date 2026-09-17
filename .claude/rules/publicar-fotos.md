@@ -391,6 +391,23 @@ cambio de semántica de seguridad disfrazado de refactor (§9).
   terceros, o aparezca en el feed una publicación sin fotos que no vino de la
   app. **Fix:** ese trigger + voltear el default a `'pausada'` + reescribir las
   4 fixtures.
+- **`listings_insert_own` no restringe qué valor de `estado` trae un INSERT del
+  cliente**, y esto es distinto del punto de arriba — aquél es sobre 0 fotos,
+  este es sobre el ESTADO mismo. Medido (CLAUDE.md §3, migración
+  `20260917000459`): su `with_check` es solo `user_id = auth.uid() and
+  is_active_user()`, y el INSERT de `listings` está concedido a nivel TABLA, así
+  que cubre la columna. Un autenticado cualquiera crea su propia fila
+  directamente en cualquiera de los 5 valores del enum —incluidos `activa`,
+  `vendida` y `bloqueada`— sin pasar nunca por `pendiente`. Y no hace falta un
+  cliente hostil para tocarlo: el flujo ACTUAL de `publicar.ts` también termina
+  en `activa` sin pasar por revisión — crea en `'pausada'` (`:307`) y la pasa a
+  `'activa'` (`:366`) en cuanto las fotos suben, exactamente el camino que la
+  moderación pre-publicación necesita interceptar. **Revisar cuando:** se diseñe
+  el rework de `publicar.ts` para la moderación pre-publicación y su Edge
+  Function. **Fix:** forzar `estado = 'pendiente'` en el `with_check` del
+  INSERT, y mover la transición `pendiente → activa` a código elevado (trigger o
+  Edge Function) — con el `with_check` forzado, esa transición deja de poder
+  hacerla el cliente.
 - **El reintento solo distingue DOS errores deterministas**, `EntityTooLarge` y
   el formato no soportado. La regla más amplia —"no reintentar ningún 4xx"— se
   evaluó y se descartó: un 401 puede ser un token en refresco, o sea
