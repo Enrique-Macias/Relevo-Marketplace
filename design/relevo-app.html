@@ -1734,12 +1734,48 @@
               </div>
             </div>
           </div>
+
+          <!-- Variante (doc, no es parte del flujo): RF-18, en revisión o
+               bloqueada. Comparten reparto —ningún botón + .notice— porque
+               comparten la causa: el `using` de `listings_update_own` excluye
+               los dos estados, así que "Marcar como vendida" y "Editar
+               publicación" afectarían 0 filas. Es el mismo motivo por el que
+               "Editar publicación" desaparece sobre una vendida, con dos
+               estados más en la misma lista.
+
+               El .notice va SIN .notice-icon, igual que el de arriba: el
+               círculo --brick es color de error y aquí no falló nada que el
+               usuario pueda arreglar. Es el precedente que ya fijó "Detalle
+               (vendida)".
+
+               OJO CON EL .stat-row DE ARRIBA cuando esto se construya: una
+               publicación en revisión o bloqueada nunca estuvo en el catálogo,
+               así que sus tres números son 0 por definición. Pintar "0 vistas ·
+               0 favoritos · 0 contactos" lee como fracaso en vez de como "no ha
+               empezado"; lo correcto es esconder la fila entera, que es lo que
+               ya hace el bloque de rating de Perfil cuando no hay reseñas. -->
+          <div style="margin:26px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:9px;">
+              Variante (doc, no es parte del flujo): en revisión, y bloqueada
+            </div>
+            <div class="sticky-cta" style="position:static; padding:0 0 10px; background:none; backdrop-filter:none; border-top:none;">
+              <div class="notice" style="flex:1; width:auto; margin-bottom:0;">
+                <div class="notice-text">Esta publicación está en revisión. Se publicará en cuanto la revisemos.</div>
+              </div>
+            </div>
+            <div class="sticky-cta" style="position:static; padding:0; background:none; backdrop-filter:none; border-top:none;">
+              <div class="notice" style="flex:1; width:auto; margin-bottom:0;">
+                <div class="notice-text">Esta publicación no fue aprobada y no se publicó.</div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- El .sticky-cta del vendedor tiene TRES repartos, y los decide el
-             estado de la publicación junto con el derivado de tres estados del
-             .ghost-btn —el mismo de la fila de "Mis publicaciones (acciones)",
-             ver el comentario largo de ese frame—:
+        <!-- El .sticky-cta del vendedor tiene CUATRO repartos —eran tres hasta
+             que RF-18 sumó los estados de moderación—, y los decide el estado de
+             la publicación junto con el derivado de tres estados del .ghost-btn
+             —el mismo de la fila de "Mis publicaciones (acciones)", ver el
+             comentario largo de ese frame—:
 
              · activa o pausada → "Marcar como vendida" + "Editar publicación".
                Es lo que se pinta abajo; el flex:1.2 del primary existe solo para
@@ -1748,6 +1784,10 @@
                "Cambiar comprador" SOLO, a ancho completo por su propio flex:1.
              · vendida sin nada pendiente —ya calificada, o "No fue a través de
                Relevo"— → ningún botón, y va el .notice de la variante de arriba.
+             · en revisión o bloqueada (RF-18) → tampoco ningún botón, con su
+               propio .notice. Mismo reparto que el anterior y por la misma
+               causa: el `using` de `listings_update_own` excluye los tres
+               estados, así que los dos botones afectarían 0 filas.
 
              "Editar publicación" NO se pinta en los dos últimos: vendida es
              terminal (RF-08) y quien lo hace cumplir es la base, en el `using` de
@@ -4448,6 +4488,56 @@
             <div class="empty-sub">Una publicación vendida ya no se puede editar ni pausar. Puedes cambiar el comprador o eliminarla desde Mis publicaciones.</div>
           </div>
         </div>
+
+        <!-- Variante (doc, no es parte del flujo): RF-18, la publicación está en
+             revisión. MISMO RECURSO QUE LA DE ARRIBA — reemplaza el formulario
+             entero, no apaga la sección de estado.
+
+             Y eso último es el detalle que hay que medir y no suponer: el
+             `using` de `listings_update_own` (20260917000459) excluye
+             `pendiente` y `bloqueada` igual que a `vendida`, así que sobre esas
+             filas NO falla solo el cambio de estado — falla CUALQUIER update,
+             incluido cambiar el título. Dejar el formulario vivo y apagar solo
+             las tres filas de abajo prometería un "Guardar" que afecta 0 filas
+             y no lanza (el `using` filtra en silencio). Son tres estados con el
+             mismo reparto, no dos formas distintas.
+
+             Ícono neutro, como la variante de vendida: estar en revisión no es
+             un fallo. -->
+        <div style="margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+          <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:9px;">
+            Variante (doc, no es parte del flujo): se abrió una publicación en revisión
+          </div>
+          <div class="empty-state">
+            <div class="empty-icon">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            </div>
+            <div class="empty-title">Esta publicación está en revisión</div>
+            <div class="empty-sub">No se puede editar mientras la revisamos. Te avisamos en cuanto quede publicada.</div>
+          </div>
+        </div>
+
+        <!-- Variante (doc, no es parte del flujo): RF-18, la publicación fue
+             bloqueada. Aquí SÍ va `.error-icon`, y es la misma distinción que
+             hace la variante de vendida al elegir el check en vez del error:
+             vendida es un estado terminal que salió bien, esto es un rechazo.
+
+             El copy NO dice cuál regla se rompió. Hoy no hay dónde guardar ese
+             motivo —`listings` no tiene columna para eso y RF-17 no existe—,
+             así que prometerlo en el frame sería escribir copy que el código no
+             puede llenar. -->
+        <div style="margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+          <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:9px;">
+            Variante (doc, no es parte del flujo): se abrió una publicación bloqueada
+          </div>
+          <div class="empty-state">
+            <div class="empty-icon error-icon">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6"/><path d="M9 9l6 6"/></svg>
+            </div>
+            <div class="empty-title">Esta publicación no fue aprobada</div>
+            <div class="empty-sub">No cumple con las reglas de la comunidad, así que no se publicó. Puedes eliminarla desde Mis publicaciones.</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -4692,6 +4782,55 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--ink-soft)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
           </div>
 
+          <!-- RF-18: los dos estados de moderación. NINGÚN TONO NUEVO, y es
+               una decisión, no pereza: el comentario de `.mine-state` descarta
+               `--gold` como color de estado, y la paleta se queda en los tres
+               tratamientos que ya existen.
+
+               · "En revisión" hereda el default `--ink-soft`, que ese mismo
+                 comentario declara que significa "apagado = no está en el
+                 catálogo" — exactamente el caso. Comparte tono con "Pausada",
+                 y se acepta: las dos dicen lo mismo desde el catálogo, y lo
+                 que las distingue (quién puede sacarla de ahí) se lee en la
+                 palabra, no en el color.
+               · "Bloqueada" usa `.warn` (--brick), que hoy lleva "Sin fotos" y
+                 ya significa "requiere tu atención". Es lo más cerca que tiene
+                 el sistema de "algo salió mal con esto". -->
+          <div class="mine-row">
+            <div class="mine-thumb" style="background:var(--paper);">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.6"><path d="M3 7h18M3 12h18M3 17h10"/></svg>
+            </div>
+            <div class="mine-info">
+              <div class="mine-price">$190</div>
+              <div class="mine-title">Cuadernos profesionales, paquete de 5</div>
+              <div class="mine-meta">
+                <span class="mine-state">En revisión</span>
+                <span class="sep">·</span>
+                <span>hace 3 min</span>
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--ink-soft)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+
+          <!-- Sin contador de vistas, y no es un olvido: una bloqueada nunca
+               estuvo en el catálogo, así que no tiene vistas que mostrar. Poner
+               "0 vistas" leería como "nadie la vio" en vez de "nadie pudo". -->
+          <div class="mine-row">
+            <div class="mine-thumb" style="background:var(--brick-tint);">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8l8 8"/></svg>
+            </div>
+            <div class="mine-info">
+              <div class="mine-price">$540</div>
+              <div class="mine-title">Bocina portátil</div>
+              <div class="mine-meta">
+                <span class="mine-state warn">Bloqueada</span>
+                <span class="sep">·</span>
+                <span>hace 1d</span>
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--ink-soft)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+
           <div class="mine-row">
             <div class="mine-thumb" style="background:var(--slate-tint);">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="1.5"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
@@ -4897,6 +5036,85 @@
           <div class="empty-sub">"Cálculo de Larson, 9a edición" ya es visible para estudiantes de Tec de Monterrey.</div>
           <div class="empty-actions">
             <button class="primary-btn" style="margin-top:0;">Ver mi publicación</button>
+            <div class="ghost-btn">Volver al inicio</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RF-18. Las DOS pantallas que reemplazan a "Publicación creada" cuando la
+       moderación no aprueba de una. El cliente ESPERA el veredicto (la llamada
+       a la Edge Function es await), así que al terminar de publicar se navega a
+       UNA de las tres y no hay estados que cambien en vivo: aprobada → el frame
+       de arriba, `pendiente` → "en revisión", `bloqueada` → "no aprobada". -->
+
+  <div class="phone-block" data-cat="publicar">
+    <div class="phone-label">Publicación en revisión</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <!-- ÍCONO NEUTRO, no `.success` ni `.error-icon`, y es deliberado: aquí
+             no pasó nada bueno ni nada malo todavía. Es la misma convención que
+             el comentario de "Notificaciones vacío" ya fija para este ícono
+             (--paper + borde --line, trazo --ink-soft): informa un estado, no
+             celebra ni alerta. Con `.success` diría que ya está publicada, que
+             es justo lo que NO pasó. -->
+        <div class="empty-state" style="padding-top:90px;">
+          <div class="empty-icon">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          </div>
+          <div class="empty-title">Tu publicación está en revisión</div>
+          <div class="empty-sub">"Cálculo de Larson, 9a edición" se publicará en cuanto la revisemos. Suele tomar unas horas.</div>
+          <div class="empty-actions">
+            <button class="primary-btn" style="margin-top:0;">Ver mis publicaciones</button>
+            <div class="ghost-btn">Volver al inicio</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="publicar">
+    <div class="phone-label">Publicación no aprobada</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <!-- AQUÍ SÍ `.error-icon` (--brick-tint): esto es un rechazo, no un
+             estado de espera.
+
+             OJO CON LOS CTA: la tentación es ofrecer "Editar publicación" para
+             que el usuario la arregle, y NO SE PUEDE — `listings_update_own`
+             excluye `bloqueada` de su `using` (20260917000459), así que ese
+             botón afectaría 0 filas y fallaría en silencio. Sobre una bloqueada
+             al dueño solo le quedan verla y eliminarla. Por eso el CTA lleva a
+             "Mis publicaciones", donde la hoja de acciones ya tiene el borrado
+             con su confirmación, en vez de estrenar aquí una acción destructiva
+             en una pantalla que ya trae malas noticias. -->
+        <div class="empty-state" style="padding-top:90px;">
+          <div class="empty-icon error-icon">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6"/><path d="M9 9l6 6"/></svg>
+          </div>
+          <div class="empty-title">Tu publicación no fue aprobada</div>
+          <div class="empty-sub">"Cálculo de Larson, 9a edición" no cumple con las reglas de la comunidad, así que no se publicó.</div>
+          <div class="empty-actions">
+            <button class="primary-btn" style="margin-top:0;">Ver mis publicaciones</button>
             <div class="ghost-btn">Volver al inicio</div>
           </div>
         </div>

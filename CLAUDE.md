@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 54 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 58 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -1096,7 +1096,7 @@ pasar por `pendiente` (`publicar-fotos.md`, deuda ya documentada).
 
 ---
 
-## 4. Inventario completo de pantallas (56)
+## 4. Inventario completo de pantallas (58)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -1142,19 +1142,41 @@ transitorio, no una pantalla en la que la app se quede**, igual que
 `.photo-add.is-busy` dentro de "Publicar (procesando fotos)"; se cuenta porque
 es un `phone-block` propio y el filtro del prototipo lo cuenta.
 
-### Publicar (7)
+### Publicar (9)
 Publicar · Publicar (procesando fotos) · Publicar (subiendo imágenes) ·
 Publicar (error de subida) · Publicar (falta teléfono) · Editar publicación ·
-Publicación creada
+Publicación creada · **Publicación en revisión** · **Publicación no aprobada**
 
 "Publicar (falta teléfono)" es el quinto estado del MISMO componente, y el único
 que se ve ANTES de tocar nada: el campo de WhatsApp aparece solo mientras el
 perfil no tenga número guardado (RF-13), y en cuanto se guarda la pantalla
 vuelve a ser "Publicar" tal cual. Ver `publicar-fotos.md`.
 
+Las dos últimas llegaron con RF-18 y son **hermanas de "Publicación creada", no
+estados suyos**: el cliente ESPERA el veredicto de moderación, así que al
+terminar de publicar se navega a UNA de las tres según el estado que devuelve la
+Edge Function —aprobada, `pendiente`, `bloqueada`— y ninguna cambia en vivo. Son
+frames y no una variante etiquetada porque el usuario se queda en ellas y las lee
+con calma; la excepción de los toasts (§0 regla 4) no aplica.
+
+**"Publicación no aprobada" NO ofrece "Editar publicación", y es un límite de la
+base, no una elección de copy:** `listings_update_own` excluye `bloqueada` de su
+`using`, o sea que ese botón afectaría 0 filas y fallaría sin lanzar. Sobre una
+bloqueada al dueño solo le quedan verla y eliminarla.
+
 ### Cuenta (8)
 Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío ·
 Mis publicaciones · Mis publicaciones vacío · Mis publicaciones (acciones)
+
+**RF-18 no agregó ninguna aquí, y el avatar rechazado es el caso que parece que
+debería.** No lleva frame porque su estado resultante YA existe: el enforcement
+de avatares es binario —solo `VERY_LIKELY` borra— y borrar significa objeto
+fuera y `foto_url` en null, o sea el fallback a iniciales que `Avatar` ya pinta.
+No hay estado intermedio que dibujar porque no hay dónde guardarlo (§3).
+**Lo que sí queda abierto es el aviso:** el borrado ocurre después, por el
+trigger de Storage, cuando el usuario ya vio su foto puesta; hoy se entera
+porque en algún momento vuelve a ver sus iniciales. Cerrarlo pide decidir por
+dónde avisa, y si el aviso es persistente exige frame primero (§0 regla 4).
 
 ### Confianza (4)
 Reportar publicación · Calificar · ¿A quién le vendiste? ·
@@ -1239,7 +1261,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 54 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 58 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
