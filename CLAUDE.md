@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 58 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 59 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -1096,7 +1096,7 @@ pasar por `pendiente` (`publicar-fotos.md`, deuda ya documentada).
 
 ---
 
-## 4. Inventario completo de pantallas (58)
+## 4. Inventario completo de pantallas (59)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -1142,10 +1142,11 @@ transitorio, no una pantalla en la que la app se quede**, igual que
 `.photo-add.is-busy` dentro de "Publicar (procesando fotos)"; se cuenta porque
 es un `phone-block` propio y el filtro del prototipo lo cuenta.
 
-### Publicar (9)
+### Publicar (10)
 Publicar · Publicar (procesando fotos) · Publicar (subiendo imágenes) ·
-Publicar (error de subida) · Publicar (falta teléfono) · Editar publicación ·
-Publicación creada · **Publicación en revisión** · **Publicación no aprobada**
+**Publicar (revisando)** · Publicar (error de subida) ·
+Publicar (falta teléfono) · Editar publicación · Publicación creada ·
+Publicación en revisión · Publicación no aprobada
 
 "Publicar (falta teléfono)" es el quinto estado del MISMO componente, y el único
 que se ve ANTES de tocar nada: el campo de WhatsApp aparece solo mientras el
@@ -1163,6 +1164,24 @@ con calma; la excepción de los toasts (§0 regla 4) no aplica.
 base, no una elección de copy:** `listings_update_own` excluye `bloqueada` de su
 `using`, o sea que ese botón afectaría 0 filas y fallaría sin lanzar. Sobre una
 bloqueada al dueño solo le quedan verla y eliminarla.
+
+**"Publicar (revisando)" es un CUARTO estado del MISMO componente de "Publicar
+(subiendo imágenes)", decidido después y por separado** —no en la misma tarea
+que las dos pantallas de arriba, porque hasta entonces no se había resuelto la
+concurrencia de la Edge Function—. Con el cliente esperando el veredicto (RF-18),
+para cuando se llama a moderación la subida a Storage YA TERMINÓ, así que dejar
+el botón en "Subiendo imágenes" sería literalmente falso — el tipo de etiqueta
+que un usuario reporta como "se quedó pegado". Mismo `.primary-btn.is-busy`,
+mismo `.splash-dots`, sin CSS nuevo: solo cambia el texto a "Revisando tu
+publicación…", elegido para compartir vocabulario con "Publicación en revisión"
+(la pantalla a la que puede llegar después) en vez de con un verbo distinto como
+"analizando" o "verificando".
+
+**La llamada a moderación puede fallar por su cuenta (4xx/timeout), y ESO no
+necesita frame nuevo.** Reusa el patrón visual ya existente de "Publicar (error
+de subida)" —que ya representaba una FAMILIA de avisos con textos distintos
+según la causa (tamaño, formato) antes de que existiera RF-18—, con un tercer
+motivo determinista y su propio copy (`publicar-fotos.md`), no un cuarto frame.
 
 ### Cuenta (8)
 Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío ·
@@ -1261,7 +1280,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 58 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 59 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
