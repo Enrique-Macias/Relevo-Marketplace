@@ -84,7 +84,11 @@ export default {
     const muertos: string[] = [];
     let enviados = 0;
 
-    for (const lote of lotes(tokens, LOTE)) {
+    // El genérico va explícito porque `tokens` viene de `ctx.supabaseAdmin`,
+    // que no está tipado (ver `supabase/functions/shims.d.ts`): sin esto,
+    // `lotes<T>` infiere `T = unknown` a partir de un `any` y `npm run
+    // check:functions` no puede mirar adentro del lote. Sin efecto en runtime.
+    for (const lote of lotes<{ token: string }>(tokens, LOTE)) {
       const mensajes = lote.map((t) => ({
         to: t.token,
         title: notif.titulo,

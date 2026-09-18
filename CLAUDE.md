@@ -1370,7 +1370,7 @@ Toast de éxito · Toast de error · Loading / skeleton
   visible con solo "que compile" — se necesitó revisión deliberada.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son CUATRO pasos, no uno:
+  `postgres`/superusuario. Son CINCO pasos, no uno:
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
      **`psql` puede no estar instalado en la máquina** (no lo está en la de
      desarrollo actual, aunque este comando lo dé por supuesto). El contenedor
@@ -1394,9 +1394,9 @@ Toast de éxito · Toast de error · Loading / skeleton
      redundantes** — uno vigila el cableado y el otro la lógica, y §3 explica
      por qué borrar cualquiera deja un hueco medido.
   4. `node scripts/probe-moderacion.mjs` — los umbrales de RF-18 (la función de
-     decisión y la lista de palabras). **Es el único de los cuatro que NO
-     necesita el stack local**: la pieza que prueba es pura a propósito, sin
-     red ni Supabase, y por eso corre en menos de un segundo.
+     decisión y la lista de palabras). **No necesita el stack local** (el paso 5
+     tampoco): la pieza que prueba es pura a propósito, sin red ni Supabase, y
+     por eso corre en menos de un segundo.
      Y es el único que importa la implementación **REAL** en vez de
      transcribirla: `supabase/functions/moderar-contenido/{decision,palabras-prohibidas}.ts`
      no importan nada, así que Node los carga directo (type stripping, v22.6+).
@@ -1404,11 +1404,16 @@ Toast de éxito · Toast de error · Loading / skeleton
      eso aquel necesita además un tripwire sobre el fuente y este no. Si alguien
      le mete un import de Supabase a `decision.ts`, este script deja de arrancar
      — esa es la señal, no un inconveniente.
-     **Ojo:** esos dos módulos no los cubre `npx tsc --noEmit` (`tsconfig.json`
-     excluye `supabase/functions` porque es Deno), así que su red son estas
-     aserciones y no el compilador.
+  5. `npm run check:functions` — los TIPOS de `supabase/functions`, que el
+     `npx tsc --noEmit` de la app **no mira**: el `tsconfig.json` de la raíz
+     excluye esa carpeta porque es Deno, y eso la dejaba sin ningún compilador
+     (el caso general, con su medición, está en §9). No sustituye al paso 4 ni
+     al revés: el compilador mira formas, el probe mira decisiones —
+     `decidirListing({…todo limpio}, 'pausada')` typechea perfecto y devolver
+     `'activa'` sería el bug—. Tampoco necesita el stack local.
   Los probes 2 y 3 necesitan el stack local arriba y limpian lo suyo en un
   `finally`; si una corrida muere de golpe, `supabase db reset` borra la basura.
+  Los pasos 4 y 5 no necesitan nada: ni stack, ni red, ni credenciales.
 - **Para bugs de UI que dependen de interacción real (teclado, gestos, touch),
   el simulador headless de Claude Code no siempre puede confirmarlos** — no
   dispara `keyboardDidShow` ni simula touch. Cuando reporte "no pude
@@ -2004,6 +2009,42 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   corrección. **No asumas que un hook que no marca la regla está libre de
   esto** — pruébalo aislado (un archivo con variantes mínimas, linteado y
   borrado) antes de concluir que hay una diferencia real de fondo.
+
+- **Un `exclude` de `tsconfig.json` no manda el código a otro compilador: lo
+  manda a NINGUNO, y no avisa nunca.** `supabase/functions` está excluida del
+  tsconfig de la app por una razón correcta —es código Deno con specifiers
+  `npm:` que el tsconfig de Expo no resuelve, y sin el exclude `npx tsc
+  --noEmit` falla con 4 errores que no son errores—, y de ahí es facilísimo
+  concluir que "Deno ya la typecheará". **No la typechea nadie**: `deno` no está
+  instalado en esta máquina, y `supabase functions deploy` empaqueta sin
+  verificar tipos. Medido: al correr `tsc` a mano sobre esa carpeta por primera
+  vez apareció un error REAL y preexistente (`env.ts`, un predicado `n is
+  string` no asignable al tipo de su parámetro) que llevaba ahí desde que se
+  escribió el archivo. **Fix aplicado:** `supabase/functions/tsconfig.json` +
+  `shims.d.ts`, corridos con `npm run check:functions`. El alcance es honesto y
+  está escrito en `shims.d.ts`: caza typos, nombres inexistentes y argumentos
+  que no cuadran; **no** verifica el contrato de `@supabase/server`, que se
+  declara sin tipar a propósito —transcribir las firmas de un paquete que no
+  está en disco es el mismo patrón de dos-copias-que-se-desincronizan que este
+  repo ya documenta en `probe-venta.mjs`, y una firma transcrita mal daría luz
+  verde con apariencia de verificado—. **La regla general:** cada vez que
+  excluyas una carpeta de un compilador o un linter, la pregunta no es "¿por qué
+  la excluyo?" sino "¿quién la mira ahora?". Si la respuesta es "otra
+  herramienta", confirma que esa herramienta existe en la máquina y que alguien
+  la corre.
+
+- **Un `grep` sobre salida con colores ANSI puede no machear aunque el texto
+  esté ahí — y el falso negativo se lee como "el control pasó".** `tsc` imprime
+  `error TS2677` con códigos de escape EN MEDIO (`\e[91merror\e[0m\e[90m TS…`),
+  así que `grep -E "error TS"` no encuentra nada sobre una salida que sí trae el
+  error. Pasó al correr el control negativo de `check:functions`: el control se
+  vio verde y la conclusión natural —"el chequeo nuevo no sirve"— era justo la
+  contraria de la verdad. Es la misma familia que el comodín de búsqueda
+  reemplazado por un espacio, unos puntos más arriba: el patrón seguía pareciendo
+  razonable y el resultado seguía siendo mentira. **Cómo evitarlo:** cuando un
+  control negativo dé verde, mira la salida COMPLETA antes de concluir nada — o
+  grepea una sola palabra (`error`, `FALLÓ`) en vez de una frase que los códigos
+  puedan partir.
 
 - **Los `paths:` de `.claude/rules/` toleran los paréntesis de los route groups
   hoy, pero picomatch crudo NO — y si eso cambia, las reglas dejan de cargar en

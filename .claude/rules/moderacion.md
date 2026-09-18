@@ -30,7 +30,10 @@ paths:
 > IMPLEMENTACIÓN de esa spec: cómo se dispara, quién autoriza, cómo se cablea el
 > cliente. Si algo de aquí contradice CLAUDE.md §3, gana CLAUDE.md §3.
 
-## Estado al migrar esto: qué existe en código y qué no
+## Estado: qué existe en código y qué no
+
+> Actualizado 2026-09-18. Las filas que dicen **Hecho** se midieron contra el
+> repo, no se recuerdan.
 
 | Pieza | Estado | Dónde |
 |---|---|---|
@@ -39,7 +42,11 @@ paths:
 | Resolución de los dos secretos (`Deno.env.get`, fail-fast) | **Hecho** | `supabase/functions/moderar-contenido/env.ts` |
 | `listings` en la publicación de Realtime | **Hecho** | `supabase/migrations/20260917000460_listings_realtime.sql` |
 | Los dos frames de espera/rechazo de Publicar + los dos estados de Mis publicaciones/Editar/Detalle | **Hecho** | `design/relevo-app.html`, ver CLAUDE.md §4 |
-| El cuerpo real de la Edge Function (llama a Vision, a GPT, decide, responde) | **Pendiente** | `supabase/functions/moderar-contenido/index.ts` — no existe |
+| Tabla de auditoría del veredicto (RLS, cero policies, cero grants) | **Hecho** | `supabase/migrations/20260918000461_listing_moderacion.sql` + T12 |
+| Entrada de la función en `config.toml` (`verify_jwt = false`) | **Hecho** | `supabase/config.toml` |
+| Esqueleto de la Edge Function: ruteo por `authMode`, ownership, guard de promoción, escritura de estado + auditoría | **Hecho** | `supabase/functions/moderar-contenido/index.ts` |
+| Typecheck propio de la carpeta de funciones | **Hecho** | `npm run check:functions` |
+| La EVALUACIÓN real (Vision, GPT, descarga de fotos, particionado) | **Pendiente** | `index.ts` — `evaluarListing()` y `moderarAvatar()` son stubs que fallan seguro |
 | Los dos triggers de Storage | **Pendiente** | sin migración todavía |
 | El rework de `publicar.ts` (nace `pendiente`, ya no activa él mismo) | **Pendiente** | — |
 | El `with_check` de `listings_insert_own` forzando `pendiente` | **Pendiente** | deuda ya documentada en `publicar-fotos.md` |
@@ -300,6 +307,25 @@ Queda entonces: **una función, `verify_jwt = false`,
 `auth: ['secret', 'user']`**, y la rama de permisos decidida por
 `ctx.authMode`.
 
+**El import va PINEADO a `npm:@supabase/server@1.7.0`, y `send-push` NO lo
+está** (`send-push/index.ts:22` importa `npm:@supabase/server` a secas, así que
+Deno resuelve la última versión al desplegar). No es simetría rota por descuido:
+todo el reparto de permisos de esta función descansa en dos propiedades del
+contrato de ese paquete —que `auth` acepte un arreglo y que `ctx.authMode`
+exista—, las dos verificadas leyendo los `.d.mts` publicados, y un major futuro
+podría cambiarlas sin que nada en el repo lo note. `send-push` solo usa
+`auth: 'secret'`, que es la forma más vieja y estable del API, así que su
+exposición es menor.
+
+**Pendiente, con disparador:** pinear también el de `send-push`. **Revisar
+cuando:** se toque `send-push` por cualquier motivo, o salga un major de
+`@supabase/server`. **Fix:** agregarle `@<version>` al specifier, en un cambio
+propio — no se metió aquí para no mezclar un cambio a la función de push dentro
+de una tarea de moderación. Ojo con el efecto colateral: `supabase/functions/shims.d.ts`
+declara los DOS specifiers (con y sin versión) porque para TypeScript son
+módulos distintos; al pinear `send-push`, el `declare module
+'npm:@supabase/server'` sin versión se queda sin consumidor y hay que borrarlo.
+
 ---
 
 ## 3. Concurrencia dentro de la función — NI `Promise.all` de N fotos, NI secuencial
@@ -309,7 +335,8 @@ latencia de la función pasa a estar en el camino crítico de publicar, así que
 importa de verdad. La pregunta no es "¿paralelo o secuencial?" — es que
 ninguna de las dos es la forma correcta de llamar a Vision.
 
-**Las fotos van en UNA sola llamada a Vision, no en N.** El endpoint
+**Las fotos van en UNA sola llamada a Vision en el caso normal, no en N — pero
+la llamada se PARTE por tamaño acumulado, y eso no es opcional.** El endpoint
 `images:annotate` de Vision acepta un ARRAY de `AnnotateImageRequest` en el
 mismo POST — una entrada por foto, cada una pidiendo `SAFE_SEARCH_DETECTION` +
 `TEXT_DETECTION` (el OCR) a la vez — y devuelve un array de resultados, uno
@@ -319,6 +346,25 @@ optimización propia, es el uso documentado del endpoint. `Promise.all` de 5
 `fetch` sueltos pagaría 5 round-trips y 5 veces el overhead de conexión de un
 worker de Deno por nada — el batch da el mismo resultado en una sola ida y
 vuelta.
+
+**La corrección** (esta sección decía "UNA sola llamada" a secas, y era
+imprecisa): Vision documenta TRES topes en `docs.cloud.google.com/vision/quotas`
+—*"Images per `images:annotate` request: 16"*, *"Image file size: 20 MB"*,
+*"JSON request object size: 10 MB"*— y **el que muerde es el tercero**. base64
+infla ~4/3, así que el presupuesto real de bytes crudos por request es ~7.4 MB,
+mientras que el bucket permite 5 MiB por foto y hasta 5 fotos: el peor caso son
+25 MiB crudos ≈ 33 MB de JSON, **3.3× por encima del límite**.
+
+En la práctica `normalizar()` (`foto-picker.ts`) deja cada foto en cientos de
+KB y el caso normal cabe holgado en un solo request. Pero la función también va
+a ver fotos que nunca pasaron por ahí: subidas directas al Storage API (deuda
+documentada en `publicar-fotos.md`), Studio, y filas viejas. De ahí el
+particionado: acumular hasta **6 MB de bytes crudos** (headroom bajo los ~7.4)
+o **16 imágenes**, lo que ocurra primero. Una foto que por sí sola pase de 6 MB
+va en su propio lote; si además supera el tope de 20 MB por imagen, se trata
+como eje no evaluable (§6). O sea que el particionado casi nunca se activa —
+pero sin él, una publicación con fotos pesadas no falla "un poco": el request
+entero lo rechaza Vision.
 
 **El texto (GPT) corre EN PARALELO con ese batch, no después.** No hay
 dependencia entre los dos: GPT evalúa título+descripción, que el cliente ya
@@ -374,12 +420,35 @@ contra Deno, porque `deno` no está instalado ni en el host de desarrollo ni
 en el contenedor del edge runtime local. La verificación real espera a
 `supabase functions serve`.
 
-`index.ts` en sí **sigue sin existir**. Archivos que le faltan a Ola 1:
-`supabase/functions/moderar-contenido/index.ts` (el cuerpo real: llama a
-Vision, a GPT, arma los `Ejes`, llama a `decidirListing()`, responde) y la
-entrada nueva en `config.toml` (`[functions.moderar-contenido]`,
-`verify_jwt = false`). Ojo: `tsconfig.json` excluye `supabase/functions`, así
-que `npx tsc --noEmit` no cubre nada de esta carpeta.
+**CONSECUENCIA OPERATIVA DE QUE `resolverConfig()` CORRA A NIVEL DE MÓDULO, y
+es la que muerde primero al ir a probar:** la función **no arranca** sin los dos
+valores puestos. No es que falle la moderación — es que el worker ni sube, así
+que los casos de verificación 1-3 (las cinco llaves, ownership, "el trigger no
+promueve"), que no tocan Vision ni OpenAI para nada, tampoco se pueden correr.
+Para probar la autorización basta con poner valores CUALQUIERA en
+`supabase/functions/.env`; no hace falta una credencial real todavía. Está así
+a propósito y no se va a "arreglar" haciendo la lectura perezosa: el docblock de
+`resolverConfig()` promete fallar al arrancar y no a media petición, que es lo
+que evita reventar a la mitad de moderar una publicación real.
+
+`index.ts` **ya existe, como ESQUELETO** (2026-09-18). Tiene completos el
+ruteo por `ctx.authMode`, el chequeo de ownership del camino `'user'`, el guard
+de `esPromocion()`, la escritura del estado con su `if` anti-`set_updated_at` y
+la fila de auditoría en `listing_moderacion`. Lo que le falta es la EVALUACIÓN:
+`evaluarListing()` y `moderarAvatar()` son stubs. **Los stubs fallan seguro en
+la dirección de cada camino, y las dos direcciones son opuestas a propósito:**
+una publicación sin evaluar reporta los cuatro ejes como `'revisar'` y termina
+en `pendiente` (inútil pero nunca peligrosa — un stub que devolviera `'limpio'`
+publicaría sin mirar); un avatar sin evaluar se CONSERVA, porque
+`decidirAvatar()` solo borra con `bloquear` y un stub que borrara sería
+destructivo e irreversible.
+
+Ya no aplica la nota de que `tsconfig.json` deja esta carpeta sin cubrir:
+**`npm run check:functions`** la typechea desde 2026-09-18, con su propia config
+de Deno (`supabase/functions/tsconfig.json` + `shims.d.ts`). En su primera
+corrida encontró un error de tipos real y preexistente en `env.ts` — el caso
+general quedó en CLAUDE.md §9. Alcance honesto: no verifica el contrato de
+`@supabase/server`, que el shim declara sin tipar a propósito.
 
 ---
 

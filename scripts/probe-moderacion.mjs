@@ -30,12 +30,15 @@
 //    agregar `"type": "module"` al package.json de la RAÍZ — NO lo hagas: ese
 //    package.json es el de la app de Expo y Metro, y el aviso solo dice que
 //    reparsear cuesta unos milisegundos en un script que corre en menos de uno.
-//  · Estos dos módulos NO los cubre `npx tsc --noEmit`: `tsconfig.json` excluye
-//    `supabase/functions` porque esa carpeta es Deno (ver
-//    `notificaciones-push.md`, que además dice que lo correcto si algún día se
-//    quiere typechear es darle su propia config de Deno, no devolverla al
-//    tsconfig de React Native). O sea que la red de estos archivos son estas
-//    42 aserciones, no el compilador.
+//  · Estos dos módulos NO los cubre `npx tsc --noEmit` de la app:
+//    `tsconfig.json` de la raíz excluye `supabase/functions` porque esa carpeta
+//    es Deno (ver `notificaciones-push.md`). **Desde 2026-09-18 sí los cubre
+//    `npm run check:functions`**, que es la config propia que aquella nota
+//    decía que había que darles — y que en su primera corrida encontró un error
+//    de tipos real y preexistente en `env.ts`. Los dos chequeos son
+//    complementarios, no redundantes: el compilador mira formas, este script
+//    mira DECISIONES. `decidirListing({...todo limpio}, 'pausada')` typechea
+//    perfecto y devolver `'activa'` sería el bug que aquí se caza.
 // ===========================================================================
 
 import {
@@ -45,6 +48,7 @@ import {
   nivelDeTexto,
   nivelDeLista,
   peor,
+  esPromocion,
 } from '../supabase/functions/moderar-contenido/decision.ts';
 import {
   coincidencias,
@@ -376,6 +380,87 @@ igual('peor(limpio, bloquear) = bloquear', peor('limpio', 'bloquear'), 'bloquear
 igual('peor(bloquear, limpio) = bloquear', peor('bloquear', 'limpio'), 'bloquear');
 igual('peor(revisar, limpio) = revisar', peor('revisar', 'limpio'), 'revisar');
 igual('peor() sin argumentos = limpio', peor(), 'limpio');
+
+// ---------------------------------------------------------------------------
+console.log('\n== `esPromocion()`: el guard de "el trigger solo escala" ==');
+
+// El guard lo aplica `index.ts` cuando `ctx.authMode === 'secret'`, pero la
+// lógica vive aquí para que tenga cobertura: `deno` no está instalado, así que
+// nada de `index.ts` es verificable hoy (ver el docblock de `esPromocion`).
+
+igual('pendiente → activa SÍ es promoción', esPromocion('pendiente', 'activa'), true);
+igual('activa → pendiente NO lo es', esPromocion('activa', 'pendiente'), false);
+igual('activa → activa (no-op) NO lo es', esPromocion('activa', 'activa'), false);
+igual('bloqueada → activa NO lo es', esPromocion('bloqueada', 'activa'), false);
+
+// LA ASERCIÓN QUE DE VERDAD IMPORTA, y es exhaustiva a propósito: recorre TODO
+// el producto cartesiano de ejes × estados y confirma que el único cambio de
+// estado que `decidirListing()` puede producir y que vuelve la publicación más
+// pública es el par que `esPromocion()` reconoce.
+//
+// Sin esto, `esPromocion` sería una lista de pares escrita a mano que se
+// desincroniza en silencio: alguien agrega una promoción nueva a
+// `decidirListing` (digamos `pausada → activa` "para que el vendedor no tenga
+// que reactivar a mano"), el guard no la reconoce, y el TRIGGER pasa a poder
+// publicar. Es justo el fallo que el guard existe para impedir, y las cuatro
+// aserciones de arriba lo dejarían pasar enteras.
+//
+// TRES CONTROLES NEGATIVOS, corridos uno a la vez — y el tercero es el que
+// justifica que esta aserción exista, porque es el único que NADIE MÁS caza:
+//
+//   A. `esPromocion()` deja de reconocer el par (`return false`)
+//        → cae aquí Y en "pendiente → activa SÍ es promoción"
+//   B. `decidirListing()` gana `pausada + limpio → activa`
+//        → cae aquí Y en el caso numerado 9
+//   C. `decidirListing()` devuelve `activa` en la rama `revisar` de una
+//      publicación `bloqueada`
+//        → **cae SOLO aquí**
+//
+// El C destapó un hueco real de la cobertura numerada, no un caso inventado:
+// el docblock de `decidirListing` afirma que «`bloqueada → activa` no ocurre
+// por ningún camino», y los 13 casos numerados solo ejercitan `bloqueada` con
+// veredicto `limpio` (el caso 8). La rama `revisar` de ese mismo estado no la
+// probaba nadie. Es la lección de (c) en T21 otra vez (CLAUDE.md §3): una
+// invariante que se da por probada porque "ya hay un caso de eso".
+const NIVELES = ['limpio', 'revisar', 'bloquear'];
+const ESTADOS = ['activa', 'pausada', 'vendida', 'pendiente', 'bloqueada'];
+// Qué tan pública es cada una. Solo se comparan entre sí; los números no
+// significan nada fuera de este orden.
+const VISIBILIDAD = { bloqueada: 0, pendiente: 1, pausada: 2, vendida: 3, activa: 4 };
+
+const promocionesNoReconocidas = [];
+for (const vision of NIVELES)
+  for (const gptTexto of NIVELES)
+    for (const listaTecleada of NIVELES)
+      for (const listaOcr of NIVELES)
+        for (const estado of ESTADOS) {
+          const nuevo = decidirListing(
+            { vision, gptTexto, listaTecleada, listaOcr },
+            estado
+          );
+          const subeVisibilidad = VISIBILIDAD[nuevo] > VISIBILIDAD[estado];
+          if (subeVisibilidad !== esPromocion(estado, nuevo)) {
+            promocionesNoReconocidas.push(`${estado} → ${nuevo}`);
+          }
+        }
+
+ok(
+  'esPromocion() reconoce TODO cambio que suba la visibilidad (405 combinaciones)',
+  promocionesNoReconocidas.length === 0,
+  promocionesNoReconocidas.length
+    ? `sin reconocer: ${JSON.stringify([...new Set(promocionesNoReconocidas)])}`
+    : '0 discrepancias'
+);
+
+// El control de la anterior: que el barrido de verdad ENCUENTRE la promoción
+// que sí existe. Sin esto, un `decidirListing` que nunca promoviera —o un
+// barrido mal escrito que no visitara `pendiente`— daría verde arriba por
+// vacuidad, que es la lección de `:C` en T11b (CLAUDE.md §3).
+ok(
+  'el barrido sí visita la promoción real (pendiente + limpio → activa)',
+  decidirListing(LIMPIO, 'pendiente') === 'activa' &&
+    VISIBILIDAD['activa'] > VISIBILIDAD['pendiente']
+);
 
 // ---------------------------------------------------------------------------
 console.log('');

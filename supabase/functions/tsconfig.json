@@ -1,0 +1,26 @@
+{
+  "//": [
+    "Config PROPIA de las Edge Functions (Deno), separada de la de la app.",
+    "`tsconfig.json` de la raíz excluye esta carpeta a propósito: es código",
+    "Deno con specifiers `npm:` que el tsconfig de Expo no resuelve. Devolverla",
+    "allá rompería `npx tsc --noEmit` de la app con errores que no son errores",
+    "(ver `.claude/rules/notificaciones-push.md`). Esto es lo que esa nota decía",
+    "que había que hacer si algún día se quería typechear.",
+    "Se corre con `npm run check:functions`. Su alcance —y por qué el contrato",
+    "de @supabase/server queda deliberadamente sin tipar— está en `shims.d.ts`."
+  ],
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022", "dom"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "types": []
+  },
+  "include": ["**/*.ts"]
+}

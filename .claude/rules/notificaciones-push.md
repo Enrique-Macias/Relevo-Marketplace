@@ -111,6 +111,16 @@ Componentes nuevos: `NotifRow`, `SkeletonNotifRows`, `IconMail`, y dos roles de
     errores que no son errores. Si alguien lo quita "para typechear todo", lo
     correcto es darle a esa carpeta su propia config de Deno, no devolverla al
     tsconfig de React Native.
+    **Hecho el 2026-09-18** (RF-18): `supabase/functions/tsconfig.json` +
+    `shims.d.ts`, que se corren con `npm run check:functions`. Vale saber por
+    qué tardó y qué costó: mientras no existió, esa carpeta no la miraba NINGÚN
+    compilador —el exclude no la mandaba a Deno, `deno` no está instalado— y en
+    la primera corrida apareció un error de tipos real y preexistente en
+    `moderar-contenido/env.ts`. El caso general quedó en CLAUDE.md §9. Lo único
+    que este archivo tocó de `send-push` es una anotación de genérico en la
+    llamada a `lotes()`, sin efecto en runtime: el shim deja `ctx` sin tipar a
+    propósito, y TypeScript infiere `T = unknown` (no `any`) cuando un genérico
+    `T[]` recibe un `any`.
   - Probado de punta a punta en local: baja de precio → fila con el copy exacto
     del diseño → webhook (HTTP 200) → la función llamó a Expo, recibió el ticket
     de error del token falso y **borró ese token** (`limpiados: 1`). Lo único que

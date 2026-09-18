@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "expo": {
     "autolinking": {
-      "exclude": ["expo-notifications"]
+      "exclude": [
+        "expo-notifications"
+      ]
     }
   },
   "dependencies": {
@@ -60,7 +62,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "gen:types": "supabase gen types typescript --linked --schema public > src/lib/database.types.ts"
+    "gen:types": "supabase gen types typescript --linked --schema public > src/lib/database.types.ts",
+    "check:functions": "tsc --noEmit -p supabase/functions/tsconfig.json"
   },
   "private": true
 }

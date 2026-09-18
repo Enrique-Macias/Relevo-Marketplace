@@ -243,6 +243,39 @@ export function decidirListing(
   return estadoActual === 'pendiente' ? 'activa' : estadoActual;
 }
 
+/**
+ * ¿Este cambio de estado vuelve la publicación MÁS pública de lo que era?
+ *
+ * Es el guard de la asimetría de RF-18: **el trigger de Storage solo puede
+ * ESCALAR; promover a `activa` es exclusivo de la llamada del cliente**
+ * (`.claude/rules/moderacion.md` §2). `decidirListing()` ya solo promueve desde
+ * `pendiente`, así que hoy el guard es redundante con ella — y se escribe igual,
+ * porque la diferencia es de DÓNDE vive la garantía: sin él, "el trigger no
+ * promueve" es una propiedad emergente de otra función, y cualquier cambio
+ * futuro a `decidirListing` la rompería sin que nada lo note.
+ *
+ * POR QUÉ ESTÁ AQUÍ Y NO EN `index.ts`, que es donde se usa: `deno` no está
+ * instalado en este host ni en el contenedor del edge runtime local, así que
+ * todo lo que viva en `index.ts` es hoy **inverificable**. Este módulo es puro y
+ * `scripts/probe-moderacion.mjs` lo importa de verdad desde Node. Poner aquí la
+ * lógica y dejar allá solo el cableado es lo que hace que el guard tenga
+ * cobertura el día que se escribe, no el día que alguien instale Deno.
+ *
+ * EL ÚNICO PAR QUE CALIFICA ES `pendiente → activa`, y no es una suposición:
+ * sale de leer las tres ramas de `decidirListing()`. `bloquear` siempre da
+ * `bloqueada`; `revisar` solo puede mandar `activa → pendiente`, que es lo
+ * contrario; y `limpio` devuelve el estado tal cual salvo desde `pendiente`.
+ * El probe lo verifica EXHAUSTIVAMENTE sobre todas las combinaciones de ejes y
+ * estados, para que si alguien agrega una promoción nueva a `decidirListing`
+ * esta función no se quede callada.
+ */
+export function esPromocion(
+  anterior: EstadoListing,
+  siguiente: EstadoListing
+): boolean {
+  return anterior === 'pendiente' && siguiente === 'activa';
+}
+
 // ---------------------------------------------------------------------------
 // Avatares
 // ---------------------------------------------------------------------------

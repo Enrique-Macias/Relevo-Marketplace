@@ -63,12 +63,15 @@ export function resolverConfig(): ConfigModeracion {
   const googleCloudVisionApiKey = Deno.env.get(NOMBRES.googleCloudVisionApiKey);
   const openaiApiKey = Deno.env.get(NOMBRES.openaiApiKey);
 
-  const faltantes = (
-    [
-      !googleCloudVisionApiKey && NOMBRES.googleCloudVisionApiKey,
-      !openaiApiKey && NOMBRES.openaiApiKey,
-    ] as const
-  ).filter((n): n is string => n !== false);
+  // Va como dos `if` y no como un `.filter()` sobre un arreglo de
+  // `false | string`: aquella forma no typechea —el predicado `n is string` no
+  // es asignable al tipo del parámetro, porque `false` no es un string— y el
+  // error pasó inadvertido porque esta carpeta no la mira ningún compilador
+  // (`tsconfig.json` la excluye; ver `notificaciones-push.md`). `npm run
+  // check:functions` existe justamente por eso.
+  const faltantes: string[] = [];
+  if (!googleCloudVisionApiKey) faltantes.push(NOMBRES.googleCloudVisionApiKey);
+  if (!openaiApiKey) faltantes.push(NOMBRES.openaiApiKey);
 
   if (faltantes.length > 0) {
     throw new Error(
