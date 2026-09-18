@@ -457,6 +457,26 @@ deno_version = 2
 [functions.send-push]
 verify_jwt = false
 
+# moderar-contenido — moderación pre-publicación (RF-18), con DOS llamadores:
+# el cliente al terminar de publicar, y el trigger de `storage.objects` en cada
+# foto o avatar que entra.
+#
+# `verify_jwt = false` aquí NO es por el mismo motivo que arriba, y la
+# diferencia importa. En `send-push` es porque la secret key no es JWT y la
+# verificación integrada la rechazaría. Aquí eso sigue siendo cierto para el
+# camino del trigger, pero se suma algo que esa función no tiene: el OTRO
+# llamador manda un JWT de usuario de verdad. Con `verify_jwt = true` la
+# plataforma aceptaría uno y rechazaría el otro — no hay un solo valor que
+# sirva para los dos.
+# Quien autoriza es `withSupabase({ auth: ['secret', 'user'] })` dentro de la
+# función, que prueba los dos modos de izquierda a derecha, y `ctx.authMode`
+# dice cuál pasó. Ese dato NO es informativo: es el punto de enforcement de la
+# asimetría de RF-18 — el trigger (`'secret'`) solo puede ESCALAR, el cliente
+# (`'user'`) es el único que puede promover a `activa`. Ver
+# `.claude/rules/moderacion.md` §2.
+[functions.moderar-contenido]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

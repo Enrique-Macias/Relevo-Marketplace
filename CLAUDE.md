@@ -181,14 +181,21 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 24 migraciones (`supabase/migrations/`), con RLS activo y probado en
-las 12 tablas más los DOS buckets de Storage. Este es el esquema **real**, no
+Definido en 25 migraciones (`supabase/migrations/`), con RLS activo y probado en
+las 14 tablas más los DOS buckets de Storage. Este es el esquema **real**, no
 solo la intención original.
 
-**Repo y remoto NO están a la par: 24 y 23**, medido con
-`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. La de más
-es `20260917000460` (`listings` entra a la publicación de Realtime, RF-18),
-escrita y validada en local y **sin pushear**. Las dos anteriores de moderación
+**Ese 14 son 13 con policies más `listing_moderacion`, que tiene RLS habilitado
+y CERO policies a propósito** (su bloque propio, más abajo) — no es una tabla a medio
+configurar. El número venía diciendo "12" desde antes de esta tanda, cuando ya
+eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
+encontrada al medir para otra cosa.
+
+**Repo y remoto NO están a la par: 25 y 23**, medido con
+`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. Las dos de
+más son `20260917000460` (`listings` entra a la publicación de Realtime, RF-18)
+y `20260918000461` (`listing_moderacion`), escritas y validadas en local y
+**sin pushear**. Las dos anteriores de moderación
 pre-publicación (`20260917000458`, `20260917000459`, `pendiente`/`bloqueada`) sí
 viajaron — confirmado leyendo el enum en remoto directo (`pg_enum` vía
 `execute_sql`), no solo contando filas. Antes de
@@ -286,6 +293,14 @@ notifications
   Edge Function), created_at.
   El cliente solo escribe `leida_at` (grant de columna). Sin insert ni delete:
   las filas solo nacen de triggers.
+
+-- Moderación pre-publicación (RF-18)
+listing_moderacion
+  id, listing_id → listings on delete cascade, veredicto text + check
+  ('limpio'|'revisar'|'bloquear'), estado_resultante listing_status,
+  detalle jsonb, created_at. Una fila por EVALUACIÓN, no por publicación:
+  es historial, no estado actual. CERO grants y CERO policies — la escribe
+  la Edge Function con `supabaseAdmin` y la lee Studio. Ver abajo.
 ```
 
 **Protección de `correo` (RNF-05):** RLS filtra filas, no columnas — la
@@ -801,7 +816,40 @@ antes de agregar el siguiente disparador HTTP:
 - **La autorización es la de §9**, no la del Dashboard: header `apikey` con la
   secret key (no `Bearer`) y `verify_jwt = false` en `config.toml`.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 167 aserciones, corre dentro de
+**`listing_moderacion` es la PRIMERA tabla del proyecto con RLS habilitado y
+cero policies, y las dos mitades son deliberadas** (`20260918000461`, RF-18).
+Guarda por qué la Edge Function dictó cada veredicto — sin ella, el revisor abre
+Studio, ve una publicación en `pendiente` y no tiene forma de saber la razón, y
+el valor que `coincidencias()` devuelve (CUÁLES palabras machearon) no tendría a
+dónde ir. Cuatro cosas que no se ven en el diff:
+
+- **No es columna de `listings` por el mismo argumento exacto que
+  `listing_sales`**, y aquí muerde más fuerte: `listings` tiene `grant select` a
+  nivel TABLA (`20260906000439:86`), así que una columna nueva la leería
+  cualquier autenticado que pueda ver la fila — o sea que el motivo por el que
+  se bloqueó a alguien sería público. Acotarlo exigiría convertir ese grant a
+  lista de columnas, que es justo lo que hoy hace funcionar a `listings.busqueda`
+  sin grant propio y lo que T13 vigila.
+- **El `revoke all` NO es el preámbulo de ningún grant — ES el control de acceso
+  entero.** Es el único caso del repo donde ese revoke queda solo, y por eso vale
+  releer §9: los grants son aditivos sobre el `pg_default_acl`, así que sin esa
+  línea la tabla nacería legible para `anon` y `authenticated`. Medido:
+  `information_schema.table_privileges` y `column_privileges` dan 0 filas para
+  los dos roles.
+- **El RLS se habilita igual sin una sola policy, y no es ceremonia.** T12 tiene
+  una aserción literal de que TODAS las tablas de `public` lo tienen, así que sin
+  esa línea la suite se pone roja; y es defensa real, porque si algún día alguien
+  agrega un `grant select` sin pensarlo, RLS sin policies sigue negando todo en
+  vez de abrir la tabla entera.
+- **Una fila por EVALUACIÓN, no por publicación.** Deja leer "se marcó, se
+  limpió, se volvió a marcar" —lo que un revisor necesita ante una reincidente—
+  y evita un upsert. `estado_resultante` no es derivable de `veredicto`:
+  `bloquear` siempre da `bloqueada`, pero `revisar` sobre una `pausada` la deja
+  en `pausada` y sobre una `activa` la manda a `pendiente`. **Los avatares NO
+  escriben aquí** — no tienen `listing_id` y su enforcement es inmediato (borrar
+  o nada), sin cola que revisar; su rastro es el `console.error`.
+
+**Regresión de RLS:** `supabase/tests/rls.sql`, 169 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -1025,6 +1073,28 @@ fix es el mismo que en `listing_sales`: las filas que se leen y las que se
 escriben no pueden ser las mismas — de ahí `t_mod` (solo lectura, para (1) y
 (3)) y `t_mod_ctrl` (dos filas dedicadas, solo para los dos controles de (2)
 que sí mutan `estado`).
+
+Y a **169** con las 2 de `listing_moderacion` (`20260918000461`), que van
+ENTERAS en T12 y en ninguna sección propia — es el caso inverso del resto de
+esta lista. Una tabla sin policies no tiene comportamiento que ejercitar: no hay
+"este rol sí ve y este no", solo "nadie ve". Lo único verificable es la
+invariante de acceso, y ese tipo de aserción vive en T12 por definición. Las
+dos, y por qué son dos y no una:
+
+- **Sin un solo privilegio para `authenticated` ni `anon`**, mirando
+  `table_privileges` **y** `column_privileges`. Las dos, y **medido**, no
+  deducido: con un `grant select (veredicto)` puesto a mano,
+  `table_privileges` devuelve **0** y `column_privileges` **1** — o sea que
+  mirar solo la primera dejaría pasar exactamente el tipo de grant acotado que
+  este repo usa en `users` y `listings`, que es el más probable de todos.
+- **Sin ninguna policy.** Es la que caza el "arreglo" bienintencionado: alguien
+  ve una tabla con RLS y cero policies, la lee como inacabada y le agrega una
+  permisiva. La primera aserción no lo detectaría, porque sin grants esa policy
+  no cambia nada… hasta que alguien agregue el grant.
+
+Los tres controles se corrieron **uno a la vez** y cada uno cae en una sola
+aserción: grant de tabla → la primera; grant solo de columna → la primera;
+policy permisiva sin tocar grants → la segunda. Ninguno cae fuera de T12.
 
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe

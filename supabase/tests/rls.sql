@@ -2307,6 +2307,38 @@ select pg_temp.assert(
                     and column_name <> 'comprador_id'),
   'listing_sales no se borra y solo se actualiza en la columna comprador_id');
 
+-- `listing_moderacion` (RF-18) guarda POR QUÉ se marcó cada publicación: los
+-- scores de SafeSearch, las palabras exactas que machearon, el veredicto de
+-- GPT. Es lo que hace revisable la cola de `pendiente` desde Studio — y es
+-- justo por eso que no puede tener NI UN privilegio para el cliente: el motivo
+-- por el que se bloqueó a alguien no es dato del campus. Mismo criterio que
+-- `reports.reported_user_correo`.
+--
+-- Se mira a nivel TABLA y a nivel COLUMNA, no solo tabla: el gotcha de
+-- `pg_default_acl` (CLAUDE.md §9) concede por default sobre toda tabla nueva, y
+-- un `grant` de columna que alguien agregue después no aparecería en
+-- `table_privileges`. La migración no tiene ningún `grant` — el `revoke all`
+-- ES el control de acceso completo, así que esta aserción vigila que siga
+-- siéndolo.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee in ('authenticated', 'anon')
+                and table_schema = 'public'
+                and table_name = 'listing_moderacion')
+  and not exists (select 1 from information_schema.column_privileges
+                  where grantee in ('authenticated', 'anon')
+                    and table_schema = 'public'
+                    and table_name = 'listing_moderacion'),
+  'listing_moderacion no tiene ni un privilegio para authenticated ni anon');
+
+-- Y sin una sola policy, que es la otra mitad: con RLS activo (lo cubre la
+-- aserción universal de abajo) y cero policies, la tabla queda negada por
+-- completo para cualquier rol sin bypassrls, aunque un grant se colara.
+select pg_temp.assert(
+  not exists (select 1 from pg_policies
+              where schemaname = 'public' and tablename = 'listing_moderacion'),
+  'listing_moderacion no tiene ninguna policy (solo service_role la lee)');
+
 -- Todas las tablas de public tienen RLS activo.
 select pg_temp.assert(
   not exists (select 1 from pg_tables t
