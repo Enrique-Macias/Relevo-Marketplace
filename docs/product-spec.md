@@ -210,6 +210,17 @@ vez validado.
 - **RF-17** Panel interno para revisar reportes, suspender
   usuarios/publicaciones y ver métricas básicas de uso. (Vive en Supabase
   Studio — no requiere pantallas propias en la app móvil.)
+- **RF-18** Moderación automática de contenido antes de publicarse: fotos de
+  publicaciones y de perfil analizadas con Google Cloud Vision (SafeSearch +
+  detección de texto en imagen); título y descripción analizados con OpenAI
+  GPT-4o-mini. **🚧 En diseño — nada implementado todavía**, salvo la base de
+  esquema: `listing_status` ya tiene los valores `pendiente`/`bloqueada` con
+  su RLS (invisibles para quien no es el dueño; el propio dueño no puede
+  levantarlos) — ver `CLAUDE.md` §3. El flujo real (llamar a los dos
+  servicios, aplicar el umbral, mover el estado) no existe: `publicar.ts`
+  sigue creando en `pausada` y pasando a `activa` sin pasar por `pendiente`
+  (deuda ya documentada en `publicar-fotos.md`). Las decisiones de umbral y
+  el mecanismo interino de revisión están en `CLAUDE.md` §3.
 
 ---
 

@@ -57,7 +57,7 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
    aquel precedente mixto.
 5. **Antes de implementar cualquier funcionalidad de negocio** (qué campos
    lleva una publicación, qué estados existen, qué puede hacer un usuario
-   suspendido, etc.), consulta `/docs/product-spec.md` — los RF-01 a RF-17 y
+   suspendido, etc.), consulta `/docs/product-spec.md` — los RF-01 a RF-18 y
    RNF-01 a RNF-10 ahí definidos son el contrato, no una sugerencia. Si el
    código necesita hacer algo que el spec no cubre, avisa antes de improvisar
    el comportamiento.
@@ -1027,6 +1027,36 @@ que sí mutan `estado`).
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
+
+**RF-18 (moderación de contenido pre-publicación): dos decisiones de umbral,
+documentadas ANTES de construirse.** Nada de este flujo existe en código
+todavía — la base es la de arriba: el enum ya tiene `pendiente`/`bloqueada` y
+su RLS ya los trata como no públicos (T24) — pero las dos decisiones que van
+a gobernar cómo se usa ese enum ya están tomadas, y quedan aquí para que no
+sigan viviendo solo en una conversación:
+
+- **El umbral de SafeSearch que manda a revisión es `LIKELY`, no
+  `VERY_LIKELY`.** Una publicación que Google Cloud Vision marque `LIKELY` en
+  cualquier categoría de SafeSearch —o donde la detección de texto en imagen
+  encuentre algo problemático— queda en `pendiente`, a la espera de revisión
+  humana. **No hay bloqueo automático ni publicación automática en ningún
+  punto de esta decisión**: `bloqueada` solo la pone una persona, nunca el
+  pipeline. `VERY_LIKELY` habría sido el umbral más estricto —menos falsos
+  positivos, pero deja pasar sin revisión más contenido dudoso—; `LIKELY` es
+  deliberadamente más sensible, a costa de mandar más publicaciones
+  legítimas a la cola. Y **"la cola" no es una tabla nueva ni un mecanismo
+  aparte: es literalmente el filtro `estado = 'pendiente'` sobre `listings`**
+  — el mismo enum, la misma RLS, sin infraestructura adicional.
+- **Mientras no exista RF-17 (panel de administración), la cola de
+  `pendiente` la revisa el desarrollador único vía Supabase Studio.** No hay
+  otro mecanismo todavía — ni notificación a un equipo de moderación (no
+  existe ese equipo), ni SLA, ni flujo automatizado de aprobación/rechazo. Es
+  manual, por diseño, hasta que RF-17 exista.
+
+Nada de esto tiene todavía un punto de enforcement en código: no hay Edge
+Function, no hay llamada a Vision ni a OpenAI, y `publicar.ts` sigue sin
+pasar por `pendiente` (`publicar-fotos.md`, deuda ya documentada). El plan de
+implementación es el siguiente paso, no este.
 
 ---
 
