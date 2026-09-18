@@ -8,12 +8,29 @@
 
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
+import type * as NotificationsType from 'expo-notifications';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
+
+/**
+ * `expo-notifications` está excluido del autolinking en builds locales de
+ * personal team de Apple (no soportan la capability de Push — ver
+ * `package.json` > `expo.autolinking.exclude` y CLAUDE.md pendiente #1). Sin
+ * el módulo nativo, hasta el `import` revienta con "Cannot find native
+ * module" — por eso va como `require()` dentro de un `try`, que sí se puede
+ * atrapar (un `import` estático no). Todo lo de abajo se vuelve no-op mientras
+ * `Notifications` sea `null`.
+ */
+let Notifications: typeof NotificationsType | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  Notifications = require('expo-notifications');
+} catch (e) {
+  console.warn('[push] módulo nativo de notificaciones no disponible:', (e as Error)?.message ?? e);
+}
 
 /**
  * Qué hacer con una notificación que llega con la app ABIERTA.
@@ -28,7 +45,7 @@ import { supabase } from '@/lib/supabase';
  *
  * Sin sonido ni badge: los dos avisos de RF-16 son informativos, no urgentes.
  */
-Notifications.setNotificationHandler({
+Notifications?.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
     shouldShowList: true,
@@ -44,7 +61,7 @@ Notifications.setNotificationHandler({
  * de plataforma.
  */
 export async function configurarCanalAndroid(): Promise<void> {
-  if (Platform.OS !== 'android') return;
+  if (!Notifications || Platform.OS !== 'android') return;
 
   await Notifications.setNotificationChannelAsync('default', {
     name: 'Avisos de Relevo',
@@ -74,7 +91,7 @@ function projectId(): string | null {
  */
 export async function registrarPushToken(userId: string): Promise<boolean> {
   // El emulador/simulador no tiene servicio de push: pedir el token ahí lanza.
-  if (!Device.isDevice) return false;
+  if (!Notifications || !Device.isDevice) return false;
 
   await configurarCanalAndroid();
 
@@ -135,7 +152,7 @@ export async function registrarPushToken(userId: string): Promise<boolean> {
  * Best-effort: si falla, no puede impedir el cierre de sesión.
  */
 export async function borrarPushToken(): Promise<void> {
-  if (!Device.isDevice) return;
+  if (!Notifications || !Device.isDevice) return;
 
   const id = projectId();
   if (!id) return;
@@ -149,7 +166,7 @@ export async function borrarPushToken(): Promise<void> {
 }
 
 /** A dónde lleva el tap, leído del `data` que manda la Edge Function. */
-function destino(respuesta: Notifications.NotificationResponse): string {
+function destino(respuesta: NotificationsType.NotificationResponse): string {
   const data = respuesta.notification.request.content.data as
     | { listing_id?: number | string | null }
     | undefined;
@@ -179,6 +196,7 @@ function destino(respuesta: Notifications.NotificationResponse): string {
  */
 export function useRespuestaANotificacion() {
   useEffect(() => {
+    if (!Notifications) return;
     let activo = true;
 
     void Notifications.getLastNotificationResponseAsync().then((respuesta) => {

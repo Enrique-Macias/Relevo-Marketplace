@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.enrique-macias.enrique-macias"
+      "bundleIdentifier": "com.enrique-macias.relevo-marketplace"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +21,8 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "package": "com.enriquemacias.enriquemacias"
     },
     "web": {
       "output": "static",
@@ -42,12 +43,6 @@
         "expo-image-picker",
         {
           "photosPermission": "Relevo usa tus fotos para que puedas ilustrar las publicaciones que pones en venta."
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "color": "#C1440E"
         }
       ]
     ],
