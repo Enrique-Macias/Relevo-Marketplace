@@ -213,14 +213,31 @@ vez validado.
 - **RF-18** Moderación automática de contenido antes de publicarse: fotos de
   publicaciones y de perfil analizadas con Google Cloud Vision (SafeSearch +
   detección de texto en imagen); título y descripción analizados con OpenAI
-  GPT-4o-mini. **🚧 En diseño — nada implementado todavía**, salvo la base de
-  esquema: `listing_status` ya tiene los valores `pendiente`/`bloqueada` con
+  GPT-4o-mini. **🚧 Parcialmente implementado — el esqueleto existe, la
+  evaluación real todavía no.**
+  **✅ Hecho:** `listing_status` tiene los valores `pendiente`/`bloqueada` con
   su RLS (invisibles para quien no es el dueño; el propio dueño no puede
-  levantarlos) — ver `CLAUDE.md` §3. El flujo real (llamar a los dos
-  servicios, aplicar el umbral, mover el estado) no existe: `publicar.ts`
-  sigue creando en `pausada` y pasando a `activa` sin pasar por `pendiente`
-  (deuda ya documentada en `publicar-fotos.md`). Las decisiones de umbral y
-  el mecanismo interino de revisión están en `CLAUDE.md` §3.
+  levantarlos); la tabla `listing_moderacion` guarda el motivo de cada
+  veredicto (RLS habilitado, cero policies — solo la lee `service_role`/
+  Studio); y la Edge Function `moderar-contenido` existe como esqueleto real,
+  no como diseño: rutea por `ctx.authMode` (el cliente puede promover a
+  `activa`, el trigger de Storage solo puede escalar — nunca al revés), valida
+  ownership antes de moderar una publicación ajena, y escribe el estado
+  resultante más su fila de auditoría. 50 aserciones puras sobre la función de
+  decisión (`scripts/probe-moderacion.mjs`) y 15 de autorización/cableado
+  contra la función corriendo de verdad
+  (`scripts/probe-moderacion-http.mjs`), todas en verde.
+  **🚧 Pendiente, y es lo que falta para que la moderación haga algo:**
+  `evaluarListing()`/`moderarAvatar()` son stubs — no llaman a Vision ni a
+  OpenAI todavía, así que hoy toda publicación evaluada cae en `pendiente` por
+  falla segura (nunca en `activa` sin mirar). Faltan también los dos triggers
+  de Storage, el rework de `publicar.ts` (sigue creando en `pausada` y
+  pasando a `activa` sin pasar por `pendiente` — deuda ya documentada en
+  `publicar-fotos.md`), y las credenciales reales de Google Cloud Vision /
+  OpenAI (sin ellas la función ni arranca: `resolverConfig()` falla al
+  arranque, no a media petición). Las decisiones de umbral y el mecanismo
+  interino de revisión están en `CLAUDE.md` §3; el plan de implementación
+  completo, en `.claude/rules/moderacion.md`.
 
 ---
 
