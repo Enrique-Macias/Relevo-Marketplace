@@ -19,8 +19,11 @@
 // import de Supabase a `decision.ts`, este script deja de arrancar — y eso es
 // la señal, no un inconveniente.
 //
-// Los 12 casos numerados son la tabla de verificación del plan de RF-18. Los
-// que van después cubren el módulo de la lista, que es una unidad distinta.
+// Los 13 casos numerados son la tabla de verificación del plan de RF-18 (el 13
+// se agregó después: el plan traía 12, y de ahí salió el bug de `pausada`+
+// `revisar` que el bloque de más abajo documenta y corrige). Los que van
+// después de los numerados cubren el módulo de la lista, que es una unidad
+// distinta.
 //
 // DOS AVISOS ESPERADOS, ninguno es un problema:
 //  · Node imprime `MODULE_TYPELESS_PACKAGE_JSON` al cargar los `.ts`. Sugiere
@@ -197,26 +200,50 @@ igual(
   'pendiente'
 );
 
-// (11) `vendida` SÍ escala. La otra mitad —que `listing_sales` no se toca— no
-// se puede probar aquí: esta función no escribe nada. Lo que sí se prueba es
-// que la decisión no inventa un estado que arrastre la venta.
+// (11) `vendida` SÍ escala con `bloquear`. La otra mitad —que `listing_sales`
+// no se toca— no se puede probar aquí: esta función no escribe nada. Lo que sí
+// se prueba es que la decisión no inventa un estado que arrastre la venta.
 igual(
   '11. estadoActual vendida + veredicto bloquear → bloqueada (sí escala)',
   decidirListing(ejes({ listaTecleada: 'bloquear' }), 'vendida'),
   'bloqueada'
 );
 
-// ---------------------------------------------------------------------------
-console.log('\n== La otra mitad de la asimetría de `vendida` ==');
+// (13) EL GEMELO DE (11), y no es simetría por estética: `pausada` tiene que
+// escalar con `bloquear` exactamente igual que `vendida`, por la misma razón
+// —`bloqueada` nunca se promueve, así que escalar aquí no abre ningún camino
+// de vuelta a `activa`—. Sin este caso, una implementación que excluyera a
+// `pausada` del `bloquear` (tratándola como a `vendida` en TODO, no solo en
+// `revisar`) pasaría inadvertida.
+igual(
+  '13. estadoActual pausada + veredicto bloquear → bloqueada (sí escala, gemelo de 11)',
+  decidirListing(ejes({ listaTecleada: 'bloquear' }), 'pausada'),
+  'bloqueada'
+);
 
-// Su gemelo: `revisar` NO la toca, porque una vendida ya no puede volverse
-// pública (`listings_update_own` la hace terminal), así que quitarle el control
-// al vendedor por una señal incierta no compra nada. Sin esta aserción, tratar
-// a `vendida` igual que a `pausada` pasaría inadvertido.
+// ---------------------------------------------------------------------------
+console.log('\n== `revisar` NO escala ni `pausada` ni `vendida`, y es EL MISMO carve-out ==');
+
+// La primera versión de esta función solo se lo daba a `vendida`, razonando
+// "no puede volver a ser pública" — y trataba a `pausada` distinto, "para que
+// pausar no fuera un escondite". Es la corrección de un bug real, no una
+// preferencia de test: si `revisar` escala `pausada` a `pendiente`, y después
+// otra evaluación sobre esa misma fila da limpio (otra foto sube, el trigger
+// corre de nuevo), la regla de promoción —que solo mira si el estado ES
+// `pendiente`— la manda a `activa` SOLA, publicando algo que el vendedor pausó
+// a propósito. Es el mismo invariante que ya protegía a `vendida`
+// ("la promoción sale ÚNICAMENTE de `pendiente`"); lo que faltaba era
+// aplicárselo también a `pausada`. Las dos aserciones de abajo son el mismo
+// caso por partida doble: sin la de `pausada`, el bug queda sin red.
 igual(
   'vendida + veredicto revisar → vendida (no se toca)',
   decidirListing(ejes({ vision: 'revisar' }), 'vendida'),
   'vendida'
+);
+igual(
+  'pausada + veredicto revisar → pausada (no se toca — el bug que este test cierra)',
+  decidirListing(ejes({ vision: 'revisar' }), 'pausada'),
+  'pausada'
 );
 
 // Y el que prueba que la promoción es de verdad exclusiva de `pendiente`.

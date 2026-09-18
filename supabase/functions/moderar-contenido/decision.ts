@@ -192,16 +192,29 @@ export function veredicto(ejes: Ejes): Nivel {
  *
  * Y la parte asimétrica, que es la menos obvia (CLAUDE.md §3):
  *
- *  - `bloquear` escala desde CUALQUIER estado, `vendida` incluida. Una vendida
- *    la ve el campus entero, así que el contenido sucio sigue expuesto.
- *    Escalarla no toca `listing_sales`: la venta vive en otra tabla.
- *  - `revisar` escala solo desde los estados que TODAVÍA PUEDEN VOLVERSE
- *    PÚBLICOS — `activa` y `pausada`. Desde `pausada` importa de verdad: sin
- *    eso, pausar sería un escondite (pausar → cambiar la foto → reactivar, con
- *    contenido sin moderar y sin que nada vuelva a mirarlo, porque reactivar es
- *    un UPDATE de `listings` y ahí no hay trigger). `vendida` no puede volver a
- *    ser pública —es terminal por `listings_update_own`— así que un `revisar`
- *    no le quita nada al vendedor y no se toca.
+ *  - `bloquear` escala desde CUALQUIER estado, `vendida` y `pausada`
+ *    incluidas. Una vendida la ve el campus entero, así que el contenido
+ *    sucio sigue expuesto; escalarla no toca `listing_sales`, la venta vive
+ *    en otra tabla. `bloqueada` no se promueve nunca, así que escalar una
+ *    `pausada` a `bloqueada` no abre ningún camino de vuelta a `activa` — el
+ *    riesgo de abajo no aplica aquí, solo aplica a `revisar`.
+ *  - `revisar` **NO escala ni `pausada` ni `vendida`.** Las dos tienen el
+ *    mismo carve-out y por la MISMA razón, que no es simetría cosmética: la
+ *    promoción a `activa` sale ÚNICAMENTE de `pendiente` (la regla de abajo),
+ *    así que escalar cualquier otro estado A `pendiente` abre una vía de
+ *    vuelta a `activa` que no debería existir para un estado que no es de
+ *    moderación. Se pensó primero solo para `vendida` ("no puede volver a ser
+ *    pública") y se escribió aquí mismo, en una versión anterior de este
+ *    comentario, que `pausada` SÍ debía escalar con `revisar` —"si no, pausar
+ *    sería un escondite"— sin ver la consecuencia: `pausada` →(revisar)→
+ *    `pendiente` →(una foto más, veredicto limpio)→ **`activa`**, publicando
+ *    sola una publicación que el vendedor pausó a propósito. Es el mismo
+ *    invariante que protege a `vendida`, y con `pausada` faltaba aplicarlo.
+ *    **Consecuencia que SÍ queda abierta, a propósito:** un acierto de nivel
+ *    `revisar` sobre una publicación pausada no dispara ninguna cola — se
+ *    queda sin marcar hasta que algo más la toque (`bloquear` si empeora, o
+ *    el vendedor la reactiva a mano). No hay urgencia real: mientras está
+ *    pausada, nadie la ve.
  *  - La promoción a `activa` ocurre ÚNICAMENTE desde `pendiente`. `pausada` y
  *    `vendida` no son estados de moderación sino decisiones del vendedor:
  *    promoverlos despausaría la publicación de alguien que la pausó a
@@ -222,7 +235,8 @@ export function decidirListing(
   if (v === 'revisar') {
     if (estadoActual === 'bloqueada') return 'bloqueada'; // el piso
     if (estadoActual === 'vendida') return 'vendida'; // terminal, no se toca
-    return 'pendiente'; // activa | pausada | pendiente
+    if (estadoActual === 'pausada') return 'pausada'; // decisión del vendedor, no se toca
+    return 'pendiente'; // activa | pendiente
   }
 
   // Limpio: el único camino de promoción.
