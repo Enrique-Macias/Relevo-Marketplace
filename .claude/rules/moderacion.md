@@ -295,6 +295,23 @@ vendorizar):
 - `ctx.userClaims` / `ctx.jwtClaims` traen la identidad en el modo `'user'` —
   necesarias para verificar que quien pide moderar su publicación es su
   dueño.
+  **Corrección medida (2026-09-18), y el E-spike NO alcanzaba a darla:** son
+  dos objetos con formas DISTINTAS, y el que se usa es `userClaims`, cuyo campo
+  es **`id`**, no `sub`:
+
+  ```
+  ctx.userClaims → { id, role, email, appMetadata, userMetadata }
+  ctx.jwtClaims  → { iss, sub, aud, exp, iat, email, role, session_id, … }
+  ```
+
+  Escribir `ctx.userClaims?.sub` typechea (el shim deja `ctx` sin tipar) y
+  falla en runtime como `401 "sin identidad en el JWT"` — un síntoma que se
+  lee como problema de credenciales. Lo destapó la primera corrida de
+  `scripts/probe-moderacion-http.mjs`. El caso general —confirmar que un campo
+  existe no es confirmar su forma— quedó en CLAUDE.md §9.
+  Dato lateral confirmado en la misma medición: el JWT local es **ES256 con
+  `kid`**, o sea que el modo `'user'` sí resuelve por JWKS y no por el secreto
+  compartido; y en modo `'secret'`, `ctx.authKeyName` vale `"default"`.
 - `ctx.supabase` (con RLS del invocante) y `ctx.supabaseAdmin` (la saltea)
   vienen los dos hechos.
 - Hay `JwksFetchFailedError` / `JwksNotConfiguredError`, o sea que el modo

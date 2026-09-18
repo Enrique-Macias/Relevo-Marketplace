@@ -153,7 +153,16 @@ export default {
       // PROMOVER— una publicación ajena: bastaría con que la suya estuviera
       // limpia para sacar de `pendiente` la de otro. `ctx.supabaseAdmin` saltea
       // RLS, así que la base no lo va a frenar; el chequeo tiene que ser aquí.
-      const uid = ctx.userClaims?.sub;
+      //
+      // ES `.id`, NO `.sub`, y esto costó una corrida en rojo: `ctx.userClaims`
+      // es el usuario YA NORMALIZADO por `@supabase/server`
+      // (`{ id, role, email, appMetadata, userMetadata }`), no el JWT crudo. El
+      // `sub` vive en `ctx.jwtClaims`, que es otra cosa. Escribir `.sub` aquí
+      // typechea igual —el shim deja `ctx` sin tipar (`shims.d.ts`)— y falla en
+      // runtime como un 401 "sin identidad", que se lee como un problema de
+      // credenciales y no como lo que es: un nombre de campo equivocado.
+      // Medido contra el runtime local, no deducido.
+      const uid = ctx.userClaims?.id;
       if (!uid) return error('sin identidad en el JWT', 401);
 
       const { data: duenio, error: errDuenio } = await db

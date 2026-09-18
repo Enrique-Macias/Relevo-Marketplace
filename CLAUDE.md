@@ -1370,7 +1370,7 @@ Toast de éxito · Toast de error · Loading / skeleton
   visible con solo "que compile" — se necesitó revisión deliberada.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son CINCO pasos, no uno:
+  `postgres`/superusuario. Son SEIS pasos, no uno:
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
      **`psql` puede no estar instalado en la máquina** (no lo está en la de
      desarrollo actual, aunque este comando lo dé por supuesto). El contenedor
@@ -1411,7 +1411,18 @@ Toast de éxito · Toast de error · Loading / skeleton
      al revés: el compilador mira formas, el probe mira decisiones —
      `decidirListing({…todo limpio}, 'pausada')` typechea perfecto y devolver
      `'activa'` sería el bug—. Tampoco necesita el stack local.
-  Los probes 2 y 3 necesitan el stack local arriba y limpian lo suyo en un
+  6. `node scripts/probe-moderacion-http.mjs` — la Edge Function
+     `moderar-contenido` por HTTP: las CINCO credenciales (las cuatro de
+     `send-push` más el JWT de usuario, que es la razón de ser de
+     `auth: ['secret','user']`), el ownership del camino de usuario, y que la
+     escritura de estado + auditoría esté cableada. **Es el único que necesita
+     DOS procesos**: además del stack, `supabase functions serve --env-file
+     supabase/functions/.env` en otra terminal. No confundirlo con el paso 4:
+     aquel prueba DECISIONES sin red, éste prueba CABLEADO contra la función de
+     verdad, y ninguno sustituye al otro. Su primera corrida encontró un bug
+     real (§9, `userClaims.id` vs `.sub`), que es la mejor justificación de por
+     qué el paso 4 no bastaba.
+  Los probes 2, 3 y 6 necesitan el stack local arriba y limpian lo suyo en un
   `finally`; si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4 y 5 no necesitan nada: ni stack, ni red, ni credenciales.
 - **Para bugs de UI que dependen de interacción real (teclado, gestos, touch),
@@ -2032,6 +2043,22 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   la excluyo?" sino "¿quién la mira ahora?". Si la respuesta es "otra
   herramienta", confirma que esa herramienta existe en la máquina y que alguien
   la corre.
+
+- **Confirmar que un campo EXISTE no es confirmar su FORMA, y con un shim sin
+  tipar la diferencia sale como un 401.** El E-spike de `@supabase/server` leyó
+  los `.d.mts` publicados y confirmó correctamente que `ctx.userClaims` existe;
+  de ahí se escribió `ctx.userClaims?.sub`, por convención de JWT. **Está mal:**
+  `userClaims` es el usuario YA NORMALIZADO (`{ id, role, email, appMetadata,
+  userMetadata }`) y el `sub` vive en `ctx.jwtClaims`, que es otro objeto.
+  Medido contra el runtime local. Dos cosas que lo hacen peor que un typo
+  normal: `npm run check:functions` **no lo caza** —el shim deja `ctx` sin tipar
+  a propósito (`supabase/functions/shims.d.ts`), y esa es justamente la parte
+  del alcance que ese archivo declara no cubrir—, y el síntoma es un
+  `401 "sin identidad en el JWT"`, que se lee como problema de credenciales y
+  manda a revisar llaves y headers en vez del nombre de un campo. **La regla:**
+  de un paquete que no está en disco, los tipos publicados te dicen qué existe;
+  la FORMA se mide llamándolo. Un endpoint de debug que imprima el contexto
+  cuesta dos minutos y es lo que lo destapó.
 
 - **Un `grep` sobre salida con colores ANSI puede no machear aunque el texto
   esté ahí — y el falso negativo se lee como "el control pasó".** `tsc` imprime
