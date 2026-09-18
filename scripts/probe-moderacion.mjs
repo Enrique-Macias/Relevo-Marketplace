@@ -1,11 +1,23 @@
 // ===========================================================================
-// Relevo — pruebas de la función de decisión de moderación (RF-18).
+// Relevo — pruebas de TODO lo puro de la moderación de contenido (RF-18).
 //
 // Cómo correrlo:
 //     node scripts/probe-moderacion.mjs
 //
-// No necesita el stack local, ni red, ni credenciales: la pieza que prueba es
-// pura a propósito.
+// No necesita el stack local, ni red, ni credenciales: las piezas que prueba
+// son puras a propósito. Cubre CUATRO módulos:
+//
+//   decision.ts           los umbrales y la regla del piso
+//   palabras-prohibidas.ts  la lista y su normalización
+//   vision.ts             particionado, forma del request, parseo, el eje
+//   openai.ts             schema, body, parseo (incluido el refusal)
+//
+// QUE SEAN CUATRO Y NO UNO ES LA DECISIÓN DE DISEÑO QUE HACE POSIBLE ESTE
+// ARCHIVO. `vision.ts` y `openai.ts` existen separados de `index.ts`
+// precisamente para que lo Deno-only —el `fetch`, la descarga de Storage, el
+// `encodeBase64`— quede del otro lado de la línea. Si esa lógica viviera en
+// `index.ts`, sería hoy inverificable: `deno` no está instalado en esta
+// máquina y no hay credenciales de Vision ni de OpenAI.
 //
 // IMPORTA LA IMPLEMENTACIÓN REAL, NO UNA TRANSCRIPCIÓN — y esa diferencia con
 // `probe-venta.mjs` vale la pena entenderla. Allá `congeladaSegunCliente()`
@@ -13,17 +25,16 @@
 // (arrastra `expo-secure-store`, `expo-crypto`, AsyncStorage), así que el probe
 // prueba la semántica pero NO prueba que la app use esa semántica — de ahí que
 // necesite además un tripwire sobre el fuente. Aquí no hace falta nada de eso:
-// `decision.ts` y `palabras-prohibidas.ts` no importan absolutamente nada, así
-// que Node los carga directo (type stripping, v22.6+) y lo que se prueba es
-// exactamente lo que va a correr en Deno. Si algún día alguien le mete un
-// import de Supabase a `decision.ts`, este script deja de arrancar — y eso es
-// la señal, no un inconveniente.
+// ninguno de los cuatro importa nada fuera de `decision.ts` (que a su vez no
+// importa nada), así que Node los carga directo (type stripping, v22.6+) y lo
+// que se prueba es exactamente lo que va a correr en Deno. Si algún día alguien
+// le mete un import de Supabase o de Deno a cualquiera de los cuatro, este
+// script deja de arrancar — y eso es la señal, no un inconveniente.
 //
 // Los 13 casos numerados son la tabla de verificación del plan de RF-18 (el 13
 // se agregó después: el plan traía 12, y de ahí salió el bug de `pausada`+
 // `revisar` que el bloque de más abajo documenta y corrige). Los que van
-// después de los numerados cubren el módulo de la lista, que es una unidad
-// distinta.
+// después de los numerados cubren los otros tres módulos, cada uno su unidad.
 //
 // DOS AVISOS ESPERADOS, ninguno es un problema:
 //  · Node imprime `MODULE_TYPELESS_PACKAGE_JSON` al cargar los `.ts`. Sugiere
@@ -56,6 +67,26 @@ import {
   PALABRAS_PARA_PRUEBA,
   DESCARTADOS_POR_AMBIGUOS,
 } from '../supabase/functions/moderar-contenido/palabras-prohibidas.ts';
+import {
+  particionar,
+  tamanoBase64,
+  cuerpoVision,
+  resultadosDeLote,
+  ejeVision,
+  textoOcrDe,
+  MAX_BYTES_POR_LOTE,
+  MAX_IMAGENES_POR_LOTE,
+  MAX_BYTES_POR_IMAGEN,
+  MAX_BYTES_JSON_REQUEST,
+} from '../supabase/functions/moderar-contenido/vision.ts';
+import {
+  CATEGORIAS,
+  SCHEMA,
+  MODELO,
+  NOMBRE_SCHEMA,
+  cuerpoOpenAI,
+  parsearRespuestaOpenAI,
+} from '../supabase/functions/moderar-contenido/openai.ts';
 
 let pasadas = 0;
 const fallos = [];
@@ -461,6 +492,396 @@ ok(
   decidirListing(LIMPIO, 'pendiente') === 'activa' &&
     VISIBILIDAD['activa'] > VISIBILIDAD['pendiente']
 );
+
+// ---------------------------------------------------------------------------
+console.log('\n== Vision: particionado por tamaño acumulado ==');
+
+const foto = (tamano, n = 0) => ({ storagePath: `l/${n}.jpg`, tamano });
+const KB = 1024;
+const MB = 1024 * 1024;
+
+// EL CASO NORMAL, que es el que importa que NO se parta: cinco fotos ya
+// normalizadas por `foto-picker.ts` (cientos de KB) caben en un solo request.
+{
+  const fotos = [300, 250, 400, 180, 320].map((kb, i) => foto(kb * KB, i));
+  const { lotes, demasiadoGrandes } = particionar(fotos);
+  igual('5 fotos normalizadas → UN solo lote', lotes.length, 1);
+  igual('  …con las 5 adentro', lotes[0].length, 5);
+  igual('  …y ninguna descartada', demasiadoGrandes.length, 0);
+}
+
+// El tope por CONTEO, independiente del de bytes: 17 fotos minúsculas no pesan
+// nada y aun así no caben en un request.
+{
+  const fotos = Array.from({ length: 17 }, (_, i) => foto(1 * KB, i));
+  const { lotes } = particionar(fotos);
+  igual('17 fotos de 1 KB → se parten por CONTEO', lotes.length, 2);
+  igual(`  …primer lote lleno a ${MAX_IMAGENES_POR_LOTE}`, lotes[0].length, MAX_IMAGENES_POR_LOTE);
+  igual('  …y la sobrante sola', lotes[1].length, 1);
+}
+
+// El tope por BYTES: dos fotos de 4 MB suman 8 MB, por encima del lote.
+{
+  const fotos = [foto(4 * MB, 0), foto(4 * MB, 1)];
+  const { lotes } = particionar(fotos);
+  igual('2 fotos de 4 MB → se parten por BYTES', lotes.length, 2);
+}
+
+// Una foto que por sí sola no cabe en un lote, pero sí está bajo el tope por
+// imagen: sale en su propio lote, no se descarta.
+{
+  const fotos = [foto(1 * MB, 0), foto(9 * MB, 1), foto(1 * MB, 2)];
+  const { lotes, demasiadoGrandes } = particionar(fotos);
+  igual('una foto > lote pero < tope por imagen va SOLA en su lote', lotes.length, 3);
+  igual('  …y no se descarta', demasiadoGrandes.length, 0);
+  ok(
+    '  …en el lote de en medio, ella sola',
+    lotes[1].length === 1 && lotes[1][0].tamano === 9 * MB
+  );
+}
+
+// EL CASO QUE EL GUARD `actual.length > 0` PROTEGE, y que la primera versión de
+// estas pruebas NO cubría: que la foto grande sea la PRIMERA. Ahí el corte se
+// evalúa con el lote todavía vacío, y sin el guard se empuja un lote VACÍO —un
+// request a Vision con cero imágenes—. Lo destapó el control negativo, que no
+// hizo fallar nada: el caso de arriba empieza con una foto chica, así que el
+// guard nunca se ejercitaba. Medido, no deducido: sin el guard salen lotes de
+// tamaños [0, 1, 1] en vez de [1, 1].
+{
+  const { lotes } = particionar([foto(9 * MB, 0), foto(1 * MB, 1)]);
+  igual('si la foto grande es la PRIMERA no se abre un lote vacío', lotes.length, 2);
+  ok(
+    '  …ningún lote queda vacío',
+    lotes.every((l) => l.length > 0),
+    JSON.stringify(lotes.map((l) => l.length))
+  );
+}
+
+// La invariante general, sobre un barrido: NINGÚN lote puede salir vacío, con
+// cualquier combinación de tamaños. Un lote vacío es una llamada de red tirada
+// a la basura y una respuesta que `resultadosDeLote` no sabría interpretar.
+{
+  const tamanos = [1 * KB, 1 * MB, 5 * MB, 7 * MB, 19 * MB, 25 * MB];
+  const vacios = [];
+  for (const a of tamanos)
+    for (const b of tamanos)
+      for (const c of tamanos) {
+        const { lotes } = particionar([foto(a, 0), foto(b, 1), foto(c, 2)]);
+        if (lotes.some((l) => l.length === 0)) vacios.push([a, b, c]);
+      }
+  ok(
+    'ningún lote sale vacío en 216 combinaciones de tamaños',
+    vacios.length === 0,
+    vacios.length ? `vacíos con ${JSON.stringify(vacios[0])}` : '0 vacíos'
+  );
+}
+
+// Y la que pasa el tope POR IMAGEN no se manda — pero tampoco desaparece: sale
+// por `demasiadoGrandes` para que el llamador la cuente como no evaluable.
+{
+  const fotos = [foto(1 * MB, 0), foto(25 * MB, 1)];
+  const { lotes, demasiadoGrandes } = particionar(fotos);
+  igual('una foto > 20 MB no entra en ningún lote', lotes.length, 1);
+  igual('  …y sale reportada, no filtrada en silencio', demasiadoGrandes.length, 1);
+  igual('  …con su ruta, para poder decir cuál fue', demasiadoGrandes[0].storagePath, 'l/1.jpg');
+}
+
+igual('sin fotos no hay lotes', particionar([]).lotes.length, 0);
+
+// ---------------------------------------------------------------------------
+console.log('\n== Vision: el umbral de 6 MB es CORRECTO, no arbitrario ==');
+
+// `tamanoBase64` tiene que ser exacto, no una constante de 1.33 redondeada: si
+// subestima, el particionado cree que cabe algo que no cabe y Vision rechaza el
+// request entero.
+{
+  const casos = [0, 1, 2, 3, 4, 1000, 6 * MB];
+  const malos = casos.filter(
+    (n) => tamanoBase64(n) !== Buffer.from(new Uint8Array(n)).toString('base64').length
+  );
+  ok(
+    'tamanoBase64() coincide con Buffer.toString("base64") exacto',
+    malos.length === 0,
+    malos.length ? `difieren en ${JSON.stringify(malos)}` : `${casos.length} tamaños`
+  );
+}
+
+// LA ASERCIÓN QUE JUSTIFICA EL 6 MB. Un lote lleno a tope, ya codificado, tiene
+// que caber en el límite de 10 MB del JSON de Vision — con espacio de sobra
+// para el andamiaje del propio JSON (el array `requests`, los `features`, las
+// comillas), que no entra en el conteo de bytes crudos.
+{
+  const codificado = tamanoBase64(MAX_BYTES_POR_LOTE);
+  const holgura = MAX_BYTES_JSON_REQUEST - codificado;
+  ok(
+    'un lote lleno (6 MiB crudos) cabe codificado en el JSON de 10 MB',
+    codificado < MAX_BYTES_JSON_REQUEST,
+    `${codificado} chars, holgura ${(holgura / MB).toFixed(2)} MB`
+  );
+  ok(
+    '  …y la holgura alcanza para el andamiaje del JSON (>1 MB)',
+    holgura > 1 * MB,
+    `${(holgura / MB).toFixed(2)} MB`
+  );
+}
+
+// El control de la anterior: que el umbral NO esté puesto tan alto que el
+// cálculo pase por casualidad. Con 8 MiB crudos ya no cabría.
+ok(
+  'el control: 8 MiB crudos NO cabrían (el margen es real, no casual)',
+  tamanoBase64(8 * MB) > MAX_BYTES_JSON_REQUEST,
+  `${tamanoBase64(8 * MB)} chars > ${MAX_BYTES_JSON_REQUEST}`
+);
+
+// ---------------------------------------------------------------------------
+console.log('\n== Vision: el body pide las DOS features por imagen ==');
+
+{
+  const cuerpo = cuerpoVision(['AAAA', 'BBBB']);
+  igual('una entrada por imagen', cuerpo.requests.length, 2);
+  igual('el base64 va en image.content', cuerpo.requests[0].image.content, 'AAAA');
+  const tipos = cuerpo.requests[0].features.map((f) => f.type).sort();
+  ok(
+    'cada imagen pide SafeSearch Y el OCR en la misma pasada',
+    JSON.stringify(tipos) === JSON.stringify(['SAFE_SEARCH_DETECTION', 'TEXT_DETECTION']),
+    JSON.stringify(tipos)
+  );
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n== Vision: las TRES formas de foto no evaluable ==');
+
+const lote2 = [foto(1 * KB, 0), foto(1 * KB, 1)];
+const ssLimpio = { adult: 'VERY_UNLIKELY', violence: 'VERY_UNLIKELY', racy: 'VERY_UNLIKELY' };
+
+// 1. La respuesta trae MENOS entradas que el lote. Sin el emparejado por
+//    índice, las que faltan se leerían como limpias.
+{
+  const r = resultadosDeLote(lote2, { responses: [{ safeSearchAnnotation: ssLimpio }] });
+  igual('respuesta truncada: la que falta es no_evaluable', r[1].estado, 'no_evaluable');
+  igual('  …y la que sí vino se evalúa normal', r[0].estado, 'evaluada');
+  igual('  …y el eje sube a revisar por la que faltó', ejeVision(r), 'revisar');
+}
+
+// 2. Error POR IMAGEN dentro de un lote que respondió 200. Es el que más fácil
+//    se pierde: el status HTTP dice que todo salió bien.
+{
+  const r = resultadosDeLote(lote2, {
+    responses: [{ safeSearchAnnotation: ssLimpio }, { error: { message: 'IMAGE_TOO_LARGE' } }],
+  });
+  igual('error por imagen dentro de un 200: no_evaluable', r[1].estado, 'no_evaluable');
+  ok('  …conservando el mensaje de Vision', r[1].motivo.includes('IMAGE_TOO_LARGE'), r[1].motivo);
+  igual('  …y el eje sube a revisar', ejeVision(r), 'revisar');
+}
+
+// 3. Sin `safeSearchAnnotation`: la feature no corrió. Distinto de que haya
+//    corrido y no encontrado nada, que llega como VERY_UNLIKELY.
+{
+  const r = resultadosDeLote([foto(1 * KB, 0)], { responses: [{ fullTextAnnotation: { text: 'x' } }] });
+  igual('sin safeSearchAnnotation: no_evaluable', r[0].estado, 'no_evaluable');
+  igual('  …y el eje sube a revisar', ejeVision(r), 'revisar');
+}
+
+// Respuesta nula entera (el `catch` del fetch) → todas no evaluables.
+{
+  const r = resultadosDeLote(lote2, null);
+  ok('respuesta nula: las dos no_evaluable', r.every((x) => x.estado === 'no_evaluable'));
+  igual('  …y el eje sube a revisar', ejeVision(r), 'revisar');
+}
+
+// Un campo suelto ausente NO es no_evaluable: es UNKNOWN, que se lee limpio.
+{
+  const r = resultadosDeLote([foto(1 * KB, 0)], {
+    responses: [{ safeSearchAnnotation: { adult: 'VERY_UNLIKELY' } }],
+  });
+  igual('un campo suelto ausente sí se evalúa', r[0].estado, 'evaluada');
+  igual('  …completado a UNKNOWN', r[0].safeSearch.violence, 'UNKNOWN');
+  igual('  …que nivelDeSafeSearch lee como limpio', nivelDeSafeSearch(r[0].safeSearch), 'limpio');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n== Vision: el eje y el OCR ==');
+
+{
+  const r = resultadosDeLote(lote2, {
+    responses: [
+      { safeSearchAnnotation: ssLimpio },
+      { safeSearchAnnotation: { ...ssLimpio, racy: 'VERY_LIKELY' } },
+    ],
+  });
+  igual('una foto VERY_LIKELY bloquea el eje entero', ejeVision(r), 'bloquear');
+}
+
+// SIN FOTOS es limpio, no revisar: una lista vacía no es un fallo de
+// evaluación. Quien impide publicar sin fotos es el trigger, no esta función.
+igual('sin fotos el eje es limpio, no revisar', ejeVision([]), 'limpio');
+
+{
+  const r = resultadosDeLote(lote2, {
+    responses: [
+      { safeSearchAnnotation: ssLimpio, fullTextAnnotation: { text: 'hola' } },
+      { safeSearchAnnotation: ssLimpio, fullTextAnnotation: { text: 'mundo' } },
+    ],
+  });
+  igual('el OCR de todas las fotos se concatena', textoOcrDe(r), 'hola\nmundo');
+}
+
+// El separador es un salto de línea y no vacío: sin él, el final de una foto y
+// el principio de otra formarían una palabra que nadie escribió.
+{
+  const r = resultadosDeLote(lote2, {
+    responses: [
+      { safeSearchAnnotation: ssLimpio, fullTextAnnotation: { text: 'coca' } },
+      { safeSearchAnnotation: ssLimpio, fullTextAnnotation: { text: 'ina' } },
+    ],
+  });
+  igual('dos fotos no forman una palabra inventada al concatenarse', coincidencias(textoOcrDe(r)).length, 0);
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n== OpenAI: el schema espeja VeredictoTexto ==');
+
+igual('seis categorías, ni una más', CATEGORIAS.length, 6);
+ok(
+  'required lista EXACTAMENTE las mismas que properties',
+  JSON.stringify([...SCHEMA.required].sort()) ===
+    JSON.stringify(Object.keys(SCHEMA.properties).sort()),
+  JSON.stringify(SCHEMA.required)
+);
+igual('additionalProperties: false (lo exige strict)', SCHEMA.additionalProperties, false);
+igual('la raíz es un object (lo exige strict)', SCHEMA.type, 'object');
+ok(
+  'cada categoría es un enum de los tres grados',
+  CATEGORIAS.every(
+    (c) =>
+      JSON.stringify(SCHEMA.properties[c].enum) ===
+      JSON.stringify(['ninguno', 'posible', 'claro'])
+  )
+);
+
+// LA ASERCIÓN QUE AMARRA EL SCHEMA CON EL CONSUMIDOR, y no es la misma que las
+// de arriba: aquellas miran la FORMA del schema contra sí mismo. Esta prueba
+// que cada categoría que el schema declara la LEE de verdad `nivelDeTexto()`.
+// Una categoría declarada que nadie consume sería una señal que el modelo
+// reporta y nosotros tiramos, sin ningún error a la vista.
+{
+  const todoNinguno = Object.fromEntries(CATEGORIAS.map((c) => [c, 'ninguno']));
+  igual('con las seis en "ninguno" el texto es limpio', nivelDeTexto(todoNinguno), 'limpio');
+
+  const sordas = CATEGORIAS.filter(
+    (c) => nivelDeTexto({ ...todoNinguno, [c]: 'claro' }) === 'limpio'
+  );
+  ok(
+    'las seis categorías del schema mueven el veredicto (ninguna es decorativa)',
+    sordas.length === 0,
+    sordas.length ? `sordas: ${sordas.join(', ')}` : 'las 6 se consumen'
+  );
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n== OpenAI: el body ==');
+
+{
+  const cuerpo = cuerpoOpenAI('Libro de Cálculo', 'Novena edición');
+  igual('model va SIEMPRE (la referencia no lo lista, los ejemplos sí)', cuerpo.model, MODELO);
+  igual('input es el arreglo system + user', cuerpo.input.length, 2);
+  igual('  …system primero', cuerpo.input[0].role, 'system');
+  igual('  …user después', cuerpo.input[1].role, 'user');
+  ok(
+    'el texto del vendedor va SOLO en el mensaje de usuario, nunca en el de sistema',
+    cuerpo.input[1].content.includes('Libro de Cálculo') &&
+      !cuerpo.input[0].content.includes('Libro de Cálculo')
+  );
+  igual('text.format.type', cuerpo.text.format.type, 'json_schema');
+  igual('text.format.name', cuerpo.text.format.name, NOMBRE_SCHEMA);
+  igual('text.format.strict', cuerpo.text.format.strict, true);
+  ok('text.format.schema es el schema', cuerpo.text.format.schema === SCHEMA);
+}
+
+// Una descripción nula no rompe el body ni inyecta "null" como texto.
+{
+  const cuerpo = cuerpoOpenAI('Silla', null);
+  ok(
+    'descripción nula queda vacía, no la cadena "null"',
+    !cuerpo.input[1].content.includes('null'),
+    cuerpo.input[1].content.replace(/\n/g, ' | ')
+  );
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n== OpenAI: el parseo, y sobre todo el refusal ==');
+
+const veredictoJson = JSON.stringify({
+  contenido_sexual: 'ninguno',
+  violencia: 'ninguno',
+  odio_discriminacion: 'ninguno',
+  articulo_prohibido: 'claro',
+  estafa_spam: 'ninguno',
+  datos_contacto: 'posible',
+});
+
+{
+  const r = parsearRespuestaOpenAI({ output_text: veredictoJson });
+  ok('camino feliz por output_text', r.ok === true);
+  igual('  …con el grado leído', r.ok && r.veredicto.articulo_prohibido, 'claro');
+  igual('  …y nivelDeTexto lo consume', r.ok && nivelDeTexto(r.veredicto), 'bloquear');
+}
+
+// El camino largo, por si `output_text` no viene.
+{
+  const r = parsearRespuestaOpenAI({
+    output: [{ type: 'message', content: [{ type: 'output_text', text: veredictoJson }] }],
+  });
+  ok('camino largo recorriendo output[]', r.ok === true);
+}
+
+// EL CASO QUE SE OLVIDA: 200, pero con refusal en vez del JSON. Un JSON.parse a
+// ciegas revienta aquí y se lleva la petición entera.
+{
+  const r = parsearRespuestaOpenAI({
+    output: [
+      { type: 'message', content: [{ type: 'refusal', refusal: 'No puedo ayudar con eso.' }] },
+    ],
+  });
+  ok('un refusal NO lanza', r.ok === false);
+  igual('  …y se distingue de los otros fallos', r.ok === false && r.motivo, 'refusal');
+}
+
+igual(
+  'JSON inválido no lanza',
+  (() => {
+    const r = parsearRespuestaOpenAI({ output_text: 'esto no es json' });
+    return r.ok === false && r.motivo;
+  })(),
+  'json_invalido'
+);
+
+igual(
+  'respuesta nula (el catch del fetch) no lanza',
+  (() => {
+    const r = parsearRespuestaOpenAI(null);
+    return r.ok === false && r.motivo;
+  })(),
+  'sin_contenido'
+);
+
+// LA VALIDACIÓN DE FORMA NO SOBRA AUNQUE strict LA PROMETA: sin ella, un objeto
+// al que le falta una categoría entra con `undefined` en ese campo, `deGrado`
+// cae en la rama de 'ninguno', y una respuesta rota se lee como texto limpio.
+{
+  const incompleto = JSON.parse(veredictoJson);
+  delete incompleto.estafa_spam;
+  const r = parsearRespuestaOpenAI({ output_text: JSON.stringify(incompleto) });
+  ok('un veredicto al que le falta una categoría se rechaza', r.ok === false);
+  igual('  …como forma_invalida', r.ok === false && r.motivo, 'forma_invalida');
+  ok('  …diciendo cuál faltó', r.ok === false && r.detalle.includes('estafa_spam'), r.ok === false ? r.detalle : '');
+}
+
+{
+  const raro = { ...JSON.parse(veredictoJson), violencia: 'muchisimo' };
+  const r = parsearRespuestaOpenAI({ output_text: JSON.stringify(raro) });
+  igual('un grado fuera del enum se rechaza', r.ok === false && r.motivo, 'forma_invalida');
+}
 
 // ---------------------------------------------------------------------------
 console.log('');

@@ -1393,13 +1393,20 @@ Toast de éxito · Toast de error · Loading / skeleton
      el fuente de `congelada()`. **El tripwire y el escenario 3 NO son
      redundantes** — uno vigila el cableado y el otro la lógica, y §3 explica
      por qué borrar cualquiera deja un hueco medido.
-  4. `node scripts/probe-moderacion.mjs` — los umbrales de RF-18 (la función de
-     decisión y la lista de palabras). **No necesita el stack local** (el paso 5
-     tampoco): la pieza que prueba es pura a propósito, sin red ni Supabase, y
-     por eso corre en menos de un segundo.
+  4. `node scripts/probe-moderacion.mjs` — todo lo PURO de RF-18: los umbrales
+     (la función de decisión y la lista de palabras), el particionado de fotos
+     para Vision, y el schema/parseo de OpenAI. **No necesita el stack local**
+     (el paso 5 tampoco): las piezas que prueba son puras a propósito, sin red
+     ni Supabase, y por eso corre en menos de un segundo.
      Y es el único que importa la implementación **REAL** en vez de
-     transcribirla: `supabase/functions/moderar-contenido/{decision,palabras-prohibidas}.ts`
-     no importan nada, así que Node los carga directo (type stripping, v22.6+).
+     transcribirla: los cuatro módulos que cubre
+     (`supabase/functions/moderar-contenido/{decision,palabras-prohibidas,vision,openai}.ts`)
+     no importan nada fuera de `decision.ts`, así que Node los carga directo
+     (type stripping, v22.6+). **Ese "no importan nada" es la precondición, no
+     una casualidad:** `vision.ts` y `openai.ts` existen separados de `index.ts`
+     justamente para que el `fetch`, la descarga de Storage y el `encodeBase64`
+     —lo Deno-only— queden del otro lado de la línea y no arrastren el resto a
+     ser inverificable.
      Es justo lo que `probe-venta.mjs` NO puede hacer con `congelada()`, y por
      eso aquel necesita además un tripwire sobre el fuente y este no. Si alguien
      le mete un import de Supabase a `decision.ts`, este script deja de arrancar

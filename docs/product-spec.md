@@ -223,14 +223,19 @@ vez validado.
   no como diseño: rutea por `ctx.authMode` (el cliente puede promover a
   `activa`, el trigger de Storage solo puede escalar — nunca al revés), valida
   ownership antes de moderar una publicación ajena, y escribe el estado
-  resultante más su fila de auditoría. 50 aserciones puras sobre la función de
-  decisión (`scripts/probe-moderacion.mjs`) y 15 de autorización/cableado
-  contra la función corriendo de verdad
+  resultante más su fila de auditoría. También está escrito todo lo que se
+  puede probar sin credenciales: el particionado de fotos para Vision (con sus
+  tres límites) y el schema, el body y el parseo de OpenAI —refusal incluido—.
+  120 aserciones puras (`scripts/probe-moderacion.mjs`) y 15 de
+  autorización/cableado contra la función corriendo de verdad
   (`scripts/probe-moderacion-http.mjs`), todas en verde.
-  **🚧 Pendiente, y es lo que falta para que la moderación haga algo:**
-  `evaluarListing()`/`moderarAvatar()` son stubs — no llaman a Vision ni a
-  OpenAI todavía, así que hoy toda publicación evaluada cae en `pendiente` por
-  falla segura (nunca en `activa` sin mirar). Faltan también los dos triggers
+  **🚧 Pendiente, y es lo que falta para que la moderación haga algo:** el
+  `fetch` a las dos APIs, la descarga de las fotos desde Storage y su base64 —
+  o sea que `evaluarListing()`/`moderarAvatar()` siguen siendo stubs y hoy toda
+  publicación evaluada cae en `pendiente` por falla segura (nunca en `activa`
+  sin mirar). Esa parte espera credenciales reales: sin ellas no se puede
+  verificar, y este repo no da por buena una llamada de red que nunca se
+  ejecutó. Faltan también los dos triggers
   de Storage, el rework de `publicar.ts` (sigue creando en `pausada` y
   pasando a `activa` sin pasar por `pendiente` — deuda ya documentada en
   `publicar-fotos.md`), y las credenciales reales de Google Cloud Vision /

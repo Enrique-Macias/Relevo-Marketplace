@@ -46,7 +46,9 @@ paths:
 | Entrada de la función en `config.toml` (`verify_jwt = false`) | **Hecho** | `supabase/config.toml` |
 | Esqueleto de la Edge Function: ruteo por `authMode`, ownership, guard de promoción, escritura de estado + auditoría | **Hecho** | `supabase/functions/moderar-contenido/index.ts` |
 | Typecheck propio de la carpeta de funciones | **Hecho** | `npm run check:functions` |
-| La EVALUACIÓN real (Vision, GPT, descarga de fotos, particionado) | **Pendiente** | `index.ts` — `evaluarListing()` y `moderarAvatar()` son stubs que fallan seguro |
+| Particionado, request y parseo de Vision (sin el `fetch`) | **Hecho** | `supabase/functions/moderar-contenido/vision.ts` |
+| Schema, body y parseo de OpenAI, refusal incluido (sin el `fetch`) | **Hecho** | `supabase/functions/moderar-contenido/openai.ts` |
+| El `fetch` a Vision/OpenAI, la descarga de Storage, el `encodeBase64`, y armar los `Ejes` | **Pendiente** | `index.ts` — `evaluarListing()` y `moderarAvatar()` siguen siendo stubs que fallan seguro. Espera credenciales reales |
 | Los dos triggers de Storage | **Pendiente** | sin migración todavía |
 | El rework de `publicar.ts` (nace `pendiente`, ya no activa él mismo) | **Pendiente** | — |
 | El `with_check` de `listings_insert_own` forzando `pendiente` | **Pendiente** | deuda ya documentada en `publicar-fotos.md` |
@@ -383,6 +385,32 @@ como eje no evaluable (§6). O sea que el particionado casi nunca se activa —
 pero sin él, una publicación con fotos pesadas no falla "un poco": el request
 entero lo rechaza Vision.
 
+**IMPLEMENTADO en `vision.ts` (2026-09-18), y con el umbral VERIFICADO en vez
+de justificado en prosa.** Lo que antes era "6 MB con headroom bajo los ~7.4"
+ahora tiene aserción: `tamanoBase64()` devuelve el largo EXACTO (`ceil(n/3)*4`,
+comparado contra `Buffer.toString('base64')` en el probe, no una constante de
+1.33 redondeada que subestimaría), y el probe comprueba que un lote lleno a
+6 MiB codifica a 8,388,608 caracteres — **2.00 MB de holgura** bajo el tope de
+10 MB, suficiente para el andamiaje del JSON que no entra en el conteo de bytes
+crudos. Su control es que 8 MiB **no** cabrían, para que el margen no pase por
+casualidad.
+
+**Dos cosas que el particionado hace y que no se ven en la descripción de
+arriba**, las dos con control negativo propio:
+
+- **Una foto sobre el tope por imagen no se descarta: sale por
+  `demasiadoGrandes`**, para que el llamador la cuente como no evaluable.
+  Filtrarla sería el fallo silencioso de §6 movido de sitio.
+- **El corte lleva un `actual.length > 0`, y lo que pasa sin él está medido.**
+  No es lo que la primera versión de este código afirmaba (que el bucle "no
+  termina nunca"): el bucle termina igual, y lo que sale es un **lote vacío** al
+  frente —`[0, 1, 1]` en vez de `[1, 1]`— o sea un request a Vision con cero
+  imágenes. Solo ocurre cuando la PRIMERA foto es la que no cabe, que es
+  exactamente el caso que las pruebas no cubrían: el control negativo del guard
+  **no hizo fallar nada** hasta que se agregó ese caso. Hoy lo vigilan tres
+  aserciones, una de ellas un barrido de 216 combinaciones de tamaños que exige
+  que ningún lote salga vacío nunca.
+
 **El texto (GPT) corre EN PARALELO con ese batch, no después.** No hay
 dependencia entre los dos: GPT evalúa título+descripción, que el cliente ya
 mandó completos; no necesita nada que salga de Vision. Y el texto de OCR **no
@@ -405,6 +433,66 @@ reales. Se mide de verdad cuando exista `index.ts`, contra Vision y OpenAI con
 imágenes reales, y ese número —no esta estimación— es el que confirma si el
 copy de espera de "Publicar (revisando)" (CLAUDE.md §4) alcanza en la
 práctica.
+
+### 3.1. OpenAI: Responses API, y las dos preguntas que el plan dejó abiertas
+
+**Se usa el Responses API (`POST /v1/responses`) con `text.format`, NO Chat
+Completions con `response_format.json_schema`.** La razón no es preferencia por
+lo nuevo: la guía vigente de Structured Outputs documenta **únicamente** el
+Responses API y no cubre la variante de Chat Completions en absoluto.
+Implementar contra aquella sería implementar contra una forma que la doc actual
+ya no describe.
+
+Las dos preguntas que el plan marcó como "no verificado, a confirmar al
+escribirlo", resueltas contra la doc (2026-09-18):
+
+- **¿`model` es obligatorio?** Aparece en TODOS los ejemplos de la guía y no
+  hay ningún modelo por default documentado. La *referencia* del endpoint no lo
+  lista entre los parámetros del body —artefacto de cómo está redactada esa
+  página, tal como el plan sospechó—, así que la doc no permite cerrarlo del
+  todo sin llamar a la API. **Resolución práctica: se manda siempre**, con lo
+  que la ambigüedad deja de importar.
+- **¿Qué forma toma `input`?** Acepta **un string suelto O un arreglo de
+  mensajes** (`"optional string or array of EasyInputMessage…"`). Se usa el
+  arreglo `system` + `user`, que es la forma canónica de los ejemplos **y** la
+  que separa las instrucciones del texto del vendedor — que es entrada no
+  confiable, escrita por cualquiera con cuenta. Concatenarla en el prompt de
+  sistema es el camino directo a que alguien escriba "ignora las instrucciones
+  anteriores" en su descripción. El Structured Output pone el segundo candado:
+  la FORMA de la respuesta la fija el schema, así que ni una inyección exitosa
+  puede hacer que el modelo conteste otra cosa que los seis grados; lo que sí
+  podría mover son los VALORES, y por eso la lista de palabras corre aparte en
+  local sobre el mismo texto, con `peor()` garantizando que ninguna señal
+  absuelve a la otra.
+
+`text.format` lleva las cuatro claves como HERMANAS —`{ type: 'json_schema',
+name, schema, strict }`—, no `schema` anidado dentro de otro objeto.
+
+**IMPLEMENTADO en `openai.ts` (2026-09-18).** Tres cosas que no se ven en el
+diff y que tienen control negativo propio:
+
+- **El schema se deriva de un `Record<keyof VeredictoTexto, …>`, y ESA
+  anotación es el amarre** entre lo que se le pide a OpenAI y lo que
+  `nivelDeTexto()` consume. Agregar una categoría al tipo y no al schema (o al
+  revés) **no compila** — medido con las dos variantes. Sin ella se
+  desincronizan en silencio: OpenAI devolvería un objeto sin la categoría
+  nueva, `nivelDeTexto()` leería `undefined`, y `deGrado(undefined)` cae en la
+  rama de `'ninguno'`, o sea que una categoría recién agregada nunca marcaría
+  nada. `required` también se deriva de las mismas claves y no se escribe
+  aparte, porque `strict` rechaza el schema entero si las dos listas no
+  coinciden — un fallo que aparecería recién en producción.
+- **El probe verifica que las seis categorías MUEVAN el veredicto**, no solo
+  que estén en el schema. Es una aserción distinta de las de forma: caza una
+  categoría declarada que nadie consume, que sería una señal que el modelo
+  reporta y nosotros tiramos sin ningún error a la vista.
+- **La validación de forma al parsear no sobra aunque `strict` la prometa.** El
+  modo estricto garantiza la forma del lado de OpenAI; el parseo corre del lado
+  nuestro, y confiar en la promesa significa que un cambio de API, un modelo
+  mal configurado o una respuesta truncada entren como `undefined` en los seis
+  campos — que `deGrado` lee como `'ninguno'`. O sea: **una respuesta rota se
+  leería como texto limpio**, el fallo silencioso más caro posible en ese
+  archivo. Control negativo corrido: sin la validación, un veredicto al que le
+  falta una categoría pasa.
 
 ### Los secretos de Vision y OpenAI — ya resuelto en código, no solo aquí
 
@@ -642,8 +730,9 @@ trigger corre de nuevo— la habría promovido sola a `activa`, exactamente el
 auto-republicado que #9 existe para impedir. Es el mismo invariante que ya
 protegía a `vendida` (`revisar` tampoco la toca); `pausada` necesitaba el
 mismo carve-out y no lo tenía. Corregido en `decidirListing()` y en
-`probe-moderacion.mjs` (44 aserciones en total hoy, incluidas 13 solo de esta
-tabla). El fix acota el "escondite" a una consecuencia menor y documentada en
+`probe-moderacion.mjs` (13 de esta tabla; el total del archivo se mide con
+`node scripts/probe-moderacion.mjs`, no se recuerda — iba en 44 al escribirse
+esta línea y ya se movió dos veces desde entonces). El fix acota el "escondite" a una consecuencia menor y documentada en
 el propio código: un acierto de nivel `revisar` sobre una publicación pausada
 queda sin marcar hasta que algo más la toque (`bloquear` si empeora, o el
 vendedor la reactiva a mano) — aceptable porque mientras está pausada nadie la
