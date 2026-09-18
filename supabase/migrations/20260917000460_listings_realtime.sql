@@ -1,0 +1,46 @@
+-- Relevo — `listings` entra a la publicación de Realtime (RF-18).
+--
+-- Es lo que le permite al cliente enterarse de que la moderación movió su
+-- publicación de `pendiente` a `activa` o `bloqueada` sin estar preguntando.
+--
+-- ESTA MIGRACIÓN NO CAMBIA NINGÚN COMPORTAMIENTO OBSERVABLE HOY. Nadie se
+-- suscribe todavía: `src/` no tiene una sola llamada a `.channel()`. Va sola y
+-- primero a propósito — es verificable por sí misma (`pg_publication_tables`
+-- antes y después) y no arrastra a nada más.
+--
+-- ===========================================================================
+-- POR QUÉ REALTIME AQUÍ, CUANDO EL REPO YA LO DESCARTÓ DOS VECES
+-- ===========================================================================
+-- `src/lib/notificaciones.ts:165` y `notificaciones-push.md:44` dicen, con
+-- estas palabras, que no se usa Realtime porque "sería una suscripción abierta
+-- toda la sesión para un dato que cambia un puñado de veces al día". Eso sigue
+-- siendo cierto PARA ESE CASO — el contador de la campana, ambiente, global.
+--
+-- Este es la forma opuesta, y por eso la excepción se sostiene: una suscripción
+-- a UNA fila (`filter: 'id=eq.<listingId>'`), abierta SEGUNDOS, mientras una
+-- pantalla concreta está montada, para un dato que cambia exactamente una vez y
+-- que el usuario está esperando mirando la pantalla. No es ambiente, es una
+-- respuesta.
+--
+-- ===========================================================================
+-- LO QUE **NO** HACE FALTA, Y CONVIENE SABERLO ANTES DE "COMPLETARLO"
+-- ===========================================================================
+--  · **Ninguna policy nueva.** Realtime evalúa la RLS del suscriptor sobre la
+--    fila, y `listings_select` (20260917000459) ya deja al dueño ver la suya en
+--    CUALQUIER estado, `pendiente` y `bloqueada` incluidos. O sea que el dueño
+--    recibe el cambio y un tercero no. Eso es load-bearing: si alguien
+--    endurece `listings_select`, el vendedor deja de enterarse de su propio
+--    veredicto.
+--  · **`REPLICA IDENTITY` se queda en `default`** (hoy es la PK, medido). Solo
+--    haría falta `full` para recibir los valores VIEJOS de la fila, y aquí lo
+--    único que importa es el `estado` nuevo. `full` escribe la fila entera al
+--    WAL en cada update — se paga en todas las escrituras de `listings` a
+--    cambio de un dato que nadie lee.
+--  · **Nada de `realtime.messages` ni policies sobre el esquema `realtime`**:
+--    eso es para Broadcast/Presence. `postgres_changes` autoriza con la RLS de
+--    la tabla de origen, que es la de arriba.
+--
+-- La publicación ya existe (la crea Supabase) con insert/update/delete en true
+-- y CERO tablas — medido antes de escribir esto. Esta es la primera.
+
+alter publication supabase_realtime add table public.listings;

@@ -181,15 +181,17 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 23 migraciones (`supabase/migrations/`), con RLS activo y probado en
+Definido en 24 migraciones (`supabase/migrations/`), con RLS activo y probado en
 las 12 tablas más los DOS buckets de Storage. Este es el esquema **real**, no
 solo la intención original.
 
-**Repo y remoto están a la par: 23 y 23**, medido con
-`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. Las dos de
-moderación pre-publicación (`20260917000458`, `20260917000459`,
-`pendiente`/`bloqueada`) ya viajaron a remoto — confirmado también leyendo el
-enum ahí directo (`pg_enum` vía `execute_sql`), no solo contando filas. Antes de
+**Repo y remoto NO están a la par: 24 y 23**, medido con
+`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. La de más
+es `20260917000460` (`listings` entra a la publicación de Realtime, RF-18),
+escrita y validada en local y **sin pushear**. Las dos anteriores de moderación
+pre-publicación (`20260917000458`, `20260917000459`, `pendiente`/`bloqueada`) sí
+viajaron — confirmado leyendo el enum en remoto directo (`pg_enum` vía
+`execute_sql`), no solo contando filas. Antes de
 este punto vivía una salvedad —"en remoto hay 19, falta pushear la de
 `avatars`"— que resultó estar **desactualizada**: al hacer `db push` con la de
 suspensión, el CLI aplicó únicamente `20260917000457`, o sea que
@@ -1028,35 +1030,69 @@ Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
 
-**RF-18 (moderación de contenido pre-publicación): dos decisiones de umbral,
+**RF-18 (moderación de contenido pre-publicación): las decisiones de umbral,
 documentadas ANTES de construirse.** Nada de este flujo existe en código
 todavía — la base es la de arriba: el enum ya tiene `pendiente`/`bloqueada` y
-su RLS ya los trata como no públicos (T24) — pero las dos decisiones que van
-a gobernar cómo se usa ese enum ya están tomadas, y quedan aquí para que no
+su RLS ya los trata como no públicos (T24) — pero las decisiones que van a
+gobernar cómo se usa ese enum ya están tomadas, y quedan aquí para que no
 sigan viviendo solo en una conversación:
 
-- **El umbral de SafeSearch que manda a revisión es `LIKELY`, no
-  `VERY_LIKELY`.** Una publicación que Google Cloud Vision marque `LIKELY` en
-  cualquier categoría de SafeSearch —o donde la detección de texto en imagen
-  encuentre algo problemático— queda en `pendiente`, a la espera de revisión
-  humana. **No hay bloqueo automático ni publicación automática en ningún
-  punto de esta decisión**: `bloqueada` solo la pone una persona, nunca el
-  pipeline. `VERY_LIKELY` habría sido el umbral más estricto —menos falsos
-  positivos, pero deja pasar sin revisión más contenido dudoso—; `LIKELY` es
-  deliberadamente más sensible, a costa de mandar más publicaciones
-  legítimas a la cola. Y **"la cola" no es una tabla nueva ni un mecanismo
-  aparte: es literalmente el filtro `estado = 'pendiente'` sobre `listings`**
-  — el mismo enum, la misma RLS, sin infraestructura adicional.
+- **Son DOS umbrales, no uno: `LIKELY → pendiente`, `VERY_LIKELY →
+  bloqueada`.** Una publicación que Google Cloud Vision marque `LIKELY` en
+  alguna de las categorías que miramos queda en `pendiente`, a la espera de
+  revisión humana; `VERY_LIKELY` la bloquea **automáticamente**, sin pasar por
+  una persona. `LIKELY` como umbral de revisión es deliberadamente sensible —
+  manda a la cola más publicaciones legítimas de las que haría falta— y esa es
+  la concesión que se eligió a cambio de que pase menos contenido dudoso sin
+  mirar. **Ojo si lees una versión anterior de este bloque:** llegó a decir que
+  `bloqueada` solo la pone una persona y nunca el pipeline. Eso es falso desde
+  que existen los dos umbrales.
+- **Las categorías de SafeSearch que se miran son `adult`, `violence` y
+  `racy`.** `spoof` queda fuera porque no es una señal de seguridad —mide si la
+  imagen es una versión alterada de una canónica—, y `medical` porque en ESTE
+  catálogo es una fábrica de falsos positivos: libros de anatomía, batas,
+  estetoscopios, muletas, botiquines.
+- **`vendida` y `pausada` SÍ escalan a `bloqueada`, pero el pipeline NUNCA las
+  promueve a `activa`.** Es la regla menos obvia de todo esto y es asimétrica a
+  propósito. Escalan porque si no, `pausada` sería un escondite —pausar, cambiar
+  la foto, reactivar, con contenido sin moderar— y porque una `vendida` la ve el
+  campus entero (arriba), o sea que el contenido sucio sigue expuesto; escalar
+  una `vendida` **no toca `listing_sales`**, que es otra tabla con su propia
+  policy. Y no se promueven porque `pausada` y `vendida` no son estados de
+  moderación sino decisiones del vendedor: una moderación limpia que
+  "promoviera" despausaría la publicación de alguien que la pausó a propósito, o
+  resucitaría una venta. **`bloqueada → activa` no ocurre por ningún camino.**
+- **El texto sacado por OCR de una foto tiene TECHO en `pendiente`: nunca
+  bloquea solo.** Pasa por la MISMA lista de palabras prohibidas que el título y
+  la descripción —una sola lista, no dos que se desincronicen— pero con
+  consecuencia distinta, porque la intención no es la misma: teclear una palabra
+  en la descripción es deliberado, que Vision la lea de la portada de un libro o
+  de un póster de fondo es incidental. El techo no abre un hueco: el caso de
+  evasión —escribir el texto dentro de la imagen— sigue cayendo en `pendiente`,
+  que no es "publicado" sino "no se publica hasta que alguien lo mire".
+- **Los datos de contacto en el texto también tienen techo en `pendiente`.** Un
+  vendedor que escriba su WhatsApp en la descripción salta entero el control de
+  `seller_whatsapp()` (arriba), así que se detecta — pero no bloquea, porque un
+  número de modelo, un año o una talla lo disparan igual.
+- **Avatares: enforcement binario, y solo `VERY_LIKELY` borra.** Un avatar
+  `LIKELY` **no hace nada**. No es descuido: no hay dónde encolarlo —`users` no
+  tiene columna de estado para la foto y el bucket es público, así que no existe
+  un "subido pero no visible"— y se prefiere el riesgo de un avatar dudoso sin
+  resolver antes que borrar contenido legítimo sin poder revertirlo. Cuando sí
+  borra, borra el objeto y pone `foto_url` en null: el usuario vuelve a sus
+  iniciales.
 - **Mientras no exista RF-17 (panel de administración), la cola de
   `pendiente` la revisa el desarrollador único vía Supabase Studio.** No hay
   otro mecanismo todavía — ni notificación a un equipo de moderación (no
   existe ese equipo), ni SLA, ni flujo automatizado de aprobación/rechazo. Es
-  manual, por diseño, hasta que RF-17 exista.
+  manual, por diseño, hasta que RF-17 exista. Y **"la cola" no es una tabla
+  nueva ni un mecanismo aparte: es literalmente el filtro
+  `estado = 'pendiente'` sobre `listings`** — el mismo enum, la misma RLS, sin
+  infraestructura adicional.
 
 Nada de esto tiene todavía un punto de enforcement en código: no hay Edge
 Function, no hay llamada a Vision ni a OpenAI, y `publicar.ts` sigue sin
-pasar por `pendiente` (`publicar-fotos.md`, deuda ya documentada). El plan de
-implementación es el siguiente paso, no este.
+pasar por `pendiente` (`publicar-fotos.md`, deuda ya documentada).
 
 ---
 
@@ -1223,7 +1259,7 @@ Toast de éxito · Toast de error · Loading / skeleton
   visible con solo "que compile" — se necesitó revisión deliberada.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son TRES pasos, no uno:
+  `postgres`/superusuario. Son CUATRO pasos, no uno:
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
      **`psql` puede no estar instalado en la máquina** (no lo está en la de
      desarrollo actual, aunque este comando lo dé por supuesto). El contenedor
@@ -1246,7 +1282,21 @@ Toast de éxito · Toast de error · Loading / skeleton
      el fuente de `congelada()`. **El tripwire y el escenario 3 NO son
      redundantes** — uno vigila el cableado y el otro la lógica, y §3 explica
      por qué borrar cualquiera deja un hueco medido.
-  Los dos probes necesitan el stack local arriba y limpian lo suyo en un
+  4. `node scripts/probe-moderacion.mjs` — los umbrales de RF-18 (la función de
+     decisión y la lista de palabras). **Es el único de los cuatro que NO
+     necesita el stack local**: la pieza que prueba es pura a propósito, sin
+     red ni Supabase, y por eso corre en menos de un segundo.
+     Y es el único que importa la implementación **REAL** en vez de
+     transcribirla: `supabase/functions/moderar-contenido/{decision,palabras-prohibidas}.ts`
+     no importan nada, así que Node los carga directo (type stripping, v22.6+).
+     Es justo lo que `probe-venta.mjs` NO puede hacer con `congelada()`, y por
+     eso aquel necesita además un tripwire sobre el fuente y este no. Si alguien
+     le mete un import de Supabase a `decision.ts`, este script deja de arrancar
+     — esa es la señal, no un inconveniente.
+     **Ojo:** esos dos módulos no los cubre `npx tsc --noEmit` (`tsconfig.json`
+     excluye `supabase/functions` porque es Deno), así que su red son estas
+     aserciones y no el compilador.
+  Los probes 2 y 3 necesitan el stack local arriba y limpian lo suyo en un
   `finally`; si una corrida muere de golpe, `supabase db reset` borra la basura.
 - **Para bugs de UI que dependen de interacción real (teclado, gestos, touch),
   el simulador headless de Claude Code no siempre puede confirmarlos** — no
