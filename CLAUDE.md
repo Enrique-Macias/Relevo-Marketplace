@@ -2044,6 +2044,31 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   herramienta", confirma que esa herramienta existe en la máquina y que alguien
   la corre.
 
+- **El gemelo del gotcha de arriba, pero para ESLint: `npm run lint` no
+  excluye `supabase/functions` por config — lo excluye por SCOPE por default,
+  que es el mismo efecto con una causa distinta y más fácil de pasar por
+  alto.** `expo lint` sin argumentos solo escanea `/src`, `/app`, `/components`
+  (lo dice su propio `--help`, no un archivo de config visible), así que
+  "corre `npm run lint`, sale limpio" nunca fue evidencia sobre esa carpeta —
+  ni siquiera la tocaba. Se destapó respondiendo a una pregunta directa del
+  usuario ("¿lint y typecheck ESTÁNDAR pasan sobre lo tocado?"): correr
+  `npx eslint` directo sobre la carpeta encontró un `import/no-unresolved`
+  sobre `npm:@supabase/server` (falso positivo — el resolver de TypeScript no
+  entiende specifiers `npm:`, que sí resuelve Deno) y un
+  `@typescript-eslint/no-unused-vars` real sobre un `const config =` que
+  todavía no se consumía en ningún lado. **Fix:** `"lint": "expo lint src
+  supabase/functions"` en `package.json`, más un override en `eslint.config.js`
+  con `"import/no-unresolved": ["error", { ignore: ["^npm:"] }]` — la opción
+  `ignore` acota el perdón al patrón `npm:`, no apaga la regla entera para la
+  carpeta. **Ese matiz importa y casi se pierde:** la primera versión del
+  override sí apagaba la regla completa (`"off"`), y un control negativo lo
+  delató — un import relativo roto de verdad (`./archivo-que-no-existe.ts`)
+  dejaba de reportarse ahí. Con `ignore: ['^npm:']` ese mismo control vuelve a
+  caer. **La lección no es solo "revisa el scope del linter":** es que un
+  override "para silenciar un falso positivo" necesita su propio control
+  negativo, con la misma disciplina que una policy de RLS — de otro modo
+  apaga más de lo que dice apagar.
+
 - **Confirmar que un campo EXISTE no es confirmar su FORMA, y con un shim sin
   tipar la diferencia sale como un 401.** El E-spike de `@supabase/server` leyó
   los `.d.mts` publicados y confirmó correctamente que `ctx.userClaims` existe;

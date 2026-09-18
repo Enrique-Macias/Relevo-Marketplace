@@ -61,8 +61,18 @@ import {
  * petición". Moverlo adentro del `fetch` rompe esa promesa — la función
  * arrancaría bien, serviría requests, y reventaría a mitad de moderar una
  * publicación real.
+ *
+ * SIN BINDING a propósito, y no por descuido: mientras `evaluarListing()` y
+ * `moderarAvatar()` sean stubs (Olas 1.3/1.4 todavía no llaman a Vision ni a
+ * OpenAI), nada consume el valor — solo importa el efecto de fail-fast. Un
+ * `const config = ` sin uso lo marca `@typescript-eslint/no-unused-vars`
+ * (encontrado corriendo `npx eslint` directo sobre esta carpeta, que
+ * `npm run lint` no cubría hasta ahora — ver CLAUDE.md §9). Cuando esas dos
+ * funciones empiecen a llamar a las APIs reales, van a necesitar
+ * `googleCloudVisionApiKey`/`openaiApiKey`, y ahí vuelve el binding, esta vez
+ * consumido de verdad.
  */
-const config = resolverConfig();
+resolverConfig();
 
 /** Los dos buckets que el trigger vigila. `entity_id` significa distinto en cada uno. */
 type Bucket = 'listing-photos' | 'avatars';
