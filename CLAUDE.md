@@ -185,26 +185,32 @@ Definido en 23 migraciones (`supabase/migrations/`), con RLS activo y probado en
 las 12 tablas más los DOS buckets de Storage. Este es el esquema **real**, no
 solo la intención original.
 
-**Repo y remoto YA NO están a la par: 23 y 21**, medido con
-`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations` el mismo
-día. Las dos de más son `20260917000458` y `20260917000459` (moderación
-pre-publicación: `pendiente`/`bloqueada`), escritas y validadas en local pero
-sin pushear todavía. Antes de este punto vivía una salvedad —"en remoto hay 19,
-falta pushear la de `avatars`"— que resultó estar **desactualizada**: al hacer
-`db push` con la de suspensión, el CLI aplicó únicamente `20260917000457`, o sea
-que `20260916000456` ya había viajado antes y el bucket `avatars` ya existía en
+**Repo y remoto están a la par: 23 y 23**, medido con
+`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. Las dos de
+moderación pre-publicación (`20260917000458`, `20260917000459`,
+`pendiente`/`bloqueada`) ya viajaron a remoto — confirmado también leyendo el
+enum ahí directo (`pg_enum` vía `execute_sql`), no solo contando filas. Antes de
+este punto vivía una salvedad —"en remoto hay 19, falta pushear la de
+`avatars`"— que resultó estar **desactualizada**: al hacer `db push` con la de
+suspensión, el CLI aplicó únicamente `20260917000457`, o sea que
+`20260916000456` ya había viajado antes y el bucket `avatars` ya existía en
 remoto (`select count(*) from storage.buckets where id = 'avatars'` → 1).
 Moraleja para la próxima vez que se lea un conteo en esta sección: son números
 que se MIDEN con su comando, y cuando la prosa y el comando discrepan gana el
-comando — incluso cuando la prosa es una advertencia que suena prudente. Y
-ahora hay una segunda moraleja, más simple: un repo y un remoto en par es un
-estado transitorio, no una invariante — vuelve a discreparse en cuanto se
-escribe la siguiente migración y no se pushea de inmediato.
+comando — incluso cuando la prosa es una advertencia que suena prudente.
+
+**Y la segunda moraleja se demostró sola, en la misma tarea que la escribió.**
+Esta sección llegó a decir "23 y 21, las dos de más sin pushear todavía" —
+cierto en el momento en que se midió — y quedó desactualizado por un `db push`
+corrido FUERA de esta sesión antes de que se terminara de escribir el párrafo
+siguiente. Un repo y un remoto en par (o no) es un estado transitorio, no una
+propiedad del código: no se documenta como hecho fijo, se remide cada vez que
+alguien vaya a confiar en el número.
 
 ```
 -- Enums
 user_status        : activo | suspendido
-listing_status     : activa | pausada | vendida
+listing_status     : activa | pausada | vendida | pendiente | bloqueada
 listing_condition  : nuevo | como_nuevo | buen_estado | usado
 report_reason      : spam_publicidad | sospecha_fraude | contenido_inapropiado
                       | no_es_estudiante | otro

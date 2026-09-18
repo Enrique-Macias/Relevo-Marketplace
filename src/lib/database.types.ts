@@ -560,7 +560,12 @@ export type Database = {
     }
     Enums: {
       listing_condition: "nuevo" | "como_nuevo" | "buen_estado" | "usado"
-      listing_status: "activa" | "pausada" | "vendida"
+      listing_status:
+        | "activa"
+        | "pausada"
+        | "vendida"
+        | "pendiente"
+        | "bloqueada"
       notification_type:
         | "precio_favorito"
         | "reporte_resuelto"
@@ -701,7 +706,13 @@ export const Constants = {
   public: {
     Enums: {
       listing_condition: ["nuevo", "como_nuevo", "buen_estado", "usado"],
-      listing_status: ["activa", "pausada", "vendida"],
+      listing_status: [
+        "activa",
+        "pausada",
+        "vendida",
+        "pendiente",
+        "bloqueada",
+      ],
       notification_type: [
         "precio_favorito",
         "reporte_resuelto",
