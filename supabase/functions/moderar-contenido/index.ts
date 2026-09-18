@@ -33,11 +33,12 @@
  * que nada en el repo lo note. Pinear `send-push` también es un arreglo aparte,
  * anotado en `.claude/rules/moderacion.md`.
  *
- * ESTADO: Vision y OpenAI YA SE LLAMAN DE VERDAD para publicaciones (Olas 1.3,
- * 1.4, 1.5). Los avatares (Ola 1.6) siguen sin evaluación — `moderarAvatar()`
- * es un stub que conserva siempre. Ver `evaluarListing()` para el pipeline
- * completo y `.claude/rules/moderacion.md` §6 para los cuatro caminos de falla
- * segura, cada uno cableado a mano.
+ * ESTADO: Vision y OpenAI YA SE LLAMAN DE VERDAD, para publicaciones
+ * (`evaluarListing()`, Olas 1.3-1.5) y para avatares (`moderarAvatar()`, Ola
+ * 1.6, mismo pipeline de imagen vía `evaluarFotos()` parametrizada por
+ * bucket). Ver `.claude/rules/moderacion.md` §6 para los caminos de falla
+ * segura de cada uno, cada uno cableado a mano y verificado contra la
+ * función viva.
  */
 
 import { encodeBase64 } from 'jsr:@std/encoding/base64';
@@ -153,7 +154,7 @@ export default {
         }
 
         if (bucket_id === 'avatars') {
-          return await moderarAvatar(db, entity_id, name);
+          return await moderarAvatar(db, config, entity_id, name);
         }
 
         if (bucket_id === 'listing-photos') {
@@ -282,6 +283,7 @@ async function moderarListing(
 }
 
 const BUCKET_LISTING_PHOTOS: Bucket = 'listing-photos';
+const BUCKET_AVATARS: Bucket = 'avatars';
 
 /**
  * Los cuatro ejes de una publicación real — Vision + OpenAI en `Promise.all`,
@@ -330,7 +332,7 @@ async function evaluarListing(
   );
 
   const [fotosResultado, resultadoTexto] = await Promise.all([
-    evaluarFotos(db, config, storagePaths),
+    evaluarFotos(db, config, storagePaths, BUCKET_LISTING_PHOTOS),
     evaluarTexto(config, fila.titulo, fila.descripcion),
   ]);
   const { resultados: resultadosFotos, lotesVision } = fotosResultado;
@@ -379,15 +381,26 @@ async function evaluarListing(
  * cada `storagePath` de entrada —SIEMPRE, ninguna se pierde en el camino—,
  * más `lotesVision`: cuántos requests a Vision se hicieron de verdad.
  *
+ * `bucket` es un parámetro, NO `BUCKET_LISTING_PHOTOS` fijo: `moderarAvatar()`
+ * reusa esta misma función con `BUCKET_AVATARS`. Es el mismo argumento por el
+ * que la lista de palabras prohibidas es una sola (CLAUDE.md §3,
+ * `.claude/rules/moderacion.md` §8) — separar el pipeline de imagen en dos
+ * copias, una por bucket, duplicaría exactamente lo que no debe
+ * desincronizarse: el particionado, la forma del request a Vision, y cómo se
+ * interpreta cada una de las tres formas de foto no evaluable.
+ *
  * SIN FOTOS es un arreglo vacío, no un error: `ejeVision([])` ya lee eso como
  * `'limpio'` (`vision.ts`), y quien impide publicar sin fotos es el trigger
- * `listings_enforce_activation_has_photos`, no esta función.
+ * `listings_enforce_activation_has_photos`, no esta función. (Para el camino
+ * de avatares esto no aplica: `moderarAvatar()` siempre manda exactamente una
+ * ruta.)
  */
 async function evaluarFotos(
   // deno-lint-ignore no-explicit-any
   db: any,
   config: ConfigModeracion,
-  storagePaths: readonly string[]
+  storagePaths: readonly string[],
+  bucket: Bucket
 ): Promise<{ resultados: ResultadoFoto[]; lotesVision: number }> {
   if (storagePaths.length === 0) return { resultados: [], lotesVision: 0 };
 
@@ -397,7 +410,7 @@ async function evaluarFotos(
   for (const storagePath of storagePaths) {
     try {
       const { data: blob, error: errDescarga } = await db.storage
-        .from(BUCKET_LISTING_PHOTOS)
+        .from(bucket)
         .download(storagePath);
 
       // CAMINO 4 DE FALLA SEGURA: la descarga falla (path inválido, objeto
@@ -555,30 +568,103 @@ function ejeQueManda(ejes: Ejes): keyof Ejes {
 // ---------------------------------------------------------------------------
 
 /**
- * TODAVÍA NO EVALÚA NADA — Ola 1.6.
+ * El camino de avatares (Ola 1.6). Mismo pipeline de imagen que una foto de
+ * publicación — descarga, particiona, Vision — vía `evaluarFotos(...,
+ * BUCKET_AVATARS)`: es el mismo argumento por el que la lista de palabras
+ * prohibidas es una sola (CLAUDE.md §3, `.claude/rules/moderacion.md` §8).
  *
- * Aquí la falla segura es la CONTRARIA a la de las publicaciones, y no es una
+ * SIN TEXTO. Un avatar no tiene título ni descripción, así que no hay eje
+ * `gptTexto` ni `listaTecleada` — `decidirAvatar()` solo toma `vision` y
+ * `listaOcr`, y ni siquiera se llama a OpenAI.
+ *
+ * LA FALLA SEGURA ES LA CONTRARIA a la de las publicaciones, y no es una
  * inconsistencia: `decidirAvatar()` solo borra con `bloquear`, así que un eje
- * en `'revisar'` da `'conservar'`. Es la decisión de producto de CLAUDE.md §3
- * —un avatar dudoso no se borra— aplicada tal cual: sin evaluación, no se toca
- * nada. Un stub que borrara sería destructivo e irreversible.
+ * en `'revisar'` —incluido "no se pudo evaluar", que es como `ejeVision()`
+ * trata una foto `no_evaluable`— da `'conservar'`. Es la decisión de producto
+ * de CLAUDE.md §3 aplicada tal cual, y sale gratis de reusar las mismas
+ * piezas: no hace falta cablear ningún caso especial para fotos que no se
+ * pudieron bajar o evaluar, la asimetría ya vive en `decision.ts`.
+ *
+ * SIN AUDITORÍA: `listing_moderacion` no tiene `listing_id` que ponerle a un
+ * avatar, y el enforcement es inmediato —borrar o no hacer nada, sin cola que
+ * revisar—. El rastro es el `console.error`/`console.warn`, no una fila
+ * (`.claude/rules/moderacion.md` §7).
  */
 async function moderarAvatar(
   // deno-lint-ignore no-explicit-any
-  _db: any,
+  db: any,
+  config: ConfigModeracion,
   entityId: string,
   name: string
 ): Promise<Response> {
-  console.warn(
-    `[moderar-contenido] evaluación de avatar no implementada; ${name} se conserva`
-  );
+  const { resultados } = await evaluarFotos(db, config, [name], BUCKET_AVATARS);
 
-  const accion = decidirAvatar({
-    vision: NO_EVALUADO,
-    listaOcr: NO_EVALUADO,
-  });
+  const ejes: Pick<Ejes, 'vision' | 'listaOcr'> = {
+    vision: ejeVision(resultados),
+    listaOcr: nivelDeLista(coincidencias(textoOcrDe(resultados)), 'ocr'),
+  };
 
-  // `accion` es `'conservar'` por construcción mientras el stub esté; la rama
-  // de borrado (con su guard de carrera sobre `foto_url`) llega en la Ola 1.6.
-  return Response.json({ ok: true, accion, user_id: entityId });
+  const accion = decidirAvatar(ejes);
+
+  if (accion === 'conservar') {
+    return Response.json({ ok: true, accion });
+  }
+
+  // BORRAR EL OBJETO, SIEMPRE — no lleva el guard de la carrera, y esto es a
+  // propósito, no un descuido: cada subida de avatar estrena uuid
+  // (`storage.ts`, `rutaAvatar()`), así que este objeto NUNCA es el avatar
+  // vigente si `foto_url` ya cambió — el cliente ya intentó borrarlo
+  // (`borrarAvatar()`, best-effort) al escribir el nuevo. Borrarlo aquí,
+  // tarde, no daña nada: es la misma limpieza, solo que de un veredicto que
+  // llegó después de que el usuario cambió de foto.
+  //
+  // MISMO GOTCHA QUE `borrarAvatar()` DEL CLIENTE (CLAUDE.md §9): `remove()`
+  // no falla — devuelve 200 con un array VACÍO si el invocante no ve el
+  // objeto, sin tocarlo. Con `ctx.supabaseAdmin` (bypassa RLS) esto no
+  // debería pasar nunca; si pasa, es señal de algo raro y se grita, no se
+  // asume éxito por el solo hecho de no haber `error`.
+  const { data: borrados, error: errBorrado } = await db.storage
+    .from(BUCKET_AVATARS)
+    .remove([name]);
+
+  if (errBorrado) {
+    console.error(`[moderar-contenido] no se pudo borrar el avatar ${name}:`, errBorrado.message);
+  } else if (!borrados || borrados.length === 0) {
+    console.error(
+      `[moderar-contenido] remove() de ${name} devolvió 200 con lista vacía — el objeto sigue en el bucket`
+    );
+  }
+
+  // EL GUARD DE LA CARRERA, y este sí es obligatorio. Solo nulifica
+  // `foto_url` SI SIGUE apuntando al objeto que se acaba de moderar: entre
+  // que el trigger disparó y esta función corrió, el usuario pudo haber
+  // subido un avatar NUEVO (otro uuid). Sin el `.eq('foto_url', name)`, el
+  // veredicto tardío del avatar VIEJO le borraría la foto al avatar NUEVO
+  // —posiblemente limpio— dejándolo sin foto por un error ajeno.
+  // `.select('id')` es lo que permite distinguir "el guard bloqueó el
+  // update" de "el update aplicó de verdad": un UPDATE cuyo `where` no
+  // matchea ninguna fila no lanza (mismo gotcha de `listings_update_own`,
+  // CLAUDE.md §3) — devuelve un array vacío, no un error.
+  const { data: actualizado, error: errUpdate } = await db
+    .from('users')
+    .update({ foto_url: null })
+    .eq('id', entityId)
+    .eq('foto_url', name)
+    .select('id');
+
+  if (errUpdate) {
+    console.error(
+      `[moderar-contenido] no se pudo nulificar foto_url de ${entityId}:`,
+      errUpdate.message
+    );
+  }
+
+  const fotoUrlNulificado = !errUpdate && !!actualizado && actualizado.length > 0;
+  if (!errUpdate && !fotoUrlNulificado) {
+    console.warn(
+      `[moderar-contenido] avatar bloqueado (${name}) pero foto_url de ${entityId} ya apuntaba a otro — el guard de la carrera lo dejó intacto`
+    );
+  }
+
+  return Response.json({ ok: true, accion, foto_url_nulificado: fotoUrlNulificado });
 }

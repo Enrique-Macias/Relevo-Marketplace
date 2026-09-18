@@ -4,6 +4,7 @@ paths:
   - "scripts/probe-moderacion.mjs"
   - "scripts/probe-moderacion-http.mjs"
   - "scripts/probe-moderacion-red.mjs"
+  - "scripts/probe-moderacion-avatares.mjs"
   - "supabase/migrations/*listing_status_moderacion*.sql"
   - "supabase/migrations/*listings_estados_no_publicos*.sql"
   - "supabase/migrations/*listings_realtime*.sql"
@@ -35,9 +36,9 @@ paths:
 
 ## Estado: qué existe en código y qué no
 
-> Actualizado 2026-09-18 (segunda vez el mismo día: credenciales reales
-> puestas y Ola 1.5 cerrada). Las filas que dicen **Hecho** se midieron contra
-> el repo, no se recuerdan.
+> Actualizado 2026-09-18 (tercera vez el mismo día: Ola 1.6, el camino de
+> avatares, cerrada). Las filas que dicen **Hecho** se midieron contra el
+> repo, no se recuerdan.
 
 | Pieza | Estado | Dónde |
 |---|---|---|
@@ -55,18 +56,20 @@ paths:
 | **El `fetch` real a Vision y a OpenAI** (Ola 1.5) | **Hecho, con credenciales reales puestas** | `index.ts`, `llamarLoteVision()` / `evaluarTexto()` |
 | **La descarga desde Storage + `encodeBase64`** | **Hecho** | `index.ts`, `evaluarFotos()` |
 | **Armar los `Ejes` + `decidirListing()` + escritura + auditoría, para PUBLICACIONES** | **Hecho, con el guard de promoción probado end-to-end (§6.3)** | `index.ts`, `evaluarListing()` |
-| Enforcement de avatares (`moderarAvatar()`) | **Pendiente — Ola 1.6, sigue siendo stub que conserva siempre** | `index.ts` |
+| **Enforcement de avatares** (`moderarAvatar()`): descarga, Vision, `decidirAvatar()`, borrado + guard de la carrera | **Hecho, con el guard de la carrera probado end-to-end (§6.4)** | `index.ts`, `moderarAvatar()` |
 | Los dos triggers de Storage | **Pendiente** | sin migración todavía |
 | El rework de `publicar.ts` (nace `pendiente`, ya no activa él mismo) | **Pendiente** | — |
 | El `with_check` de `listings_insert_own` forzando `pendiente` | **Pendiente** | deuda ya documentada en `publicar-fotos.md` |
 | Suscripción de Realtime en el cliente | **Pendiente** | — |
 
-**Con esto, RF-18 modera publicaciones reales de punta a punta** —el único
-hueco funcional que queda es que nada en la app TODAVÍA llama a esta función
-(`publicar.ts` sigue sin el rework) y que un avatar sucio no se borra solo.
-Los ocho casos de verificación que dependían de red real (4 parcial, 5, 6, 7,
-8, 9, 13, y el probe de autorización re-verificado con evaluación real) están
-en §6.3, con sus controles negativos.
+**Con esto, `moderar-contenido` modera publicaciones Y avatares reales de
+punta a punta** —el único hueco funcional que queda es que nada en la app
+TODAVÍA llama a esta función: falta el rework de `publicar.ts` (Ola 3) y los
+dos triggers de Storage (Ola 2) que la disparan automáticamente al subir una
+foto o un avatar. Los ocho casos de verificación que dependían de red real
+para publicaciones (4 parcial, 5, 6, 7, 8, 9, 13, y el probe de autorización
+re-verificado con evaluación real) están en §6.3; los cuatro de avatares, en
+§6.4 — todos con sus controles negativos.
 
 ---
 
@@ -549,17 +552,21 @@ a propósito y no se va a "arreglar" haciendo la lectura perezosa: el docblock d
 `resolverConfig()` promete fallar al arrancar y no a media petición, que es lo
 que evita reventar a la mitad de moderar una publicación real.
 
-`index.ts` **ya existe, como ESQUELETO** (2026-09-18). Tiene completos el
-ruteo por `ctx.authMode`, el chequeo de ownership del camino `'user'`, el guard
-de `esPromocion()`, la escritura del estado con su `if` anti-`set_updated_at` y
-la fila de auditoría en `listing_moderacion`. Lo que le falta es la EVALUACIÓN:
-`evaluarListing()` y `moderarAvatar()` son stubs. **Los stubs fallan seguro en
-la dirección de cada camino, y las dos direcciones son opuestas a propósito:**
-una publicación sin evaluar reporta los cuatro ejes como `'revisar'` y termina
-en `pendiente` (inútil pero nunca peligrosa — un stub que devolviera `'limpio'`
-publicaría sin mirar); un avatar sin evaluar se CONSERVA, porque
-`decidirAvatar()` solo borra con `bloquear` y un stub que borrara sería
-destructivo e irreversible.
+**Nota histórica, ya superada — se deja para que quede el razonamiento del
+diseño de falla segura, no como estado actual.** `index.ts` empezó como
+ESQUELETO (2026-09-18, primera mitad del día): ruteo, ownership, el guard de
+`esPromocion()` y la escritura de estado ya estaban, pero `evaluarListing()` y
+`moderarAvatar()` eran stubs. **Los stubs fallaban seguro en la dirección de
+cada camino, y las dos direcciones eran opuestas a propósito:** una
+publicación sin evaluar reportaba los cuatro ejes como `'revisar'` y
+terminaba en `pendiente` (inútil pero nunca peligrosa — un stub que
+devolviera `'limpio'` habría publicado sin mirar); un avatar sin evaluar se
+CONSERVABA, porque `decidirAvatar()` solo borra con `bloquear` y un stub que
+borrara habría sido destructivo e irreversible. **Los dos dejaron de ser
+stubs el mismo día** (Ola 1.5 para `evaluarListing()`, §6.3; Ola 1.6 para
+`moderarAvatar()`, §6.4) — la asimetría de diseño que este párrafo describe
+sigue siendo real (`decidirAvatar()` no cambió), solo que ya no hace falta
+un stub para que se cumpla: la implementación real la hereda directo.
 
 Ya no aplica la nota de que `tsconfig.json` deja esta carpeta sin cubrir:
 **`npm run check:functions`** la typechea desde 2026-09-18, con su propia config
@@ -854,6 +861,69 @@ devolviendo la forma EXACTA de un refusal real, alcanzado desde el
 contenedor del edge runtime vía `host.docker.internal` — **no** `127.0.0.1`,
 que desde dentro del contenedor apunta al contenedor mismo, no al host.
 
+### 6.4. Ola 1.6 (avatares) — los tres casos del plan, corridos contra la función viva (2026-09-18)
+
+**`evaluarFotos()` se parametrizó por bucket** (`Bucket`, `'listing-photos' |
+'avatars'`) para que `moderarAvatar()` reuse el pipeline COMPLETO de imagen
+—descarga, particionado, request a Vision, las tres formas de foto no
+evaluable— en vez de una copia paralela. Mismo argumento que la lista de
+palabras prohibidas siendo una sola (CLAUDE.md §3): dos copias del pipeline
+de imagen es exactamente lo que no debe desincronizarse. El único call site
+existente (`evaluarListing`) pasó a nombrar `BUCKET_LISTING_PHOTOS`
+explícito; nada de su comportamiento cambió (reverificado: probes de
+publicaciones siguen en 16+10 tras el cambio).
+
+**Por qué Vision va MOCKEADO en este script y no en uno de los dos anteriores
+(`-http`, `-red`).** `decidirAvatar()` solo borra con el eje `vision` en
+`'bloquear'`, que exige `VERY_LIKELY` de SafeSearch — y la única forma de
+conseguir eso de Vision DE VERDAD es mandarle una imagen genuinamente
+explícita o gráficamente violenta. Este repo no sourcea ni genera ese
+contenido, ni para pruebas (mismo criterio ya aplicado al declinar la
+sub-casuística LIKELY/VERY_LIKELY del caso 4 en §6.3). La lógica de umbral
+(`nivelDeSafeSearch`) ya está cubierta pura y determinista en
+`probe-moderacion.mjs`; lo que faltaba probar era el CABLEADO alrededor de
+esa lógica — y un mock que devuelve la FORMA real de la respuesta de Vision
+(nunca una foto real) es exactamente lo que hace falta para eso, sin
+comprometer nada. Mismo patrón que el mock del *refusal* de OpenAI (caso 8).
+
+**Los tres casos del plan, con su resultado exacto** —
+`scripts/probe-moderacion-avatares.mjs`, 16 aserciones, requiere
+`ENDPOINT_VISION` apuntado al mock (ver el encabezado del script para el
+procedimiento exacto, editar+reiniciar+restaurar):
+
+| # | Caso | Resultado medido |
+|---|---|---|
+| 1 | `VERY_LIKELY` → borra | `accion: 'borrar'`, `foto_url_nulificado: true`, `foto_url` en `null`, el objeto YA NO está en el bucket |
+| 2 | `LIKELY` → no-op | `accion: 'conservar'`, `foto_url` intacto, el objeto SIGUE en el bucket, `foto_url_nulificado` ni viene en la respuesta |
+| 3 | Guard de la carrera | avatar A disparado con la respuesta del mock retrasada 2s; mientras tanto se sube B y se actualiza `foto_url`. El veredicto tardío de A SÍ dice `'borrar'`, pero `foto_url_nulificado: false`, `foto_url` sigue en B, B no se borra — **y A sí se borra del bucket**, un efecto colateral esperado y documentado (ver abajo) |
+| — | Avatares nunca escriben en `listing_moderacion` | 0 filas nuevas tras las 4 llamadas de moderación de este script (confirmado con `count=exact` antes/después, no solo leído del código) |
+
+**El borrado del objeto NO lleva el guard de la carrera — es deliberado, y el
+caso 3 lo prueba en la misma corrida que prueba lo contrario para `foto_url`.**
+Cada subida de avatar estrena uuid (`storage.ts`, `rutaAvatar()`), así que un
+objeto cuyo veredicto llega tarde NUNCA es el avatar vigente si `foto_url` ya
+cambió — el cliente ya intentó borrarlo (`borrarAvatar()`, best-effort) al
+escribir el nuevo. Borrarlo aquí, tarde, es la misma limpieza que el cliente
+ya iba a hacer, no un borrado nuevo. Ponerle el mismo guard que a `foto_url`
+sería un candado sin nada que proteger, y dejaría huérfanos exactamente los
+objetos que este código ya puede limpiar gratis.
+
+**Control negativo corrido, y encontró lo que tenía que encontrar.** Se quitó
+`.eq('foto_url', name)` del UPDATE (dejando solo `.eq('id', entityId)`), se
+corrió el caso 3 aislado: **`foto_url` quedó en `null`** —el veredicto tardío
+de A le borró la foto a B— en vez de seguir apuntando a B. Restaurado,
+reverificado en verde. Es la misma familia de gotcha que `listings_update_own`
+(CLAUDE.md §9): el `where` que no matchea ninguna fila no lanza, así que sin
+el control negativo un guard roto pasaría inadvertido — la llamada sigue
+devolviendo 200 igual.
+
+**Por qué el JSON de respuesta distingue `foto_url_nulificado` con `.select('id')`
+y no infiriéndolo del `errUpdate`.** Un UPDATE cuyo `where` no matchea ninguna
+fila NO es un error (mismo gotcha de arriba) — devuelve un array vacío, sin
+`error`. Sin leer ese array, "el guard bloqueó el update" y "el update aplicó"
+son indistinguibles desde el código, que es justo la ambigüedad que el caso 3
+necesita poder afirmar con certeza.
+
 ---
 
 ## 7. Orden y dependencias — mapa completo de olas
@@ -914,11 +984,15 @@ depende de ellas.
 
 ## 8. Avatares — resumen de implementación (la spec vive en CLAUDE.md §3)
 
+**Implementado (Ola 1.6, 2026-09-18) — `moderarAvatar()` en `index.ts`, con
+los tres casos del plan verificados end-to-end en §6.4.**
+
 Comparten la Edge Function con las publicaciones, con verdict-application
 distinta: el pipeline de imagen es idéntico (SafeSearch + OCR + la misma
 lista) y separarlos duplicaría exactamente lo que no debe desincronizarse —
 el mismo argumento por el que la lista de palabras prohibidas es una sola
-(CLAUDE.md §3).
+(CLAUDE.md §3). En código, esto se resolvió parametrizando `evaluarFotos()`
+por bucket en vez de escribir una segunda copia.
 
 Enforcement binario, solo `VERY_LIKELY`: borrar el objeto + `foto_url = null`
 → el usuario vuelve a sus iniciales. `LIKELY` no hace nada — la razón

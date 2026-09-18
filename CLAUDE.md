@@ -1447,6 +1447,13 @@ Toast de éxito · Toast de error · Loading / skeleton
   `evaluarListing()`, no en cada cambio de schema/RLS. Detalle completo,
   incluidos los casos de falla real de Vision/OpenAI que se verificaron a
   mano (sin script permanente, por qué), en `.claude/rules/moderacion.md` §6.3.
+  **`scripts/probe-moderacion-avatares.mjs`, mismo criterio, para
+  `moderarAvatar()`** — pero con un requisito extra: necesita `ENDPOINT_VISION`
+  apuntado temporalmente a un mock local (mismo motivo que declinar imágenes
+  reales para el umbral `LIKELY`/`VERY_LIKELY`, ver `.claude/rules/moderacion.md`
+  §6.3), así que no corre contra un `functions serve` normal sin editar el
+  fuente primero. Procedimiento exacto y los tres casos, en §6.4 del mismo
+  archivo.
 - **Para bugs de UI que dependen de interacción real (teclado, gestos, touch),
   el simulador headless de Claude Code no siempre puede confirmarlos** — no
   dispara `keyboardDidShow` ni simula touch. Cuando reporte "no pude
