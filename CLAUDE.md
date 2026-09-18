@@ -1409,6 +1409,7 @@ de los route groups).
 | `cuenta-perfil.md` | Mis publicaciones, Favoritos, Perfil, Editar perfil, Perfil público, RF-13 | `src/app/(cuenta)/**`, `(tabs)/perfil.tsx`, `(tabs)/favoritos.tsx`, `src/lib/perfil*.ts` |
 | `confianza-ventas.md` | Venta, ¿a quién le vendiste?, Calificar, Reportar | `src/app/(confianza)/**`, `src/app/reportar/**`, `src/lib/confianza.ts` |
 | `notificaciones-push.md` | Inbox, push, Edge Function `send-push` | `src/app/(notificaciones)/**`, `src/lib/{notificaciones,push}.ts`, `supabase/functions/**` |
+| `moderacion.md` | Moderación pre-publicación (RF-18): Edge Function `moderar-contenido`, los dos triggers de Storage, rework de `publicar.ts`, Realtime | `supabase/functions/moderar-contenido/**`, `scripts/probe-moderacion.mjs`, `src/lib/{publicar,storage}.ts`, `src/app/(publicar)/**` |
 | `componentes-compartidos.md` | Qué componente existe ya y qué NO unificar | `src/components/**` |
 | `compartir-deeplinks.md` | Compartir sin link (las dos pantallas) | `detalle/**`, `perfil-publico/**`, `app.json` |
 
