@@ -2,9 +2,12 @@
 paths:
   - "supabase/functions/moderar-contenido/**"
   - "scripts/probe-moderacion.mjs"
+  - "scripts/probe-moderacion-http.mjs"
+  - "scripts/probe-moderacion-red.mjs"
   - "supabase/migrations/*listing_status_moderacion*.sql"
   - "supabase/migrations/*listings_estados_no_publicos*.sql"
   - "supabase/migrations/*listings_realtime*.sql"
+  - "supabase/migrations/*listing_moderacion*.sql"
   - "src/lib/publicar.ts"
   - "src/lib/storage.ts"
   - "src/app/(publicar)/**"
@@ -32,8 +35,9 @@ paths:
 
 ## Estado: qué existe en código y qué no
 
-> Actualizado 2026-09-18. Las filas que dicen **Hecho** se midieron contra el
-> repo, no se recuerdan.
+> Actualizado 2026-09-18 (segunda vez el mismo día: credenciales reales
+> puestas y Ola 1.5 cerrada). Las filas que dicen **Hecho** se midieron contra
+> el repo, no se recuerdan.
 
 | Pieza | Estado | Dónde |
 |---|---|---|
@@ -48,12 +52,21 @@ paths:
 | Typecheck propio de la carpeta de funciones | **Hecho** | `npm run check:functions` |
 | Particionado, request y parseo de Vision (sin el `fetch`) | **Hecho** | `supabase/functions/moderar-contenido/vision.ts` |
 | Schema, body y parseo de OpenAI, refusal incluido (sin el `fetch`) | **Hecho** | `supabase/functions/moderar-contenido/openai.ts` |
-| El `fetch` a Vision/OpenAI, la descarga de Storage, el `encodeBase64`, y armar los `Ejes` | **Pendiente** | `index.ts` — `evaluarListing()` y `moderarAvatar()` siguen siendo stubs que fallan seguro. Espera credenciales reales |
+| **El `fetch` real a Vision y a OpenAI** (Ola 1.5) | **Hecho, con credenciales reales puestas** | `index.ts`, `llamarLoteVision()` / `evaluarTexto()` |
+| **La descarga desde Storage + `encodeBase64`** | **Hecho** | `index.ts`, `evaluarFotos()` |
+| **Armar los `Ejes` + `decidirListing()` + escritura + auditoría, para PUBLICACIONES** | **Hecho, con el guard de promoción probado end-to-end (§6.3)** | `index.ts`, `evaluarListing()` |
+| Enforcement de avatares (`moderarAvatar()`) | **Pendiente — Ola 1.6, sigue siendo stub que conserva siempre** | `index.ts` |
 | Los dos triggers de Storage | **Pendiente** | sin migración todavía |
 | El rework de `publicar.ts` (nace `pendiente`, ya no activa él mismo) | **Pendiente** | — |
 | El `with_check` de `listings_insert_own` forzando `pendiente` | **Pendiente** | deuda ya documentada en `publicar-fotos.md` |
 | Suscripción de Realtime en el cliente | **Pendiente** | — |
-| Enforcement de avatares | **Pendiente** | — |
+
+**Con esto, RF-18 modera publicaciones reales de punta a punta** —el único
+hueco funcional que queda es que nada en la app TODAVÍA llama a esta función
+(`publicar.ts` sigue sin el rework) y que un avatar sucio no se borra solo.
+Los ocho casos de verificación que dependían de red real (4 parcial, 5, 6, 7,
+8, 9, 13, y el probe de autorización re-verificado con evaluación real) están
+en §6.3, con sus controles negativos.
 
 ---
 
@@ -738,11 +751,8 @@ queda sin marcar hasta que algo más la toque (`bloquear` si empeora, o el
 vendedor la reactiva a mano) — aceptable porque mientras está pausada nadie la
 ve.
 
-### 6.2. El resto, todavía sin correr al migrar este archivo
+### 6.2. El resto, todavía sin correr
 
-- **Edge Function:** local con `supabase functions serve`; los cuatro casos
-  de llave de CLAUDE.md §9 (sin llave / inventada / publishable / secret),
-  más una imagen real por umbral.
 - **Triggers:** las dos ramas por separado, por el Storage API real —
   (1) objeto nuevo → invocación; (2) **sobrescribir con `upsert: true` un
   objeto de una publicación ya `activa` → tiene que escalar**, que es la
@@ -760,6 +770,89 @@ ve.
 - **`C` (la migración de Realtime ya aplicada):** `select * from
   pg_publication_tables where pubname='supabase_realtime'` antes y después —
   ya corrido una vez al aplicar `20260917000460`, repetible.
+
+### 6.3. Ola 1.5 (fetch real a Vision/OpenAI) — los ocho casos que dependían de red, corridos con credenciales reales (2026-09-18)
+
+**Tres scripts, tres alcances distintos, y ninguno sustituye a los otros:**
+
+| Script | Qué prueba | ¿Cuesta dinero? | ¿Necesita servidor? |
+|---|---|---|---|
+| `probe-moderacion.mjs` | DECISIONES puras (120 aserciones) | No | No |
+| `probe-moderacion-http.mjs` | AUTORIZACIÓN/CABLEADO (16) | **Sí, desde la Ola 1.5** | Sí |
+| `probe-moderacion-red.mjs` | Particionado, descarga fallida, no-op (10) | Sí | Sí |
+
+**`probe-moderacion-http.mjs` dejó de ser gratis, y no por elección.** Antes
+de la Ola 1.5 probaba autorización con la evaluación en stub, así que nunca
+tocaba red. En cuanto `evaluarListing()` llama de verdad a las dos APIs, CADA
+llamada a la función —aunque el objetivo del test sea solo "¿rechaza sin
+llave?"— dispara el pipeline completo si llega a `moderarListing`. No hay
+modo "seco" en `index.ts` y no se construyó uno: no estaba pedido y habría
+sido una rama de código que solo existe para pruebas. Consecuencia práctica:
+la primera versión de este probe usaba títulos de prueba sin sentido
+(`RLS ModHTTP propia ${RUN}`), y con evaluación real eso produjo veredictos
+NO DETERMINISTAS de GPT entre corridas —una vez `posible`, una vez peor—.
+Arreglado con `TITULO_LIMPIO`/`DESCRIPCION_LIMPIA`, un par verificado 5/5 GPT
++ 3/3 Vision antes de confiar en él como fixture.
+
+**El guard de promoción (`esPromocion`) dejó de pasar por vacuidad en este
+probe.** Antes, con los ejes siempre en `'revisar'`, `decidirListing` nunca
+proponía `activa` desde `pendiente`, así que no había ninguna promoción que
+el guard pudiera bloquear — la aserción de "el trigger no promueve" pasaba
+sin ejercitar nada. Con contenido limpio de verdad, `enPendiente` SÍ recibe
+una promoción real, y el control negativo (desactivar
+`bloqueadaPorGuard` en `index.ts`, restaurar servidor, correr) hizo CAER la
+aserción — restaurado y reverificado en verde.
+
+**Descubrimiento de fixture, no de producto:** promover a `activa` exige al
+menos una foto real en `listing_photos` (`listings_enforce_activation_has_photos`,
+CLAUDE.md §3) — un trigger de la BASE, completamente ajeno a la moderación.
+La primera corrida de la sección 5 falló con `500 "Una publicación no puede
+activarse sin fotos"`, no por un bug de `index.ts` (el error se propagó
+correctamente) sino porque el fixture no tenía foto. Arreglado con
+`subirFotoLimpia()` — un JPEG sólido generado con `sharp`, verificado 3/3
+`limpio` antes de usarlo.
+
+**Los ocho casos, con su resultado exacto:**
+
+| # | Caso | Resultado medido |
+|---|---|---|
+| 1-3 | Llaves, ownership, trigger no promueve | 16/16 en `probe-moderacion-http.mjs`, guard NO vacuo (ver arriba) |
+| 4 (parcial) | Imagen/texto limpios, real | GPT 5/5 `limpio`; Vision (JPEG sólido) 3/3 `limpio`; Vision (ruido 2000×2000) 1/1 `limpio` |
+| 4 (LIKELY/VERY_LIKELY) | — | **Declinado a propósito** — ver el bloque de abajo |
+| 5 | Particionado: 2 fotos de ~3.9 MB (~7.7 MB crudos) | `lotes_vision: 2` (confirmado leyendo `listing_moderacion.detalle`), veredicto correcto, las dos fotos evaluadas |
+| 6 | Vision caído (`ENDPOINT_VISION` a host muerto) | `HTTP 200`, `vision: 'revisar'`, motivo `"sin respuesta de Vision para esta imagen"`, `estado_resultante: 'pendiente'` — sin excepción |
+| 7 | OpenAI caído (`ENDPOINT_OPENAI` a host muerto) | `HTTP 200`, `gptTexto: 'revisar'`, `motivo: 'error_http'` con el error DNS real en `detalle`, `pendiente` — sin excepción |
+| 8 | OpenAI refusal | `HTTP 200`, `motivo: 'refusal'`, `detalle` con el texto EXACTO del mock, `pendiente` — sin excepción |
+| 9 | Falla la descarga de una foto suelta | `buena → evaluada`, `fantasma → no_evaluable`, `estado_resultante: 'pendiente'` — control negativo (filtrar en vez de incluir) hizo caer las dos mitades a la vez |
+| 13 | No-op write | `updated_at` idéntico en las dos corridas, pero 2 filas en `listing_moderacion` |
+
+**Por qué 4 (LIKELY/VERY_LIKELY) se declina, con el trade-off explícito.**
+Forzar esos niveles con imágenes reales exigiría sourcear o generar contenido
+sexual explícito o gráficamente violento — este repo no lo hace, ni para
+pruebas, sin importar que el contexto sea "moderación de contenido" y la
+intención defensiva. Lo que SÍ se puede y se mide es la lógica de umbral en
+sí (`nivelDeSafeSearch()`: `LIKELY → revisar`, `VERY_LIKELY → bloquear`),
+determinista y ya cubierta por `probe-moderacion.mjs` sin necesitar ninguna
+imagen real. Lo que queda sin probar es exclusivamente "¿Vision de verdad
+clasifica una foto genuinamente explícita como `LIKELY`/`VERY_LIKELY`?" —
+comportamiento del modelo de Google, no de este código. Si alguna vez hace
+falta esa cobertura, la vía es que el usuario aporte un asset ya vetado
+(dataset público de SafeSearch, por ejemplo), no que la IA lo genere o lo
+busque.
+
+**Casos 6, 7 y 8 no viven en un script permanente**, y es deliberado: piden
+editar temporalmente `ENDPOINT_VISION`/`ENDPOINT_OPENAI` en el FUENTE y
+reiniciar `supabase functions serve` — automatizar el reinicio del servidor
+desde dentro de un script Node que a la vez necesita ESE servidor corriendo
+es más aparato del que vale la pena mantener, con el riesgo real de dejar el
+entorno de desarrollo a medio restaurar si algo truena a mitad de camino.
+Se verificaron a mano, edición + reinicio + prueba + restaurar + reinicio,
+con los resultados exactos arriba. El mecanismo para 6 y 7 fue apuntar el
+endpoint a un host que no resuelve (`*.host-que-no-existe.invalido`); para 8,
+un servidor HTTP local de una sola ruta (`node:http`, sin dependencias)
+devolviendo la forma EXACTA de un refusal real, alcanzado desde el
+contenedor del edge runtime vía `host.docker.internal` — **no** `127.0.0.1`,
+que desde dentro del contenedor apunta al contenedor mismo, no al host.
 
 ---
 

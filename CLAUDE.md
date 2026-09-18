@@ -1429,9 +1429,24 @@ Toast de éxito · Toast de error · Loading / skeleton
      verdad, y ninguno sustituye al otro. Su primera corrida encontró un bug
      real (§9, `userClaims.id` vs `.sub`), que es la mejor justificación de por
      qué el paso 4 no bastaba.
+     **Desde la Ola 1.5 (`evaluarListing()` llama de verdad a Vision/OpenAI)
+     este paso YA NO ES GRATIS**: no hay modo "seco" en `index.ts`, así que
+     cada corrida dispara requests reales a las dos APIs, aunque el objetivo
+     del test sea solo autorización. Necesita los DOS secretos puestos en
+     `supabase/functions/.env` y el contenido de prueba tiene que ser
+     genuinamente limpio y VERIFICADO —no texto al azar: un título sin sentido
+     le dio a GPT un veredicto no determinista entre corridas, medido
+     (`.claude/rules/moderacion.md` §6.3).
   Los probes 2, 3 y 6 necesitan el stack local arriba y limpian lo suyo en un
   `finally`; si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4 y 5 no necesitan nada: ni stack, ni red, ni credenciales.
+
+  **`scripts/probe-moderacion-red.mjs` NO es un séptimo paso rutinario** —
+  cubre particionado real (>6 MB), descarga fallida de una foto suelta y el
+  no-op write, y se corre a mano cuando se toca `vision.ts`, `openai.ts` o
+  `evaluarListing()`, no en cada cambio de schema/RLS. Detalle completo,
+  incluidos los casos de falla real de Vision/OpenAI que se verificaron a
+  mano (sin script permanente, por qué), en `.claude/rules/moderacion.md` §6.3.
 - **Para bugs de UI que dependen de interacción real (teclado, gestos, touch),
   el simulador headless de Claude Code no siempre puede confirmarlos** — no
   dispara `keyboardDidShow` ni simula touch. Cuando reporte "no pude
@@ -1502,7 +1517,7 @@ de los route groups).
 | `cuenta-perfil.md` | Mis publicaciones, Favoritos, Perfil, Editar perfil, Perfil público, RF-13 | `src/app/(cuenta)/**`, `(tabs)/perfil.tsx`, `(tabs)/favoritos.tsx`, `src/lib/perfil*.ts` |
 | `confianza-ventas.md` | Venta, ¿a quién le vendiste?, Calificar, Reportar | `src/app/(confianza)/**`, `src/app/reportar/**`, `src/lib/confianza.ts` |
 | `notificaciones-push.md` | Inbox, push, Edge Function `send-push` | `src/app/(notificaciones)/**`, `src/lib/{notificaciones,push}.ts`, `supabase/functions/**` |
-| `moderacion.md` | Moderación pre-publicación (RF-18): Edge Function `moderar-contenido`, los dos triggers de Storage, rework de `publicar.ts`, Realtime | `supabase/functions/moderar-contenido/**`, `scripts/probe-moderacion.mjs`, `src/lib/{publicar,storage}.ts`, `src/app/(publicar)/**` |
+| `moderacion.md` | Moderación pre-publicación (RF-18): Edge Function `moderar-contenido`, los dos triggers de Storage, rework de `publicar.ts`, Realtime | `supabase/functions/moderar-contenido/**`, `scripts/probe-moderacion*.mjs`, `src/lib/{publicar,storage}.ts`, `src/app/(publicar)/**` |
 | `componentes-compartidos.md` | Qué componente existe ya y qué NO unificar | `src/components/**` |
 | `compartir-deeplinks.md` | Compartir sin link (las dos pantallas) | `detalle/**`, `perfil-publico/**`, `app.json` |
 
@@ -2104,6 +2119,22 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   control negativo dé verde, mira la salida COMPLETA antes de concluir nada — o
   grepea una sola palabra (`error`, `FALLÓ`) en vez de una frase que los códigos
   puedan partir.
+
+- **`127.0.0.1` desde dentro del edge runtime de `supabase functions serve`
+  NO es el host de desarrollo — es el contenedor mismo.** El runtime local
+  corre como su propio contenedor Docker (`supabase_edge_runtime_…`, verlo
+  con `docker ps`), así que un `fetch` que la función Deno hace hacia
+  `http://127.0.0.1:<puerto>` desde su código resuelve al loopback DEL
+  CONTENEDOR, no al de la máquina que lo lanzó. Mordió al montar un servidor
+  mock local (`node:http`, sin dependencias) para forzar un *refusal* de
+  OpenAI de verdad (RF-18, caso 8 de `.claude/rules/moderacion.md` §6.3): el
+  servidor escuchaba en el host y `127.0.0.1` desde la función simplemente no
+  lo alcanzaba — connection refused, indistinguible a primera vista de "el
+  mock no arrancó". El fix en macOS (Docker Desktop) es
+  **`host.docker.internal`**, el nombre que Docker Desktop resuelve al host
+  desde dentro de cualquier contenedor. Aplica a cualquier endpoint que se
+  quiera interceptar temporalmente para pruebas (Vision, OpenAI, un mock
+  propio) — no solo a este caso.
 
 - **Los `paths:` de `.claude/rules/` toleran los paréntesis de los route groups
   hoy, pero picomatch crudo NO — y si eso cambia, las reglas dejan de cargar en

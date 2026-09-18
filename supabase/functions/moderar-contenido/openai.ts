@@ -195,16 +195,24 @@ export type RespuestaOpenAI = {
 };
 
 /**
- * Por qué no hubo veredicto. Los cuatro motivos terminan igual —el eje
+ * Por qué no hubo veredicto. Los cinco motivos terminan igual —el eje
  * `gptTexto` cuenta como `revisar`— pero se distinguen para poder loguearlos:
  * un `refusal` recurrente es un problema de prompt, un `json_invalido`
  * recurrente es un problema de la API.
+ *
+ * `error_http` es el único que esta unión declara pero que
+ * `parsearRespuestaOpenAI` NUNCA produce — vive aquí (y no como un string
+ * suelto en `index.ts`) para que `ParseTexto` siga siendo el tipo único que
+ * todo el pipeline usa. Lo construye el LLAMADOR (`index.ts`, `evaluarTexto`)
+ * cuando el `fetch` mismo falla o la respuesta no es 2xx: ahí no hay nada que
+ * parsear todavía, así que no puede salir de esta función.
  */
 export type MotivoSinVeredicto =
   | 'refusal'
   | 'sin_contenido'
   | 'json_invalido'
-  | 'forma_invalida';
+  | 'forma_invalida'
+  | 'error_http';
 
 export type ParseTexto =
   | { ok: true; veredicto: VeredictoTexto }

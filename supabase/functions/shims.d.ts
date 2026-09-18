@@ -74,3 +74,22 @@ declare module 'npm:@supabase/server@1.7.0' {
     handler: HandlerSupabase
   ): HandlerSupabase;
 }
+
+/**
+ * `jsr:@std/encoding/base64`, usada en `moderar-contenido/index.ts` para
+ * codificar cada foto antes de mandarla a Vision — `btoa(String.fromCharCode(
+ * ...bytes))` revienta con `RangeError: Maximum call stack size exceeded`
+ * sobre imágenes de varios MB (medido, ver `scripts/probe-moderacion.mjs`).
+ *
+ * A DIFERENCIA del shim de `@supabase/server`, ESTE SÍ va tipado con la firma
+ * real, no con `any`. La razón no es inconsistencia: `@supabase/server` es un
+ * paquete grande cuyo contrato completo no vale la pena transcribir (ver el
+ * encabezado de este archivo); `encodeBase64` es UNA función de la librería
+ * estándar de Deno, con una firma pública, estable y verificada contra la
+ * documentación: `encodeBase64(data: ArrayBuffer | Uint8Array | string):
+ * string` (jsr.io/@std/encoding/doc/~/encodeBase64). Fingir que no se conoce
+ * esa firma sería peor que útil.
+ */
+declare module 'jsr:@std/encoding/base64' {
+  export function encodeBase64(data: ArrayBuffer | Uint8Array | string): string;
+}
