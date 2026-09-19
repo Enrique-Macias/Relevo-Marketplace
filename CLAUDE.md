@@ -2147,23 +2147,68 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   grepea una sola palabra (`error`, `FALLÓ`) en vez de una frase que los códigos
   puedan partir.
 
-- **Un control negativo tiene que CONFIRMAR que la variante rota se aplicó —
-  si no, el verde que devuelve no prueba nada.** Hermano del gotcha del `grep`
-  sobre colores ANSI de más arriba, y del mismo tamaño de trampa. Pasó al correr
-  los controles de los triggers de Storage (RF-18 Ola 2): el `docker exec psql`
-  que instalaba cada variante estaba en una variable de shell (`$PSQL -c "…"`),
-  y zsh la trató como el NOMBRE de un comando, no como una línea a expandir —
-  `command not found`. El DDL nunca se aplicó, así que la suite corrió contra el
-  esquema BUENO y dijo "las 21 pruebas pasaron". Leído sin cuidado, eso parece
-  el hallazgo más valioso posible ("¡esta aserción no tiene control negativo!")
-  cuando en realidad no se había probado nada.
-  **Cómo evitarlo:** antes de correr la suite, imprimir el ESTADO del objeto que
-  se acaba de romper y comprobar que de verdad cambió — `select tgname from
-  pg_trigger …`, `select prosrc like '%VARIANTE ROTA%' …`, `pg_get_triggerdef`.
-  Dos líneas, y convierten "salió verde" en un dato en vez de una esperanza. Es
-  la misma familia del resto de esta sección: **en este repo, lo que no falla
-  ruidosamente es lo que hay que mirar dos veces** — y un control negativo que
-  no se aplicó es exactamente eso.
+- **Una verificación que sale sospechosamente limpia suele estar midiendo otra
+  cosa — y el síntoma es siempre el mismo: NADA falla.** Es la forma general de
+  un error que en esta tanda apareció con tres disfraces distintos en una sola
+  tarea (RF-18 Ola 2). En los tres, el comando devolvió 0, el script imprimió su
+  resumen feliz, y el resultado era coherente y plausible; lo único falso era
+  CONTRA QUÉ se había comparado. Por eso no se reconoce por el resultado, hay
+  que reconocerlo por la forma.
+
+  **Disfraz (a): una variable de shell que no se expandió, y el comando
+  SIGUIENTE corrió igual sobre el estado viejo.** El `docker exec psql` que
+  instalaba cada variante rota vivía en una variable (`$PSQL -c "…"`) y zsh la
+  trató como el NOMBRE de un comando, no como una línea a expandir:
+  `command not found`. El DDL nunca se aplicó — pero el `node
+  scripts/probe-storage.mjs` de la línea siguiente corrió perfectamente, contra
+  el esquema BUENO, y dijo "las 21 pruebas pasaron". Leído sin cuidado eso
+  parece el hallazgo más valioso posible ("¡esta aserción no tiene control
+  negativo!") cuando no se había probado absolutamente nada. Ojo con el reparto
+  de culpas: el paso que falló SÍ gritó, pero su grito no detuvo al que
+  importaba.
+
+  **Disfraz (b): el baseline ya contenía el cambio, así que el "antes vs
+  después" era "después vs después".** Para medir cuántas aserciones tenía
+  `probe-storage.mjs` ANTES del cambio se corrió
+  `git show HEAD:scripts/probe-storage.mjs`. Devolvió **21**, el mismo número
+  que la versión nueva. No era que el cambio no hiciera nada: era que el trabajo
+  ya se había comiteado desde fuera de la sesión, así que `HEAD` ERA la versión
+  nueva. El baseline real estaba un commit más atrás y daba 17. Nada falló:
+  `git show` funcionó, el script corrió, el número salió. (La misma mordida, en
+  su versión de conteos de migraciones, está en §3 — allá como moraleja de que
+  repo y remoto son un estado transitorio; aquí como lo que es en general.)
+
+  **Disfraz (c): el comprobante de la comprobación.** Al verificar que la
+  redacción corregida había entrado al commit, un `grep -cF` sobre cinco frases
+  devolvió `[0]` para una de ellas — y la frase SÍ estaba, solo que partida por
+  un salto de línea, que un patrón de una sola línea no puede machear. Hermano
+  directo del gotcha del `grep` sobre colores ANSI de aquí arriba: el patrón
+  seguía pareciendo razonable y el resultado seguía siendo mentira.
+
+  **La regla, y no es "verifica la referencia" en abstracto — es esta:** cuando
+  un número de verificación **te sorprenda por lo limpio que sale** (nada falla,
+  el antes y el después coinciden, el control negativo no caza nada), **imprime
+  explícitamente QUÉ estás comparando contra QUÉ antes de confiar en él**. Dos
+  líneas bastan y convierten "salió verde" en un dato en vez de una esperanza:
+
+  ```
+  select tgname from pg_trigger where tgname like '…';        -- ¿se aplicó?
+  select prosrc like '%VARIANTE ROTA%' from pg_proc …;        -- ¿ESTA variante?
+  pg_get_triggerdef(oid)                                      -- ¿qué quedó?
+  wc -l / grep -c "marca_del_cambio" <archivo-baseline>       -- ¿es el de antes?
+  ```
+
+  Es exactamente lo que la SEGUNDA tanda de controles negativos de esa tarea
+  hizo bien —cada uno imprimía `triggers vivos: …` o `variante APLICADA` antes
+  de correr el probe— y lo que le faltó a la primera. La diferencia de costo
+  entre las dos tandas fue de segundos; la diferencia de valor, todo.
+
+  **Y ojo con la asimetría que hace esto tan traicionero:** un control negativo
+  que no se aplicó falla hacia el lado que CONFIRMA lo que uno esperaba
+  («ninguna aserción lo caza»), mientras que uno bien aplicado suele
+  contradecirte. O sea que este error se siente como un descubrimiento, no como
+  un tropiezo. Es la misma familia del resto de esta sección: **en este repo, lo
+  que no falla ruidosamente es lo que hay que mirar dos veces.**
 
 - **`127.0.0.1` desde dentro de CUALQUIER contenedor del stack local NO es el
   host de desarrollo — es el contenedor mismo.** El título de este gotcha decía
