@@ -60,28 +60,38 @@ paths:
 | **La descarga desde Storage + `encodeBase64`** | **Hecho** | `index.ts`, `evaluarFotos()` |
 | **Armar los `Ejes` + `decidirListing()` + escritura + auditoría, para PUBLICACIONES** | **Hecho, con el guard de promoción probado end-to-end (§6.3)** | `index.ts`, `evaluarListing()` |
 | **Enforcement de avatares** (`moderarAvatar()`): descarga, Vision, `decidirAvatar()`, borrado + guard de la carrera | **Hecho, con el guard de la carrera probado end-to-end (§6.4)** | `index.ts`, `moderarAvatar()` |
-| Los dos triggers de Storage | **Hecho y verificado en LOCAL; en remoto ni siquiera pusheados — y los secretos van en Ola 3** | `supabase/migrations/20260918000462_storage_moderacion_triggers.sql` + `probe-storage.mjs` §moderación |
+| Los dos triggers de Storage | **Hecho, verificados en LOCAL y ACTIVOS en remoto** (2026-09-19: los dos secretos de Vault que los encendían están puestos — ver abajo) | `supabase/migrations/20260918000462_storage_moderacion_triggers.sql` + `probe-storage.mjs` §moderación |
 | El rework de `publicar.ts` (nace `pendiente`, ya no activa él mismo) | **Hecho** (Ola 3) | `src/lib/publicar.ts`, `src/lib/moderacion.ts` |
 | El `with_check` de `listings_insert_own` forzando `pendiente` | **Hecho** (Ola 3) | `supabase/migrations/20260919000463_listings_insert_pendiente.sql` + T25 |
 | UI de los estados nuevos (chips, guards, el 4º reparto de Detalle) | **Hecho** (Ola 3) | `mis-publicaciones.tsx`, `editar/[id].tsx`, `detalle/[id].tsx`, `confianza.ts` |
 | Las dos pantallas de veredicto | **Hecho** (Ola 3) | `(publicar)/revision.tsx`, `(publicar)/no-aprobada.tsx` |
 | Suscripción de Realtime en el cliente | **Hecho** (Ola 3) | `useVeredictoEnVivo()` en `src/lib/moderacion.ts`, consumida por `revision.tsx` |
 | `unirFotoDisparadora()`: la foto sin fila SE evalúa | **Hecho** (2026-09-19), verificado con OCR real end-to-end | `vision.ts` + `probe-moderacion.mjs` (pura) + `probe-moderacion-http.mjs` §7 |
-| **La Edge Function desplegada en REMOTO** | **NO** — `list_edge_functions` devuelve solo `send-push` | CLAUDE.md §8, pendiente 2 |
+| **La Edge Function desplegada en REMOTO** | **SÍ** (2026-09-19) — `list_edge_functions` da `moderar-contenido` **ACTIVE**, `version: 1` | CLAUDE.md §8, "Hecho" |
 
 **Con esto, `moderar-contenido` modera publicaciones Y avatares reales de
 punta a punta, y desde la Ola 2 los dos triggers de Storage la disparan solos al
 entrar un objeto** — verificado end-to-end: sobrescribir la foto de una
 publicación `activa` la escala a `bloqueada` (§6.5).
 
-**PERO EN PRODUCCIÓN TODAVÍA NO PROTEGE NADA, Y YA NO ES POR EL MISMO MOTIVO.**
-Ola 3 está completa, así que el hueco funcional que este párrafo señalaba —el
-rework de `publicar.ts`— se cerró. Lo que queda es de DESPLIEGUE, y son cuatro
-pasos manuales que no se han dado (CLAUDE.md §8, pendiente 2): la Edge Function
-**nunca se desplegó a remoto** (medido con `list_edge_functions`: allá solo vive
-`send-push`), sus dos credenciales no están puestas, la migración del
-`with_check` no se ha pusheado, y los dos secretos de Vault siguen en 0 — así
-que allá `private.notify_moderacion()` levanta un `warning` y no llama a nadie.
+**Y AHORA SÍ PROTEGE EN PRODUCCIÓN (2026-09-19).** Este párrafo decía "todavía
+no protege nada" porque faltaban los cuatro pasos manuales del runbook de
+CLAUDE.md §8 — los cuatro están dados, remedidos contra remoto y no repetidos
+de memoria: la Edge Function está **ACTIVE** (`list_edge_functions`,
+`version: 1`), `mcp__supabase__list_migrations` da **27**, igual que
+`ls supabase/migrations | wc -l` en el repo (**27**, incluida `20260919000463`),
+y `select count(*) from vault.secrets where name like 'moderar_contenido_%'`
+da **2**. **Y probado de punta a punta en remoto, desde el dev build, los DOS
+veredictos**: una publicación de contenido limpio quedó `activa`; una con una
+palabra de la lista quedó `bloqueada`. Confirmado en Studio. El detalle vive en
+CLAUDE.md §8, "Hecho".
+
+**La deuda de COSTO sigue viva y es independiente de este cierre** (§7/§9 de
+este archivo): cada evento de Editar sigue pagando una evaluación completa
+sobre el set VIEJO, así que reemplazar 5 fotos sigue costando 10 requests
+reales (5 Vision + 5 OpenAI). No se tocó a propósito — es la decisión de costo
+que se dejó fuera de alcance al cerrar el hueco de `unirFotoDisparadora()`.
+
 Los ocho casos de verificación que dependían de red real
 para publicaciones (4 parcial, 5, 6, 7, 8, 9, 13, y el probe de autorización
 re-verificado con evaluación real) están en §6.3; los cuatro de avatares, en
@@ -1186,8 +1196,9 @@ hasta `supabase secrets set` (nombres ya decididos, ver §3.1 — hecho) +
 `supabase/functions/.env` local (plantilla ya creada — hecho). **El cuerpo
 de `index.ts` en sí sigue sin escribirse.**
 
-**Ola 2 (depende de la función + F-spike): HECHO EN EL ESQUEMA, INERTE EN
-PROD.** Los dos triggers de Storage (§1) viven en
+**Ola 2 (depende de la función + F-spike): HECHA, y ACTIVA en prod desde
+2026-09-19** (los dos secretos de Vault que la encendían ya están puestos —
+ver la actualización más abajo). Los dos triggers de Storage (§1) viven en
 `20260918000462_storage_moderacion_triggers.sql`, con sus cuatro aserciones
 gratis en `probe-storage.mjs` y la escalada end-to-end en
 `probe-moderacion-http.mjs` §6 (todo en §6.5).
@@ -1238,12 +1249,10 @@ gratis en `probe-storage.mjs` y la escalada end-to-end en
   | Editar, reemplazando 5 fotos | **10** (5 Vision + 5 OpenAI, del trigger) | **sí, cada evento incluye la foto que lo disparó** — pero SIGUE costando 10: cada uno de los 5 eventos re-evalúa también las que ya se habían evaluado |
   | Sobrescribir una foto (`x-upsert`, solo desde Studio) | 2 | sí — es el caso que midió §6.5 |
 
-  Dos salidas, no tres — la que pedía "arreglar primero el `name`" ya está
-  hecha: **(i)** encender igual y aceptar el costo N-fold como deuda de §9 con
-  su disparador (debounce o mover el trigger); **(ii)** dejarlos apagados hasta
-  que exista RF-17, que es quien revisaría la cola de todos modos. **Todo Ola 3
-  funciona igual sin los secretos**: lo único apagado es la re-moderación
-  automática de Storage.
+  **Se optó por (i): encenderlos y aceptar el costo N-fold como deuda de §9
+  con su disparador (debounce o mover el trigger)** — ejecutado 2026-09-19, ver
+  arriba. La otra salida que se había planteado ("(ii)" dejarlos apagados hasta
+  RF-17) queda registrada por si algún día hay que revertir, no como pendiente.
 
   **Y una tercera cosa a saber antes de encender, sin relación con el costo:**
   verificar el fix destapó un bug de manejo de errores, no del fix en sí —
@@ -1274,9 +1283,15 @@ gratis en `probe-storage.mjs` y la escalada end-to-end en
   nunca dispara está sin probar en prod, y se ve idéntico a uno que funciona.
   Dos amarres: los dos `vault.create_secret` son un **paso explícito del
   checklist de Ola 3** (abajo), y el aviso está en el encabezado del SQL y en
-  CLAUDE.md §8. Verificación de que sigue inerte, en remoto:
+  CLAUDE.md §8.
+
+  **YA NO ES EL CASO: los dos secretos están creados en producción desde
+  2026-09-19** (paso 4 del runbook de CLAUDE.md §8, ejecutado y remedido, no
+  recordado):
   `select count(*) from vault.secrets where name in
-  ('moderar_contenido_secret_key','moderar_contenido_function_url');` → 0.
+  ('moderar_contenido_secret_key','moderar_contenido_function_url');` → **2**.
+  Probado end-to-end en remoto: contenido limpio → `activa`; una palabra de la
+  lista → `bloqueada`. Los dos confirmados en Studio.
 
 **Ola 3 (depende de la función y de B): HECHA** (2026-09-19). El rework de
 `publicar.ts` **+ el `with_check` de `listings_insert_own`, en el mismo cambio**
@@ -1286,10 +1301,10 @@ gratis en `probe-storage.mjs` y la escalada end-to-end en
 Se sumaron al alcance del plan dos piezas que su tabla de impacto no listaba —
 `accionVenta()` y `detalle/[id].tsx`— y el guard del reintento de §5.1b.
 
-**Y, como último paso de esa ola —no antes—, los dos `vault.create_secret` en
-PRODUCCIÓN** (ver Ola 2 arriba). Hasta que se creen, la moderación automática de
-Storage no protege nada en remoto. Es el paso que convierte "verificado en
-local" en "Hecho".
+**Y, como último paso de esa ola, los dos `vault.create_secret` en
+PRODUCCIÓN: HECHO (2026-09-19)** (ver Ola 2 arriba). Es el paso que convirtió
+"verificado en local" en "Hecho" — RF-18 protege de verdad en remoto, probado
+con los dos veredictos reales.
 
 **Ola 4:** Realtime en el cliente + su fallback por refetch (§4.1); avatares
 (§1 cubre el trigger que los toca; el enforcement — borrar objeto + `foto_url

@@ -1599,6 +1599,25 @@ de los route groups).
   propósito.
 - Variables de entorno: `.env.local` (real, ignorado) + `.env.example`
   (commiteado, vacío).
+- **RF-18 (moderación pre-publicación) EN PRODUCCIÓN (2026-09-19).** Los cuatro
+  pasos manuales del runbook —Edge Function desplegada, sus dos credenciales,
+  la migración del `with_check`, los dos secretos de Vault— están dados, y los
+  cuatro se remidieron contra remoto en vez de darse por hechos de memoria:
+  - `mcp__supabase__list_edge_functions` → `moderar-contenido` **ACTIVE**,
+    `version: 1`.
+  - `mcp__supabase__list_migrations` da **27**, igual que
+    `ls supabase/migrations | wc -l` en el repo (**27**) — a la par, incluida
+    `20260919000463`.
+  - `select count(*) from vault.secrets where name like 'moderar_contenido_%'`
+    → **2** (`moderar_contenido_function_url`, `moderar_contenido_secret_key`).
+  - **Probado end-to-end en remoto desde el dev build, los DOS veredictos**:
+    una publicación de contenido limpio quedó `activa`; una con una palabra de
+    la lista quedó `bloqueada`. Confirmado en Studio.
+  Con esto, `private.notify_moderacion()` deja de levantar el `warning` que
+  documentaba §8 más abajo: los triggers de Storage disparan de verdad contra
+  la función real. La deuda de costo (Editar sigue pagando 10 requests por 5
+  fotos reemplazadas, `.claude/rules/moderacion.md` §7/§9) sigue abierta, sin
+  relación con que esto ya esté en producción.
 
 **Pendiente, en este orden de prioridad:**
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
@@ -1616,52 +1635,11 @@ de los route groups).
      inbox con `push_enviado_at is null` y no sale ningún push.
    - Por §6 el simulador headless no cuenta como prueba. Es hermano del pendiente
      del header `Authorization` de `expo-image`.
-2. **Poner RF-18 en producción: son CUATRO pasos manuales, y hoy no se ha dado
-   ninguno.** El orden importa — `20260919000463` en remoto sin la Edge Function
-   desplegada allá deja publicar ROTO (toda alta se queda `pendiente` con un
-   "Reintentar" que nunca funciona, porque el cliente ya no activa nada):
-
-   ```bash
-   # 1. La Edge Function. MEDIDO: `mcp__supabase__list_edge_functions` devuelve
-   #    SOLO `send-push`. `moderar-contenido` nunca se desplegó a remoto.
-   supabase functions deploy moderar-contenido
-
-   # 2. Sus dos credenciales. `resolverConfig()` corre a nivel de MÓDULO, así que
-   #    sin ellas la función NO ARRANCA — no falla la moderación: falla el worker.
-   supabase secrets set GOOGLE_CLOUD_VISION_API_KEY=... OPENAI_API_KEY=...
-
-   # 3. La migración del `with_check`, que hoy es la única que el repo tiene de
-   #    más (§3).
-   supabase db push
-   ```
-
-   ```sql
-   -- 4. Y SOLO ENTONCES, los dos secretos de Vault que encienden los triggers de
-   --    Storage. Esos triggers YA ESTÁN en remoto desde que 20260918000462
-   --    viajó, pero `private.notify_moderacion()` levanta un `warning` y no
-   --    llama a nadie mientras estos dos valores no existan.
-   select vault.create_secret('sb_secret_…', 'moderar_contenido_secret_key');
-   select vault.create_secret(
-     'https://ukxfnydfhmryrzhdqkvj.supabase.co/functions/v1/moderar-contenido',
-     'moderar_contenido_function_url');
-   ```
-
-   **El paso 4 tiene una decisión pendiente antes de ejecutarse, con su número
-   medido** (ver `.claude/rules/moderacion.md` §7): encenderlo hace que **editar
-   las fotos** de una publicación cueste una evaluación paga COMPLETA por cada
-   objeto subido — 5 fotos reemplazadas = 10 requests (5 Vision + 5 OpenAI), uno
-   por evento. **Eso sigue igual tras cerrar el hueco de "la foto no la evalúa
-   nadie" (2026-09-19, `unirFotoDisparadora()` en `vision.ts`):** cada evento YA
-   incluye la foto que lo disparó aunque su fila no exista todavía, pero cada uno
-   de los 5 eventos sigue re-evaluando también las que ya se habían evaluado en
-   el anterior — el fix cerró la CORRECTNESS, no el COSTO, que es una decisión
-   aparte (debounce o mover el disparador, sin tocar). Publicar NO tiene ese
-   problema: el skip de `pendiente` deja los N eventos en cero y el alta cuesta 2
-   requests (1 Vision + 1 OpenAI) sin importar cuántas fotos tenga.
-
-   Verificación de que siguen sin crearse:
-   `select count(*) from vault.secrets where name like 'moderar_contenido_%';`
-   → 0.
+2. ~~Poner RF-18 en producción (los cuatro pasos manuales del runbook).~~
+   **HECHO (2026-09-19)** — ver el bloque de arriba, en "Hecho:". Sigue viva la
+   deuda de COSTO (no de despliegue): Editar sigue pagando 10 requests por 5
+   fotos reemplazadas, documentado con su disparador y su fix en
+   `.claude/rules/moderacion.md` §7/§9 — decisión aparte, sin tocar.
 
 **Deuda consciente — con disparador de revisión, no "algún día":** cada entrada
 vive COMPLETA —con su "Revisar cuando" y su "Fix"— en la regla de su feature, y
