@@ -2160,12 +2160,12 @@ select pg_temp.assert(
 
 -- Estas sí son de seguridad: solo disparan por trigger y nadie debe poder
 -- invocarlas. Postgres verifica EXECUTE al crear el trigger, no al dispararlo.
--- Tres importan más que el resto: `claim_push_token`, que invocable a mano sería
--- un borrado arbitrario de la fila de cualquiera cuyo token se conozca;
--- `notify_push`, que lee la secret key de Vault; y `pause_listings_on_suspend`,
--- que invocable a mano pausaría el catálogo de cualquier vendedor con solo
--- pasarle su id —es SECURITY DEFINER y no mira quién llama, porque su `when`
--- ya decidió eso por ella.
+-- Cuatro importan más que el resto: `claim_push_token`, que invocable a mano
+-- sería un borrado arbitrario de la fila de cualquiera cuyo token se conozca;
+-- `notify_push` y `notify_moderacion`, que leen la secret key de Vault; y
+-- `pause_listings_on_suspend`, que invocable a mano pausaría el catálogo de
+-- cualquier vendedor con solo pasarle su id —es SECURITY DEFINER y no mira
+-- quién llama, porque su `when` ya decidió eso por ella.
 select pg_temp.assert(
   not has_function_privilege('authenticated', 'private.handle_new_user()', 'execute')
   and not has_function_privilege('authenticated', 'private.enforce_photo_limit()', 'execute')
@@ -2180,8 +2180,10 @@ select pg_temp.assert(
   and not has_function_privilege('authenticated',
         'private.notify_compra_calificable()', 'execute')
   and not has_function_privilege('authenticated',
-        'private.pause_listings_on_suspend()', 'execute'),
-  'las 11 funciones que solo disparan por trigger siguen revocadas');
+        'private.pause_listings_on_suspend()', 'execute')
+  and not has_function_privilege('authenticated',
+        'private.notify_moderacion()', 'execute'),
+  'las 12 funciones que solo disparan por trigger siguen revocadas');
 
 -- El webhook no puede quedar como un grant abierto sobre Vault: si
 -- `authenticated` pudiera leer `vault.decrypted_secrets`, la secret key del

@@ -29,12 +29,40 @@
 // Sin dependencias: fetch nativo contra la API HTTP, a propósito. Meter
 // supabase-js aquí probaría el cliente, no el servicio.
 //
+// MODERACIÓN AUTOMÁTICA (RF-18, Ola 2). La última sección cubre los dos triggers
+// de `storage.objects`. No necesita `supabase functions serve` ni credenciales
+// de Vision/OpenAI y no cuesta dinero: repunta los dos secretos de Vault a un
+// listener local y los restaura al terminar. El detalle está junto a los
+// helpers, más abajo.
+//
+//   CONTROLES NEGATIVOS, corridos UNO A LA VEZ el 2026-09-18, cada uno contra
+//   este script completo. Es la tabla que dice si estas aserciones prueban lo
+//   que dicen:
+//
+//     sin el trigger de INSERT ....... (a) y (d); y (c) cae con su mensaje de
+//                                      "la BARRERA no llegó: no concluyente"
+//     sin el trigger de UPDATE ....... SOLO (b)
+//     sin el skip de `pendiente` ..... SOLO (c)
+//     el skip también en `avatars` ... SOLO (d)
+//     sin `old.version is distinct
+//       from new.version` ............ **NADA: las 21 pasan**
+//
+//   Esa última fila es un resultado, no un hueco por llenar: el guard de
+//   `version` NO filtra ningún ruido medido hoy (3 lecturas por
+//   `/object/authenticated/` y 3 por `/object/info/` -> 0 eventos de trigger).
+//   Existe como defensa declarada para UPDATEs futuros que no cambien el
+//   contenido, igual que el `estado <> 'pausada'` redundante de
+//   `listing_photos_objects_select`. No le busques control negativo: no lo
+//   tiene, y está escrito así a propósito.
+//
 // Crea sus propios usuarios y publicaciones, con correos únicos por corrida, y
 // limpia en un `finally`. Si una corrida muere de golpe puede dejar basura en la
-// base LOCAL; `supabase db reset` la borra.
+// base LOCAL; `supabase db reset` la borra — y para los secretos de Vault, que
+// viven fuera de ese reset, el `finally` los restaura antes que nada.
 // ===========================================================================
 
 import { execFileSync } from 'node:child_process';
+import http from 'node:http';
 
 const BUCKET = 'listing-photos';
 const BUCKET_AVATARS = 'avatars';
@@ -128,11 +156,13 @@ async function crearListing(E, userId, titulo, estado) {
 
 // Los cuatro helpers toman el bucket: el proyecto tiene DOS y son de
 // visibilidad opuesta (`listing-photos` privado, `avatars` público).
-const subir = (E, tok, ruta, bucket = BUCKET) =>
+// `extra` existe para `x-upsert: true`, que es lo que ejercita la rama UPDATE de
+// los triggers de moderación. Default `{}`: los call sites de arriba no cambian.
+const subir = (E, tok, ruta, bucket = BUCKET, extra = {}) =>
   fetch(`${E.API_URL}/storage/v1/object/${bucket}/${ruta}`, {
     method: 'POST',
     headers: { apikey: E.PUBLISHABLE, Authorization: `Bearer ${tok}`,
-               'Content-Type': 'image/jpeg' },
+               'Content-Type': 'image/jpeg', ...extra },
     body: new Uint8Array([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x01, 0xff, 0xd9]),
   });
 
@@ -183,6 +213,115 @@ const listar = (E, auth, bucket) =>
     body: JSON.stringify({ prefix: '', limit: 100, offset: 0 }),
   });
 
+// ---------------------------------------------------------------------------
+// Moderación automática (RF-18, Ola 2): el mock y el repunte de Vault
+// ---------------------------------------------------------------------------
+//
+// CÓMO SE INTERCEPTA LA LLAMADA DEL TRIGGER SIN `supabase functions serve`, y
+// por qué sale MÁS BARATO que los casos 6-8 de `.claude/rules/moderacion.md`
+// §6.3: aquellos tenían que editar `ENDPOINT_VISION` en el FUENTE y reiniciar
+// el servidor, porque es una constante de un `.ts`. Aquí la URL de la función
+// vive en una FILA DE VAULT, así que este script la repunta con SQL en runtime
+// y la restaura en el `finally` — sin editar fuente, sin reiniciar nada, sin
+// credenciales de Vision/OpenAI y sin gastar un centavo.
+//
+// PRECONDICIÓN MEDIDA (2026-09-18), no supuesta: `net.http_post` DESDE EL
+// CONTENEDOR DE POSTGRES alcanza `host.docker.internal` — status 200 en
+// `net._http_response`, y el listener recibió el body exacto y el header
+// `apikey`. CLAUDE.md §9 solo tenía medido ese nombre desde el contenedor del
+// EDGE RUNTIME; esto lo extiende al de la base.
+//
+// POR QUÉ `docker exec psql` Y NO HTTP, en un script que presume de no usar
+// nada más que `fetch`: `vault` no es un esquema expuesto al Data API —y no
+// debe serlo, `rls.sql` tiene una aserción de que `authenticated` no lo toca—,
+// así que no hay endpoint que llamar. Es la misma vía que el runbook de la
+// suite de RLS (CLAUDE.md §6, paso 1).
+const DB_CONTAINER = 'supabase_db_relevo-marketplace';
+const SECRETO_KEY = 'moderar_contenido_secret_key';
+const SECRETO_URL = 'moderar_contenido_function_url';
+
+const lit = (v) => `'${String(v).replace(/'/g, "''")}'`;
+
+function sql(q) {
+  return execFileSync(
+    'docker',
+    ['exec', '-i', DB_CONTAINER, 'psql', '-U', 'postgres', '-d', 'postgres',
+     '-t', '-A', '-F', '|', '-c', q],
+    { encoding: 'utf8' }
+  ).trim();
+}
+
+/** Lo que hay HOY en Vault para los dos nombres, para poder devolverlo igual. */
+function leerSecretos() {
+  const filas = sql(
+    `select name, id, decrypted_secret from vault.decrypted_secrets
+      where name in (${lit(SECRETO_KEY)}, ${lit(SECRETO_URL)})`
+  );
+  const out = {};
+  for (const f of filas.split('\n').filter(Boolean)) {
+    const [name, id, secreto] = f.split('|');
+    out[name] = { id, secreto };
+  }
+  return out;
+}
+
+/** Deja `name` valiendo `valor`, exista o no la fila. */
+function ponerSecreto(previo, name, valor) {
+  if (previo[name]) {
+    sql(`select vault.update_secret(${lit(previo[name].id)}::uuid, ${lit(valor)})`);
+  } else {
+    sql(`select vault.create_secret(${lit(valor)}, ${lit(name)})`);
+  }
+}
+
+/** Lo contrario: el valor de antes, o ninguna fila si antes no había. */
+function restaurarSecreto(previo, name) {
+  if (previo[name]) {
+    sql(`select vault.update_secret(${lit(previo[name].id)}::uuid, ${lit(previo[name].secreto)})`);
+  } else {
+    sql(`delete from vault.secrets where name = ${lit(name)}`);
+  }
+}
+
+/** Un listener de una sola ruta que apunta todo lo que le llega. */
+function levantarMock() {
+  const recibido = [];
+  const srv = http.createServer((req, res) => {
+    let crudo = '';
+    req.on('data', (c) => (crudo += c));
+    req.on('end', () => {
+      let body = null;
+      try { body = JSON.parse(crudo); } catch { /* lo dejamos en null a propósito */ }
+      recibido.push({ apikey: req.headers['apikey'] ?? null, body });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"ok":true}');
+    });
+  });
+  return new Promise((resolve) => {
+    // 0.0.0.0 y no 127.0.0.1: quien nos llama es otro contenedor.
+    srv.listen(0, '0.0.0.0', () => resolve({ srv, recibido, puerto: srv.address().port }));
+  });
+}
+
+const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * `pg_net` es fire-and-forget y ASÍNCRONO, así que no se puede leer el mock
+ * justo después del upload. Se pollea con tope en vez de dormir un fijo: más
+ * rápido en el caso normal y no se vuelve flaky si la máquina va lenta.
+ */
+async function esperarA(pred, ms = 10000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (pred()) return true;
+    await dormir(120);
+  }
+  return false;
+}
+
+const deListing = (recibido, entityId) =>
+  recibido.filter((r) => r.body?.entity_id === String(entityId));
+
 const mover = (E, tok, desde, hacia, bucket = BUCKET) =>
   fetch(`${E.API_URL}/storage/v1/object/move`, {
     method: 'POST',
@@ -207,6 +346,11 @@ async function main() {
   const correoDueno = `probe-dueno-${RUN}@tec.mx`;
   const correoAjeno = `probe-ajeno-${RUN}@tec.mx`;
   let dueno, ajeno, activa, pausada, deAjeno;
+  // Fixtures PROPIOS de la sección de moderación. No se reusan los de arriba a
+  // propósito: a esa altura del archivo `activa/foto.jpg` ya fue BORRADA por la
+  // sección de borrado, y un fixture cuyo estado depende de secciones anteriores
+  // es justo la trampa que CLAUDE.md §3 documenta para `rls.sql` (`:C` en T11b).
+  let modActiva, modPendiente, modBarrera, mock, previos;
 
   try {
     dueno = await crearUsuario(E, correoDueno);
@@ -303,7 +447,108 @@ async function main() {
     ok('el dueño SÍ borra su avatar (y remove() dice cuál, no solo 200)',
       Array.isArray(borrados) && borrados.length === 1,
       `status ${borradoRes.status}, ${Array.isArray(borrados) ? borrados.length : '?'} objeto(s)`);
+
+    // -----------------------------------------------------------------------
+    // Moderación automática (RF-18, Ola 2) — los dos triggers de storage.objects
+    //
+    // QUÉ SE AFIRMA Y QUÉ NO. Las aserciones se escriben sobre el RESULTADO
+    // OBSERVABLE ("sobrescribir la foto de una publicación activa la vuelve a
+    // mandar a moderar"), nunca sobre QUÉ TRIGGER disparó. El F-spike del
+    // 2026-09-18 midió que un upsert es un UPDATE real sobre la misma fila —y
+    // no un DELETE+INSERT— pero eso es un detalle de implementación de Storage
+    // que una actualización puede mover. `tg_op` se IMPRIME como dato y no se
+    // afirma: así estas pruebas siguen siendo válidas si Storage cambia de
+    // mecanismo, que es exactamente lo que no queremos volver a averiguar a
+    // mano.
+    //
+    // No cuesta dinero y no necesita `supabase functions serve`: el trigger
+    // llama al mock local, no a la Edge Function. La escalada de estado
+    // end-to-end (que sí necesita la función y sí cuesta) vive en
+    // `probe-moderacion-http.mjs`.
+    // -----------------------------------------------------------------------
+    console.log('\n== Moderación automática (triggers de storage.objects) ==');
+
+    mock = await levantarMock();
+    previos = leerSecretos();
+    const CENTINELA = `sb_secret_PROBE_${RUN}`;
+    ponerSecreto(previos, SECRETO_KEY, CENTINELA);
+    ponerSecreto(previos, SECRETO_URL,
+      `http://host.docker.internal:${mock.puerto}/moderar-contenido`);
+
+    modActiva    = await crearListing(E, dueno, `Probe mod activa ${RUN}`,    'activa');
+    modPendiente = await crearListing(E, dueno, `Probe mod pendiente ${RUN}`, 'pendiente');
+    modBarrera   = await crearListing(E, dueno, `Probe mod barrera ${RUN}`,   'activa');
+
+    // (a) OBJETO NUEVO -> invocación. Se afirma también el header `apikey`: sin
+    // él la Edge Function contesta 401 y el trigger sería decorativo.
+    await subir(E, tDueno, `${modActiva}/uno.jpg`, BUCKET);
+    const llegoA = await esperarA(() => deListing(mock.recibido, modActiva).length >= 1);
+    const evA = deListing(mock.recibido, modActiva)[0];
+    ok('un objeto nuevo en una publicación activa dispara la moderación',
+      llegoA && evA?.body?.bucket_id === 'listing-photos' && evA?.apikey === CENTINELA,
+      llegoA ? `tg_op=${evA?.body?.tg_op}, apikey ${evA?.apikey === CENTINELA ? 'ok' : 'MAL'}`
+             : 'no llegó nada');
+
+    // (b) SOBRESCRIBIR -> vuelve a moderar. Es LA aserción que justifica la rama
+    // UPDATE, y la evasión que estos triggers existen para cerrar: subir limpio,
+    // quedar aprobado, y reemplazar la foto después.
+    //
+    // SE COMPARA EL CONTEO ANTES/DESPUÉS, no "hay al menos uno": con `>= 1` esta
+    // aserción pasaría en verde por el evento que ya dejó (a), o sea sin que la
+    // rama UPDATE existiera siquiera.
+    const antesB = deListing(mock.recibido, modActiva).length;
+    await subir(E, tDueno, `${modActiva}/uno.jpg`, BUCKET, { 'x-upsert': 'true' });
+    const llegoB = await esperarA(() => deListing(mock.recibido, modActiva).length > antesB);
+    const evB = deListing(mock.recibido, modActiva).at(-1);
+    ok('sobrescribir la foto de una publicación activa la vuelve a mandar a moderar',
+      llegoB && evB?.body?.name === `${modActiva}/uno.jpg`,
+      `${antesB} -> ${deListing(mock.recibido, modActiva).length} evento(s), tg_op=${evB?.body?.tg_op}`);
+
+    // (c) PUBLICACIÓN `pendiente` -> NO dispara. Está en un flujo de alta activo
+    // y la llamada final del cliente va a evaluarla entera; moderarla aquí
+    // duplicaría Vision y abriría la carrera de §1.3.
+    //
+    // LA BARRERA NO ES OPCIONAL: "no llegó nada en N ms" no distingue "no
+    // disparó" de "todavía no llegó". Se sube a la pendiente, después a una
+    // ACTIVA, y se espera a que llegue la de la activa. Si la posterior ya
+    // llegó y la anterior sigue ausente, el silencio está probado y no es
+    // lentitud.
+    await subir(E, tDueno, `${modPendiente}/uno.jpg`, BUCKET);
+    await subir(E, tDueno, `${modBarrera}/uno.jpg`, BUCKET);
+    const llegoBarrera = await esperarA(() => deListing(mock.recibido, modBarrera).length >= 1);
+    ok('una subida a una publicación PENDIENTE no dispara la moderación',
+      llegoBarrera && deListing(mock.recibido, modPendiente).length === 0,
+      llegoBarrera
+        ? `${deListing(mock.recibido, modPendiente).length} evento(s) para la pendiente`
+        : 'la BARRERA no llegó: la aserción no es concluyente');
+
+    // (d) AVATAR -> siempre dispara, sin skip de estado. Es la aserción POSITIVA
+    // que impide "arreglar" la función copiándole el guard de `pendiente` a los
+    // dos buckets por simetría — un avatar no tiene estado que consultar.
+    // Hermana de T22 (e), que existe por el mismo motivo con `is_active_user()`.
+    await subir(E, tDueno, `${dueno}/mod.jpg`, BUCKET_AVATARS);
+    const llegoD = await esperarA(() => deListing(mock.recibido, dueno).length >= 1);
+    const evD = deListing(mock.recibido, dueno)[0];
+    ok('un avatar nuevo dispara la moderación (sin skip de estado)',
+      llegoD && evD?.body?.bucket_id === 'avatars',
+      llegoD ? `entity_id=${evD?.body?.entity_id}, tg_op=${evD?.body?.tg_op}` : 'no llegó nada');
+
   } finally {
+    // Lo de moderación primero: restaurar Vault y cerrar el listener importa
+    // más que borrar filas, porque un secreto repuntado que sobreviva a la
+    // corrida deja al trigger llamando a un puerto muerto en la próxima.
+    if (previos) {
+      try { restaurarSecreto(previos, SECRETO_KEY); } catch {}
+      try { restaurarSecreto(previos, SECRETO_URL); } catch {}
+    }
+    if (mock) mock.srv.close();
+
+    for (const id of [modActiva, modPendiente, modBarrera]) {
+      if (id) await fetch(`${E.API_URL}/storage/v1/object/${BUCKET}/${id}/uno.jpg`, {
+        method: 'DELETE', headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
+      }).catch(() => {});
+    }
+
     for (const [id, ruta] of [[pausada, 'oculta.jpg'], [activa, 'foto.jpg']]) {
       if (id) await fetch(`${E.API_URL}/storage/v1/object/${BUCKET}/${id}/${ruta}`, {
         method: 'DELETE', headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
@@ -317,10 +562,10 @@ async function main() {
         method: 'DELETE',
         headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}`,
                    'Content-Type': 'application/json' },
-        body: JSON.stringify({ prefixes: [`${id}/a.jpg`, `${id}/intruso.jpg`, `${id}/robado.jpg`] }),
+        body: JSON.stringify({ prefixes: [`${id}/a.jpg`, `${id}/intruso.jpg`, `${id}/robado.jpg`, `${id}/mod.jpg`] }),
       }).catch(() => {});
     }
-    for (const id of [activa, pausada, deAjeno]) {
+    for (const id of [activa, pausada, deAjeno, modActiva, modPendiente, modBarrera]) {
       if (id) await fetch(`${E.API_URL}/rest/v1/listings?id=eq.${id}`, {
         method: 'DELETE', headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
       }).catch(() => {});

@@ -270,6 +270,101 @@ async function llamar(E, modo, body, tok) {
 }
 
 // ---------------------------------------------------------------------------
+// Sección 6: el trigger de Storage de verdad (RF-18, Ola 2)
+// ---------------------------------------------------------------------------
+//
+// Para que el trigger llegue a ESTA función hay que apuntarle los dos secretos
+// de Vault al `functions serve` local. Se repuntan aquí y se restauran en el
+// `finally`.
+//
+// `host.docker.internal` Y NO `127.0.0.1`: quien hace el `net.http_post` es el
+// contenedor de Postgres, y su loopback es él mismo. Medido (2026-09-18): con
+// ese nombre, `net._http_response` da 200 y el destino recibe body y header.
+// CLAUDE.md §9 documenta el mismo gotcha para el contenedor del edge runtime.
+//
+// Los helpers de Vault están DUPLICADOS con `probe-storage.mjs` a sabiendas.
+// No es el acoplamiento que este repo persigue (`formatPrecio` ↔
+// `formato_precio()`, `congelada()` ↔ su `using`): aquello son dos
+// implementaciones de UNA MISMA REGLA que al desincronizarse mienten. Esto es
+// andamiaje de pruebas, cada probe apunta a un destino distinto, y si una copia
+// se rompe su propio script falla ruidosamente.
+const DB_CONTAINER = 'supabase_db_relevo-marketplace';
+const SECRETO_KEY = 'moderar_contenido_secret_key';
+const SECRETO_URL = 'moderar_contenido_function_url';
+
+const lit = (v) => `'${String(v).replace(/'/g, "''")}'`;
+
+const sqlDocker = (q) =>
+  execFileSync(
+    'docker',
+    ['exec', '-i', DB_CONTAINER, 'psql', '-U', 'postgres', '-d', 'postgres',
+     '-t', '-A', '-F', '|', '-c', q],
+    { encoding: 'utf8' }
+  ).trim();
+
+function leerSecretos() {
+  const out = {};
+  const filas = sqlDocker(
+    `select name, id, decrypted_secret from vault.decrypted_secrets
+      where name in (${lit(SECRETO_KEY)}, ${lit(SECRETO_URL)})`
+  );
+  for (const f of filas.split('\n').filter(Boolean)) {
+    const [name, id, secreto] = f.split('|');
+    out[name] = { id, secreto };
+  }
+  return out;
+}
+
+const ponerSecreto = (previo, name, valor) =>
+  previo[name]
+    ? sqlDocker(`select vault.update_secret(${lit(previo[name].id)}::uuid, ${lit(valor)})`)
+    : sqlDocker(`select vault.create_secret(${lit(valor)}, ${lit(name)})`);
+
+const restaurarSecreto = (previo, name) =>
+  previo[name]
+    ? sqlDocker(`select vault.update_secret(${lit(previo[name].id)}::uuid, ${lit(previo[name].secreto)})`)
+    : sqlDocker(`delete from vault.secrets where name = ${lit(name)}`);
+
+const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * `pg_net` es fire-and-forget y la función tarda SEGUNDOS (Vision + OpenAI
+ * reales), así que el efecto no está listo al volver del upload. Se pollea con
+ * tope: rápido cuando sale bien, y sin volverse flaky si las APIs van lentas.
+ */
+async function esperarA(pred, ms = 60000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    if (await pred()) return true;
+    await dormir(500);
+  }
+  return false;
+}
+
+/** Como `auditoriasDe`, pero trayendo `detalle` — la sección 6 lo necesita. */
+async function auditoriasConDetalle(E, id) {
+  const res = await fetch(
+    `${E.API_URL}/rest/v1/listing_moderacion?listing_id=eq.${id}` +
+      `&select=veredicto,estado_resultante,detalle&order=created_at.asc`,
+    { headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` } }
+  );
+  return res.ok ? await res.json() : [];
+}
+
+// Una entrada VERBATIM de `palabras-prohibidas.ts`. Es el eje DETERMINISTA, y
+// por eso es el que dispara esta sección en vez de una imagen sucia: forzar
+// `VERY_LIKELY` de Vision exigiría sourcear contenido sexual explícito o
+// gráficamente violento, que este repo no hace ni para pruebas (mismo criterio
+// ya aplicado al declinar el caso 4 de §6.3 y al mockear Vision en
+// `probe-moderacion-avatares.mjs`).
+//
+// Y el veredicto es deterministo AUNQUE GPT sea un modelo: `peor()` es
+// monótona, así que un acierto de lista en texto TECLEADO da `bloquear` diga lo
+// que diga OpenAI. Ninguna señal absuelve a la otra — que es exactamente la
+// propiedad que hace usable este fixture.
+const PALABRA_PROHIBIDA = 'clonazepam';
+
+// ---------------------------------------------------------------------------
 
 async function main() {
   const raw = env();
@@ -296,6 +391,8 @@ async function main() {
   const correoDueno = `probe-mod-dueno-${RUN}@tec.mx`;
   const correoAjeno = `probe-mod-ajeno-${RUN}@tec.mx`;
   let dueno, ajeno, propia, ajena, enPendiente, fotoEnPendiente;
+  // Fixtures propios de la sección 6 (el trigger de Storage).
+  let escalable, fotoEscalable, previosVault;
 
   try {
     dueno = await crearUsuario(E, correoDueno);
@@ -434,7 +531,81 @@ async function main() {
          (await estadoDe(E, enPendiente)) === 'activa',
        `HTTP ${porElDueno.status}, respuesta=${JSON.stringify(porElDueno.json)}`);
 
+
+    // -----------------------------------------------------------------
+    console.log('\n== 6. El TRIGGER de storage.objects escala de verdad ==');
+
+    // Esta sección es la mitad cara del plan de Ola 2: `probe-storage.mjs`
+    // prueba GRATIS que el trigger dispara con el payload correcto contra un
+    // mock; aquí se prueba que, disparando contra la función DE VERDAD, el
+    // estado de la publicación se mueve. Ninguna sustituye a la otra.
+    //
+    // EL ORDEN ES LOAD-BEARING: la publicación y su foto se crean ANTES de
+    // repuntar Vault. Al revés, la subida inicial de la foto ya dispararía el
+    // trigger y dejaría la fila `bloqueada` antes del overwrite — y la
+    // aserción de abajo pasaría por la razón equivocada, sin haber ejercitado
+    // la rama UPDATE en absoluto. Es la lección de `:C` en T11b (CLAUDE.md §3)
+    // en su forma temporal: importa CUÁNDO corre cada paso, no solo qué afirma.
+    escalable = await crearListing(
+      E, dueno, `${PALABRA_PROHIBIDA} ${RUN}`, 'activa',
+      `Publicación de prueba de RF-18 con ${PALABRA_PROHIBIDA} en el texto.`
+    );
+    fotoEscalable = await subirFotoLimpia(E, escalable);
+
+    igual('control: antes de tocar nada la publicación está activa',
+      await estadoDe(E, escalable), 'activa');
+
+    previosVault = leerSecretos();
+    ponerSecreto(previosVault, SECRETO_KEY, E.SECRET);
+    ponerSecreto(previosVault, SECRETO_URL,
+      `${E.API_URL.replace(/\/\/(127\.0\.0\.1|localhost)/, '//host.docker.internal')}` +
+      `/functions/v1/moderar-contenido`);
+
+    // EL OVERWRITE. `x-upsert: true` produce un UPDATE real sobre la misma fila
+    // de `storage.objects` (F-spike del 2026-09-18), que es lo que despierta a
+    // `objects_notify_moderacion_update`.
+    const resOverwrite = await fetch(
+      `${E.API_URL}/storage/v1/object/listing-photos/${fotoEscalable}`,
+      {
+        method: 'POST',
+        headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}`,
+                   'Content-Type': 'image/jpeg', 'x-upsert': 'true' },
+        body: await sharp({
+          create: { width: 320, height: 320, channels: 3, background: { r: 200, g: 200, b: 200 } },
+        }).jpeg().toBuffer(),
+      }
+    );
+    ok('el overwrite del objeto se acepta', resOverwrite.ok, `HTTP ${resOverwrite.status}`);
+
+    const escalo = await esperarA(async () => (await estadoDe(E, escalable)) === 'bloqueada');
+    ok('sobrescribir la foto de una publicación ACTIVA la escala a bloqueada',
+      escalo, `estado final: ${await estadoDe(E, escalable)}`);
+
+    // La auditoría no es decorado: es lo único que explica POR QUÉ se bloqueó,
+    // y sin ella un revisor abre Studio y ve una fila `bloqueada` sin motivo
+    // (migración 20260918000461).
+    //
+    // SE AFIRMA `lista_tecleada`, NO `eje_que_manda`, y la diferencia importa:
+    // `ejeQueManda()` desempata por orden fijo con `vision` y `gptTexto` ANTES
+    // que `listaTecleada`, así que si GPT también dice `bloquear` —probable con
+    // este texto— el eje reportado sería `gptTexto`. Afirmarlo sería atar la
+    // prueba a lo que conteste un modelo.
+    const auditorias = await auditoriasConDetalle(E, escalable);
+    const ultima = auditorias.at(-1);
+    ok('la escalada dejó su fila de auditoría, con la palabra que la causó',
+      ultima?.estado_resultante === 'bloqueada' &&
+        Array.isArray(ultima?.detalle?.lista_tecleada) &&
+        ultima.detalle.lista_tecleada.includes(PALABRA_PROHIBIDA),
+      `${auditorias.length} fila(s), lista_tecleada=${JSON.stringify(ultima?.detalle?.lista_tecleada)}`);
+
   } finally {
+    // Vault primero: un secreto repuntado que sobreviva a la corrida deja el
+    // trigger llamando a un `functions serve` que ya no está.
+    if (previosVault) {
+      try { restaurarSecreto(previosVault, SECRETO_KEY); } catch { /* nada que hacer */ }
+      try { restaurarSecreto(previosVault, SECRETO_URL); } catch { /* nada que hacer */ }
+    }
+
     const del = (tabla, filtro) =>
       fetch(`${E.API_URL}/rest/v1/${tabla}?${filtro}`, {
         method: 'DELETE',
@@ -446,14 +617,15 @@ async function main() {
     // `pg_constraint`), pero `storage.objects` es un sistema aparte sin FK a
     // `listings`. Sin este borrado explícito, cada corrida deja un JPEG
     // huérfano en el bucket — mismo gotcha que CLAUDE.md §9 ya documenta.
-    if (fotoEnPendiente) {
-      await fetch(`${E.API_URL}/storage/v1/object/listing-photos/${fotoEnPendiente}`, {
+    for (const ruta of [fotoEnPendiente, fotoEscalable]) {
+      if (!ruta) continue;
+      await fetch(`${E.API_URL}/storage/v1/object/listing-photos/${ruta}`, {
         method: 'DELETE',
         headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
       }).catch(() => {});
     }
 
-    for (const id of [propia, ajena, enPendiente]) {
+    for (const id of [propia, ajena, enPendiente, escalable]) {
       if (id) await del('listings', `id=eq.${id}`);
     }
     for (const id of [dueno, ajeno]) {

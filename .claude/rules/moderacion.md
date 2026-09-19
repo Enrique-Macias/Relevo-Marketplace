@@ -57,16 +57,21 @@ paths:
 | **La descarga desde Storage + `encodeBase64`** | **Hecho** | `index.ts`, `evaluarFotos()` |
 | **Armar los `Ejes` + `decidirListing()` + escritura + auditoría, para PUBLICACIONES** | **Hecho, con el guard de promoción probado end-to-end (§6.3)** | `index.ts`, `evaluarListing()` |
 | **Enforcement de avatares** (`moderarAvatar()`): descarga, Vision, `decidirAvatar()`, borrado + guard de la carrera | **Hecho, con el guard de la carrera probado end-to-end (§6.4)** | `index.ts`, `moderarAvatar()` |
-| Los dos triggers de Storage | **Pendiente** | sin migración todavía |
+| Los dos triggers de Storage | **Hecho y verificado en LOCAL; en remoto ni siquiera pusheados — y los secretos van en Ola 3** | `supabase/migrations/20260918000462_storage_moderacion_triggers.sql` + `probe-storage.mjs` §moderación |
 | El rework de `publicar.ts` (nace `pendiente`, ya no activa él mismo) | **Pendiente** | — |
 | El `with_check` de `listings_insert_own` forzando `pendiente` | **Pendiente** | deuda ya documentada en `publicar-fotos.md` |
 | Suscripción de Realtime en el cliente | **Pendiente** | — |
 
 **Con esto, `moderar-contenido` modera publicaciones Y avatares reales de
-punta a punta** —el único hueco funcional que queda es que nada en la app
-TODAVÍA llama a esta función: falta el rework de `publicar.ts` (Ola 3) y los
-dos triggers de Storage (Ola 2) que la disparan automáticamente al subir una
-foto o un avatar. Los ocho casos de verificación que dependían de red real
+punta a punta, y desde la Ola 2 los dos triggers de Storage la disparan solos al
+entrar un objeto** — verificado end-to-end: sobrescribir la foto de una
+publicación `activa` la escala a `bloqueada` (§6.5).
+
+**PERO EN PRODUCCIÓN TODAVÍA NO PROTEGE NADA, Y ES A PROPÓSITO.** Los dos
+secretos de Vault del trigger **no se crean en prod hasta que Ola 3 esté
+completa** (el porqué, en §7), así que allá `private.notify_moderacion()`
+levanta un `warning` y no llama a nadie. El hueco funcional que queda es el
+rework de `publicar.ts` (Ola 3). Los ocho casos de verificación que dependían de red real
 para publicaciones (4 parcial, 5, 6, 7, 8, 9, 13, y el probe de autorización
 re-verificado con evaluación real) están en §6.3; los cuatro de avatares, en
 §6.4 — todos con sus controles negativos.
@@ -126,55 +131,73 @@ when (new.bucket_id in ('listing-photos', 'avatars')
       and old.version is distinct from new.version)   -- solo si cambió el CONTENIDO
 ```
 
-### Contingente del F-spike: si `upsert` resulta ser DELETE+INSERT
+### El F-spike, CORRIDO (2026-09-18) — y corrige dos cosas de este archivo
 
-El F-spike (medir si `move` cambia `version` y si un upsert es UPDATE real,
-DELETE+INSERT, o ninguna de las dos) todavía no se corrió al migrar esto. Los
-cuatro resultados posibles y qué hace cada uno con el diseño de arriba:
+Trigger sonda `AFTER INSERT/UPDATE/DELETE ON storage.objects` registrando
+`tg_op`, `old/new.version`, `old/new.metadata->>'eTag'` y `old/new.name`, contra
+el Storage API real del stack local. Desmontado al terminar.
 
-| Resultado del spike | Qué arma caza el overwrite | Qué hay que cambiar |
-|---|---|---|
-| UPDATE real sobre la misma fila | la rama UPDATE (`version` distinta) | nada |
-| DELETE + INSERT | **la rama INSERT** | nada en la lógica; sí en las pruebas y en un tripwire |
-| `move` no cambia `version` | ninguna (y está bien: un move no cambia el contenido) | nada, pero hay que anotarlo |
-| **UPDATE pero `version` NO cambia** | **ninguna — el overwrite queda descubierto** | el `WHEN` está mal: comparar `old.metadata` (lleva el `eTag`) o soltar la condición |
+| Operación | Bucket / rol | HTTP | `tg_op` | fila | `version` | `eTag` |
+|---|---|---|---|---|---|---|
+| POST alta | LP / authenticated | 200 | **INSERT** | nueva | — → v1 | — → e1 |
+| POST + `x-upsert: true` | LP / authenticated | 200 | **UPDATE** | **la MISMA** (`id` idéntico) | **CAMBIA** | **CAMBIA** |
+| PUT (`.update()` de supabase-js) | LP / authenticated | 200 | **UPDATE** | la misma | CAMBIA | CAMBIA |
+| `move()` | LP / authenticated | 200 | **UPDATE** | la misma | **CAMBIA** | **IGUAL** |
+| POST sin upsert, ruta existente | LP / authenticated | 400 | — | — | *(cero eventos)* | |
+| POST + `x-upsert` | LP / **service_role** | 200 | **UPDATE** | la misma | CAMBIA | CAMBIA |
+| `move()` | LP / **service_role** | 200 | **UPDATE** | la misma | CAMBIA | IGUAL |
+| POST alta | AV / authenticated | 200 | **INSERT** | nueva | — → v1 | — → e1 |
+| POST + `x-upsert` | AV / authenticated | **400** `AccessDenied` *"new row violates row-level security policy"* | — | — | *(cero eventos)* | |
+| `move()` | AV / authenticated | 400 | — | — | *(cero eventos)* | |
+| POST + `x-upsert` | AV / **service_role** | 200 | **UPDATE** | la misma | CAMBIA | CAMBIA |
+| `move()` | AV / **service_role** | 200 | **UPDATE** | la misma | CAMBIA | IGUAL |
+| DELETE | LP / service_role | 200 | **DELETE** | — | v → — | |
 
-**Conclusión, y es más tranquila de lo que parece: si sale DELETE+INSERT no
-hace falta discriminar alta de reemplazo.** El discriminador que de verdad
-importa ya está puesto, y es otro: **el skip de `pendiente`** (ver §1.3 más
-abajo).
+**Salió la PRIMERA de las cuatro salidas que este archivo contemplaba: UPDATE
+real sobre la misma fila, `version` distinta.** O sea que el diseño de arriba
+—dos triggers, el de UPDATE guardado por `version`— queda como estaba. Cero
+DELETE+INSERT.
 
-- Durante el alta, la publicación está en `pendiente` → el trigger se salta el
-  evento **venga como venga** (INSERT, UPDATE o D+I). La llamada final la
-  evalúa entera.
-- Después de decidida (`activa`/`pausada`/`bloqueada`), **cualquier** evento
-  de objeto sobre esa publicación se evalúa. Y ahí alta y reemplazo
-  **necesitan exactamente el mismo tratamiento**: una foto agregada al editar
-  una publicación viva hay que moderarla igual que una sobrescrita. No hay
-  decisión que ramificar.
-- Avatares: siempre se evalúan. Tampoco hay nada que distinguir.
+**Consecuencia directa: el comentario-tripwire de la rama INSERT NO se
+escribió.** Este archivo lo pedía *condicionado* a que saliera D+I, para cubrir
+una rama UPDATE que habría quedado muerta. No hay rama muerta. Lo que sí quedó
+escrito, y fechado, es el resultado del spike, en el encabezado de
+`20260918000462_storage_moderacion_triggers.sql` — para que nadie tenga que
+volver a correrlo.
 
-**El riesgo real de que salga D+I no es un hueco de lógica, es uno de
-mantenimiento:** la rama UPDATE quedaría como código que no dispara nunca para
-el caso que la motivó, y alguien podría después "optimizar" la rama INSERT con
-un guard tipo *"solo objetos nuevos"* y matar la cobertura del overwrite sin
-que nada falle. Se cubre con dos cosas, no con una rama nueva:
+**Y el spike DESMINTIÓ lo que este archivo predecía para `move`.** La tabla de
+contingencia decía *"`move` no cambia `version` → ninguna arma lo caza, y está
+bien: un move no cambia el contenido"*. Es al revés: **`version` sí cambia en un
+`move`, así que un move SÍ dispara la rama UPDATE** (lo que no cambia es el
+`eTag` — `version` es un id de revisión de la FILA, no un hash del contenido).
 
-1. **La aserción se escribe sobre el RESULTADO, no sobre qué trigger
-   disparó**: *"sobrescribir una foto de una publicación `activa` la
-   escala"*. Así vale idéntica bajo los tres resultados del spike, y sigue en
-   verde si Storage cambia de implementación en una actualización.
-2. **Un comentario-tripwire en la rama INSERT** diciendo que también es el
-   camino del overwrite cuando el upsert es D+I, con el resultado del spike
-   anotado y fechado.
+**Se deja disparando a propósito, y no se tapa con un guard de `eTag`:** un move
+cambia `path_tokens[1]`, o sea que el objeto pasa a colgar de OTRA publicación,
+con otro estado y otro dueño. Re-moderarlo es lo correcto, y es coherente con lo
+que §1.4 ya decidía para el payload (*"lo que se modera es dónde QUEDÓ el
+objeto"*).
 
-**La cuarta salida del F-spike importa aparte de todo esto:** si un overwrite
-NO cambia `version` en absoluto, ni la rama UPDATE (`WHEN` no dispara) ni la
-INSERT (no hubo insert) lo ven, y el overwrite queda **sin cobertura** — no es
-un problema de lógica de negocio, es que el `WHEN` está mal escrito. El fix
-sería comparar `old.metadata` (que lleva el `eTag`) en vez de `version`, o
-soltar la condición y aceptar re-evaluar en cada UPDATE. Es la razón concreta
-por la que el F-spike va ANTES de escribir el SQL final y no después.
+**Dos mediciones laterales que cambian cómo hay que LEER el `WHEN`:**
+
+- **El guard `old.version is distinct from new.version` no filtra ningún ruido
+  medido hoy.** 3 × `GET /object/authenticated/` y 3 × `/object/info/` →
+  **0 eventos**: `last_accessed_at` no se escribe al leer en esta versión de
+  Storage. El guard se conserva como **defensa declarada para UPDATEs futuros
+  que no cambien el contenido, sin control negativo que lo respalde** — y su
+  control negativo corrido lo confirma: quitarlo deja las 21 aserciones de
+  `probe-storage.mjs` en verde. Mismo caso, y misma honestidad, que el
+  `estado <> 'pausada'` redundante de `listing_photos_objects_select`. No lo
+  leas como un filtro con consumidor.
+- **`path_tokens` se recalcula en el UPDATE de un `move`** (es columna
+  generada): tras mover a `643/sub.jpg`, `path_tokens[1]` = `643`. El payload de
+  `NEW` es correcto sin tocar nada.
+
+**Y el punto 2 de "por qué INSERT solo no alcanza" dejó de ser deducción.** Decía
+que `service_role`/Studio saltan la RLS y por eso hasta `avatars` —sin policy de
+UPDATE— se sobrescribe desde Studio. Medido: como `authenticated`, el upsert
+sobre `avatars` muere con `400 AccessDenied "new row violates row-level security
+policy"` y **no genera ningún evento**; con la secret key, es un UPDATE normal.
+La rama UPDATE de `avatars` existe exactamente para ese llamador.
 
 ### El discriminador "¿es alta o reemplazo?", si aun así se quiere (y su trampa)
 
@@ -760,13 +783,8 @@ ve.
 
 ### 6.2. El resto, todavía sin correr
 
-- **Triggers:** las dos ramas por separado, por el Storage API real —
-  (1) objeto nuevo → invocación; (2) **sobrescribir con `upsert: true` un
-  objeto de una publicación ya `activa` → tiene que escalar**, que es la
-  aserción que justifica la rama UPDATE; (3) confirmar que una subida a una
-  publicación `pendiente` **no** dispara HTTP (§1.3 de este archivo). Va en
-  `probe-storage.mjs`, no en `rls.sql`: el comportamiento real del API solo
-  se ve por HTTP.
+- **Triggers: HECHO**, y partido en dos scripts con costos distintos — el
+  detalle completo, con los cinco controles negativos, en §6.5.
 - **Rework de `publicar.ts`:** `rls.sql` entero (167 aserciones a la fecha de
   este archivo) + los dos probes existentes + una T25 nueva para el
   `with_check` del INSERT, con su control negativo corrido por separado.
@@ -924,6 +942,82 @@ fila NO es un error (mismo gotcha de arriba) — devuelve un array vacío, sin
 son indistinguibles desde el código, que es justo la ambigüedad que el caso 3
 necesita poder afirmar con certeza.
 
+### 6.5. Ola 2 (los dos triggers de Storage) — corrida 2026-09-18
+
+**Dos scripts, y la línea que los separa es el COSTO**, que es la razón de que
+no sea uno solo:
+
+| Script | Qué prueba | ¿Cuesta? | ¿Necesita `functions serve`? |
+|---|---|---|---|
+| `probe-storage.mjs` (4 aserciones nuevas, 21 en total) | que el trigger DISPARA, con el payload y el header correctos | **No** | **No** |
+| `probe-moderacion-http.mjs` (§6, 4 nuevas, 20 en total) | que disparando de verdad el ESTADO se mueve | Sí (ya lo era) | Sí |
+
+**Cómo intercepta `probe-storage.mjs` sin servidor, y por qué sale más barato
+que los casos 6-8 de §6.3.** Aquellos tenían que editar `ENDPOINT_VISION` en el
+FUENTE y reiniciar `functions serve`, porque es una constante de un `.ts`. Aquí
+la URL de la función vive en una **fila de Vault**, así que el script la repunta
+con SQL en runtime a un listener `node:http` local y la restaura en el `finally`
+— **sin editar fuente, sin reiniciar nada, sin credenciales y sin gastar un
+centavo**. El `finally` restaura Vault ANTES que nada: un secreto repuntado que
+sobreviva a la corrida deja el trigger llamando a un puerto muerto.
+
+**Precondición medida, no supuesta:** `net.http_post` **desde el contenedor de
+Postgres** alcanza `host.docker.internal` — 200 en `net._http_response`, con el
+body y el header `apikey` recibidos. CLAUDE.md §9 solo tenía medido ese nombre
+desde el contenedor del *edge runtime*; el caso general quedó ahí, ampliado.
+
+**Los cuatro casos de `probe-storage.mjs` y sus CINCO controles negativos**,
+corridos uno a la vez contra el script completo:
+
+| Variante rota | Cae en |
+|---|---|
+| sin el trigger de INSERT | (a) y (d); y (c) cae con su propio mensaje *"la BARRERA no llegó: la aserción no es concluyente"* |
+| sin el trigger de UPDATE | **solo (b)** |
+| sin el skip de `pendiente` | **solo (c)** |
+| el skip aplicado también a `avatars` | **solo (d)** |
+| sin el guard `old.version is distinct from new.version` | **NADA — las 21 pasan** |
+
+Tres cosas de esa tabla que conviene no suponer:
+
+- **(b) se afirma sobre el CONTEO antes/después, no sobre "hay al menos uno".**
+  Con `>= 1` pasaría en verde por el evento que ya dejó (a), o sea sin que la
+  rama UPDATE existiera. Y **no afirma `tg_op === 'UPDATE'`**: eso es un detalle
+  de implementación de Storage que el F-spike midió hoy y que una actualización
+  puede mover, así que se imprime como dato y no como aserción.
+- **(c) lleva BARRERA, y sin ella sería una mentira por timeout.** "No llegó
+  nada en N ms" no distingue *no disparó* de *tardó*. Se sube a la `pendiente`,
+  después a una `activa`, y se espera a que llegue la de la `activa`; si la
+  posterior ya llegó y la anterior sigue ausente, el silencio está probado. El
+  control de "sin trigger de INSERT" lo demuestra funcionando: (c) no miente en
+  verde, **declara que no es concluyente**.
+- **La última fila es un RESULTADO, no un hueco.** El guard de `version` no
+  tiene control negativo porque no filtra nada medido (ver §1). Está escrito así
+  a propósito en los tres lados: la migración, el probe y §1.
+
+**La sección 6 de `probe-moderacion-http.mjs`, y por qué la escalada la dispara
+la LISTA y no una imagen sucia.** Forzar `bloquear` por Vision exigiría sourcear
+contenido sexual explícito o gráficamente violento, que este repo no hace ni
+para pruebas — mismo criterio ya aplicado en §6.3 (caso 4) y §6.4. La lista de
+palabras es el eje determinista: una publicación `activa` con una palabra
+prohibida en el título, con su foto limpia, a la que se le sobrescribe la foto.
+Resultado medido: **`activa → bloqueada`**, más la fila de auditoría con
+`lista_tecleada=["clonazepam"]`.
+
+Y el veredicto es determinista **aunque GPT sea un modelo**: `peor()` es
+monótona, así que un acierto de lista en texto tecleado da `bloquear` diga lo
+que diga OpenAI. Por eso la aserción mira **`detalle.lista_tecleada` y NO
+`eje_que_manda`** — `ejeQueManda()` desempata por orden fijo con `vision` y
+`gptTexto` ANTES que `listaTecleada`, así que si GPT también dice `bloquear`
+—probable con ese texto— el eje reportado sería `gptTexto`. Afirmarlo ataría la
+prueba a lo que conteste un modelo.
+
+**El ORDEN de esa sección es load-bearing**, y por el mismo motivo que ya
+documenta `listing_sales` en CLAUDE.md §3: la publicación y su foto se crean
+ANTES de repuntar Vault. Al revés, la subida inicial ya dispararía el trigger y
+dejaría la fila `bloqueada` antes del overwrite — la aserción pasaría en verde
+sin haber ejercitado la rama UPDATE en absoluto.
+
+
 ---
 
 ## 7. Orden y dependencias — mapa completo de olas
@@ -951,24 +1045,76 @@ hasta `supabase secrets set` (nombres ya decididos, ver §3.1 — hecho) +
 `supabase/functions/.env` local (plantilla ya creada — hecho). **El cuerpo
 de `index.ts` en sí sigue sin escribirse.**
 
-**Ola 2 (depende de la función + F-spike):** los dos triggers de Storage
-(§1 de este archivo).
+**Ola 2 (depende de la función + F-spike): HECHO EN EL ESQUEMA, INERTE EN
+PROD.** Los dos triggers de Storage (§1) viven en
+`20260918000462_storage_moderacion_triggers.sql`, con sus cuatro aserciones
+gratis en `probe-storage.mjs` y la escalada end-to-end en
+`probe-moderacion-http.mjs` §6 (todo en §6.5).
 
-- **F-spike.** Medir si `move` cambia `version` y si un upsert es UPDATE,
-  DELETE+INSERT, o ninguna de las dos, con un trigger sonda. **Todavía sin
-  correr.**
+- **F-spike. HECHO** (2026-09-18) — resultado completo y sus dos correcciones a
+  este archivo en §1. Salió "UPDATE real sobre la misma fila", así que el diseño
+  no cambió; lo que sí cambió es que un `move` SÍ dispara, al revés de lo que
+  este archivo predecía.
 
-  Confirmado que NO bloquea la Edge Function: la función recibe `tg_op` pero
-  no ramifica sobre él — re-evalúa la entidad completa y, por el camino del
-  trigger, solo puede escalar. Ni la lógica, ni el payload, ni la
-  idempotencia cambian según el resultado. Su único consumidor es el
-  comentario-tripwire de la rama INSERT del trigger, que es Ola 2 — por eso
-  el spike se corre en esa ola y no antes.
+- **LOS SECRETOS DE VAULT DE PRODUCCIÓN NO SE CREAN HASTA QUE OLA 3 ESTÉ
+  COMPLETA.** Es una decisión, no un olvido, y es lo que hace que la fila de la
+  tabla de estado diga "verificado en LOCAL" y no "Hecho" a secas. (Y hoy hay un
+  paso ANTES incluso de ese: la migración sigue sin pushear — remoto tiene 25
+  migraciones y ningún `objects_notify_moderacion%` en `pg_trigger`, medido.)
+
+  **El motivo:** mientras `publicar.ts` siga creando las filas en `pausada`
+  (`:286-291`), el skip de `pendiente` **no tiene a quién saltarse**, así que el
+  trigger evaluaría DURANTE el alta y `decidirListing()` escalaría
+  `pausada → bloqueada` ante un `bloquear`. Y una publicación `bloqueada` hoy es
+  un **callejón sin salida** para su dueño, verificado archivo por archivo:
+
+  | Qué hace el vendedor | Qué pasa realmente |
+  |---|---|
+  | Abre "Mis publicaciones" | **La ve** — `listings_select` tiene `or user_id = auth.uid()` |
+  | Mira el chip de estado | **Vacío**: `ESTADO_LABEL` es un `Record` de 3 claves (`mis-publicaciones.tsx:63-67`) |
+  | Toca "Reactivar" | 0 filas **sin lanzar** → *"No pudimos cambiar el estado"* (`:160`). Falso |
+  | Abre "Editar publicación" | **El formulario se pinta entero**: el guard de `editar/[id].tsx:452` solo cubre `vendida` |
+  | Guarda | *"Esta publicación ya se vendió"* (`editar/[id].tsx:385`). Mentira lisa |
+  | Busca ayuda | **No hay**: RF-17 no existe |
+  | Lo único que funciona | **Eliminarla** |
+
+  **Y a cambio no se pierde nada:** Ola 2 no entrega ninguna funcionalidad al
+  usuario por sí sola — todo su valor es quedar cableada para Ola 3. Activar los
+  secretos antes no compra cobertura, compra riesgo.
+
+  **Exposición medida en remoto (2026-09-18)**, para que la decisión no dependa
+  de una intuición: 6 cuentas, todas de alta entre el 09-07 y el 09-15, **cinco
+  de ellas en dominios de correo personal** (hotmail/gmail/outlook) y una sola
+  `@tec.mx` — o sea, el desarrollador y sus pruebas, no estudiantes ajenos. Pero
+  53 publicaciones, todas de los últimos 30 días, 11 en los últimos 7 y la
+  última ese mismo día: la ventana **no** es teórica.
+
+  **Probabilidad de que alguien la pise: baja por los ejes deterministas,
+  DESCONOCIDA por el de GPT**, y esa asimetría es lo que decide. Vision sobre un
+  catálogo de libros y calculadoras: improbable. La lista de palabras:
+  improbable **por diseño** (26 entradas, regla de admisión explícita, cuatro
+  términos descartados por ambiguos). **`articulo_prohibido` de GPT es el eje que
+  lee contexto y es un modelo, y su tasa de falsos positivos sobre este catálogo
+  no está medida** — lo único medido es 5/5 `limpio` sobre UN par verificado
+  (§6.3), que es un fixture, no una tasa.
+
+  **El costo de esperar, que sí lo tiene:** un trigger que existe en prod y
+  nunca dispara está sin probar en prod, y se ve idéntico a uno que funciona.
+  Dos amarres: los dos `vault.create_secret` son un **paso explícito del
+  checklist de Ola 3** (abajo), y el aviso está en el encabezado del SQL y en
+  CLAUDE.md §8. Verificación de que sigue inerte, en remoto:
+  `select count(*) from vault.secrets where name in
+  ('moderar_contenido_secret_key','moderar_contenido_function_url');` → 0.
 
 **Ola 3 (depende de la función y de B):** el rework de `publicar.ts` **+ el
 `with_check` de `listings_insert_own`, en el mismo cambio** (§5 de este
 archivo); y la UI de los estados nuevos (`ESTADO_LABEL`, los guards de
 `alternarPausa()` y de "Editar publicación").
+
+**Y, como último paso de esa ola —no antes—, los dos `vault.create_secret` en
+PRODUCCIÓN** (ver Ola 2 arriba). Hasta que se creen, la moderación automática de
+Storage no protege nada en remoto. Es el paso que convierte "verificado en
+local" en "Hecho".
 
 **Ola 4:** Realtime en el cliente + su fallback por refetch (§4.1); avatares
 (§1 cubre el trigger que los toca; el enforcement — borrar objeto + `foto_url

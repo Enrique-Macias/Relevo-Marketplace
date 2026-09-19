@@ -181,7 +181,7 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 25 migraciones (`supabase/migrations/`), con RLS activo y probado en
+Definido en 26 migraciones (`supabase/migrations/`), con RLS activo y probado en
 las 14 tablas más los DOS buckets de Storage. Este es el esquema **real**, no
 solo la intención original.
 
@@ -191,30 +191,25 @@ configurar. El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto NO están a la par: 25 y 23**, medido con
-`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. Las dos de
-más son `20260917000460` (`listings` entra a la publicación de Realtime, RF-18)
-y `20260918000461` (`listing_moderacion`), escritas y validadas en local y
-**sin pushear**. Las dos anteriores de moderación
-pre-publicación (`20260917000458`, `20260917000459`, `pendiente`/`bloqueada`) sí
-viajaron — confirmado leyendo el enum en remoto directo (`pg_enum` vía
-`execute_sql`), no solo contando filas. Antes de
-este punto vivía una salvedad —"en remoto hay 19, falta pushear la de
-`avatars`"— que resultó estar **desactualizada**: al hacer `db push` con la de
-suspensión, el CLI aplicó únicamente `20260917000457`, o sea que
-`20260916000456` ya había viajado antes y el bucket `avatars` ya existía en
-remoto (`select count(*) from storage.buckets where id = 'avatars'` → 1).
-Moraleja para la próxima vez que se lea un conteo en esta sección: son números
-que se MIDEN con su comando, y cuando la prosa y el comando discrepan gana el
-comando — incluso cuando la prosa es una advertencia que suena prudente.
+**Repo y remoto NO están a la par: 26 y 25**, medido con
+`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. La única de
+más es `20260918000462` (los dos triggers de `storage.objects` que disparan
+`moderar-contenido`, RF-18 Ola 2), escrita y validada en local y **sin pushear**.
 
-**Y la segunda moraleja se demostró sola, en la misma tarea que la escribió.**
-Esta sección llegó a decir "23 y 21, las dos de más sin pushear todavía" —
-cierto en el momento en que se midió — y quedó desactualizado por un `db push`
-corrido FUERA de esta sesión antes de que se terminara de escribir el párrafo
-siguiente. Un repo y un remoto en par (o no) es un estado transitorio, no una
-propiedad del código: no se documenta como hecho fijo, se remide cada vez que
-alguien vaya a confiar en el número.
+**Y este número acaba de volver a demostrar su propia moraleja, otra vez más.**
+Este párrafo decía "25 y 23", con `20260917000460` y `20260918000461` marcadas
+como "sin pushear" — y al remedirlo contra remoto resultó que **las dos ya
+habían viajado**: el remoto tiene 25, no 23, y nadie lo anotó cuando ocurrió.
+Antes de eso decía "23 y 21", que quedó obsoleto por un `db push` corrido FUERA
+de la sesión que lo escribió, antes siquiera de que se terminara el párrafo. Y
+antes de eso, "en remoto hay 19, falta pushear la de `avatars`", también falso
+al medirlo. Van cuatro.
+
+**La moraleja, ya sin matices:** que repo y remoto estén a la par es un **estado
+transitorio, no una propiedad del código**. No se documenta como hecho fijo: se
+REMIDE con su comando cada vez que alguien vaya a confiar en el número, y cuando
+la prosa y el comando discrepan **gana el comando** — incluso cuando la prosa es
+una advertencia que suena prudente, y especialmente cuando es esta misma.
 
 ```
 -- Enums
@@ -1570,6 +1565,31 @@ de los route groups).
      inbox con `push_enviado_at is null` y no sale ningún push.
    - Por §6 el simulador headless no cuenta como prueba. Es hermano del pendiente
      del header `Authorization` de `expo-image`.
+2. **Los dos secretos de Vault de `moderar-contenido` (RF-18, Ola 2), que están
+   DELIBERADAMENTE sin crear en remoto.** Son DOS pasos, y hoy no se ha dado
+   ninguno: la migración `20260918000462` está **sin pushear** (medido:
+   `mcp__supabase__list_migrations` da 25 y el repo 26, y `pg_trigger` en remoto
+   no tiene ningún `objects_notify_moderacion%`), y aun después del `db push`
+   los triggers quedan **inertes** sin estos dos valores —
+   `private.notify_moderacion()` levanta un `warning` y no llama a nadie. O sea
+   que **la moderación automática de Storage todavía no protege producción, por
+   partida doble**:
+
+   ```sql
+   select vault.create_secret('sb_secret_…', 'moderar_contenido_secret_key');
+   select vault.create_secret(
+     'https://ukxfnydfhmryrzhdqkvj.supabase.co/functions/v1/moderar-contenido',
+     'moderar_contenido_function_url');
+   ```
+
+   **No los crees todavía.** Van como último paso de la Ola 3, y el porqué está
+   en `.claude/rules/moderacion.md` §7: mientras `publicar.ts` cree las filas en
+   `pausada`, el trigger evalúa durante el alta y puede dejar una publicación
+   `bloqueada`, que hoy es un callejón sin salida para su dueño (chip vacío,
+   "Reactivar" que miente, "Editar" que dice "ya se vendió"). Verificación de
+   que siguen sin crearse:
+   `select count(*) from vault.secrets where name like 'moderar_contenido_%';`
+   → 0.
 
 **Deuda consciente — con disparador de revisión, no "algún día":** cada entrada
 vive COMPLETA —con su "Revisar cuando" y su "Fix"— en la regla de su feature, y
@@ -2127,8 +2147,45 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   grepea una sola palabra (`error`, `FALLÓ`) en vez de una frase que los códigos
   puedan partir.
 
-- **`127.0.0.1` desde dentro del edge runtime de `supabase functions serve`
-  NO es el host de desarrollo — es el contenedor mismo.** El runtime local
+- **Un control negativo tiene que CONFIRMAR que la variante rota se aplicó —
+  si no, el verde que devuelve no prueba nada.** Hermano del gotcha del `grep`
+  sobre colores ANSI de más arriba, y del mismo tamaño de trampa. Pasó al correr
+  los controles de los triggers de Storage (RF-18 Ola 2): el `docker exec psql`
+  que instalaba cada variante estaba en una variable de shell (`$PSQL -c "…"`),
+  y zsh la trató como el NOMBRE de un comando, no como una línea a expandir —
+  `command not found`. El DDL nunca se aplicó, así que la suite corrió contra el
+  esquema BUENO y dijo "las 21 pruebas pasaron". Leído sin cuidado, eso parece
+  el hallazgo más valioso posible ("¡esta aserción no tiene control negativo!")
+  cuando en realidad no se había probado nada.
+  **Cómo evitarlo:** antes de correr la suite, imprimir el ESTADO del objeto que
+  se acaba de romper y comprobar que de verdad cambió — `select tgname from
+  pg_trigger …`, `select prosrc like '%VARIANTE ROTA%' …`, `pg_get_triggerdef`.
+  Dos líneas, y convierten "salió verde" en un dato en vez de una esperanza. Es
+  la misma familia del resto de esta sección: **en este repo, lo que no falla
+  ruidosamente es lo que hay que mirar dos veces** — y un control negativo que
+  no se aplicó es exactamente eso.
+
+- **`127.0.0.1` desde dentro de CUALQUIER contenedor del stack local NO es el
+  host de desarrollo — es el contenedor mismo.** El título de este gotcha decía
+  "desde dentro del edge runtime", y eso hacía leerlo como una rareza de Deno.
+  **No lo es: es Docker.** Medido también desde el contenedor de **Postgres**,
+  vía `pg_net` (2026-09-18, al construir los triggers de Storage de RF-18):
+  `net.http_post` a `http://host.docker.internal:<puerto>/…` llega —200 en
+  `net._http_response`, con el body y el header `apikey` recibidos por un
+  listener del host— mientras que `127.0.0.1` no alcanzaría nada. Aplica igual
+  a cualquier otro contenedor del stack que salga a la red.
+
+  Vale la pena saberlo porque **habilita una técnica de prueba, no solo evita un
+  bug**: cualquier endpoint configurable —la URL de una Edge Function guardada en
+  Vault, `ENDPOINT_VISION`, `ENDPOINT_OPENAI`— se puede interceptar
+  temporalmente con un `node:http` de veinte líneas en el host. Es lo que hace
+  que `probe-storage.mjs` pruebe los triggers de moderación **gratis y sin
+  `functions serve`** (`.claude/rules/moderacion.md` §6.5), y lo que permitió
+  forzar un *refusal* real de OpenAI (§6.3, caso 8). Cuando el endpoint vive en
+  una FILA (Vault) en vez de en una constante de un `.ts`, la intercepción ni
+  siquiera necesita editar fuente ni reiniciar el servidor.
+
+  El caso original, que es donde se descubrió: El runtime local
   corre como su propio contenedor Docker (`supabase_edge_runtime_…`, verlo
   con `docker ps`), así que un `fetch` que la función Deno hace hacia
   `http://127.0.0.1:<puerto>` desde su código resuelve al loopback DEL
