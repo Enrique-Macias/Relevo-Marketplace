@@ -191,19 +191,24 @@ configurar. El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto NO están a la par: 26 y 25**, medido con
+**Repo y remoto NO están a la par: 27 y 26**, medido con
 `ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. La única de
-más es `20260918000462` (los dos triggers de `storage.objects` que disparan
-`moderar-contenido`, RF-18 Ola 2), escrita y validada en local y **sin pushear**.
+más es `20260919000463` (el `with_check` que obliga a toda publicación de
+cliente a nacer `pendiente`, RF-18 Ola 3), escrita y validada en local y **sin
+pushear** — y no debe pushearse sola: ver §8, pendiente 2, porque llegar a
+remoto antes de que la Edge Function esté desplegada allá rompe publicar.
 
-**Y este número acaba de volver a demostrar su propia moraleja, otra vez más.**
-Este párrafo decía "25 y 23", con `20260917000460` y `20260918000461` marcadas
-como "sin pushear" — y al remedirlo contra remoto resultó que **las dos ya
-habían viajado**: el remoto tiene 25, no 23, y nadie lo anotó cuando ocurrió.
-Antes de eso decía "23 y 21", que quedó obsoleto por un `db push` corrido FUERA
-de la sesión que lo escribió, antes siquiera de que se terminara el párrafo. Y
-antes de eso, "en remoto hay 19, falta pushear la de `avatars`", también falso
-al medirlo. Van cuatro.
+**Y este número acaba de volver a demostrar su propia moraleja, por QUINTA
+vez.** Este párrafo decía "26 y 25", con `20260918000462` marcada como "sin
+pushear" — y al remedirlo contra remoto resultó que **ya había viajado**: el
+remoto tiene 26, no 25, y `pg_trigger` allá ya tiene
+`objects_notify_moderacion_insert`/`_update`. (Siguen INERTES, eso sí:
+`select count(*) from vault.secrets where name like 'moderar_contenido_%'` da 0.)
+Antes decía "25 y 23", con `20260917000460` y `20260918000461` marcadas como sin
+pushear, y las dos ya habían viajado. Antes de eso, "23 y 21", que quedó
+obsoleto por un `db push` corrido FUERA de la sesión que lo escribió, antes
+siquiera de que se terminara el párrafo. Y antes, "en remoto hay 19, falta
+pushear la de `avatars`", también falso al medirlo.
 
 **La moraleja, ya sin matices:** que repo y remoto estén a la par es un **estado
 transitorio, no una propiedad del código**. No se documenta como hecho fijo: se
@@ -844,7 +849,7 @@ dónde ir. Cuatro cosas que no se ven en el diff:
   escriben aquí** — no tienen `listing_id` y su enforcement es inmediato (borrar
   o nada), sin cola que revisar; su rastro es el `console.error`.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 169 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 177 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -1091,6 +1096,40 @@ Los tres controles se corrieron **uno a la vez** y cada uno cae en una sola
 aserción: grant de tabla → la primera; grant solo de columna → la primera;
 policy permisiva sin tocar grants → la segunda. Ninguno cae fuera de T12.
 
+Y a **177** con las 8 de T25 (toda publicación de cliente nace `pendiente`,
+`20260919000463`), autocontenida con sus propios `:V`/`:W`. Nada en T12: la
+migración no crea funciones, no toca ningún grant y no agrega ningún `EXECUTE` —
+solo reescribe el `with check` de una policy que ya existía. Las cuatro variantes
+rotas se corrieron una a la vez, cada una imprimiendo el `pg_get_expr` de la
+policy viva ANTES del resultado:
+
+| Variante rota | Cae en |
+|---|---|
+| sin la migración (el `with check` de `20260906000439`) | T25 (b) |
+| `with check (estado = 'pendiente')` a secas (drop+create mal hecho) | T25 **(e)** aislada; en la suite, **T3** |
+| voltear el DEFAULT de la columna en vez de la policy | T25 (b) |
+| `estado <> 'activa'` en vez de `= 'pendiente'` | T25 (d) |
+
+**La segunda fila vuelve a ser el caso de T21, y esta vez arregló una aserción
+vieja en vez de agregar una nueva.** T3 ("A no puede insertar un listing con
+`user_id` de B") y la de T10 ("un suspendido no puede publicar") **omitían
+`estado`**, o sea que caían en el default `'activa'` — y desde esta migración eso
+las habría dejado pasando por el motivo equivocado. **Medido, no deducido:**
+contra la variante del `with check` a secas, T3 SIN el arreglo pasa en verde y la
+suite muere mucho después (en T10); T3 CON `estado = 'pendiente'` explícito la
+caza en el acto. Las dos mandan ahora el estado bueno, para que el único motivo
+de rechazo posible sea el que su mensaje dice.
+
+**(c) es la aserción que parece de más y no lo es:** omitir la columna NO es lo
+mismo que no mandarla. El default de `listings.estado` sigue en `'activa'` a
+propósito —voltearlo obligaría a reescribir los 4 bloques de fixtures de la suite
+y los cuatro `probe-*.mjs`—, así que un insert de cliente sin `estado` cae ahí y
+tiene que ser rechazado igual. Y **(f) vigila justo esa premisa**: que
+`postgres`/`service_role` sigan sembrando cualquier estado. Si alguien
+"endureciera" esto con un trigger o un `check` de tabla —que sí alcanzan a
+`service_role`, a diferencia de una policy— la suite entera se caería en cascada;
+con (f), cae una sola aserción y lo dice con todas sus letras.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -1155,9 +1194,13 @@ sigan viviendo solo en una conversación:
   `estado = 'pendiente'` sobre `listings`** — el mismo enum, la misma RLS, sin
   infraestructura adicional.
 
-Nada de esto tiene todavía un punto de enforcement en código: no hay Edge
-Function, no hay llamada a Vision ni a OpenAI, y `publicar.ts` sigue sin
-pasar por `pendiente` (`publicar-fotos.md`, deuda ya documentada).
+**Ese párrafo decía "nada de esto tiene todavía un punto de enforcement en
+código", y dejó de ser cierto.** Hoy existen la Edge Function
+(`moderar-contenido`, que llama de verdad a Vision y OpenAI), los dos triggers de
+Storage, y —desde la Ola 3— el alta pasa por `pendiente`: `publicar.ts` crea con
+ese estado (obligado por el `with_check` de `20260919000463`) y el veredicto lo
+escribe la función, no el cliente. Lo único que sigue apagado en PRODUCCIÓN son
+los dos secretos de Vault de los triggers (§8, pendiente 2).
 
 ---
 
@@ -1246,7 +1289,15 @@ publicación…", elegido para compartir vocabulario con "Publicación en revisi
 necesita frame nuevo.** Reusa el patrón visual ya existente de "Publicar (error
 de subida)" —que ya representaba una FAMILIA de avisos con textos distintos
 según la causa (tamaño, formato) antes de que existiera RF-18—, con un tercer
-motivo determinista y su propio copy (`publicar-fotos.md`), no un cuarto frame.
+MOTIVO y su propio copy (`publicar-fotos.md`), no un cuarto frame.
+
+**Ojo con la palabra "determinista", que este párrafo llegó a usar aquí y era
+falso.** En este repo `esDeterminista()` no significa "es una causa concreta":
+significa **"no vale reintentar"**, y es lo que APAGA el botón (`nueva.tsx`:
+`hayDeterminista && !hayTransitorio`). El fallo de moderación es justo lo
+contrario —reintentar es la salida—, así que `esDeterminista()` **no cambió** y
+el motivo nuevo vive en `falloGeneral`. Son **tres motivos y dos baldes**; el
+párrafo viejo hacía leer que eran tres baldes.
 
 ### Cuenta (8)
 Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío ·
@@ -1565,29 +1616,46 @@ de los route groups).
      inbox con `push_enviado_at is null` y no sale ningún push.
    - Por §6 el simulador headless no cuenta como prueba. Es hermano del pendiente
      del header `Authorization` de `expo-image`.
-2. **Los dos secretos de Vault de `moderar-contenido` (RF-18, Ola 2), que están
-   DELIBERADAMENTE sin crear en remoto.** Son DOS pasos, y hoy no se ha dado
-   ninguno: la migración `20260918000462` está **sin pushear** (medido:
-   `mcp__supabase__list_migrations` da 25 y el repo 26, y `pg_trigger` en remoto
-   no tiene ningún `objects_notify_moderacion%`), y aun después del `db push`
-   los triggers quedan **inertes** sin estos dos valores —
-   `private.notify_moderacion()` levanta un `warning` y no llama a nadie. O sea
-   que **la moderación automática de Storage todavía no protege producción, por
-   partida doble**:
+2. **Poner RF-18 en producción: son CUATRO pasos manuales, y hoy no se ha dado
+   ninguno.** El orden importa — `20260919000463` en remoto sin la Edge Function
+   desplegada allá deja publicar ROTO (toda alta se queda `pendiente` con un
+   "Reintentar" que nunca funciona, porque el cliente ya no activa nada):
+
+   ```bash
+   # 1. La Edge Function. MEDIDO: `mcp__supabase__list_edge_functions` devuelve
+   #    SOLO `send-push`. `moderar-contenido` nunca se desplegó a remoto.
+   supabase functions deploy moderar-contenido
+
+   # 2. Sus dos credenciales. `resolverConfig()` corre a nivel de MÓDULO, así que
+   #    sin ellas la función NO ARRANCA — no falla la moderación: falla el worker.
+   supabase secrets set GOOGLE_CLOUD_VISION_API_KEY=... OPENAI_API_KEY=...
+
+   # 3. La migración del `with_check`, que hoy es la única que el repo tiene de
+   #    más (§3).
+   supabase db push
+   ```
 
    ```sql
+   -- 4. Y SOLO ENTONCES, los dos secretos de Vault que encienden los triggers de
+   --    Storage. Esos triggers YA ESTÁN en remoto desde que 20260918000462
+   --    viajó, pero `private.notify_moderacion()` levanta un `warning` y no
+   --    llama a nadie mientras estos dos valores no existan.
    select vault.create_secret('sb_secret_…', 'moderar_contenido_secret_key');
    select vault.create_secret(
      'https://ukxfnydfhmryrzhdqkvj.supabase.co/functions/v1/moderar-contenido',
      'moderar_contenido_function_url');
    ```
 
-   **No los crees todavía.** Van como último paso de la Ola 3, y el porqué está
-   en `.claude/rules/moderacion.md` §7: mientras `publicar.ts` cree las filas en
-   `pausada`, el trigger evalúa durante el alta y puede dejar una publicación
-   `bloqueada`, que hoy es un callejón sin salida para su dueño (chip vacío,
-   "Reactivar" que miente, "Editar" que dice "ya se vendió"). Verificación de
-   que siguen sin crearse:
+   **El paso 4 tiene una decisión pendiente antes de ejecutarse, con su número
+   medido** (ver `.claude/rules/moderacion.md` §7): encenderlo hace que **editar
+   las fotos** de una publicación cueste una evaluación paga COMPLETA por cada
+   objeto subido, y que además esas evaluaciones miren el set ANTERIOR —el objeto
+   se sube antes de que exista su fila en `listing_photos`, así que la foto que
+   disparó el trigger no la evalúa nadie—. Publicar NO tiene ese problema: el
+   skip de `pendiente` deja los N eventos en cero y el alta cuesta 2 requests
+   (1 Vision + 1 OpenAI) sin importar cuántas fotos tenga.
+
+   Verificación de que siguen sin crearse:
    `select count(*) from vault.secrets where name like 'moderar_contenido_%';`
    → 0.
 
@@ -1614,7 +1682,11 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - La lada del teléfono está fija en `+52` → `cuenta-perfil.md`
 - El teléfono es no-enumerable-en-bloque, no inaccesible → `cuenta-perfil.md`
 - Un insert directo con `estado='activa'` y 0 fotos sigue siendo posible → `publicar-fotos.md`
-- `listings_insert_own` no restringe `estado`: un INSERT de cliente crea directo en cualquier valor del enum, y el flujo actual de `publicar.ts` también llega a `activa` sin pasar por `pendiente` → `publicar-fotos.md`
+- ~~`listings_insert_own` no restringe `estado`~~ **[CERRADA]** por `20260919000463` → `publicar-fotos.md`
+- Editar el TEXTO de una publicación ya aprobada no la vuelve a moderar → `publicar-fotos.md`
+- El trigger de Storage evalúa el set ANTERIOR de fotos y nunca la que lo disparó → `moderacion.md`
+- Toda re-evaluación vuelve a tirar el dado de GPT sobre texto que no cambió → `moderacion.md`
+- La cola de `pendiente` mezcla lo marcado por moderación con lo abandonado a media subida → `moderacion.md`
 - El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
 - El reintento solo distingue DOS errores deterministas → `publicar-fotos.md`
 - Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila → `publicar-fotos.md`
@@ -2264,3 +2336,19 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   `/context` al abrir su pantalla. **Detectar:** con las mismas sondas — una
   regla con un `paths:` que no machea **no da ningún error**, simplemente no
   carga nunca. **Fix:** escapar los paréntesis o pasar a `*grupo*`.
+
+  **Segundo dato, medido en 2026-09-19 al agregarle `paths:` a
+  `moderacion.md`, y refuerza lo de arriba con un caso concreto del repo:**
+  `src/app/(explorar)/detalle/**` —el patrón que ya usa
+  `compartir-deeplinks.md`— **carga de verdad en Claude Code** (observado en esa
+  sesión: la regla apareció al leer `detalle/[id].tsx`) y **NO machea bajo
+  picomatch 4.0.7**, que compila `(explorar)` como grupo de captura:
+  `^(?:src\/app\/(explorar)\/detalle…)$`, o sea contra `src/app/explorar/…`
+  sin paréntesis. En cambio el path EXACTO con sus corchetes
+  (`src/app/(explorar)/detalle/[id].tsx`) machea en los DOS, porque picomatch
+  tiene un atajo de igualdad literal — ojo, no por `is-glob`: `[id]` sí es un
+  glob (una clase de caracteres), así que un `detalle/[id]*.tsx` cualquiera
+  compilaría como "i o d" y NO mancharía el archivo real. Si algún día hay que
+  migrar estos patrones, el path exacto es la forma que sobrevive a los dos
+  motores; el `**` con paréntesis es la que depende de que Claude Code siga sin
+  pasar el patrón crudo.

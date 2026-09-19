@@ -196,10 +196,17 @@ select pg_temp.assert(
 -- ---------------------------------------------------------------------------
 \echo ''
 \echo '== T3 — no se puede publicar en nombre de otro =='
+-- `estado` VA EXPLÍCITO Y EN 'pendiente', y no es prolijidad: desde
+-- 20260919000463 el `with_check` de listings_insert_own también lo exige. Sin
+-- esta columna el insert cae al default 'activa' de la tabla, y esta aserción
+-- seguiría en VERDE por el estado en vez de por el `user_id` suplantado —
+-- `expect_error` acepta cualquier error, así que la diferencia no se vería.
+-- Es la lección de `:C` en T11b: una aserción que pasa por otro motivo no está
+-- probando lo que dice.
 select pg_temp.expect_error(:A::uuid,
   format('insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
-                                       titulo, precio, condicion)
-          values (%L, 1, 1, 1, ''RLS Suplantado'', 1, ''nuevo'')', :B::uuid),
+                                       titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS Suplantado'', 1, ''nuevo'', ''pendiente'')', :B::uuid),
   'A no puede insertar un listing con user_id de B');
 
 -- ---------------------------------------------------------------------------
@@ -351,10 +358,12 @@ select pg_temp.assert(
             select count(*) from d', (select pausada from t_ids))) = 0,
   'un suspendido no puede borrar su publicación');
 
+-- `estado` explícito por el mismo motivo que en T3: sin él, esta aserción
+-- pasaría por el `with_check` de moderación y no por `is_active_user()`.
 select pg_temp.expect_error(:B::uuid,
   format('insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
-                                       titulo, precio, condicion)
-          values (%L, 1, 1, 1, ''RLS Nueva'', 10, ''nuevo'')', :B::uuid),
+                                       titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS Nueva'', 10, ''nuevo'', ''pendiente'')', :B::uuid),
   'un suspendido no puede publicar');
 
 select pg_temp.assert(
@@ -2135,6 +2144,117 @@ select pg_temp.assert(
 -- Es real y está medido, pero no es un candado que esta migración rompa o
 -- arregle — no hay guardia nueva que probar. Queda en el índice de deuda
 -- consciente de CLAUDE.md §8, con su propio disparador de revisión.
+-- ---------------------------------------------------------------------------
+\echo ''
+\echo '== T25 — toda publicación de cliente nace `pendiente` (moderación) =='
+-- Autocontenida, mismo criterio que T11b, T13, T14, T15, T16, T17, T19, T21,
+-- T22, T23 y T24: siembra sus propios usuarios y no reutiliza fixtures de
+-- secciones anteriores.
+--
+--   :V — un usuario activo. Es quien inserta en todas las aserciones.
+--   :W — otro usuario activo, y su ÚNICO trabajo es ser el `user_id` ajeno de
+--        (e). No se suspende ni se le toca nada más.
+--
+-- Prueba el `with_check` de `listings_insert_own` (20260919000463), que es la
+-- otra mitad de 20260917000459: aquella cerró el UPDATE (`pendiente`/`bloqueada`
+-- no los levanta su dueño) y dejó el INSERT abierto a propósito, con su propio
+-- bloque "LO QUE ESTA MIGRACIÓN NO CIERRA". Esto lo cierra.
+
+\set V '''25252525-0000-0000-0000-000000002525'''
+\set W '''52525252-0000-0000-0000-000000005252'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:V::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-v@tec.mx', '', now(), now(), now()),
+  (:W::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-w@tec.mx', '', now(), now(), now());
+update public.users set nombre = 'Valeria' where id = :V::uuid;
+update public.users set nombre = 'Wendy'   where id = :W::uuid;
+
+-- (a) CONTROL, y va primero a propósito: sin él, (b)-(d) pasarían en verde
+-- aunque el INSERT estuviera roto del todo (un `with check (false)`, un grant
+-- revocado de más). Verifica las DOS cosas: que el insert ocurre Y que la fila
+-- queda en `pendiente` — el `returning` sale del mismo statement, así que no
+-- puede estar mirando otra fila.
+select pg_temp.assert(
+  pg_temp.as_user_text(:V::uuid,
+    format('with i as (insert into public.listings (user_id, categoria_id,
+                          universidad_id, campus_id, titulo, precio, condicion, estado)
+                        values (%L, 1, 1, 1, ''RLS T25 ok'', 100, ''nuevo'', ''pendiente'')
+                        returning estado)
+            select estado::text from i', :V::uuid)) = 'pendiente',
+  'un cliente activo SÍ crea su publicación en pendiente (control)');
+
+-- (b) El caso obvio: el estado con el que `publicar.ts` creaba hasta RF-18 era
+-- 'pausada', y el que la app terminaba poniendo era 'activa'. Los dos quedan
+-- fuera; este prueba el segundo, que es el que se saltaba la revisión entera.
+select pg_temp.expect_error(:V::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                                       titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS T25 activa'', 100, ''nuevo'', ''activa'')', :V::uuid),
+  'un cliente no puede crear su publicación directo en activa');
+
+-- (c) EL SIGILOSO, y por eso va aparte de (b): omitir la columna NO es lo mismo
+-- que no mandarla. El default de `listings.estado` sigue siendo 'activa' a
+-- propósito (20260919000463 explica por qué no se voltea: las fixtures de esta
+-- suite y de los cuatro probes siembran estados arbitrarios por fuera de RLS),
+-- así que un insert sin `estado` cae ahí y tiene que ser rechazado igual.
+select pg_temp.expect_error(:V::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                                       titulo, precio, condicion)
+          values (%L, 1, 1, 1, ''RLS T25 default'', 100, ''nuevo'')', :V::uuid),
+  'omitir estado cae en el default activa y también se rechaza');
+
+-- (d) Los otros tres valores del enum, para que la lista quede cerrada y no
+-- solo "no activa". `bloqueada` es el que más importa: crearse una bloqueada a
+-- uno mismo no tiene sentido, pero el hueco medido en 20260917000459 permitía
+-- los CINCO, y una lista a medias se ve igual de bien que una completa.
+select pg_temp.expect_error(:V::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                                       titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS T25 pausada'', 100, ''nuevo'', ''pausada'')', :V::uuid),
+  'tampoco pausada');
+
+select pg_temp.expect_error(:V::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                                       titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS T25 vendida'', 100, ''nuevo'', ''vendida'')', :V::uuid),
+  'tampoco vendida');
+
+select pg_temp.expect_error(:V::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                                       titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS T25 bloqueada'', 100, ''nuevo'', ''bloqueada'')', :V::uuid),
+  'tampoco bloqueada');
+
+-- (e) La cláusula se SUMÓ, no reemplazó al resto del with_check. Es el control
+-- del "drop + create mal hecho": alguien que reescriba la policy dejando solo
+-- `estado = 'pendiente'` pasa (a)-(d) sin despeinarse y abre la suplantación.
+-- T3 ya prueba esto, pero con un `estado` que hoy también sería rechazado por
+-- la cláusula nueva; aquí el estado es el BUENO, así que el único motivo
+-- posible de rechazo es el `user_id`.
+select pg_temp.expect_error(:V::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                                       titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS T25 ajena'', 100, ''nuevo'', ''pendiente'')', :W::uuid),
+  'con el estado correcto, sigue sin poder insertar en nombre de otro');
+
+-- (f) `postgres` sigue sembrando cualquier estado, y NO es una aserción de
+-- adorno: es la premisa de la que dependen los 4 bloques de fixtures de esta
+-- suite y los cuatro `scripts/probe-*.mjs` (que insertan con la secret key).
+-- Si alguien "endureciera" esto con un trigger o un check de tabla —que sí
+-- alcanzarían a service_role, a diferencia de una policy— la suite entera se
+-- caería en cascada y nadie sabría por qué. Aquí cae una sola aserción y lo
+-- dice con todas sus letras.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values (:V::uuid, 1, 1, 1, 'RLS T25 sembrada', 100, 'nuevo', 'activa');
+select pg_temp.assert(
+  (select estado = 'activa' from public.listings where titulo = 'RLS T25 sembrada'),
+  'postgres/service_role siguen sembrando cualquier estado (premisa de las fixtures)');
+
 -- ---------------------------------------------------------------------------
 \echo ''
 \echo '== T12 — invariantes de grants =='

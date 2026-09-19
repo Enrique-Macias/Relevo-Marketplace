@@ -14,7 +14,14 @@ import { StyleSheet, View } from 'react-native';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
-import { IconCheckCircle, IconChevronRight, IconPause, IconTrash } from '@/components/icons';
+import {
+  IconCheckCircle,
+  IconChevronRight,
+  IconClock,
+  IconPause,
+  IconTrash,
+  IconXCircle,
+} from '@/components/icons';
 import { ListingFormFields } from '@/components/ListingFormFields';
 import { FormHeader } from '@/components/ListRow';
 import { idFoto, type FotoEnEdicion } from '@/components/PhotoRow';
@@ -433,21 +440,34 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
   }
 
   /**
-   * RF-08: vendida es terminal, también para editar. Se llega aquí por dos
-   * caminos reales —un deep link, y volver de Calificar al Editar que lanzó el
-   * flujo de venta (ver el refetch al foco del componente de ruta)—, así que no
-   * es una rama defensiva.
+   * Los TRES estados en los que el dueño ya no manda, y en los que este
+   * formulario no tendría a dónde guardar.
+   *
+   * RF-08 puso `vendida`; RF-18 sumó `pendiente` y `bloqueada`
+   * (20260917000459). Se llega a cualquiera de los tres por caminos reales —un
+   * deep link, un tap desde "Mis publicaciones", y volver de Calificar al
+   * Editar que lanzó el flujo de venta (ver el refetch al foco del componente
+   * de ruta)—, así que no es una rama defensiva.
+   *
+   * SE REEMPLAZA EL FORMULARIO ENTERO, no se apaga la `.status-section`, y esa
+   * es la parte que hay que medir y no suponer: el `using` de
+   * `listings_update_own` excluye los tres, así que sobre esas filas no falla
+   * solo el cambio de estado — falla CUALQUIER update, incluido cambiar el
+   * título. Dejar el formulario vivo y apagar solo las tres filas de abajo
+   * prometería un "Guardar" que afecta 0 filas y no lanza.
    *
    * Va con `EmptyState` y NO con `ErrorState`, que es lo que usa el guard de
    * arriba, por dos razones: `ErrorState` trae "Reintentar" hardcodeado en su
-   * `PrimaryButton` y aquí no hay nada que reintentar, y su ícono de alerta sobre
-   * --brick-tint dice "algo falló" cuando esto es un estado terminal, no un
-   * fallo. Sin `.empty-actions` por el mismo criterio que "Notificaciones vacío"
-   * y "Categoría sin resultados": la única acción posible es volver, y eso ya es
+   * `PrimaryButton` y aquí no hay nada que reintentar, y aquí la única de las
+   * tres que de verdad es un fallo es `bloqueada` —que por eso sí lleva el
+   * `.error-icon`; las otras dos son estados, no errores—. Sin
+   * `.empty-actions` por el mismo criterio que "Notificaciones vacío" y
+   * "Categoría sin resultados": la única acción posible es volver, y eso ya es
    * el chevron del `FormHeader`.
    *
    * Esto no es el candado —lo es el `using` de `listings_update_own`
-   * (20260913000454)—, solo evita ofrecer un formulario que no podría guardar.
+   * (20260913000454 + 20260917000459)—, solo evita ofrecer un formulario que no
+   * podría guardar.
    */
   if (listing.estado === 'vendida') {
     return (
@@ -457,6 +477,35 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
           icon={<IconCheckCircle size={30} color={Colors.inkSoft} />}
           title="Esta publicación ya se vendió"
           sub="Una publicación vendida ya no se puede editar ni pausar. Puedes cambiar el comprador o eliminarla desde Mis publicaciones."
+        />
+      </Screen>
+    );
+  }
+
+  if (listing.estado === 'pendiente') {
+    return (
+      <Screen header={<FormHeader title="Editar publicación" />}>
+        <StatusBar style="dark" />
+        <EmptyState
+          // Ícono neutro, como la variante de vendida: estar en revisión no es
+          // un fallo.
+          icon={<IconClock size={30} color={Colors.inkSoft} />}
+          title="Esta publicación está en revisión"
+          sub="No se puede editar mientras la revisamos. Te avisamos en cuanto quede publicada."
+        />
+      </Screen>
+    );
+  }
+
+  if (listing.estado === 'bloqueada') {
+    return (
+      <Screen header={<FormHeader title="Editar publicación" />}>
+        <StatusBar style="dark" />
+        <EmptyState
+          icon={<IconXCircle size={30} color={Colors.brick} />}
+          iconStyle={styles.iconoError}
+          title="Esta publicación no fue aprobada"
+          sub="No cumple con las reglas de la comunidad, así que no se publicó. Puedes eliminarla desde Mis publicaciones."
         />
       </Screen>
     );
@@ -568,6 +617,11 @@ function Toggle({ on }: { on: boolean }) {
 const styles = StyleSheet.create({
   skeleton: {
     paddingTop: 18,
+  },
+  // .error-icon{background:var(--brick-tint);} — conserva el borde, al revés que
+  // `.empty-icon.success`. Solo lo usa el guard de `bloqueada`.
+  iconoError: {
+    backgroundColor: Colors.brickTint,
   },
   sectionHead: {
     paddingTop: 4,

@@ -12,6 +12,31 @@ import { supabase } from '@/lib/supabase';
 
 export type Condicion = 'nuevo' | 'como_nuevo' | 'buen_estado' | 'usado';
 
+/**
+ * Los CINCO valores del enum `listing_status`. Se escribe a mano y no se deriva
+ * de `database.types.ts` por la convención del repo (tipos de dominio
+ * explícitos en la capa de datos), pero el orden es el mismo que el del enum
+ * para que un diff contra `npm run gen:types` se lea de un vistazo.
+ *
+ * `pendiente` y `bloqueada` llegaron con la moderación pre-publicación (RF-18):
+ * no son públicos (`listings_select`) y su dueño no los puede levantar
+ * (`listings_update_own`), las dos cosas desde 20260917000459.
+ */
+export type EstadoListing = 'activa' | 'pausada' | 'vendida' | 'pendiente' | 'bloqueada';
+
+/**
+ * El subconjunto que tiene CHIP en "Mis publicaciones" — y es un tipo aparte, no
+ * un descuido de no reusar `EstadoListing`.
+ *
+ * El vacío de esa pantalla arma su copy con
+ * `ESTADO_LABEL[filtro].toLowerCase() + 's'`, que solo funciona para estos tres
+ * ("activas", "pausadas", "vendidas"). Con `EstadoListing` ahí, agregar un chip
+ * de "En revisión" compilaría y produciría "en revisións"; con este tipo, no
+ * compila. El diseño mantiene cuatro chips a propósito (`relevo-app.html`, el
+ * frame "Mis publicaciones"), así que hoy no se agrega ninguno.
+ */
+export type EstadoFiltrable = 'activa' | 'pausada' | 'vendida';
+
 export type Orden = 'recientes' | 'precio_asc' | 'precio_desc' | 'mejor_calificados';
 
 /**
@@ -90,7 +115,13 @@ export type ListingCard = {
 
 export type ListingDetalle = ListingCard & {
   descripcion: string | null;
-  estado: 'activa' | 'pausada' | 'vendida';
+  /**
+   * Los CINCO, no tres: el dueño abre el Detalle de su propia publicación en
+   * `pendiente` o `bloqueada` con un tap desde "Mis publicaciones", y el guard
+   * de "Editar publicación" necesita poder compararlo contra esos valores (con
+   * la unión de tres, esa comparación ni siquiera compila).
+   */
+  estado: EstadoListing;
   vistasCount: number;
   /**
    * RUTAS dentro del bucket privado `listing-photos` (`{listing_id}/{uuid}.jpg`),
@@ -125,7 +156,7 @@ export type ListingDetalle = ListingCard & {
  *    `borrarListing`), y para entonces ya no habría de dónde leerlas.
  */
 export type MiListing = ListingCard & {
-  estado: 'activa' | 'pausada' | 'vendida';
+  estado: EstadoListing;
   vistasCount: number;
   fotos: string[];
 };
@@ -406,8 +437,8 @@ export type MisListingsPage = {
 
 export type FetchMisListingsParams = {
   userId: string;
-  /** El chip de filtro. Sin él, las tres. */
-  estado?: 'activa' | 'pausada' | 'vendida';
+  /** El chip de filtro. Sin él, TODAS — incluidas `pendiente` y `bloqueada`. */
+  estado?: EstadoFiltrable;
   limit?: number;
   cursor?: ListingsCursor | null;
 };
@@ -601,10 +632,19 @@ function aFila(input: ListingInput) {
  * invocante. O sea que **no hay forma de subir una foto antes de esta línea**.
  *
  * `estado` SÍ se manda, explícito, y no cae al default `'activa'` de la
- * columna: bajo el modelo atómico el alta lo crea `'pausada'` y solo lo activa
- * cuando todas las fotos subieron (ver `publicarListing`). Dejarlo implícito
- * haría que un cambio de default —o un lector distraído— decidiera algo que es
- * la pieza central del flujo.
+ * columna. Desde RF-18 el único valor que la base le acepta a un cliente es
+ * `'pendiente'` —el `with_check` de `listings_insert_own` (20260919000463)—, y
+ * el parámetro sigue existiendo, con ese único valor en su tipo, a propósito:
+ * es lo que hace que el call site DECLARE en qué estado nace la publicación en
+ * vez de esconderlo aquí dentro, que es la misma razón por la que nunca se dejó
+ * caer al default. De paso, intentar crear en cualquier otro estado deja de
+ * compilar en vez de morir con 42501 en runtime — el tipo refleja la regla de
+ * la base, no la reemplaza (mismo criterio que la unión discriminada de
+ * `crearReporte()`).
+ *
+ * El rechazo de ese `with_check` SÍ LANZA, al revés que el de
+ * `listings_update_own`: un `with check` de INSERT aborta con 42501 en vez de
+ * filtrar en silencio. Por eso aquí no hace falta `{count:'exact'}`.
  *
  * `user_id` SÍ se manda, y viene por parámetro en vez de leerse aquí de la
  * sesión. `listings` tiene el insert concedido a nivel de tabla (no por
@@ -616,7 +656,7 @@ function aFila(input: ListingInput) {
 export async function crearListing(
   input: ListingInput,
   userId: string,
-  estado: 'activa' | 'pausada'
+  estado: 'pendiente'
 ): Promise<number> {
   const { data, error } = await supabase
     .from('listings')
@@ -635,9 +675,12 @@ export async function crearListing(
  * exactamente igual que un éxito — el mismo problema y la misma solución que
  * `VentaCongeladaError` (`src/lib/confianza.ts`).
  *
- * OJO AL LEER ESE 0: tiene DOS causas y la respuesta no dice cuál. La publicación
- * ya está `vendida` (20260913000454, RF-08), o quien escribe está suspendido. Por
- * eso el mensaje es neutro y con salida en vez de afirmar una de las dos.
+ * OJO AL LEER ESE 0: tiene CUATRO causas y la respuesta no dice cuál. La
+ * publicación ya está `vendida` (20260913000454, RF-08), está `pendiente` o
+ * `bloqueada` por moderación (20260917000459, RF-18), o quien escribe está
+ * suspendido. Por eso el mensaje es neutro y con salida en vez de afirmar una de
+ * las cuatro; si algún día hay que distinguirlas, el dato tiene que salir de una
+ * lectura aparte, no de este 0.
  *
  * Esto NO duplica autorización (CLAUDE.md §0 regla 7): el candado es la policy,
  * que decide mire el cliente lo que mire. Aquí solo se elige que el usuario vea
@@ -935,7 +978,7 @@ export function useListings(params: FetchListingsParams | null) {
  * chip, quitar la que se borró—. `useListings` no lo expone porque en Explorar
  * nada de eso ocurre; aquí es el modo normal de operar.
  */
-export function useMisListings(userId: string | null, estadoFiltro?: 'activa' | 'pausada' | 'vendida') {
+export function useMisListings(userId: string | null, estadoFiltro?: EstadoFiltrable) {
   const [items, setItems] = useState<MiListing[]>([]);
   const [cursor, setCursor] = useState<ListingsCursor | null>(null);
   const [estado, setEstado] = useState<EstadoLista>('loading');

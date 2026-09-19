@@ -45,25 +45,48 @@ import {
   borrarListing,
   cambiarEstadoListing,
   useMisListings,
+  type EstadoFiltrable,
+  type EstadoListing,
   type MiListing,
 } from '@/lib/listings';
 import { useSession } from '@/lib/session';
 import { borrarFotos } from '@/lib/storage';
 
-type EstadoListing = 'activa' | 'pausada' | 'vendida';
-
-/** Los `.chip` del frame. `undefined` es "Todas": no manda filtro a la query. */
-const FILTROS: { label: string; value: EstadoListing | undefined }[] = [
+/**
+ * Los `.chip` del frame. `undefined` es "Todas": no manda filtro a la query.
+ *
+ * SIGUEN SIENDO CUATRO con RF-18, aunque el enum tenga cinco valores, y es lo
+ * que dibuja el frame. `EstadoFiltrable` (tres) y no `EstadoListing` (cinco) es
+ * lo que lo hace cumplir en el compilador: el vacío de abajo arma su copy con
+ * `ESTADO_LABEL[filtro].toLowerCase() + 's'`, que produciría "en revisións"
+ * para un chip de `pendiente`. Con este tipo, agregar ese chip sin resolver el
+ * plural NO COMPILA — antes reventaba en runtime, porque `ESTADO_LABEL` era un
+ * `Record` de tres claves y el acceso podía dar `undefined`.
+ */
+const FILTROS: { label: string; value: EstadoFiltrable | undefined }[] = [
   { label: 'Todas', value: undefined },
   { label: 'Activas', value: 'activa' },
   { label: 'Pausadas', value: 'pausada' },
   { label: 'Vendidas', value: 'vendida' },
 ];
 
+/**
+ * Los CINCO, no los tres filtrables: el chip de la fila pinta el estado real de
+ * la publicación, y "Todas" incluye las de moderación.
+ *
+ * Los dos textos nuevos salen del frame tal cual, igual que los otros tres.
+ * NINGÚN TONO NUEVO, y el comentario del HTML lo argumenta: "En revisión"
+ * hereda el `--ink-soft` por default —que significa "apagado = no está en el
+ * catálogo", que es exactamente el caso, y lo comparte con "Pausada"— y
+ * "Bloqueada" usa `.warn` (--brick), el tratamiento que ya lleva "Sin fotos" y
+ * que ya significa "requiere tu atención".
+ */
 const ESTADO_LABEL: Record<EstadoListing, string> = {
   activa: 'Activa',
   pausada: 'Pausada',
   vendida: 'Vendida',
+  pendiente: 'En revisión',
+  bloqueada: 'Bloqueada',
 };
 
 const TINT_BG: Record<string, string> = {
@@ -85,7 +108,7 @@ export default function MisPublicacionesScreen() {
   const { mostrar } = useToast();
   const userId = session?.user.id ?? null;
 
-  const [filtro, setFiltro] = useState<EstadoListing | undefined>(undefined);
+  const [filtro, setFiltro] = useState<EstadoFiltrable | undefined>(undefined);
   const { items, setItems, estado, cargandoMas, hayMas, loadMore, recargar } = useMisListings(
     userId,
     filtro
@@ -123,7 +146,7 @@ export default function MisPublicacionesScreen() {
    * transporte.
    */
   async function alternarPausa(item: MiListing) {
-    const nuevo: EstadoListing = item.estado === 'pausada' ? 'activa' : 'pausada';
+    const nuevo: 'activa' | 'pausada' = item.estado === 'pausada' ? 'activa' : 'pausada';
 
     /**
      * El candado real es el trigger `listings_enforce_activation_has_photos`,
@@ -286,7 +309,7 @@ export default function MisPublicacionesScreen() {
  * encontró nada" no —el remedio es tocar otro chip, no publicar—, así que ese
  * no lleva CTA.
  */
-function VacioSegunFiltro({ filtro }: { filtro: EstadoListing | undefined }) {
+function VacioSegunFiltro({ filtro }: { filtro: EstadoFiltrable | undefined }) {
   if (filtro) {
     return (
       <EmptyState
@@ -361,7 +384,17 @@ function MiListingRow({
               <Text style={styles.sep}>·</Text>
             </>
           ) : null}
-          <Text style={[styles.estado, item.estado === 'activa' && styles.estadoActiva]}>
+          {/* `.warn` (--brick) para "Bloqueada" por el mismo criterio que "Sin
+              fotos" de arriba: es lo más cerca que tiene el sistema de "algo
+              salió mal con esto". "En revisión" se queda con el --ink-soft por
+              default — ver el comentario de ESTADO_LABEL. */}
+          <Text
+            style={[
+              styles.estado,
+              item.estado === 'activa' && styles.estadoActiva,
+              item.estado === 'bloqueada' && styles.estadoWarn,
+            ]}
+          >
             {ESTADO_LABEL[item.estado]}
           </Text>
           <Text style={styles.sep}>·</Text>
@@ -430,17 +463,27 @@ function HojaAcciones({
   if (!item) return null;
 
   // Una publicación vendida no se pausa, no se reactiva y no se edita: ese
-  // estado es terminal (RF-08). Las filas simplemente no se pintan.
+  // estado es terminal (RF-08). Y desde RF-18, tampoco una `pendiente` ni una
+  // `bloqueada`: `listings_update_own` excluye los TRES de su `using`
+  // (20260917000459), así que sobre cualquiera de ellos el update afecta 0
+  // filas SIN LANZAR. Las filas simplemente no se pintan.
   //
   // `puedeEditar` es hermano de `puedeAlternar`, no una variante suya: son dos
   // filas distintas que hoy comparten condición pero no razón — si algún día
-  // vendida dejara de bloquear una de las dos, se toca una sola.
+  // uno de esos estados dejara de bloquear una de las dos, se toca una sola.
   //
   // Ninguno de los dos es el candado. Ese vive en el `using` de
-  // `listings_update_own` (20260913000454) y lo vigila T20; esconder las filas
-  // solo evita ofrecer algo que la base va a rechazar.
-  const puedeAlternar = item.estado !== 'vendida';
-  const puedeEditar = item.estado !== 'vendida';
+  // `listings_update_own` (20260913000454 + 20260917000459) y lo vigilan T20 y
+  // T24; esconder las filas solo evita ofrecer algo que la base va a rechazar.
+  //
+  // Con la fila de venta también ausente (`accionVenta()` devuelve null en esos
+  // dos estados), la hoja queda con UNA sola fila y es la destructiva. Es el
+  // reparto degenerado que el frame ya dibuja como variante para la vendida
+  // congelada: la hoja conserva su header con el título, que es lo que evita
+  // que se lea como un menú roto.
+  const editable = item.estado === 'activa' || item.estado === 'pausada';
+  const puedeAlternar = editable;
+  const puedeEditar = editable;
   const accion = accionVenta(item.estado, venta);
 
   return (

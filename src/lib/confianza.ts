@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { cambiarEstadoListing } from '@/lib/listings';
+import { cambiarEstadoListing, type EstadoListing } from '@/lib/listings';
 import { supabase } from '@/lib/supabase';
 
 export type Contacto = {
@@ -334,12 +334,21 @@ export type AccionVenta = 'marcar' | 'corregir' | null;
  *                  vendida desaparece la entrada original, así que sin él un
  *                  comprador mal elegido sería incorregible desde la app.
  *   · null       — vendida sin comprador (la salida "No fue a través de
- *                  Relevo"), o ya congelada por la calificación del vendedor.
+ *                  Relevo"), ya congelada por la calificación del vendedor, o
+ *                  `pendiente`/`bloqueada` por moderación (RF-18).
+ *
+ * ESE ÚLTIMO CASO NO ES SOLO UN TIPO MÁS ANCHO, es comportamiento: hasta RF-18
+ * esta función devolvía 'marcar' para TODO estado distinto de vendida, así que
+ * con el enum de cinco valores una publicación en revisión habría ofrecido
+ * "Marcar como vendida" en las TRES superficies que la consumen. Y ese update
+ * afecta 0 filas sin lanzar — `listings_update_own` excluye `pendiente` y
+ * `bloqueada` de su `using` (20260917000459) — o sea que el usuario habría
+ * llegado hasta "¿A quién le vendiste?" para recibir un error al final.
+ *
+ * El `if` nuevo va ANTES del `!== 'vendida'`, o la primera línea se lo comería.
  */
-export function accionVenta(
-  estado: 'activa' | 'pausada' | 'vendida',
-  venta: Venta | null
-): AccionVenta {
+export function accionVenta(estado: EstadoListing, venta: Venta | null): AccionVenta {
+  if (estado === 'pendiente' || estado === 'bloqueada') return null;
   if (estado !== 'vendida') return 'marcar';
   if (venta === null || venta.congelada) return null;
   return 'corregir';

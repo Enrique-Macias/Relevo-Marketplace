@@ -18,12 +18,14 @@ paths:
 > tokens de diseño (§2), esquema y RLS (§3), inventario de pantallas (§4) y los
 > gotchas de infraestructura (§9) — siguen en `CLAUDE.md`, que carga siempre.
 
-**Publicar — construido, conectado y ATÓMICO.** Las 7 pantallas del grupo viven
-en 3 archivos de ruta: `nueva.tsx` cubre los 5 estados de Publicar (formulario,
-falta teléfono, procesando fotos, subiendo, error de subida), más `creada.tsx`
-—hoy de un solo estado— y `editar/[id].tsx`. (Esta cuenta decía "5 pantallas /
-3 estados": se le había quedado fuera "procesando fotos", que sí es un
-`phone-block` propio y §4 sí contaba.) La capa de datos: `src/lib/storage.ts`
+**Publicar — construido, conectado y ATÓMICO.** Las 10 pantallas del grupo viven
+en 5 archivos de ruta: `nueva.tsx` cubre los 6 estados de Publicar (formulario,
+falta teléfono, procesando fotos, subiendo, **revisando**, error de subida), más
+las TRES de confirmación —`creada.tsx`, `revision.tsx` y `no-aprobada.tsx`, una
+por veredicto de moderación— y `editar/[id].tsx`. (Esta cuenta decía "7
+pantallas / 3 archivos", y antes "5 pantallas / 3 estados": se le había quedado
+fuera "procesando fotos", que sí es un `phone-block` propio y §4 sí contaba. El
+número se mide contra `data-cat="publicar"` en el HTML, no se recuerda.) La capa de datos: `src/lib/storage.ts`
 (subida, borrado y URL autenticada — desde RF-03 habla con los DOS buckets del
 proyecto, así que ojo: `BUCKET` es el privado y `BUCKET_AVATARS` el público),
 `src/lib/publicar.ts` (la orquestación y su orden de
@@ -63,8 +65,8 @@ Detalles que no se ven en el diff:
   elegir y salir sin guardar dejaría objetos huérfanos que nadie ve ni limpia.
   Esto sigue aplicando igual bajo el modelo atómico.
 - **Un fallo de fotos NO hace rollback del listing, y tampoco lo activa.** La
-  publicación se queda `pausada` con lo que sí subió, y el usuario reintenta
-  desde la misma pantalla. Borrarla sería peor de las dos maneras: perdería lo
+  publicación se queda sin publicar (`pendiente` desde RF-18, `pausada` antes)
+  con lo que sí subió, y el usuario reintenta desde la misma pantalla. Borrarla sería peor de las dos maneras: perdería lo
   que escribió y ni siquiera limpiaría los archivos ya subidos (el cascade se
   lleva las filas, no los objetos). Si abandona en ese estado, la recupera desde
   "Mis publicaciones" — esa pantalla es la que hizo viable este modelo.
@@ -352,8 +354,11 @@ cambio de semántica de seguridad disfrazado de refactor (§9).
   categorias}.ts` ya no existen; la capa de datos vive en `src/lib/listings.ts`,
   `src/lib/categorias.ts` y `src/lib/favoritos.ts`. Ver `explorar.md`.
 
-- **"Publicar" migrado al modelo ATÓMICO** — la publicación se crea `pausada`,
-  suben todas sus fotos, y solo si TODAS suben pasa a `activa`. Reemplaza al
+- **"Publicar" migrado al modelo ATÓMICO** — la publicación se crea sin ser
+  pública, suben todas sus fotos, y solo si TODAS suben se decide su estado
+  final. (Nació `pausada`; desde RF-18 Ola 3 nace **`pendiente`** y el estado
+  final lo decide `moderar-contenido`, no el cliente. El argumento del modelo no
+  cambió — ver el docblock de `publicarListing()`.) Reemplaza al
   modelo de "publica ya, recupera fotos después", en el que un fallo parcial
   dejaba la publicación visible con menos fotos de las que el usuario eligió.
   Cuatro consecuencias que no son opcionales:
@@ -378,7 +383,7 @@ cambio de semántica de seguridad disfrazado de refactor (§9).
 - **Un insert directo con `estado='activa'` y 0 fotos sigue siendo posible.** El
   trigger `listings_enforce_activation_has_photos` (§3) solo cubre UPDATE. Es
   hermano exacto del punto de abajo: el cliente ya no toma ese camino (toda
-  publicación nace `pausada`), así que lo expuesto es Studio, `service_role` o
+  publicación nace `pendiente`), así que lo expuesto es Studio, `service_role` o
   quien pegue al API directo — y es calidad de dato, no seguridad: un
   autenticado que lo haga solo se ensucia su propia publicación.
   **No es que no se pueda** —un `before insert` con el mismo
@@ -391,25 +396,37 @@ cambio de semántica de seguridad disfrazado de refactor (§9).
   terceros, o aparezca en el feed una publicación sin fotos que no vino de la
   app. **Fix:** ese trigger + voltear el default a `'pausada'` + reescribir las
   4 fixtures.
-- **`listings_insert_own` no restringe qué valor de `estado` trae un INSERT del
-  cliente**, y esto es distinto del punto de arriba — aquél es sobre 0 fotos,
-  este es sobre el ESTADO mismo. Medido (CLAUDE.md §3, migración
-  `20260917000459`): su `with_check` es solo `user_id = auth.uid() and
-  is_active_user()`, y el INSERT de `listings` está concedido a nivel TABLA, así
-  que cubre la columna. Un autenticado cualquiera crea su propia fila
-  directamente en cualquiera de los 5 valores del enum —incluidos `activa`,
-  `vendida` y `bloqueada`— sin pasar nunca por `pendiente`. Y no hace falta un
-  cliente hostil para tocarlo: el flujo ACTUAL de `publicar.ts` también termina
-  en `activa` sin pasar por revisión — crea en `'pausada'` (`:307`) y la pasa a
-  `'activa'` (`:366`) en cuanto las fotos suben, exactamente el camino que la
-  moderación pre-publicación necesita interceptar. **Revisar cuando:** se diseñe
-  el rework de `publicar.ts` para la moderación pre-publicación y su Edge
-  Function. **Fix:** forzar `estado = 'pendiente'` en el `with_check` del
-  INSERT, y mover la transición `pendiente → activa` a código elevado (trigger o
-  Edge Function) — con el `with_check` forzado, esa transición deja de poder
-  hacerla el cliente.
+- ~~**`listings_insert_own` no restringe qué valor de `estado` trae un INSERT
+  del cliente.**~~ **CERRADA** por `20260919000463` (RF-18, Ola 3), que era
+  exactamente el fix que esta entrada describía: `estado = 'pendiente'` en el
+  `with_check`, y la transición `pendiente → activa` movida a código elevado (la
+  Edge Function con `supabaseAdmin`). Se cerró **en el mismo cambio** que el
+  rework de `publicar.ts`, y ese orden no era negociable: la migración sola rompe
+  el alta en el insert, y el cliente solo deja el hueco abierto. Lo vigilan las 8
+  aserciones de T25, con sus cuatro variantes rotas (CLAUDE.md §3).
+  **El default de la columna sigue en `'activa'`** y eso es deliberado — el
+  `with_check` solo ata a `authenticated`, así que las fixtures de la suite
+  (`postgres`) y de los cuatro probes (secret key) no se tocaron. La consecuencia
+  a saber: un insert de cliente que OMITA la columna cae en ese default y ahora
+  es **rechazado**; T25 (c) lo prueba aparte por eso.
+
+- **Editar el TEXTO de una publicación ya aprobada no la vuelve a moderar.**
+  `guardarEdicion()` llama a `actualizarListing()` y nada más; los triggers de
+  Storage solo ven objetos, así que "publico limpio → edito el título a algo
+  sucio" evade la moderación entera. No es una regresión de RF-18 (antes no
+  había moderación en absoluto), pero sí es el hueco que queda del lado del
+  texto. **Revisar cuando:** aparezca el primer reporte de contenido sobre una
+  publicación que pasó revisión. **Fix:** un trigger
+  `after update of titulo, descripcion on listings` que llame a
+  `moderar-contenido` con la secret key —solo escala, nunca promueve, porque el
+  guard de `esPromocion()` ya lo cubre—, o pedir moderación desde
+  `guardarEdicion()` como hace el alta. Ojo con lo segundo: ese camino SÍ podría
+  promover, y una edición no debería poder sacar algo de `pendiente`.
 - **El reintento solo distingue DOS errores deterministas**, `EntityTooLarge` y
-  el formato no soportado. La regla más amplia —"no reintentar ningún 4xx"— se
+  el formato no soportado. (Ojo al leer esto desde RF-18: los **motivos** de
+  fallo ya son tres —se sumó `falloGeneral: 'moderacion'`— pero los **baldes**
+  siguen siendo dos, y `esDeterminista()` no cambió. Esta entrada es sobre los
+  deterministas, que siguen siendo dos.) La regla más amplia —"no reintentar ningún 4xx"— se
   evaluó y se descartó: un 401 puede ser un token en refresco, o sea
   transitorio, y reintentarlo es lo correcto. **Revisar cuando:** aparezca en
   los logs un 4xx determinista que no sea de tamaño ni de formato (un

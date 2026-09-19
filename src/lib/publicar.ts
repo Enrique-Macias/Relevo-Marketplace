@@ -21,11 +21,15 @@
 import type { FotoEnEdicion, FotoParaGuardar, MotivoFallo } from '@/components/PhotoRow';
 import {
   actualizarListing,
-  cambiarEstadoListing,
   crearListing,
   guardarFotos,
   type ListingInput,
 } from '@/lib/listings';
+import {
+  ModeracionEstadoInesperadoError,
+  solicitarModeracion,
+  type EstadoModeracion,
+} from '@/lib/moderacion';
 import {
   borrarFotos,
   FormatoNoSoportadoError,
@@ -51,11 +55,25 @@ export type ResultadoGuardado = {
    */
   fotos: FotoParaGuardar[];
   /**
-   * Falló algo que NO pertenece a ninguna foto: `guardarFotos()` o la
-   * activación. Llega por retorno y no como excepción a propósito — ver
+   * Falló algo que NO pertenece a ninguna foto, y CUÁL de las dos cosas.
+   *
+   * Dejó de ser booleano con RF-18: son dos motivos con copy distinto —
+   * `'guardado'` es `guardarFotos()`, donde culpar a la conexión suele ser
+   * correcto; `'moderacion'` es la llamada a la Edge Function, donde no—. Los
+   * DOS caen igual en el balde de "reintentar" (ver `componerAviso`), así que
+   * esto NO agrega un tercer balde ni toca `esDeterminista()`.
+   *
+   * Llega por retorno y no como excepción a propósito — ver
    * `finalizarPublicacion`.
    */
-  falloGeneral: boolean;
+  falloGeneral: null | 'guardado' | 'moderacion';
+  /**
+   * El veredicto de moderación, que es lo que decide a cuál de las TRES
+   * pantallas de confirmación se navega (CLAUDE.md §4). `null` significa que no
+   * se llegó a pedir: alguna foto falló y se salió antes, o es una edición
+   * (`guardarEdicion`), que no re-modera.
+   */
+  estado: EstadoModeracion | null;
 };
 
 export type ProgresoFoto = { actual: number; total: number };
@@ -127,11 +145,17 @@ const MB = Math.round(MAX_BYTES / (1024 * 1024));
  * usuario ya quitó y —peor— con las posiciones corridas, porque quitar la foto 2
  * convierte la 4 en la 3.
  *
- * DOS BALDES, NO TRES, y el criterio no es de dónde viene el fallo sino qué
+ * DOS BALDES, TRES MOTIVOS, y el criterio no es de dónde viene el fallo sino qué
  * puede hacer el usuario: los deterministas se arreglan quitando la foto, y todo
- * lo demás —incluido `falloGeneral`, que no cuelga de ninguna foto— se arregla
- * reintentando. Por eso `falloGeneral` entra en el mismo balde que 'transporte'
- * en vez de necesitar un caso especial.
+ * lo demás —incluidos los DOS valores de `falloGeneral`, que no cuelgan de
+ * ninguna foto— se arregla reintentando. Por eso `falloGeneral` entra en el
+ * mismo balde que 'transporte' en vez de necesitar un caso especial, y por eso
+ * RF-18 sumó un MOTIVO sin sumar un balde: `esDeterminista()` no cambió.
+ *
+ * Lo que sí cambió es que `'moderacion'` va en su PROPIA frase y no dentro de la
+ * de "puede ser tu conexión": un 4xx de la Edge Function no es la red del
+ * usuario, y decirle que lo es lo manda a revisar su WiFi por algo que no está
+ * ahí.
  *
  * El determinista va PRIMERO porque es el que trae una acción. Y el balde
  * transitorio no se puede omitir cuando ya hay frases deterministas, aunque
@@ -139,11 +163,14 @@ const MB = Math.round(MAX_BYTES / (1024 * 1024));
  * "Reintentar" (ver el CTA en `nueva.tsx`). Las dos mitades del texto se
  * corresponden una a una con las dos mitades del botón.
  */
-export function componerAviso(fallos: FalloFoto[], falloGeneral: boolean): string | null {
+export function componerAviso(
+  fallos: FalloFoto[],
+  falloGeneral: null | 'guardado' | 'moderacion'
+): string | null {
   const det = fallos.filter((f) => esDeterminista(f.motivo));
   const transporte = fallos.filter((f) => f.motivo === 'transporte');
 
-  if (det.length === 0 && transporte.length === 0 && !falloGeneral) return null;
+  if (det.length === 0 && transporte.length === 0 && falloGeneral === null) return null;
 
   const partes: string[] = [];
 
@@ -173,11 +200,15 @@ export function componerAviso(fallos: FalloFoto[], falloGeneral: boolean): strin
   if (transporte.length > 0) {
     transitorias.push(sujeto(transporte, 'no subió', 'no subieron'));
   }
-  if (falloGeneral) {
+  if (falloGeneral === 'guardado') {
     transitorias.push('no pudimos guardar los cambios');
   }
   if (transitorias.length > 0) {
     partes.push(`${mayuscula(unir(transitorias))}, puede ser tu conexión.`);
+  }
+
+  if (falloGeneral === 'moderacion') {
+    partes.push('No pudimos enviar tu publicación a revisión, intenta de nuevo.');
   }
 
   return partes.join(' ');
@@ -280,15 +311,25 @@ async function subirPendientes(
 }
 
 /**
- * RF-05, primer tramo del alta ATÓMICA: crea la publicación `pausada` y arranca
- * la subida.
+ * RF-05, primer tramo del alta ATÓMICA: crea la publicación `pendiente` y
+ * arranca la subida.
  *
- * POR QUÉ NACE PAUSADA: la subida no puede ocurrir antes del insert (regla 1
+ * POR QUÉ NACE PENDIENTE, y por qué ya no `pausada`: el argumento del modelo
+ * atómico sigue intacto —la subida no puede ocurrir antes del insert (regla 1
  * arriba), así que la publicación existe durante un rato en el que todavía no se
- * sabe si va a tener sus fotos. Crearla `activa` la hace visible en el feed en
- * ese hueco, y si alguna foto falla queda publicada incompleta — que es el
- * modelo viejo, "publica ya, recupera fotos después". Naciendo `pausada` solo la
- * ve su dueño hasta que `finalizarPublicacion` la activa.
+ * sabe si va a tener sus fotos, y crearla `activa` la haría visible en el feed
+ * en ese hueco—. `pendiente` da exactamente lo mismo ahí (tampoco es pública,
+ * 20260917000459) y encima suma dos cosas que `pausada` no podía dar:
+ *
+ *  · Es lo que la base EXIGE desde RF-18: el `with_check` de
+ *    `listings_insert_own` (20260919000463) no acepta otro valor de un cliente.
+ *  · Es lo que hace que el trigger de Storage SE SALTE las fotos de un alta en
+ *    curso (`20260918000462`, el skip de `pendiente`). Con `pausada` cada foto
+ *    disparaba una evaluación paga completa, en paralelo con la llamada final —
+ *    o sea doble costo y una carrera real (`.claude/rules/moderacion.md` §1).
+ *
+ * Y el final ya NO es siempre `activa`: lo decide `moderar-contenido`, y puede
+ * quedarse en `pendiente` (revisión humana) o pasar a `bloqueada`.
  *
  * `onListingCreado` no es un adorno: si la subida falla, quien llama NECESITA el
  * id para reintentar sobre la misma publicación. Devolverlo solo al final lo
@@ -302,15 +343,18 @@ export async function publicarListing(params: {
   userId: string;
   fotos: FotoParaGuardar[];
   onProgreso?: (p: ProgresoFoto) => void;
+  /** Ver `finalizarPublicacion`, que es quien lo dispara. */
+  onModerando?: () => void;
   onListingCreado?: (listingId: number) => void;
 }): Promise<ResultadoGuardado> {
-  const listingId = await crearListing(params.input, params.userId, 'pausada');
+  const listingId = await crearListing(params.input, params.userId, 'pendiente');
   params.onListingCreado?.(listingId);
 
   return finalizarPublicacion({
     listingId,
     fotos: params.fotos,
     onProgreso: params.onProgreso,
+    onModerando: params.onModerando,
   });
 }
 
@@ -320,8 +364,17 @@ export async function publicarListing(params: {
  *
  *  1. Sube lo que falte (las de origen 'local'); las ya subidas se saltan solas.
  *  2. Escribe `listing_photos` con lo que haya, INCLUSO si algo falló.
- *  3. Si algo falló, devuelve sin activar: la publicación se queda `pausada`.
- *  4. Si no, la activa.
+ *  3. Si algo falló, devuelve sin moderar: la publicación se queda `pendiente`,
+ *     que no es pública, y el usuario reintenta desde la misma pantalla.
+ *  4. Si no, pide el veredicto de moderación y lo devuelve.
+ *
+ * EL PASO 4 REEMPLAZÓ A LA ACTIVACIÓN, y el orden con el paso 2 sigue sin ser
+ * negociable — ahora por DOS razones, no una. La vieja: el trigger
+ * `listings_enforce_activation_has_photos` exige al menos una fila en
+ * `listing_photos` para pasar a `activa`, y la escribe el paso 2. La nueva:
+ * `evaluarListing()` lee `listing_photos` para saber QUÉ fotos evaluar
+ * (`moderar-contenido/index.ts`), así que moderar antes del paso 2 evaluaría un
+ * set vacío y aprobaría a ciegas.
  *
  * EL PASO 2 CORRE TAMBIÉN EN EL CAMINO DE FALLO, y no es por prolijidad: sin él,
  * los objetos que sí subieron quedarían sin fila, y si el usuario abandona la
@@ -340,12 +393,23 @@ export async function publicarListing(params: {
  *
  * Que sea idempotente cubre además esos mismos fallos: el mismo "Reintentar" los
  * resuelve — las subidas se saltan, el delete+insert se repite sin daño y
- * activar dos veces da lo mismo.
+ * `solicitarModeracion()` sobre una publicación que ya salió de `pendiente`
+ * devuelve su veredicto SIN volver a llamar a la Edge Function (ver su
+ * docblock: sin ese guard, un reintento tras una respuesta perdida podía tumbar
+ * lo que la primera evaluación ya había aprobado).
  */
 export async function finalizarPublicacion(params: {
   listingId: number;
   fotos: FotoParaGuardar[];
   onProgreso?: (p: ProgresoFoto) => void;
+  /**
+   * Avisa que la subida terminó y arrancó la moderación. Hermano de
+   * `onProgreso`, y existe por lo mismo: para cuando se llama a
+   * `moderar-contenido` la subida a Storage YA TERMINÓ, así que dejar el botón
+   * en "Subiendo imágenes" sería literalmente falso — el tipo de etiqueta que un
+   * usuario reporta como "se quedó pegado" (frame "Publicar (revisando)").
+   */
+  onModerando?: () => void;
 }): Promise<ResultadoGuardado> {
   const { listingId } = params;
 
@@ -357,22 +421,42 @@ export async function finalizarPublicacion(params: {
 
   try {
     await guardarFotos(listingId, paths);
-
-    if (hayFallos) return { listingId, fotos, falloGeneral: false };
-
-    // El trigger `listings_enforce_activation_has_photos` exige al menos una
-    // fila en `listing_photos`, y el paso anterior es justo el que la garantiza.
-    // El orden entre esas dos llamadas no es negociable.
-    await cambiarEstadoListing(listingId, 'activa');
   } catch (e: any) {
     console.warn(
-      `[publicar] no se pudo terminar de publicar — listing_id=${listingId} ` +
+      `[publicar] no se pudieron guardar las fotos — listing_id=${listingId} ` +
         `message=${e?.message ?? e}`
     );
-    return { listingId, fotos, falloGeneral: true };
+    return { listingId, fotos, falloGeneral: 'guardado', estado: null };
   }
 
-  return { listingId, fotos, falloGeneral: false };
+  if (hayFallos) return { listingId, fotos, falloGeneral: null, estado: null };
+
+  let estado: EstadoModeracion;
+  try {
+    params.onModerando?.();
+    estado = await solicitarModeracion(listingId);
+  } catch (e: any) {
+    // Los DOS errores del módulo caen en el mismo motivo, y es decisión, no
+    // descuido: `ModeracionEstadoInesperadoError` no se arregla reintentando
+    // (la relectura ve el mismo estado y vuelve a lanzar), pero darle motivo
+    // propio exige copy propio, o sea un `.notice` nuevo, o sea un frame
+    // (CLAUDE.md §0 regla 4), para un caso que hoy no es alcanzable. La causa
+    // real va completa a este warn, que es donde alguien la va a buscar.
+    //
+    // Y NO PROPAGA NINGUNO, ni siquiera uno inesperado: esta función tiene UN
+    // SOLO camino de retorno a propósito (ver arriba), porque una excepción
+    // aquí se llevaría consigo el resultado entero — y con él las marcas de las
+    // fotos que ya se sabían malas, dejando al usuario con el error genérico y
+    // cada "Reintentar" volviendo a subir la foto condenada.
+    const inesperado = e instanceof ModeracionEstadoInesperadoError;
+    console.warn(
+      `[publicar] no se pudo moderar — listing_id=${listingId} ` +
+        `${inesperado ? `estado=${e.estado} ` : ''}message=${e?.message ?? e}`
+    );
+    return { listingId, fotos, falloGeneral: 'moderacion', estado: null };
+  }
+
+  return { listingId, fotos, falloGeneral: null, estado };
 }
 
 /**
@@ -388,6 +472,11 @@ export async function finalizarPublicacion(params: {
  * estado a medio terminar: ya existía y ya era del usuario, así que se guarda lo
  * que se pudo y quien llama avisa. Tampoco toca `estado`: pausar y reactivar son
  * el toggle de la `.status-section`, no el guardado.
+ *
+ * Y NO RE-MODERA — devuelve `estado: null`. Las FOTOS nuevas las ve el trigger
+ * de Storage (20260918000462), pero el TEXTO no lo vuelve a mirar nadie: editar
+ * el título de una publicación ya aprobada evade la moderación entera. Es deuda
+ * consciente, con su disparador y su fix, en `.claude/rules/publicar-fotos.md`.
  */
 export async function guardarEdicion(params: {
   listingId: number;
@@ -403,7 +492,7 @@ export async function guardarEdicion(params: {
   await actualizarListing(listingId, params.input);
 
   if (!params.fotosCambiaron) {
-    return { listingId, fotos: params.fotos, falloGeneral: false };
+    return { listingId, fotos: params.fotos, falloGeneral: null, estado: null };
   }
 
   const { paths, fotos } = await subirPendientes(listingId, params.fotos, params.onProgreso);
@@ -416,5 +505,5 @@ export async function guardarEdicion(params: {
   const sobrantes = params.pathsOriginales.filter((p) => !paths.includes(p));
   await borrarFotos(sobrantes);
 
-  return { listingId, fotos, falloGeneral: false };
+  return { listingId, fotos, falloGeneral: null, estado: null };
 }

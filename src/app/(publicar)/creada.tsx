@@ -3,11 +3,18 @@
  *
  * Tuvo un segundo estado —"Publicación creada (fotos faltantes)", con un
  * `.notice` persistente y un CTA que llevaba a Editar— y ya no lo tiene: bajo el
- * modelo atómico, llegar aquí SIGNIFICA que todas las fotos subieron y que la
- * publicación quedó activa. El camino "activa con fotos incompletas" dejó de
- * existir, así que su aviso no se quedó apagado por si acaso: se borró, junto
- * con su frame en `design/relevo-app.html`. Un fallo de subida ahora se resuelve
- * sin salir de "Publicar" (ver `nueva.tsx`), y el `.notice` se mudó allá.
+ * modelo atómico, llegar aquí SIGNIFICA que todas las fotos subieron. El camino
+ * "activa con fotos incompletas" dejó de existir, así que su aviso no se quedó
+ * apagado por si acaso: se borró, junto con su frame en `design/relevo-app.html`.
+ * Un fallo de subida ahora se resuelve sin salir de "Publicar" (ver
+ * `nueva.tsx`), y el `.notice` se mudó allá.
+ *
+ * Y DESDE RF-18 SUBIR TODAS LAS FOTOS YA NO ALCANZA PARA LLEGAR AQUÍ. Este
+ * docblock afirmaba que llegar significa "quedó activa"; hoy significa que la
+ * moderación LA APROBÓ. Es una de TRES pantallas hermanas —"en revisión" y "no
+ * aprobada" son las otras dos—, y a cuál se navega lo decide el veredicto que
+ * `moderar-contenido` devolvió. Ninguna cambia en vivo: el cliente esperó la
+ * respuesta antes de navegar.
  */
 
 import { router, useLocalSearchParams } from 'expo-router';

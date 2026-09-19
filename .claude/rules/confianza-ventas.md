@@ -104,6 +104,15 @@ Detalles que no se ven en el diff:
   publicación", "Detalle (vista vendedor)" y la hoja de "Mis publicaciones"—:
   calcularlo tres veces es la forma de que se desincronicen. Los estados son
   "Marcar como vendida" / "Cambiar comprador" / ausente.
+  **RF-18 le agregó una cuarta razón para devolver `null`, y ese cambio NO es de
+  tipos sino de comportamiento**: hasta entonces devolvía `'marcar'` para TODO
+  estado distinto de `vendida`, así que con `pendiente`/`bloqueada` en el enum
+  habría ofrecido "Marcar como vendida" sobre una publicación que la base no deja
+  tocar — `listings_update_own` excluye los dos de su `using` (20260917000459),
+  o sea que el update afecta 0 filas SIN LANZAR y el vendedor habría llegado
+  hasta "¿A quién le vendiste?" para recibir un error al final. El `if` nuevo va
+  ANTES del `!== 'vendida'`, o la primera línea se lo come. Que el helper viva en
+  un solo lugar es lo que hizo que esto fuera una línea y no tres.
   **Ojo: desde que vendida es terminal (RF-08), "Cambiar comprador" perdió una de
   esas tres entradas.** La de "Editar publicación" quedó inalcanzable sobre una
   vendida —esa pantalla ahora rebota con su guard— y eso es correcto, no una

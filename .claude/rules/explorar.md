@@ -150,6 +150,18 @@ Detalles que no se ven en el diff:
   ambos se borraron al migrar a tsvector. Si vuelves a ver un `replace` sobre
   el término de búsqueda, es una regresión.
 
+**El `.sticky-cta` del dueño tiene un CUARTO reparto desde RF-18**, y se llega a
+él con un tap desde "Mis publicaciones", no solo por deep link: sobre una
+publicación `pendiente` o `bloqueada` no se pinta ningún botón —"Marcar como
+vendida" la esconde `accionVenta()`, "Editar publicación" el guard de
+`puedeEditar`— y en su lugar va el `.notice` con el texto del frame. Comparten
+reparto con "vendida sin nada pendiente" porque comparten la causa: los dos
+botones afectarían 0 filas. **Y el `.stat-row` desaparece entero** en esos dos
+estados (también se salta `fetchStatsPropias`): una publicación que nunca estuvo
+en el catálogo tiene los tres números en 0 por definición, y "0 vistas · 0
+favoritos · 0 contactos" lee como fracaso en vez de como "no ha empezado" — mismo
+recurso que el bloque de rating de Perfil sin reseñas.
+
 Botones inertes a propósito: **ya solo el menú kebab** del dueño, que es otra
 tarea. Los demás se fueron cableando y conviene no "restaurarlos": "Editar
 publicación" navega a `(publicar)/editar/[id]`; "Marcar como vendida" lanza el

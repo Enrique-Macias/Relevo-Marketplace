@@ -551,3 +551,57 @@ export function IconHelpCircle({ size, color }: IconProps) {
     </Svg>
   );
 }
+
+// RF-18 — el ícono NEUTRO de "en revisión": `.empty-icon` sin modificador, con
+// el reloj en --ink-soft. Lo comparten "Publicación en revisión" (pantalla
+// completa) y el guard de "Editar publicación" sobre una `pendiente`.
+//
+// Neutro Y NO `.success` a propósito, y el frame lo dice: con el check verde
+// diría que ya está publicada, que es justo lo que NO pasó. Es la misma
+// convención que ya fijó "Notificaciones vacío" para este círculo.
+//
+// stroke-width 1.8, el del frame de pantalla completa. La variante dentro de
+// "Editar publicación" lo dibuja a 1.6 — inconsistencia del propio HTML, no del
+// código; a 30px no se distingue y no vale un prop.
+export function IconClock({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Circle cx={12} cy={12} r={9} />
+      <Path d="M12 7v5l3 2" />
+    </Svg>
+  );
+}
+
+// RF-18 — el ícono de RECHAZO de "no aprobada". Va SIEMPRE dentro de un
+// `.empty-icon.error-icon` (fondo --brick-tint) con el trazo en --brick: esto no
+// es un estado de espera, es un rechazo, y esa es la misma distinción que hace
+// el guard de `vendida` al elegir el check en vez del error.
+//
+// Distinto de `IconAlertCircle` (exclamación, "algo falló y puedes reintentar")
+// y de `IconClose` (la ✕ suelta de los headers, sin círculo).
+export function IconXCircle({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+    >
+      <Circle cx={12} cy={12} r={9} />
+      <Path d="M15 9l-6 6" />
+      <Path d="M9 9l6 6" />
+    </Svg>
+  );
+}

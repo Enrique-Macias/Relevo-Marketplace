@@ -39,6 +39,7 @@ import {
   fetchVentasVendedor,
   incrementListingView,
   registrarContacto,
+  type EstadoListing,
   type ListingDetalle,
 } from '@/lib/listings';
 import { fetchTelefonoVendedor, urlWhatsapp } from '@/lib/perfil';
@@ -111,9 +112,19 @@ export default function DetalleScreen() {
     recargas
   );
   const accionDeVenta = listing ? accionVenta(listing.estado, venta) : null;
-  // RF-08: vendida es terminal. Hermano del `puedeEditar` de la hoja de "Mis
+  // RF-08 + RF-18: son TRES los estados en los que el dueño ya no manda, y
+  // `listings_update_own` los excluye a los tres de su `using` (20260913000454
+  // + 20260917000459). Hermano del `puedeEditar` de la hoja de "Mis
   // publicaciones" — la misma regla, en la otra entrada a la misma pantalla.
-  const puedeEditar = listing?.estado !== 'vendida';
+  const puedeEditar = listing?.estado === 'activa' || listing?.estado === 'pausada';
+  /**
+   * Los dos estados de moderación, que reparten el `.sticky-cta` igual que una
+   * vendida sin nada pendiente —ningún botón, solo un `.notice`— por la misma
+   * causa: los dos botones del dueño afectarían 0 filas.
+   *
+   * Se alcanza con un tap desde "Mis publicaciones", no solo por deep link.
+   */
+  const enModeracion = listing?.estado === 'pendiente' || listing?.estado === 'bloqueada';
   // "Soy el comprador" NO se deduce del estado sino de la fila: `listing_sales`
   // solo la ven las dos partes, así que la RLS ya contestó esa pregunta.
   const soyComprador = !!venta && !!userId && venta.compradorId === userId;
@@ -197,11 +208,14 @@ export default function DetalleScreen() {
     if (!listing) return;
 
     let vigente = true;
-    if (isOwner) {
+    // Los stats del dueño no se piden en `pendiente`/`bloqueada`: esa fila no se
+    // pinta (ver el `.stat-row` más abajo), así que serían dos requests —uno de
+    // ellos una RPC— para un número que nadie va a ver.
+    if (isOwner && !enModeracion) {
       fetchStatsPropias(listing.id)
         .then((s) => vigente && setStats(s))
         .catch((e) => console.warn('[detalle] no se pudieron leer los stats:', e?.message ?? e));
-    } else {
+    } else if (!isOwner) {
       fetchVentasVendedor(listing.vendedor.id)
         .then((n) => vigente && setVentas(n))
         .catch((e) => console.warn('[detalle] no se pudieron contar las ventas:', e?.message ?? e));
@@ -210,7 +224,7 @@ export default function DetalleScreen() {
     return () => {
       vigente = false;
     };
-  }, [listing, isOwner]);
+  }, [listing, isOwner, enModeracion]);
 
   /**
    * Compartir — texto plano y NINGÚN link, a propósito.
@@ -469,6 +483,15 @@ export default function DetalleScreen() {
               </View>
               <IconChevronRight size={16} color={Colors.inkSoft} />
             </Pressable>
+          ) : enModeracion ? (
+            /* El `.stat-row` DESAPARECE ENTERO en revisión o bloqueada, y no es
+               que no haya datos: una publicación que nunca estuvo en el catálogo
+               tiene los tres números en 0 POR DEFINICIÓN —`listings_select` la
+               esconde e `increment_listing_view` la excluye (20260917000459)—, y
+               "0 vistas · 0 favoritos · 0 contactos" lee como fracaso en vez de
+               como "no ha empezado". Es el mismo recurso que el bloque de rating
+               de Perfil cuando no hay reseñas. */
+            null
           ) : (
             <View style={styles.statRow}>
               <View style={styles.statCard}>
@@ -563,7 +586,9 @@ export default function DetalleScreen() {
               {/* Vendida y sin nada pendiente —ya calificada, o "No fue a través
                   de Relevo"—: sin esto el contenedor quedaría vacío. Es el mismo
                   aviso que ve cualquier otro autenticado. */}
-              {!accionDeVenta && !puedeEditar ? <VendidoNotice /> : null}
+              {!accionDeVenta && !puedeEditar ? (
+                <AvisoSinAcciones estado={listing.estado} />
+              ) : null}
             </>
           ) : listing.estado === 'vendida' ? (
             <>
@@ -594,7 +619,7 @@ export default function DetalleScreen() {
                 // Cualquier otro autenticado —incluidos los que preguntaron y no
                 // compraron. Sin WhatsApp: contactar por algo ya vendido no
                 // tiene sentido.
-                <VendidoNotice />
+                <AvisoSinAcciones estado="vendida" />
               )}
             </>
           ) : (
@@ -654,10 +679,34 @@ export default function DetalleScreen() {
  * Va SIN su `.notice-icon`: ese círculo es --brick, el color de error del
  * sistema, y aquí no falló nada — la publicación simplemente ya se vendió.
  */
-function VendidoNotice() {
+/**
+ * El `.notice` del `.sticky-cta` cuando NO queda ningún botón que ofrecer.
+ *
+ * Eran dos consumidores con un solo texto (el dueño de una vendida sin nada
+ * pendiente, y cualquier otro autenticado viendo una vendida); con RF-18 son
+ * tres textos y el mismo reparto, porque comparten la causa: el `using` de
+ * `listings_update_own` excluye `vendida`, `pendiente` y `bloqueada`, así que
+ * "Marcar como vendida" y "Editar publicación" afectarían 0 filas.
+ *
+ * Va SIN ícono, el precedente que ya fijó "Detalle (vendida)": el círculo
+ * --brick es color de error y aquí no falló nada que el usuario pueda arreglar.
+ */
+const AVISO_SIN_ACCIONES: Record<'vendida' | 'pendiente' | 'bloqueada', string> = {
+  vendida: 'Esta publicación ya se vendió.',
+  pendiente: 'Esta publicación está en revisión. Se publicará en cuanto la revisemos.',
+  bloqueada: 'Esta publicación no fue aprobada y no se publicó.',
+};
+
+function AvisoSinAcciones({ estado }: { estado: EstadoListing }) {
+  const texto = AVISO_SIN_ACCIONES[estado as keyof typeof AVISO_SIN_ACCIONES];
+  // Los otros dos valores del enum nunca llegan aquí: si el dueño no tiene ni
+  // botón de venta ni de edición, la publicación está en uno de esos tres
+  // estados. Se degrada a no pintar nada en vez de a una cadena vacía.
+  if (!texto) return null;
+
   return (
     <View style={styles.vendidoNotice}>
-      <Text style={styles.vendidoText}>Esta publicación ya se vendió.</Text>
+      <Text style={styles.vendidoText}>{texto}</Text>
     </View>
   );
 }

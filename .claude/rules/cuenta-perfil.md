@@ -23,7 +23,15 @@ Publicar dejó la app en un estado donde pausar una publicación la volvía
 inalcanzable (el Feed filtra `estado = 'activa'`), y lo mismo pasaba con una que
 quedaba sin fotos por un fallo de subida. Eso último dejó de ser un accidente y
 pasó a ser el diseño: el modelo atómico DEPENDE de esta pantalla, porque una
-publicación que se queda `pausada` por un fallo de subida se recupera aquí.
+publicación que se queda sin publicar por un fallo de subida se recupera aquí
+(`pausada` hasta RF-18; desde la Ola 3, `pendiente`).
+
+**Y desde RF-18 esta pantalla pinta DOS estados más**: "En revisión"
+(`pendiente`) y "Bloqueada" (`bloqueada`), con los textos y los tonos del frame —
+ningún color nuevo, ningún chip nuevo. Sobre esos dos, la hoja de acciones NO
+ofrece pausar/reactivar, editar ni marcar como vendida: `listings_update_own` los
+excluye de su `using` (20260917000459) igual que a `vendida`, así que queda con
+una sola fila y es la destructiva. El detalle, en `moderacion.md`.
 
 - **`(cuenta)/mis-publicaciones.tsx`** cubre los 3 frames: la lista, su vacío y
   la hoja de acciones. Lee con `useMisListings()` (`src/lib/listings.ts`), que es

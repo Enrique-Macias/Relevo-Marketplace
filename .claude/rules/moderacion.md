@@ -9,8 +9,11 @@ paths:
   - "supabase/migrations/*listings_estados_no_publicos*.sql"
   - "supabase/migrations/*listings_realtime*.sql"
   - "supabase/migrations/*listing_moderacion*.sql"
+  - "supabase/migrations/*listings_insert_pendiente*.sql"
   - "src/lib/publicar.ts"
   - "src/lib/storage.ts"
+  - "src/lib/moderacion.ts"
+  - "src/app/(explorar)/detalle/**"
   - "src/app/(publicar)/**"
   - "src/app/(cuenta)/mis-publicaciones.tsx"
 ---
@@ -58,20 +61,27 @@ paths:
 | **Armar los `Ejes` + `decidirListing()` + escritura + auditoría, para PUBLICACIONES** | **Hecho, con el guard de promoción probado end-to-end (§6.3)** | `index.ts`, `evaluarListing()` |
 | **Enforcement de avatares** (`moderarAvatar()`): descarga, Vision, `decidirAvatar()`, borrado + guard de la carrera | **Hecho, con el guard de la carrera probado end-to-end (§6.4)** | `index.ts`, `moderarAvatar()` |
 | Los dos triggers de Storage | **Hecho y verificado en LOCAL; en remoto ni siquiera pusheados — y los secretos van en Ola 3** | `supabase/migrations/20260918000462_storage_moderacion_triggers.sql` + `probe-storage.mjs` §moderación |
-| El rework de `publicar.ts` (nace `pendiente`, ya no activa él mismo) | **Pendiente** | — |
-| El `with_check` de `listings_insert_own` forzando `pendiente` | **Pendiente** | deuda ya documentada en `publicar-fotos.md` |
-| Suscripción de Realtime en el cliente | **Pendiente** | — |
+| El rework de `publicar.ts` (nace `pendiente`, ya no activa él mismo) | **Hecho** (Ola 3) | `src/lib/publicar.ts`, `src/lib/moderacion.ts` |
+| El `with_check` de `listings_insert_own` forzando `pendiente` | **Hecho** (Ola 3) | `supabase/migrations/20260919000463_listings_insert_pendiente.sql` + T25 |
+| UI de los estados nuevos (chips, guards, el 4º reparto de Detalle) | **Hecho** (Ola 3) | `mis-publicaciones.tsx`, `editar/[id].tsx`, `detalle/[id].tsx`, `confianza.ts` |
+| Las dos pantallas de veredicto | **Hecho** (Ola 3) | `(publicar)/revision.tsx`, `(publicar)/no-aprobada.tsx` |
+| Suscripción de Realtime en el cliente | **Hecho** (Ola 3) | `useVeredictoEnVivo()` en `src/lib/moderacion.ts`, consumida por `revision.tsx` |
+| **La Edge Function desplegada en REMOTO** | **NO** — `list_edge_functions` devuelve solo `send-push` | CLAUDE.md §8, pendiente 2 |
 
 **Con esto, `moderar-contenido` modera publicaciones Y avatares reales de
 punta a punta, y desde la Ola 2 los dos triggers de Storage la disparan solos al
 entrar un objeto** — verificado end-to-end: sobrescribir la foto de una
 publicación `activa` la escala a `bloqueada` (§6.5).
 
-**PERO EN PRODUCCIÓN TODAVÍA NO PROTEGE NADA, Y ES A PROPÓSITO.** Los dos
-secretos de Vault del trigger **no se crean en prod hasta que Ola 3 esté
-completa** (el porqué, en §7), así que allá `private.notify_moderacion()`
-levanta un `warning` y no llama a nadie. El hueco funcional que queda es el
-rework de `publicar.ts` (Ola 3). Los ocho casos de verificación que dependían de red real
+**PERO EN PRODUCCIÓN TODAVÍA NO PROTEGE NADA, Y YA NO ES POR EL MISMO MOTIVO.**
+Ola 3 está completa, así que el hueco funcional que este párrafo señalaba —el
+rework de `publicar.ts`— se cerró. Lo que queda es de DESPLIEGUE, y son cuatro
+pasos manuales que no se han dado (CLAUDE.md §8, pendiente 2): la Edge Function
+**nunca se desplegó a remoto** (medido con `list_edge_functions`: allá solo vive
+`send-push`), sus dos credenciales no están puestas, la migración del
+`with_check` no se ha pusheado, y los dos secretos de Vault siguen en 0 — así
+que allá `private.notify_moderacion()` levanta un `warning` y no llama a nadie.
+Los ocho casos de verificación que dependían de red real
 para publicaciones (4 parcial, 5, 6, 7, 8, 9, 13, y el probe de autorización
 re-verificado con evaluación real) están en §6.3; los cuatro de avatares, en
 §6.4 — todos con sus controles negativos.
@@ -253,6 +263,36 @@ en un solo punto de entrada.
 
 `name` y `path_tokens` van **siempre de `NEW`**: un `move` cambia el nombre, y
 lo que hay que moderar es dónde quedó el objeto, no de dónde salió.
+
+### Pero `moderarListing()` DESCARTA ese `name`, y ahí hay un hueco medido (Ola 3)
+
+**Medido leyendo `index.ts` al construir Ola 3, no supuesto.** El camino de
+`listing-photos` llama a `moderarListing(db, Number(entity_id), …)` **sin pasarle
+`name`**: `evaluarListing()` re-lee `listing_photos` entera y evalúa lo que esa
+tabla tenga en ese instante. Y el objeto se sube **antes** de que exista su fila
+—`publicar.ts` (`subirPendientes` y recién `guardarFotos`), `perfil.ts`
+(`subirAvatar` y recién `update foto_url`)—, que es el mismo orden que este
+archivo ya documenta más arriba como load-bearing. O sea que, en el instante del
+trigger, **la foto que lo disparó todavía no tiene fila**. Dos consecuencias:
+
+- **Esa foto no se evalúa nunca.** Se evalúa el set ANTERIOR, y después de
+  `guardarFotos()` ya no llega ningún evento más.
+- **Y se paga N veces por evaluar lo viejo.** Editar reemplazando 5 fotos de una
+  publicación `activa` o `pausada` = 5 eventos × (1 Vision + 1 OpenAI) = **10
+  requests pagos**, todos sobre las fotos que están siendo reemplazadas.
+
+**El camino de AVATARES no lo tiene**: `moderarAvatar()` sí usa `name`. La
+asimetría es la causa raíz.
+
+**Por qué no se vio antes, y es la lección:** la prueba end-to-end de §6.5 usó
+`x-upsert` para sobrescribir una ruta **existente** —que sí tiene fila—, así que
+el único caso medido es justo el único donde coinciden. Un alta genuina nunca la
+tiene: `storage.ts` sube siempre con `upsert: false` y uuid nuevo.
+
+**Publicar NO está afectado**, y por eso esto no bloqueó Ola 3: el skip de
+`pendiente` corta antes del `net.http_post`, así que los N eventos del alta
+cuestan cero y el alta entera son **2 requests** (1 Vision con todas las fotos en
+un lote + 1 OpenAI). Queda como deuda, con su disparador, en §9 de este archivo.
 
 ### El trigger se salta las publicaciones en `pendiente` — la razón es una carrera real
 
@@ -660,6 +700,15 @@ llegaría todavía.
 
 ## 5. Rework de `publicar.ts` — diagnóstico de impacto completo
 
+> **HECHO (Ola 3, 2026-09-19).** Lo que sigue es el diagnóstico con el que se
+> construyó, conservado porque explica POR QUÉ cada pieza quedó como quedó. Dos
+> correcciones a la tabla de abajo, medidas contra el código al ejecutarlo:
+> **las firmas de tipo eran SIETE, no cinco** —le faltaban `ListingDetalle.estado`
+> (sin abrirla, el guard nuevo de Editar ni compila) y `accionVenta()`—, y
+> **`detalle/[id].tsx` no estaba en la tabla** aunque el diseño ya tenía su
+> cuarto reparto del `.sticky-cta` y se llega ahí con un tap desde "Mis
+> publicaciones". Las dos entraron en el mismo cambio.
+
 **La regresión #1 ya está armada y esperando**, aunque nadie haya tocado
 `publicar.ts` todavía. `20260917000459` metió `pendiente`/`bloqueada` en el
 `not in` de `listings_update_own`. En el instante en que la fila nazca
@@ -680,8 +729,10 @@ publicar queda roto.
 | **Motivo de fallo de moderación** | `publicar.ts:37-59`, `:142-184` | Ver §5.1 — cambia la forma de `falloGeneral`. | `falloGeneral` deja de ser booleano. |
 | **`creada.tsx`** | docblock `:4-10` | **Miente**: afirma que llegar ahí significa "quedó activa". | Copy ya construido en dos frames nuevos ("Publicación en revisión", "no aprobada"), CLAUDE.md §4. |
 | **`alternarPausa()`** | `editar/[id].tsx:374`, `mis-publicaciones.tsx:150` | Sobre `pendiente`/`bloqueada` devuelven 0 filas y muestran *"ya se vendió"* / *"no pudimos cambiar el estado"* — **falso**. | Guard por estado antes de ofrecer la acción. El 0 tiene ahora **cuatro** causas (`…459:94-97`); `listings.ts:638-640` ya está desactualizado. |
-| **`ESTADO_LABEL`** | `mis-publicaciones.tsx:63-67` | **Fallo silencioso**: `ESTADO_LABEL['pendiente']` es `undefined` → RN pinta cadena vacía. Una bloqueada se ve como una pausada con un glitch. | Ampliar el `Record`. Ojo con `:295`: `ESTADO_LABEL[filtro].toLowerCase()` **crashea** si se agrega un chip sin tocar el mapa. |
-| **Firmas de tipo** | `listings.ts:619`, `:689`, `:128`, `:410`; `mis-publicaciones.tsx:53` | No admiten los estados nuevos; el enum de la base sí. | Abrir las cinco. |
+| **`ESTADO_LABEL`** | `mis-publicaciones.tsx` | **Fallo silencioso**: `ESTADO_LABEL['pendiente']` es `undefined` → RN pinta cadena vacía. Una bloqueada se ve como una pausada con un glitch. | `Record<EstadoListing, string>` (5 claves, textos del frame). El crash de `ESTADO_LABEL[filtro].toLowerCase()` **se volvió irrepresentable**: `FILTROS` va tipado por `EstadoFiltrable`, así que agregar un chip de "En revisión" sin resolver el plural ("en revisións") NO COMPILA, en vez de reventar en runtime. |
+| **Firmas de tipo** | `listings.ts` (`ListingDetalle.estado`, `MiListing.estado`, `crearListing`, `FetchMisListingsParams`, `useMisListings`); `confianza.ts` (`accionVenta`); `mis-publicaciones.tsx` | No admiten los estados nuevos; el enum de la base sí. | **SIETE, no cinco.** Dos tipos exportados en `listings.ts`: `EstadoListing` (los 5) y `EstadoFiltrable` (los 3 con chip). Ver abajo por qué son dos. |
+| **`accionVenta()`** | `confianza.ts` | Devolvía `'marcar'` para TODO estado ≠ vendida, así que una `pendiente` ofrecería "Marcar como vendida" en las TRES superficies — y ese update afecta 0 filas sin lanzar. | Devuelve `null` en `pendiente`/`bloqueada`, con el `if` ANTES del `!== 'vendida'`. **No es tipado, es comportamiento.** |
+| **`detalle/[id].tsx`** | el `.sticky-cta` del dueño, y el `.stat-row` | Ofrece "Marcar como vendida" + "Editar publicación" sobre una `pendiente`; y pintaría "0 vistas · 0 favoritos · 0 contactos", que lee como fracaso. | Cuarto reparto (`.notice`, sin botones) con los dos textos del frame, y el `.stat-row` desaparece entero (también se salta `fetchStatsPropias`). |
 | **Guard de `editar`** | `editar/[id].tsx:452` | Solo cubre `vendida`; con los nuevos pinta el formulario y "Guardar" falla contra RLS — verificado: la policy rechaza CUALQUIER update sobre `pendiente`/`bloqueada`, no solo el cambio de estado. | Extender el guard para reemplazar el formulario entero, igual que ya hace la variante de `vendida` — no basta con apagar la `.status-section`. |
 | **`with_check` del INSERT** | `listings_insert_own` | Hoy no restringe `estado`. | Forzar `'pendiente'`. **Mismo cambio que el rework** — solo, rompe publicar al instante (ver arriba). |
 | **Default de la columna** | `estado default 'activa'` | **No hay que voltearlo.** El `with_check` solo ata a `authenticated`; las fixtures corren como `postgres`. | Sin cambios — evita reescribir los 4 bloques de fixtures que la deuda hermana ya documenta en `publicar-fotos.md`. |
@@ -715,6 +766,44 @@ Diseño concreto:
   (`publicar.ts:130-140`) y la deuda de "**solo DOS errores deterministas**"
   en `publicar-fotos.md`: los **motivos** pasan a tres, los **baldes** siguen
   siendo dos.
+
+**AL IMPLEMENTARLO APARECIÓ UN SEGUNDO ERROR, y comparte motivo con el primero
+a propósito.** `solicitarModeracion()` puede lanzar `ModeracionEstadoInesperadoError`
+—la publicación está en `pausada`/`vendida`, que este flujo no sabe interpretar—,
+y eso NO se arregla reintentando: la relectura ve el mismo estado y vuelve a
+lanzar. Aun así cae en `'moderacion'`, porque darle motivo propio exige copy
+propio, o sea un `.notice` nuevo, o sea un frame (CLAUDE.md §0 regla 4), para un
+caso que hoy **no es alcanzable** (una fila nace `pendiente` y solo la Edge
+Function la mueve). La causa real va completa al `console.warn` con el estado
+recibido. Es decisión, no accidente, y por eso está escrita en el `catch`.
+
+### 5.1b. El guard del reintento — sin él, "Reintentar" puede DEGRADAR lo ya aprobado
+
+No estaba en el plan original y salió de mirar el código en vez de confiar en él.
+`moderarListing()` llama a `evaluarListing()` **sin mirar `estadoActual`**; el
+estado solo entra después, como argumento de `decidirListing()`. Y ahí, un
+veredicto `revisar` sobre una publicación ya `activa` la manda a `pendiente`
+(`decision.ts`), y un `bloquear` a `bloqueada`. Junta eso con un hecho ya medido
+—GPT no es determinista sobre el MISMO texto, §6.3— y sale el caso:
+
+```
+llamada 1 → la función escribe 'activa'  → la respuesta se pierde (red, background)
+el usuario toca "Reintentar"
+llamada 2 → se vuelve a pagar Vision + OpenAI sobre contenido IDÉNTICO
+          → GPT contesta distinto → la publicación aprobada se cae a pendiente
+```
+
+Por eso `solicitarModeracion()` **lee el estado primero** y devuelve directo si
+ya no es `'pendiente'`, sin invocar nada. Tres cosas que conviene no "simplificar":
+
+- **No es autorización duplicada** (CLAUDE.md §0 regla 7): la Edge Function se
+  comporta igual mire el cliente lo que mire, y el ownership lo valida ella con
+  `ctx.userClaims.id`. Lo único que se elige aquí es no re-tirar el dado.
+- **La carrera es benigna**: si el estado cambia entre la lectura y la
+  invocación, lo peor que pasa es que se invoque de más — el comportamiento de
+  antes.
+- **Hace idempotente el reintento del CLIENTE, no la función.** El camino del
+  trigger sigue pudiendo re-evaluar, y ese hueco queda como deuda (§9).
 
 ### 5.2. El `with_check` de `listings_insert_own`
 
@@ -785,13 +874,19 @@ ve.
 
 - **Triggers: HECHO**, y partido en dos scripts con costos distintos — el
   detalle completo, con los cinco controles negativos, en §6.5.
-- **Rework de `publicar.ts`:** `rls.sql` entero (167 aserciones a la fecha de
-  este archivo) + los dos probes existentes + una T25 nueva para el
-  `with_check` del INSERT, con su control negativo corrido por separado.
-- **Realtime:** publicar, ver la pantalla de revisión, mover el estado a
-  mano desde Studio, confirmar que llega. **Y confirmar el fallback con
-  Realtime apagado a propósito** — probar solo el camino feliz no dice si el
-  piso existe.
+- **Rework de `publicar.ts`: HECHO** (Ola 3). `rls.sql` entero —177 aserciones,
+  medido con su comando, no recordado— con **T25 nueva (8) para el `with_check`
+  del INSERT** y sus cuatro variantes rotas corridas una a la vez; más
+  `probe-storage.mjs` (21) y `probe-venta.mjs` (13), que **no debían moverse** y
+  no se movieron: sus fixtures insertan con la secret key, así que un rojo ahí
+  habría significado que el `with_check` estaba atrapando a `service_role`. La
+  tabla de qué variante cae en qué aserción está en CLAUDE.md §3.
+- **Realtime: PENDIENTE de correrse a mano**, y es lo único de Ola 3 que no se
+  puede verificar desde aquí. Publicar, ver la pantalla de revisión, mover el
+  estado a mano desde Studio, confirmar que llega. **Y confirmar el fallback con
+  Realtime apagado a propósito** (`alter publication supabase_realtime drop
+  table public.listings`, con `pg_publication_tables` antes y después) — probar
+  solo el camino feliz no dice si el piso existe.
 - **`C` (la migración de Realtime ya aplicada):** `select * from
   pg_publication_tables where pubname='supabase_realtime'` antes y después —
   ya corrido una vez al aplicar `20260917000460`, repetible.
@@ -994,6 +1089,15 @@ Tres cosas de esa tabla que conviene no suponer:
   tiene control negativo porque no filtra nada medido (ver §1). Está escrito así
   a propósito en los tres lados: la migración, el probe y §1.
 
+**OJO CON LO QUE ESTAS CUATRO ASERCIONES NO PRUEBAN, descubierto en Ola 3.**
+Las dos que ejercitan `listing-photos` usan `x-upsert` sobre una ruta que YA
+tiene fila en `listing_photos`, y ese es el único caso en el que "la foto que
+disparó el trigger" y "lo que `evaluarListing()` evalúa" coinciden. En un alta
+genuina el objeto se sube antes que su fila, así que la función evalúa el set
+ANTERIOR y la foto nueva no la mira nadie — el hueco completo está en §1. Estas
+aserciones prueban que el trigger DISPARA con el payload correcto, que es lo que
+dicen; no prueban QUÉ se evalúa.
+
 **La sección 6 de `probe-moderacion-http.mjs`, y por qué la escalada la dispara
 la LISTA y no una imagen sucia.** Forzar `bloquear` por Vision exigiría sourcear
 contenido sexual explícito o gráficamente violento, que este repo no hace ni
@@ -1082,6 +1186,27 @@ gratis en `probe-storage.mjs` y la escalada end-to-end en
   usuario por sí sola — todo su valor es quedar cableada para Ola 3. Activar los
   secretos antes no compra cobertura, compra riesgo.
 
+  **ACTUALIZACIÓN (Ola 3 cerrada): el motivo de arriba ya no aplica, pero
+  apareció otro, y este SÍ es una decisión abierta con un número medido.** El
+  callejón sin salida de la tabla está cerrado —`publicar.ts` crea en
+  `pendiente`, el chip dice "En revisión"/"Bloqueada", "Reactivar" y "Editar" ya
+  no se ofrecen, y Detalle pinta su `.notice`—. Lo que queda es el costo, y el
+  hueco de §1:
+
+  | Flujo | Requests pagos | ¿Correcto? |
+  |---|---|---|
+  | Publicar, 5 fotos | **2** (1 Vision + 1 OpenAI, del cliente) | sí — el skip de `pendiente` deja los 5 eventos en 0 |
+  | Editar, reemplazando 5 fotos | **10** (5 Vision + 5 OpenAI, del trigger) | **no** — evalúan el set ANTERIOR, y las 5 fotos nuevas no las mira nadie |
+  | Sobrescribir una foto (`x-upsert`, solo desde Studio) | 2 | sí — es el caso que midió §6.5 |
+
+  Tres salidas, sin recomendación escondida: **(i)** encender igual y aceptar el
+  gasto y el hueco de Editar como deuda de §9 con su disparador; **(ii)**
+  arreglar primero el `name` (pasárselo a `moderarListing()` y unirlo a los
+  paths leídos), más remedir §6.5; **(iii)** dejarlos apagados hasta que exista
+  RF-17, que es quien revisaría la cola de todos modos. **Todo Ola 3 funciona
+  igual sin los secretos**: lo único apagado es la re-moderación automática de
+  Storage.
+
   **Exposición medida en remoto (2026-09-18)**, para que la decisión no dependa
   de una intuición: 6 cuentas, todas de alta entre el 09-07 y el 09-15, **cinco
   de ellas en dominios de correo personal** (hotmail/gmail/outlook) y una sola
@@ -1106,10 +1231,13 @@ gratis en `probe-storage.mjs` y la escalada end-to-end en
   `select count(*) from vault.secrets where name in
   ('moderar_contenido_secret_key','moderar_contenido_function_url');` → 0.
 
-**Ola 3 (depende de la función y de B):** el rework de `publicar.ts` **+ el
-`with_check` de `listings_insert_own`, en el mismo cambio** (§5 de este
-archivo); y la UI de los estados nuevos (`ESTADO_LABEL`, los guards de
-`alternarPausa()` y de "Editar publicación").
+**Ola 3 (depende de la función y de B): HECHA** (2026-09-19). El rework de
+`publicar.ts` **+ el `with_check` de `listings_insert_own`, en el mismo cambio**
+(§5 de este archivo); la UI de los estados nuevos (`ESTADO_LABEL`, los guards de
+`alternarPausa()`, de "Editar publicación" y del `.sticky-cta` de Detalle,
+`accionVenta()`); las dos pantallas de veredicto; y la suscripción de Realtime.
+Se sumaron al alcance del plan dos piezas que su tabla de impacto no listaba —
+`accionVenta()` y `detalle/[id].tsx`— y el guard del reintento de §5.1b.
 
 **Y, como último paso de esa ola —no antes—, los dos `vault.create_secret` en
 PRODUCCIÓN** (ver Ola 2 arriba). Hasta que se creen, la moderación automática de
@@ -1149,3 +1277,40 @@ Sin `pendiente` de avatar porque `users` no tiene columna de estado para la
 foto y el bucket es público — crearlo invalidaría la premisa escrita que
 justifica el bucket público (`cuenta-perfil.md:484-485`). Fuera de alcance de
 RF-18, documentado como deuda ahí.
+
+---
+
+## 9. Deuda consciente de moderación — con disparador, no "algún día"
+
+- **El trigger de `listing-photos` evalúa el set ANTERIOR y nunca la foto que lo
+  disparó** (el hueco de §1, con sus dos mitades: la foto nueva sin evaluar, y N
+  evaluaciones pagas de lo viejo por cada Editar). No es alcanzable durante
+  Publicar gracias al skip de `pendiente`. **Revisar cuando:** se autoricen los
+  dos secretos de Vault en prod, o antes si aparece gasto inesperado en
+  Vision/OpenAI. **Fix:** pasarle `name` a `moderarListing()` y unirlo a los
+  paths leídos de `listing_photos` — es el mínimo que cubre la foto nueva; el
+  N-fold pide además debounce, o mover el disparador a `listing_photos`, que a
+  su vez pierde la cobertura de subidas directas al Storage API (el argumento de
+  §1), así que no es un cambio libre.
+
+- **Toda re-evaluación vuelve a tirar el dado de GPT sobre texto que no cambió.**
+  `veredicto()` mezcla tres ejes deterministas con uno que es un modelo, y
+  `evaluarListing()` los corre todos siempre, así que agregarle una foto a una
+  publicación aprobada puede degradarla a `pendiente` por el TEXTO, sin que el
+  texto se haya tocado. El guard de §5.1b cierra el reintento del CLIENTE; esto
+  queda abierto para el camino del trigger. **Revisar cuando:** aparezca una fila
+  en `listing_moderacion` con `eje_que_manda = 'gptTexto'` sobre una publicación
+  que ya había salido `limpio` antes con el mismo título y descripción.
+  **Fix:** que el camino `authMode === 'secret'` no llame a OpenAI (un evento de
+  Storage es sobre una IMAGEN; el texto ya lo evaluó el alta), dejando `gptTexto`
+  fuera de `Ejes` en esa rama — ojo, cambia lo que asienta §6.3 y hay que
+  remedirlo.
+
+- **La cola de `pendiente` mezcla dos cosas.** "La cola" es literalmente
+  `estado = 'pendiente'` sobre `listings` (CLAUDE.md §3), y ahí caen tanto las
+  publicaciones que la moderación marcó como las abandonadas a media subida (la
+  falla segura de §1: el usuario cierra la app y la llamada final nunca llega).
+  Para el revisor son indistinguibles a simple vista. **Revisar cuando:** la cola
+  pase de un puñado de filas. **Fix:** filtrar por
+  `exists (select 1 from listing_moderacion m where m.listing_id = l.id)`, que
+  solo tienen las primeras — o esperar a RF-17, que es donde esa vista vive.

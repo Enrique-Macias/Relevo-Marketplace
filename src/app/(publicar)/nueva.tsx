@@ -1,16 +1,23 @@
 /**
- * Frames "Publicar", "Publicar (subiendo imágenes)" y "Publicar (error de
- * subida)" — alta de publicación (RF-05). Un solo componente con tres estados,
- * como Categoría o Búsqueda.
+ * Frames "Publicar", "Publicar (falta teléfono)", "Publicar (procesando
+ * fotos)", "Publicar (subiendo imágenes)", "Publicar (revisando)" y "Publicar
+ * (error de subida)" — alta de publicación (RF-05). Un solo componente con
+ * todos esos estados, como Categoría o Búsqueda.
  *
- * EL ALTA ES ATÓMICA: la publicación se crea `pausada`, suben todas sus fotos, y
- * solo si TODAS suben pasa a `activa`. Reemplaza al modelo de "publica ya,
- * recupera fotos después", donde un fallo parcial dejaba la publicación visible
- * con menos fotos de las que el usuario eligió y había que contárselo al final.
+ * EL ALTA ES ATÓMICA: la publicación se crea `pendiente`, suben todas sus
+ * fotos, y solo entonces se le pide su veredicto a `moderar-contenido`.
+ * Reemplaza al modelo de "publica ya, recupera fotos después", donde un fallo
+ * parcial dejaba la publicación visible con menos fotos de las que el usuario
+ * eligió y había que contárselo al final.
  *
- * Los dos estados nuevos existen porque eso vuelve la subida un momento con
+ * Los estados de espera existen porque eso vuelve la subida un momento con
  * duración y con posibilidad de fallar, del que el usuario tiene que enterarse
  * SIN salir de esta pantalla — que es donde se reintenta.
+ *
+ * Y EL FINAL YA NO ES UNA SOLA PANTALLA (RF-18): el veredicto decide entre
+ * "Publicación creada", "en revisión" y "no aprobada". El cliente ESPERA ese
+ * veredicto, así que ninguna de las tres cambia en vivo — salvo "en revisión",
+ * que es la única donde todavía falta algo por pasar.
  */
 
 import { router } from 'expo-router';
@@ -44,9 +51,18 @@ import { MAX_FOTOS } from '@/lib/storage';
 
 /**
  * Ya no hay estado `error`: "hay error" se DERIVA de las fotos (§ el aviso, más
- * abajo). Lo único que hace falta guardar es si hay una subida en curso.
+ * abajo). Lo único que hace falta guardar es qué trabajo hay en curso.
+ *
+ * `moderando` es el CUARTO estado del componente y llegó con RF-18: para cuando
+ * se llama a `moderar-contenido` la subida a Storage ya terminó, así que dejar
+ * el botón en "Subiendo imágenes" sería literalmente falso. Frame "Publicar
+ * (revisando)" — mismo `.primary-btn.is-busy`, mismos `.splash-dots`, solo
+ * cambia el texto.
  */
-type Fase = { t: 'form' } | { t: 'subiendo'; progreso: ProgresoFoto | null };
+type Fase =
+  | { t: 'form' }
+  | { t: 'subiendo'; progreso: ProgresoFoto | null }
+  | { t: 'moderando' };
 
 export default function PublicarScreen() {
   const insets = useSafeAreaInsets();
@@ -64,8 +80,12 @@ export default function PublicarScreen() {
    * huérfana `pausada` por cada intento fallido.
    */
   const [listingId, setListingId] = useState<number | null>(null);
-  /** El fallo que NO cuelga de ninguna foto: `guardarFotos()` o la activación. */
-  const [falloGeneral, setFalloGeneral] = useState(false);
+  /**
+   * El fallo que NO cuelga de ninguna foto, y cuál: `guardarFotos()` o la
+   * llamada a moderación. Los dos se reintentan, con copy distinto — ver
+   * `componerAviso`.
+   */
+  const [falloGeneral, setFalloGeneral] = useState<null | 'guardado' | 'moderacion'>(null);
   /**
    * Lo tecleado en el campo de WhatsApp, cuando el campo existe.
    *
@@ -109,6 +129,13 @@ export default function PublicarScreen() {
     (!faltaTelefono || telefonoValido(telefono));
 
   const subiendo = fase.t === 'subiendo';
+  const moderando = fase.t === 'moderando';
+  /**
+   * "Hay trabajo en curso", que es lo que de verdad decide congelar campos y
+   * apagar botones. Antes bastaba `subiendo` porque era la única fase con
+   * duración; con la moderación son dos.
+   */
+  const ocupado = fase.t !== 'form';
 
   /**
    * TODO ESTO SE DERIVA EN CADA RENDER, no se guarda.
@@ -121,13 +148,13 @@ export default function PublicarScreen() {
   const fallos = fallosDe(form.fotos);
   const aviso = componerAviso(fallos, falloGeneral);
   const hayDeterminista = fallos.some((f) => esDeterminista(f.motivo));
-  const hayTransitorio = fallos.some((f) => !esDeterminista(f.motivo)) || falloGeneral;
+  const hayTransitorio = fallos.some((f) => !esDeterminista(f.motivo)) || falloGeneral !== null;
 
   // La publicación ya existe en la base con este texto y `finalizarPublicacion`
   // no lo reescribe, así que editarlo aquí se perdería en silencio. Las FOTOS sí
   // se pueden tocar mientras no haya una subida en curso — es la única salida
   // para un fallo determinista.
-  const textoCongelado = listingId !== null || subiendo;
+  const textoCongelado = listingId !== null || ocupado;
 
   /**
    * Ref, no estado: tiene que valer ANTES del primer `await`, sin esperar a
@@ -192,8 +219,9 @@ export default function PublicarScreen() {
     if (!listoParaGuardar) return;
 
     setFase({ t: 'subiendo', progreso: null });
-    setFalloGeneral(false);
+    setFalloGeneral(null);
     const onProgreso = (progreso: ProgresoFoto) => setFase({ t: 'subiendo', progreso });
+    const onModerando = () => setFase({ t: 'moderando' });
 
     /**
      * El teléfono va PRIMERO, y el orden es deliberado — el mismo criterio que
@@ -227,6 +255,7 @@ export default function PublicarScreen() {
               userId: userId!,
               fotos: fotosParaGuardar(form.fotos),
               onProgreso,
+              onModerando,
               // Se guarda ANTES de subir, no al terminar: si la subida falla,
               // este id es lo único que hace posible el reintento.
               onListingCreado: setListingId,
@@ -235,6 +264,7 @@ export default function PublicarScreen() {
               listingId,
               fotos: fotosParaGuardar(form.fotos),
               onProgreso,
+              onModerando,
             });
 
       // Siempre: las que subieron pasan a 'storage' y las que fallaron quedan
@@ -243,14 +273,31 @@ export default function PublicarScreen() {
       setFalloGeneral(resultado.falloGeneral);
       setFase({ t: 'form' });
 
-      if (resultado.falloGeneral || fallosDe(resultado.fotos).length > 0) return;
+      if (resultado.falloGeneral !== null || fallosDe(resultado.fotos).length > 0) return;
 
-      // `replace` y no `push`: el formulario ya se envió, y "atrás" desde la
-      // confirmación no debe devolver a una pantalla que volvería a publicar.
-      router.replace({
-        pathname: '/(publicar)/creada',
-        params: { id: String(resultado.listingId) },
-      });
+      /*
+        RF-18: son TRES destinos, no uno, y los decide el veredicto que la Edge
+        Function acaba de devolver. Ninguno cambia en vivo — el cliente ESPERÓ
+        la respuesta, así que para cuando se navega el estado ya es definitivo
+        (salvo que se quede en `pendiente`, que es justo lo que esa pantalla
+        vigila con Realtime).
+
+        `replace` y no `push`: el formulario ya se envió, y "atrás" desde la
+        confirmación no debe devolver a una pantalla que volvería a publicar.
+      */
+      const params = { id: String(resultado.listingId) };
+      if (resultado.estado === 'activa') {
+        router.replace({ pathname: '/(publicar)/creada', params });
+      } else if (resultado.estado === 'bloqueada') {
+        router.replace({ pathname: '/(publicar)/no-aprobada', params });
+      } else {
+        // 'pendiente', y también cualquier valor que no debería llegar aquí:
+        // es el único destino que no le promete al usuario algo que no pasó.
+        if (resultado.estado !== 'pendiente') {
+          console.warn(`[publicar] veredicto inesperado: ${resultado.estado}`);
+        }
+        router.replace({ pathname: '/(publicar)/revision', params });
+      }
     } catch (e: any) {
       // Solo llega aquí si falló `crearListing`: `finalizarPublicacion` no
       // propaga (devuelve `falloGeneral`). No se tocó Storage, no hay nada que
@@ -273,7 +320,7 @@ export default function PublicarScreen() {
             trailing={{
               label: 'Guardar',
               onPress: publicar,
-              disabled: !listoParaGuardar || subiendo || (hayDeterminista && !hayTransitorio),
+              disabled: !listoParaGuardar || ocupado || (hayDeterminista && !hayTransitorio),
             }}
           />
         }
@@ -287,7 +334,7 @@ export default function PublicarScreen() {
           zonaEntrega={campus?.nombre}
           onAgregarFoto={agregarFoto}
           disabled={textoCongelado}
-          fotosDisabled={subiendo}
+          fotosDisabled={ocupado}
           eligiendoFotos={eligiendoFotos}
           telefono={
             faltaTelefono
@@ -317,9 +364,15 @@ export default function PublicarScreen() {
         */}
         <PrimaryButton
           label={
-            subiendo ? 'Subiendo imágenes' : hayTransitorio ? 'Reintentar' : 'Publicar artículo'
+            moderando
+              ? 'Revisando tu publicación…'
+              : subiendo
+                ? 'Subiendo imágenes'
+                : hayTransitorio
+                  ? 'Reintentar'
+                  : 'Publicar artículo'
           }
-          busy={subiendo}
+          busy={ocupado}
           onPress={publicar}
           disabled={!listoParaGuardar || (hayDeterminista && !hayTransitorio)}
           style={styles.cta}
