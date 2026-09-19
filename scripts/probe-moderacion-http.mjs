@@ -219,6 +219,37 @@ async function subirFotoLimpia(E, listingId) {
   return storagePath;
 }
 
+/**
+ * Sube una foto GENUINA con una palabra de la lista IMPRESA como texto —
+ * `upsert:false`, uuid nuevo, exactamente como `storage.ts` sube de verdad
+ * (`subirObjeto()`) — y a propósito NO le escribe fila en `listing_photos`:
+ * es la ventana real que el hueco de §1 explotaba.
+ *
+ * El texto va como SVG rasterizado a JPEG (`sharp`, ya dependencia): fondo
+ * blanco, letra grande y negra, sin ambigüedad para el OCR. No es contenido
+ * explícito ni violento — es una imagen con una palabra escrita, la misma
+ * categoría de fixture que ya usa la sección de arriba con texto TECLEADO,
+ * solo que aquí la lee Vision por OCR en vez de leerse del título.
+ */
+async function subirFotoConOcrSucio(E, listingId, palabra) {
+  const svg = `<svg width="640" height="220" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100%" height="100%" fill="white"/>
+    <text x="30" y="130" font-size="56" font-family="sans-serif" fill="black">${palabra}</text>
+  </svg>`;
+  const jpeg = await sharp(Buffer.from(svg)).jpeg().toBuffer();
+
+  const storagePath = `${listingId}/${crypto.randomUUID()}.jpg`;
+
+  const res = await fetch(`${E.API_URL}/storage/v1/object/listing-photos/${storagePath}`, {
+    method: 'POST',
+    headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}`, 'Content-Type': 'image/jpeg' },
+    body: jpeg,
+  });
+  if (!res.ok) throw new Error(`subirFotoConOcrSucio: ${res.status} ${await res.text()}`);
+
+  return storagePath;
+}
+
 async function estadoDe(E, id) {
   const res = await fetch(`${E.API_URL}/rest/v1/listings?id=eq.${id}&select=estado`, {
     headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
@@ -391,8 +422,11 @@ async function main() {
   const correoDueno = `probe-mod-dueno-${RUN}@tec.mx`;
   const correoAjeno = `probe-mod-ajeno-${RUN}@tec.mx`;
   let dueno, ajeno, propia, ajena, enPendiente, fotoEnPendiente;
+  let credencialSecret, credencialUser;
   // Fixtures propios de la sección 6 (el trigger de Storage).
   let escalable, fotoEscalable, previosVault;
+  // Fixtures propios de la sección 7 (la foto SIN fila que dispara el trigger).
+  let nuevaFotoListing, fotoNueva;
 
   try {
     dueno = await crearUsuario(E, correoDueno);
@@ -408,6 +442,25 @@ async function main() {
     propia = await crearListing(E, dueno, TITULO_LIMPIO, 'activa', DESCRIPCION_LIMPIA);
     ajena = await crearListing(E, ajeno, `RLS ModHTTP ajena ${RUN}`, 'activa');
     enPendiente = await crearListing(E, dueno, TITULO_LIMPIO, 'pendiente', DESCRIPCION_LIMPIA);
+    // DOS fixtures PROPIAS, no `propia`, y es una corrección respecto a antes
+    // de esta tarea: con `nombreDisparador` ya cableado (§7), el `name` que
+    // `conSecret` manda para probar la secret key deja de ser inerte. Es un
+    // path que NO EXISTE en Storage a propósito (solo se prueba credenciales,
+    // no evaluación), así que la descarga falla → `no_evaluable` → eje
+    // 'revisar' → escala de `activa` a `pendiente`. Medido, en DOS capas:
+    //   · reusar `propia` para esto dejaba esa fixture en `pendiente` para las
+    //     secciones 2 y 4, que asumen que sigue `activa` — la lección de T11b
+    //     (CLAUDE.md §3): no reutilizar fixtures entre secciones cuando el
+    //     estado avanza.
+    //   · y NI SIQUIERA `conSecret` y `conUser` pueden compartir UNA fixture
+    //     entre sí: `conSecret` corre primero y la deja en `pendiente`, así
+    //     que `conUser` (camino de usuario, limpio) intenta PROMOVERLA de
+    //     vuelta a `activa` — y esa transición choca con
+    //     `listings_enforce_activation_has_photos` (0 fotos reales) y
+    //     `moderarListing()` no atrapa ese error de UPDATE: se propaga como
+    //     `HTTP 500`. Medido exactamente así antes de separarlas.
+    credencialSecret = await crearListing(E, dueno, `${TITULO_LIMPIO} credSecret`, 'activa', DESCRIPCION_LIMPIA);
+    credencialUser = await crearListing(E, dueno, `${TITULO_LIMPIO} credUser`, 'activa', DESCRIPCION_LIMPIA);
 
     // `propia` NUNCA necesita foto: su estado no cambia (limpio sobre `activa`
     // es un no-op, ver sección 4), así que el `when` de
@@ -436,11 +489,11 @@ async function main() {
     igual('publishable (válida, pero sin sesión) → 401', publishable.status, 401);
 
     const conSecret = await llamar(E, 'secret', {
-      bucket_id: 'listing-photos', name: `${propia}/x.jpg`, entity_id: String(propia),
+      bucket_id: 'listing-photos', name: `${credencialSecret}/x.jpg`, entity_id: String(credencialSecret),
     });
     ok('secret key → pasa', conSecret.status === 200, `HTTP ${conSecret.status}`);
 
-    const conUser = await llamar(E, 'user', { listing_id: propia }, tDueno);
+    const conUser = await llamar(E, 'user', { listing_id: credencialUser }, tDueno);
     ok('JWT de usuario → pasa', conUser.status === 200, `HTTP ${conUser.status}`);
 
     // -----------------------------------------------------------------
@@ -479,20 +532,21 @@ async function main() {
     // -----------------------------------------------------------------
     console.log('\n== 4. Efectos sobre la base, con evaluación REAL ==');
 
-    // `propia` empezó `activa` y las tres llamadas de arriba (conSecret,
-    // conUser, dePropia) la evaluaron con el par LIMPIO. Un veredicto `limpio`
-    // sobre una fila que YA es pública no es una promoción — es un no-op — así
-    // que se queda `activa`. Si esto diera `pendiente` o `bloqueada`, sería
-    // una señal real: o el texto dejó de leerse limpio, o algo en el camino de
-    // escritura está mal.
+    // `propia` empezó `activa` y `dePropia` (sección 2) la evaluó con el par
+    // LIMPIO — es la ÚNICA llamada real que toca `propia` (las de la sección 1
+    // ahora usan sus propias fixtures, `credencialSecret`/`credencialUser`, ver
+    // arriba). Un veredicto `limpio` sobre una fila que YA es pública no es una
+    // promoción — es un no-op — así que se queda `activa`. Si esto diera
+    // `pendiente` o `bloqueada`, sería una señal real: o el texto dejó de
+    // leerse limpio, o algo en el camino de escritura está mal.
     igual('una activa evaluada limpia se queda activa (no es promoción)',
           await estadoDe(E, propia), 'activa');
 
     // La auditoría se escribe SIEMPRE, incluso cuando el estado no se movió:
     // `listing_moderacion` es historial de EVALUACIONES, no de cambios.
     const filas = await auditoriasDe(E, propia);
-    ok('cada llamada deja su fila en listing_moderacion',
-       filas.length >= 3, `${filas.length} fila(s) tras 3 llamadas`);
+    ok('la llamada dejó su fila en listing_moderacion',
+       filas.length >= 1, `${filas.length} fila(s) tras 1 llamada`);
     ok('la fila guarda el veredicto REAL (limpio) y el estado resultante',
        filas.length > 0 && filas[0].veredicto === 'limpio' &&
          filas[0].estado_resultante === 'activa',
@@ -598,6 +652,74 @@ async function main() {
         ultima.detalle.lista_tecleada.includes(PALABRA_PROHIBIDA),
       `${auditorias.length} fila(s), lista_tecleada=${JSON.stringify(ultima?.detalle?.lista_tecleada)}`);
 
+
+    // -----------------------------------------------------------------
+    console.log('\n== 7. La foto SIN FILA que dispara el trigger SE EVALÚA ==');
+
+    // `.claude/rules/moderacion.md` §1: el objeto se sube ANTES de que exista
+    // su fila en `listing_photos` — `storage.ts` sube y solo DESPUÉS
+    // `guardarFotos()` la escribe. La sección 6 de arriba usa `x-upsert` sobre
+    // una ruta YA registrada, que es el único caso donde eso coincide con "la
+    // foto que dispara el trigger" y NO ejercita el hueco. Esta sección sí:
+    // sube un objeto GENUINO (`upsert:false`, uuid nuevo, exactamente como
+    // hace `storage.ts` de verdad) y NUNCA le escribe fila — es la ventana
+    // real que el bug explotaba.
+    //
+    // POR QUÉ ESCALA A `pendiente` Y NO A `bloqueada`: la única forma de
+    // llegar a `bloqueada` por el EJE DE LA FOTO es Vision SafeSearch en
+    // `VERY_LIKELY`, contenido que este repo no sourcea ni genera ni para
+    // pruebas (mismo criterio del caso 4 de la sección de arriba y de
+    // `probe-moderacion-avatares.mjs`). La otra vía determinista —un acierto
+    // de lista vía OCR— tiene TECHO en `pendiente` por diseño
+    // (`decision.ts`, `nivelDeLista`, "EL TECHO NO ABRE UN HUECO"): nunca
+    // bloquea solo. Por eso esta sección usa una foto con la palabra
+    // prohibida IMPRESA como texto, que Vision lee por OCR real, y confirma
+    // el mismo mecanismo (¿se incluyó ESA foto en el lote de Vision?) sin
+    // tocar contenido explícito.
+    //
+    // Listing PROPIO de esta sección, no reusa `escalable`: aquel ya terminó
+    // en `bloqueada`, terminal por la regla del piso — reusarlo
+    // enmascararía si la foto nueva se evaluó o no. Título/descripción
+    // LIMPIOS (verificados 5/5 GPT + 3/3 Vision), para que el único eje que
+    // pueda mover el estado sea el de la foto.
+    nuevaFotoListing = await crearListing(
+      E, dueno, `${TITULO_LIMPIO} 7`, 'activa', DESCRIPCION_LIMPIA
+    );
+
+    igual('control: antes de subir nada la publicación está activa',
+      await estadoDe(E, nuevaFotoListing), 'activa');
+
+    fotoNueva = await subirFotoConOcrSucio(E, nuevaFotoListing, PALABRA_PROHIBIDA);
+
+    const escaloPorOcr = await esperarA(
+      async () => (await estadoDe(E, nuevaFotoListing)) === 'pendiente'
+    );
+    ok('la foto SIN fila escala la publicación de activa a pendiente',
+      escaloPorOcr, `estado final: ${await estadoDe(E, nuevaFotoListing)}`);
+
+    // La auditoría tiene que nombrar ESA foto específica, no una vieja —
+    // `detalle.fotos` es la lista completa de lo que se evaluó, y sin la
+    // unión esta foto simplemente no aparecería ahí.
+    const auditoriasNueva = await auditoriasConDetalle(E, nuevaFotoListing);
+    const ultimaNueva = auditoriasNueva.at(-1);
+    const fotoEnDetalle = Array.isArray(ultimaNueva?.detalle?.fotos)
+      ? ultimaNueva.detalle.fotos.find((f) => f.storage_path === fotoNueva)
+      : undefined;
+    ok('la foto SIN fila aparece en el detalle de auditoría, evaluada',
+      ultimaNueva?.estado_resultante === 'pendiente' &&
+        fotoEnDetalle?.estado === 'evaluada' &&
+        Array.isArray(ultimaNueva?.detalle?.lista_ocr) &&
+        ultimaNueva.detalle.lista_ocr.includes(PALABRA_PROHIBIDA),
+      `foto=${JSON.stringify(fotoEnDetalle)}, lista_ocr=${JSON.stringify(ultimaNueva?.detalle?.lista_ocr)}`);
+
+    // CONTROL NEGATIVO (corrido a mano, no automatizado — mismo criterio que
+    // los casos 6/7/8 de `.claude/rules/moderacion.md` §6.3): comentando la
+    // unión en `vision.ts` (`unirFotoDisparadora` devolviendo `pathsExistentes`
+    // tal cual) y reiniciando `functions serve`, esta sección cae en las DOS
+    // aserciones de arriba — la publicación se queda `activa` y no hay fila de
+    // auditoría nueva con esta foto. Restaurado y reverificado en verde.
+    // Resultado: 2026-09-19.
+
   } finally {
     // Vault primero: un secreto repuntado que sobreviva a la corrida deja el
     // trigger llamando a un `functions serve` que ya no está.
@@ -617,7 +739,7 @@ async function main() {
     // `pg_constraint`), pero `storage.objects` es un sistema aparte sin FK a
     // `listings`. Sin este borrado explícito, cada corrida deja un JPEG
     // huérfano en el bucket — mismo gotcha que CLAUDE.md §9 ya documenta.
-    for (const ruta of [fotoEnPendiente, fotoEscalable]) {
+    for (const ruta of [fotoEnPendiente, fotoEscalable, fotoNueva]) {
       if (!ruta) continue;
       await fetch(`${E.API_URL}/storage/v1/object/listing-photos/${ruta}`, {
         method: 'DELETE',
@@ -625,7 +747,8 @@ async function main() {
       }).catch(() => {});
     }
 
-    for (const id of [propia, ajena, enPendiente, escalable]) {
+    for (const id of [propia, ajena, enPendiente, escalable, nuevaFotoListing,
+                       credencialSecret, credencialUser]) {
       if (id) await del('listings', `id=eq.${id}`);
     }
     for (const id of [dueno, ajeno]) {

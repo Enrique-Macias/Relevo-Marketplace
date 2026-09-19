@@ -74,6 +74,7 @@ import {
   resultadosDeLote,
   ejeVision,
   textoOcrDe,
+  unirFotoDisparadora,
   MAX_BYTES_POR_LOTE,
   MAX_IMAGENES_POR_LOTE,
   MAX_BYTES_POR_IMAGEN,
@@ -587,6 +588,46 @@ const MB = 1024 * 1024;
 }
 
 igual('sin fotos no hay lotes', particionar([]).lotes.length, 0);
+
+// ---------------------------------------------------------------------------
+console.log('\n== unirFotoDisparadora(): la foto que dispara el trigger ==');
+
+// El caso que motiva la función: el objeto se sube ANTES de que exista su
+// fila en `listing_photos` (`.claude/rules/moderacion.md` §1). Sin la unión,
+// esa foto queda fuera del set que se evalúa — la aserción de abajo es
+// exactamente esa consecuencia, corregida.
+igual(
+  'arreglo vacío + disparador → un solo elemento',
+  JSON.stringify(unirFotoDisparadora([], 'a/1.jpg')),
+  JSON.stringify(['a/1.jpg'])
+);
+
+// El caso realista de Editar: varias fotos ya existentes (las viejas, que
+// `listing_photos` SÍ tiene) más la que acaba de subir. Con esto cubierto
+// aquí, gratis, no hace falta pagar un segundo request a Vision para probar
+// que el union con 3+ elementos queda bien formado.
+igual(
+  'set existente (3) + disparador nuevo → 4, el nuevo al final',
+  JSON.stringify(unirFotoDisparadora(['a/1.jpg', 'a/2.jpg', 'a/3.jpg'], 'a/4.jpg')),
+  JSON.stringify(['a/1.jpg', 'a/2.jpg', 'a/3.jpg', 'a/4.jpg'])
+);
+
+// El caso `x-upsert` de la sección de moderación de `probe-storage.mjs`: la
+// fila YA existe (es un overwrite, no un alta). Sin este guard, esa foto se
+// evaluaría DOS VECES en el mismo lote.
+igual(
+  'el disparador YA está en el set → igual, SIN duplicar',
+  JSON.stringify(unirFotoDisparadora(['a/1.jpg', 'a/2.jpg'], 'a/1.jpg')),
+  JSON.stringify(['a/1.jpg', 'a/2.jpg'])
+);
+
+// El camino del CLIENTE (`moderarListing({ puedePromover: true })`) no manda
+// `nombreDisparador`: para cuando llama, `guardarFotos()` ya escribió todo.
+igual(
+  'sin disparador (undefined) → el set intacto',
+  JSON.stringify(unirFotoDisparadora(['a/1.jpg'], undefined)),
+  JSON.stringify(['a/1.jpg'])
+);
 
 // ---------------------------------------------------------------------------
 console.log('\n== Vision: el umbral de 6 MB es CORRECTO, no arbitrario ==');

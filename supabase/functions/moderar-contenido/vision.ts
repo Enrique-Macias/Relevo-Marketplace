@@ -60,6 +60,43 @@ export const MAX_BYTES_POR_IMAGEN = 20 * 1024 * 1024;
 /** Lo que Vision acepta en un `requests[]` de 10 MB, en bytes. */
 export const MAX_BYTES_JSON_REQUEST = 10 * 1024 * 1024;
 
+// ---------------------------------------------------------------------------
+// La foto que disparó el trigger, unida al set que ya existe
+// ---------------------------------------------------------------------------
+
+/**
+ * Une el path del objeto que disparó el trigger de `storage.objects` al set
+ * de rutas que ya trae `listing_photos`, sin duplicarlo si la fila YA está
+ * (el caso `x-upsert` sobre una ruta existente: la fila anterior sigue ahí).
+ *
+ * EXISTE PORQUE EL OBJETO SE SUBE ANTES DE QUE EXISTA SU FILA. `storage.ts`
+ * sube el archivo (`subirObjeto()`) y solo DESPUÉS `guardarFotos()` (fotos de
+ * publicación) o `update foto_url` (avatar) escriben la fila que lo apunta —
+ * es el mismo orden que `publicar.ts` documenta como load-bearing (regla 2 de
+ * su docblock). En el instante en que el trigger dispara, `listing_photos`
+ * TODAVÍA NO tiene la foto que lo disparó.
+ *
+ * Sin esta unión, `evaluarListing()` lee solo lo que `listing_photos` YA
+ * tenía — el set ANTERIOR — y la foto que acaba de entrar queda evaluada por
+ * NADIE: no la ve este evento (no está en la tabla todavía) ni ninguno
+ * posterior (nada vuelve a disparar sobre ella una vez que su fila existe).
+ *
+ * ES PURA A PROPÓSITO, como el resto de este archivo (CLAUDE.md §9,
+ * `.claude/rules/moderacion.md` §6): decide QUÉ paths se evalúan, un paso
+ * antes de que `particionar()` decida CÓMO se agrupan. Vivir aquí y no inline
+ * en `index.ts` es lo que le permite a `scripts/probe-moderacion.mjs`
+ * cubrirla sin pagar un solo request a Vision.
+ */
+export function unirFotoDisparadora(
+  pathsExistentes: readonly string[],
+  nombreDisparador?: string
+): string[] {
+  if (!nombreDisparador || pathsExistentes.includes(nombreDisparador)) {
+    return [...pathsExistentes];
+  }
+  return [...pathsExistentes, nombreDisparador];
+}
+
 /**
  * El largo EXACTO en caracteres de codificar `bytes` bytes en base64.
  *

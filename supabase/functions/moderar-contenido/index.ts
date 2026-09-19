@@ -66,6 +66,7 @@ import {
   particionar,
   resultadosDeLote,
   textoOcrDe,
+  unirFotoDisparadora,
   type ResultadoFoto,
   type RespuestaVision,
 } from './vision.ts';
@@ -158,7 +159,14 @@ export default {
         }
 
         if (bucket_id === 'listing-photos') {
-          return await moderarListing(db, Number(entity_id), config, { puedePromover: false });
+          // `nombreDisparador: name` es lo que cierra el hueco de
+          // `.claude/rules/moderacion.md` §1: sin él, `evaluarListing()` solo
+          // vería el set que `listing_photos` YA tenía, y la foto que acaba
+          // de subir —cuya fila todavía no existe— no la evaluaría nadie.
+          return await moderarListing(db, Number(entity_id), config, {
+            puedePromover: false,
+            nombreDisparador: name,
+          });
         }
 
         // El `WHEN` del trigger ya filtra por bucket, así que llegar aquí
@@ -217,7 +225,20 @@ async function moderarListing(
   db: any,
   listingId: number,
   config: ConfigModeracion,
-  { puedePromover }: { puedePromover: boolean }
+  {
+    puedePromover,
+    nombreDisparador,
+  }: {
+    puedePromover: boolean;
+    /**
+     * El `name` del objeto de Storage que disparó este evento, cuando lo hay
+     * (camino del TRIGGER). `undefined` en el camino del CLIENTE: para
+     * cuando ese llama, `guardarFotos()` ya escribió todas las filas, así que
+     * no hay ninguna foto "todavía sin fila" que unir. Ver
+     * `unirFotoDisparadora()` en `vision.ts`.
+     */
+    nombreDisparador?: string;
+  }
 ): Promise<Response> {
   const { data: fila, error: errFila } = await db
     .from('listings')
@@ -230,7 +251,7 @@ async function moderarListing(
 
   const estadoActual = fila.estado as EstadoListing;
 
-  const { ejes, detalle } = await evaluarListing(db, listingId, fila, config);
+  const { ejes, detalle } = await evaluarListing(db, listingId, fila, config, nombreDisparador);
 
   const propuesto = decidirListing(ejes, estadoActual);
 
@@ -312,7 +333,9 @@ async function evaluarListing(
   db: any,
   listingId: number,
   fila: { titulo: string; descripcion: string | null },
-  config: ConfigModeracion
+  config: ConfigModeracion,
+  /** Ver el docblock de `moderarListing()` y de `unirFotoDisparadora()`. */
+  nombreDisparador?: string
 ): Promise<{ ejes: Ejes; detalle: Detalle }> {
   const { data: fotos, error: errFotos } = await db
     .from('listing_photos')
@@ -327,9 +350,15 @@ async function evaluarListing(
     );
   }
 
-  const storagePaths: string[] = (fotos ?? []).map(
+  const storagePathsBase: string[] = (fotos ?? []).map(
     (f: { storage_path: string }) => f.storage_path
   );
+
+  // La unión con la foto que disparó el evento — ver `unirFotoDisparadora()`
+  // en `vision.ts` para el porqué. En el camino del CLIENTE
+  // (`nombreDisparador` undefined) esto es un no-op: devuelve
+  // `storagePathsBase` tal cual.
+  const storagePaths = unirFotoDisparadora(storagePathsBase, nombreDisparador);
 
   const [fotosResultado, resultadoTexto] = await Promise.all([
     evaluarFotos(db, config, storagePaths, BUCKET_LISTING_PHOTOS),

@@ -66,6 +66,7 @@ paths:
 | UI de los estados nuevos (chips, guards, el 4º reparto de Detalle) | **Hecho** (Ola 3) | `mis-publicaciones.tsx`, `editar/[id].tsx`, `detalle/[id].tsx`, `confianza.ts` |
 | Las dos pantallas de veredicto | **Hecho** (Ola 3) | `(publicar)/revision.tsx`, `(publicar)/no-aprobada.tsx` |
 | Suscripción de Realtime en el cliente | **Hecho** (Ola 3) | `useVeredictoEnVivo()` en `src/lib/moderacion.ts`, consumida por `revision.tsx` |
+| `unirFotoDisparadora()`: la foto sin fila SE evalúa | **Hecho** (2026-09-19), verificado con OCR real end-to-end | `vision.ts` + `probe-moderacion.mjs` (pura) + `probe-moderacion-http.mjs` §7 |
 | **La Edge Function desplegada en REMOTO** | **NO** — `list_edge_functions` devuelve solo `send-push` | CLAUDE.md §8, pendiente 2 |
 
 **Con esto, `moderar-contenido` modera publicaciones Y avatares reales de
@@ -264,35 +265,71 @@ en un solo punto de entrada.
 `name` y `path_tokens` van **siempre de `NEW`**: un `move` cambia el nombre, y
 lo que hay que moderar es dónde quedó el objeto, no de dónde salió.
 
-### Pero `moderarListing()` DESCARTA ese `name`, y ahí hay un hueco medido (Ola 3)
+### `moderarListing()` descartaba ese `name` — **CERRADO** (2026-09-19)
 
 **Medido leyendo `index.ts` al construir Ola 3, no supuesto.** El camino de
-`listing-photos` llama a `moderarListing(db, Number(entity_id), …)` **sin pasarle
-`name`**: `evaluarListing()` re-lee `listing_photos` entera y evalúa lo que esa
-tabla tenga en ese instante. Y el objeto se sube **antes** de que exista su fila
-—`publicar.ts` (`subirPendientes` y recién `guardarFotos`), `perfil.ts`
-(`subirAvatar` y recién `update foto_url`)—, que es el mismo orden que este
-archivo ya documenta más arriba como load-bearing. O sea que, en el instante del
-trigger, **la foto que lo disparó todavía no tiene fila**. Dos consecuencias:
+`listing-photos` llamaba a `moderarListing(db, Number(entity_id), …)` **sin
+pasarle `name`**: `evaluarListing()` re-leía `listing_photos` entera y
+evaluaba lo que esa tabla tuviera en ese instante. Y el objeto se sube
+**antes** de que exista su fila —`publicar.ts` (`subirPendientes` y recién
+`guardarFotos`), `perfil.ts` (`subirAvatar` y recién `update foto_url`)—, que
+es el mismo orden que este archivo ya documenta más arriba como load-bearing.
+O sea que, en el instante del trigger, **la foto que lo disparó todavía no
+tenía fila**. Dos consecuencias, y el fix solo cierra la primera:
 
-- **Esa foto no se evalúa nunca.** Se evalúa el set ANTERIOR, y después de
-  `guardarFotos()` ya no llega ningún evento más.
+- **Esa foto no se evaluaba nunca.** Se evaluaba el set ANTERIOR, y después de
+  `guardarFotos()` ya no llegaba ningún evento más. **CERRADO.**
 - **Y se paga N veces por evaluar lo viejo.** Editar reemplazando 5 fotos de una
   publicación `activa` o `pausada` = 5 eventos × (1 Vision + 1 OpenAI) = **10
-  requests pagos**, todos sobre las fotos que están siendo reemplazadas.
+  requests pagos**, todos sobre las fotos que están siendo reemplazadas. **Sigue
+  ABIERTO, a propósito** — el fix es el mínimo pedido: unir la foto, no
+  debounce ni mover el disparador. Ver §9.
 
-**El camino de AVATARES no lo tiene**: `moderarAvatar()` sí usa `name`. La
-asimetría es la causa raíz.
+**El camino de AVATARES no lo tenía**: `moderarAvatar()` ya usaba `name` desde
+Ola 1.6. La asimetría era la causa raíz.
 
-**Por qué no se vio antes, y es la lección:** la prueba end-to-end de §6.5 usó
-`x-upsert` para sobrescribir una ruta **existente** —que sí tiene fila—, así que
-el único caso medido es justo el único donde coinciden. Un alta genuina nunca la
-tiene: `storage.ts` sube siempre con `upsert: false` y uuid nuevo.
+**El fix: `unirFotoDisparadora()`, pura, en `vision.ts`.** Une el `name` del
+objeto que disparó el trigger al set que `listing_photos` ya tiene, sin
+duplicar si la fila YA existe (el caso `x-upsert` de §6.5). Vive en `vision.ts`
+y no inline en `index.ts` por el mismo criterio que `particionar()`: es lógica
+pura, así que `scripts/probe-moderacion.mjs` la cubre de verdad desde Node, sin
+red — 4 aserciones (vacío+disparador, set de 3+disparador nuevo, disparador ya
+presente sin duplicar, y sin disparador para el camino del cliente). `index.ts`
+solo cablea: le pasa `name` en el camino del trigger y nada en el del cliente.
 
-**Publicar NO está afectado**, y por eso esto no bloqueó Ola 3: el skip de
+**Verificado end-to-end, con OCR real y no con contenido explícito.** La única
+forma de llegar a `bloqueada` por el eje de la FOTO es Vision SafeSearch en
+`VERY_LIKELY` — declinado en este repo ni para pruebas (§6.3/§6.4). El acierto
+de lista vía OCR tiene TECHO en `pendiente` por diseño (`nivelDeLista()`), así
+que la prueba de `probe-moderacion-http.mjs` §7 sube una foto GENUINA
+(`upsert:false`, uuid nuevo, **sin fila**, como `storage.ts` de verdad) con
+"clonazepam" impreso como texto, y confirma que escala de `activa` a
+`pendiente` con ESA foto —no una vieja— en el detalle de auditoría.
+
+**Un hallazgo NUEVO al verificar, sin relación con la lógica del fix: `conSecret`
+en §1 usaba un `name` que apuntaba a un objeto INEXISTENTE, y antes de este fix
+ese `name` era inerte.** Con la unión ya cableada, esa descarga fallida se
+volvía un eje `no_evaluable → 'revisar'` real, escalando la fixture compartida
+de `activa` a `pendiente` — y contaminaba las secciones siguientes, que asumían
+que seguía `activa`. Se resolvió dándole a esa aserción sus DOS propias
+fixtures (`credencialSecret`/`credencialUser`), mismo criterio de aislamiento
+que T11b/T21/T23 (CLAUDE.md §3): no reutilizar fixtures entre pasos cuando el
+estado avanza.
+
+**Y ESE MISMO síntoma destapó un bug real, sin relación con el fix, que queda
+documentado y sin tocar — ver §9, "La promoción de `moderarListing()` puede
+reventar con 500".**
+
+**Por qué no se vio antes de Ola 3, y es la lección:** la prueba end-to-end de
+§6.5 usaba `x-upsert` para sobrescribir una ruta **existente** —que sí tiene
+fila—, así que el único caso medido era justo el único donde coincidía. Un alta
+genuina nunca la tiene: `storage.ts` sube siempre con `upsert: false` y uuid
+nuevo.
+
+**Publicar NO está afectado, ni antes ni después del fix**: el skip de
 `pendiente` corta antes del `net.http_post`, así que los N eventos del alta
-cuestan cero y el alta entera son **2 requests** (1 Vision con todas las fotos en
-un lote + 1 OpenAI). Queda como deuda, con su disparador, en §9 de este archivo.
+cuestan cero y el alta entera son **2 requests** (1 Vision con todas las fotos
+en un lote + 1 OpenAI).
 
 ### El trigger se salta las publicaciones en `pendiente` — la razón es una carrera real
 
@@ -1186,26 +1223,36 @@ gratis en `probe-storage.mjs` y la escalada end-to-end en
   usuario por sí sola — todo su valor es quedar cableada para Ola 3. Activar los
   secretos antes no compra cobertura, compra riesgo.
 
-  **ACTUALIZACIÓN (Ola 3 cerrada): el motivo de arriba ya no aplica, pero
-  apareció otro, y este SÍ es una decisión abierta con un número medido.** El
-  callejón sin salida de la tabla está cerrado —`publicar.ts` crea en
-  `pendiente`, el chip dice "En revisión"/"Bloqueada", "Reactivar" y "Editar" ya
-  no se ofrecen, y Detalle pinta su `.notice`—. Lo que queda es el costo, y el
-  hueco de §1:
+  **ACTUALIZACIÓN (Ola 3 cerrada, 2026-09-19): el motivo de arriba ya no
+  aplica, Y EL HUECO DE §1 TAMPOCO — la mitad de correctness se cerró
+  (`unirFotoDisparadora()`), y queda solo la mitad de COSTO, que siempre fue una
+  decisión aparte.** El callejón sin salida de la tabla está cerrado —
+  `publicar.ts` crea en `pendiente`, el chip dice "En revisión"/"Bloqueada",
+  "Reactivar" y "Editar" ya no se ofrecen, y Detalle pinta su `.notice`—, y la
+  foto que dispara un evento ya se evalúa de verdad, incluso sin fila todavía
+  (probado end-to-end en §1/§7 de este archivo, con OCR real).
 
   | Flujo | Requests pagos | ¿Correcto? |
   |---|---|---|
   | Publicar, 5 fotos | **2** (1 Vision + 1 OpenAI, del cliente) | sí — el skip de `pendiente` deja los 5 eventos en 0 |
-  | Editar, reemplazando 5 fotos | **10** (5 Vision + 5 OpenAI, del trigger) | **no** — evalúan el set ANTERIOR, y las 5 fotos nuevas no las mira nadie |
+  | Editar, reemplazando 5 fotos | **10** (5 Vision + 5 OpenAI, del trigger) | **sí, cada evento incluye la foto que lo disparó** — pero SIGUE costando 10: cada uno de los 5 eventos re-evalúa también las que ya se habían evaluado |
   | Sobrescribir una foto (`x-upsert`, solo desde Studio) | 2 | sí — es el caso que midió §6.5 |
 
-  Tres salidas, sin recomendación escondida: **(i)** encender igual y aceptar el
-  gasto y el hueco de Editar como deuda de §9 con su disparador; **(ii)**
-  arreglar primero el `name` (pasárselo a `moderarListing()` y unirlo a los
-  paths leídos), más remedir §6.5; **(iii)** dejarlos apagados hasta que exista
-  RF-17, que es quien revisaría la cola de todos modos. **Todo Ola 3 funciona
-  igual sin los secretos**: lo único apagado es la re-moderación automática de
-  Storage.
+  Dos salidas, no tres — la que pedía "arreglar primero el `name`" ya está
+  hecha: **(i)** encender igual y aceptar el costo N-fold como deuda de §9 con
+  su disparador (debounce o mover el trigger); **(ii)** dejarlos apagados hasta
+  que exista RF-17, que es quien revisaría la cola de todos modos. **Todo Ola 3
+  funciona igual sin los secretos**: lo único apagado es la re-moderación
+  automática de Storage.
+
+  **Y una tercera cosa a saber antes de encender, sin relación con el costo:**
+  verificar el fix destapó un bug de manejo de errores, no del fix en sí —
+  `moderarListing()` puede devolver un 500 CRUDO si intenta promover una
+  publicación `pendiente` con 0 fotos reales (choca con
+  `listings_enforce_activation_has_photos`). Es angosto —el flujo normal de
+  Publicar siempre tiene ≥1 foto para cuando pide moderación— pero queda
+  documentado con su disparador en §9, "La promoción de `moderarListing()`
+  puede reventar con 500".
 
   **Exposición medida en remoto (2026-09-18)**, para que la decisión no dependa
   de una intuición: 6 cuentas, todas de alta entre el 09-07 y el 09-15, **cinco
@@ -1282,16 +1329,56 @@ RF-18, documentado como deuda ahí.
 
 ## 9. Deuda consciente de moderación — con disparador, no "algún día"
 
-- **El trigger de `listing-photos` evalúa el set ANTERIOR y nunca la foto que lo
-  disparó** (el hueco de §1, con sus dos mitades: la foto nueva sin evaluar, y N
-  evaluaciones pagas de lo viejo por cada Editar). No es alcanzable durante
-  Publicar gracias al skip de `pendiente`. **Revisar cuando:** se autoricen los
-  dos secretos de Vault en prod, o antes si aparece gasto inesperado en
-  Vision/OpenAI. **Fix:** pasarle `name` a `moderarListing()` y unirlo a los
-  paths leídos de `listing_photos` — es el mínimo que cubre la foto nueva; el
-  N-fold pide además debounce, o mover el disparador a `listing_photos`, que a
-  su vez pierde la cobertura de subidas directas al Storage API (el argumento de
-  §1), así que no es un cambio libre.
+- ~~**El trigger de `listing-photos` evalúa el set ANTERIOR y nunca la foto que lo
+  disparó.**~~ **CERRADA** (2026-09-19) — `unirFotoDisparadora()` en `vision.ts`,
+  ver §1. Solo cerró la MITAD de correctness (la foto ahora SÍ se evalúa); la
+  otra mitad queda abierta, ver la entrada siguiente.
+
+- **Cada Editar sigue pagando N evaluaciones completas sobre el set VIEJO, una
+  por foto nueva.** El fix de arriba cierra que la foto se evalúe; NO cierra el
+  costo: editar reemplazando 5 fotos sigue disparando 5 eventos × (1 Vision + 1
+  OpenAI) = **10 requests pagos**, cada uno re-evaluando también las fotos que
+  YA se habían evaluado en el evento anterior. Es DECISIÓN, no una regresión del
+  fix — se dejó fuera de alcance a propósito (no se pidió tocar el disparador ni
+  agregar debounce). **Revisar cuando:** se autoricen los dos secretos de Vault
+  en prod, o antes si aparece gasto inesperado en Vision/OpenAI. **Fix:**
+  debounce (juntar varios eventos cercanos en una sola evaluación), o mover el
+  disparador a `listing_photos` en vez de `storage.objects` — que a su vez
+  pierde la cobertura de subidas directas al Storage API (el argumento de §1),
+  así que no es un cambio libre.
+
+- **La promoción de `moderarListing()` puede reventar con 500 si el piso de
+  fotos lo bloquea — hallazgo nuevo, destapado al verificar el fix de arriba,
+  sin relación con él.** Medido: una publicación `pendiente` con CERO fotos
+  reales en `listing_photos`, evaluada limpia por el camino del CLIENTE
+  (`puedePromover: true`), propone `decidirListing(..., 'pendiente') = 'activa'`
+  — la única promoción que existe — y el `UPDATE {estado:'activa'}` que
+  `moderarListing()` ejecuta para aplicarla choca con el trigger de la BASE
+  `listings_enforce_activation_has_photos` (CLAUDE.md §3), que rechaza esa
+  transición. El error crudo de Postgres —`"Una publicación no puede activarse
+  sin fotos"`— se propaga tal cual: `if (errUpdate) return error(errUpdate.message,
+  500)` no distingue "fallo de infraestructura" de "la base rechazó una
+  transición inválida a propósito", así que el llamador recibe un 500 sin
+  ninguna pista de qué pasó. Reproducido exacto (curl directo, sin el probe):
+  activar el trigger sobre una `activa` sin fotos con una foto FALSA que falla
+  al descargar → escala a `pendiente` (eje `no_evaluable → 'revisar'`, correcto)
+  → la siguiente evaluación limpia por el cliente intenta promoverla → 500.
+  **¿Es alcanzable en producción, y no solo en un test?** Sí, aunque angosto: el
+  cliente solo pide moderación tras `guardarFotos()` con éxito TOTAL
+  (`finalizarPublicacion()` corta antes si `hayFallos`), así que el flujo normal
+  de Publicar siempre tiene ≥1 foto para cuando llama. El camino real es el del
+  TRIGGER: si el `download()` de una foto genuina falla de forma transitoria
+  (Storage caído un instante, el objeto se borra entre que sube y que el trigger
+  corre), esa foto entra como `no_evaluable`, escala a `pendiente`, y si esa
+  publicación tenía 0 fotos EN LA BASE en ese momento (ej. era la primera y
+  única, y algo la borró después), la próxima evaluación limpia por cualquier
+  camino queda atrapada devolviendo 500 en vez de quedarse en `pendiente`.
+  **Revisar cuando:** aparezca un 500 real de `moderar-contenido` en los logs de
+  producción con ese mensaje. **Fix:** que `moderarListing()` distinga ese
+  SQLSTATE (o el texto del mensaje) del resto de errores de UPDATE, y en ese
+  caso se quede en el estado actual en vez de propagar un 500 — la falla es
+  segura de cualquier forma (`pendiente` no es público), así que no hace falta
+  que sea ruidosa hacia el llamador.
 
 - **Toda re-evaluación vuelve a tirar el dado de GPT sobre texto que no cambió.**
   `veredicto()` mezcla tres ejes deterministas con uno que es un modelo, y

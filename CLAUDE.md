@@ -1649,11 +1649,15 @@ de los route groups).
    **El paso 4 tiene una decisión pendiente antes de ejecutarse, con su número
    medido** (ver `.claude/rules/moderacion.md` §7): encenderlo hace que **editar
    las fotos** de una publicación cueste una evaluación paga COMPLETA por cada
-   objeto subido, y que además esas evaluaciones miren el set ANTERIOR —el objeto
-   se sube antes de que exista su fila en `listing_photos`, así que la foto que
-   disparó el trigger no la evalúa nadie—. Publicar NO tiene ese problema: el
-   skip de `pendiente` deja los N eventos en cero y el alta cuesta 2 requests
-   (1 Vision + 1 OpenAI) sin importar cuántas fotos tenga.
+   objeto subido — 5 fotos reemplazadas = 10 requests (5 Vision + 5 OpenAI), uno
+   por evento. **Eso sigue igual tras cerrar el hueco de "la foto no la evalúa
+   nadie" (2026-09-19, `unirFotoDisparadora()` en `vision.ts`):** cada evento YA
+   incluye la foto que lo disparó aunque su fila no exista todavía, pero cada uno
+   de los 5 eventos sigue re-evaluando también las que ya se habían evaluado en
+   el anterior — el fix cerró la CORRECTNESS, no el COSTO, que es una decisión
+   aparte (debounce o mover el disparador, sin tocar). Publicar NO tiene ese
+   problema: el skip de `pendiente` deja los N eventos en cero y el alta cuesta 2
+   requests (1 Vision + 1 OpenAI) sin importar cuántas fotos tenga.
 
    Verificación de que siguen sin crearse:
    `select count(*) from vault.secrets where name like 'moderar_contenido_%';`
@@ -1687,6 +1691,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - El trigger de Storage evalúa el set ANTERIOR de fotos y nunca la que lo disparó → `moderacion.md`
 - Toda re-evaluación vuelve a tirar el dado de GPT sobre texto que no cambió → `moderacion.md`
 - La cola de `pendiente` mezcla lo marcado por moderación con lo abandonado a media subida → `moderacion.md`
+- La promoción de `moderarListing()` puede reventar con 500 si intenta activar una publicación con 0 fotos → `moderacion.md`
 - El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
 - El reintento solo distingue DOS errores deterministas → `publicar-fotos.md`
 - Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila → `publicar-fotos.md`
