@@ -155,24 +155,45 @@ export default function PerfilScreen() {
    * una recarga completa por cada aviso. Aquí el ciclo se cierra solo: tras el
    * refresh, `profile.foto_url` ya es `null` y el guard de abajo corta.
    *
-   * `avisadoRef` es el cinturón para la ventana en la que `refreshProfile()`
-   * todavía no resolvió y otro foco vuelve a recargar — mismo idioma que el
-   * `primerFoco` de arriba.
+   * `avisadoParaRef` GUARDA EL PATH AVISADO, NO UN BOOLEANO, y esa diferencia
+   * es un bug real encontrado en pruebas manuales (2026-09-21), no una
+   * precaución teórica. La primera versión usaba un booleano como cinturón para
+   * la ventana en la que `refreshProfile()` todavía no resolvió — y **esta
+   * pantalla es un TAB que no se desmonta** (ver el docblock de arriba), así que
+   * ese booleano no era un cinturón sino un PESTILLO PERMANENTE: tras el primer
+   * aviso quedaba en `true` para el resto de la sesión y **el segundo avatar
+   * moderado ya no avisaba nunca**. Con el path, cada moderación es un evento
+   * distinto (cada subida estrena uuid, `rutaAvatar()`) y solo se silencia la
+   * repetición del MISMO. Es exactamente el criterio que `Avatar.tsx` ya usa
+   * para `pathFallido` — "se guarda el PATH que falló, no un booleano"— y que
+   * aquí se había perdido.
+   *
+   * **La sesión NO se estanca, y conviene saberlo porque es la hipótesis
+   * natural al ver este síntoma:** `editar-perfil/index.tsx` le pasa
+   * `onGuardada: refreshProfile` a `useFotoPerfil()`, que lo espera tras cada
+   * subida exitosa (`src/lib/perfil.ts`), así que `profile.foto_url` sí vale el
+   * path nuevo cuando llega el segundo veredicto. El pestillo era lo único roto.
+   *
+   * Y el síntoma que acompaña —"el header del Feed no muestra la foto nueva ni
+   * un instante"— tampoco es un segundo bug: con `foto_url` apuntando a un
+   * objeto ya borrado, `expo-image` falla y `Avatar` cae a iniciales por su
+   * `onError`. Se ve idéntico a que la sesión tuviera `null`.
    *
    * LÍMITE CONOCIDO, documentado como deuda en `.claude/rules/cuenta-perfil.md`:
    * si el usuario no abre Perfil, o no ve el toast, no queda rastro. Un aviso
    * persistente exige frame (CLAUDE.md §0 regla 4) y dónde guardar el "ya se lo
    * dijimos", o sea esquema.
    */
-  const avisadoRef = useRef(false);
+  const avisadoParaRef = useRef<string | null>(null);
   useEffect(() => {
-    if (avisadoRef.current) return;
     // Sin foto conocida no hubo transición que avisar (cuenta que nunca puso
-    // una, o aviso ya dado).
-    if (!profile?.foto_url) return;
+    // una, o aviso ya dado y la sesión ya refrescada).
+    const conocida = profile?.foto_url;
+    if (!conocida) return;
     if (!perfil || perfil.fotoUrl !== null) return;
+    if (avisadoParaRef.current === conocida) return;
 
-    avisadoRef.current = true;
+    avisadoParaRef.current = conocida;
     mostrar('Quitamos tu foto de perfil porque no pasó la revisión de contenido', 'error');
     // Para que el header del Feed deje de pintar la foto ya borrada.
     void refreshProfile();

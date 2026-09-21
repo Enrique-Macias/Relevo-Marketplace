@@ -609,8 +609,35 @@ Lo que no se ve en el diff:
     que leer `profile`, que `refreshProfile()` cambia — y eso lo volvería
     dependencia del efecto que hace las SEIS consultas de la pantalla, o sea una
     recarga completa por cada aviso. Separado, el ciclo se cierra solo: tras el
-    refresh, `profile.foto_url` ya es `null` y el guard corta. El `avisadoRef` es
-    el cinturón para la ventana en la que ese refresh todavía no resolvió.
+    refresh, `profile.foto_url` ya es `null` y el guard corta.
+  - **El guard de repetición GUARDA EL PATH AVISADO, NO UN BOOLEANO — y llegó
+    ahí por un bug real, cazado en pruebas manuales el mismo día (2026-09-21).**
+    La primera versión usaba un booleano (`avisadoRef`) como cinturón para la
+    ventana en la que `refreshProfile()` todavía no resolvió. **Perfil es un TAB
+    que no se desmonta** —lo dice el docblock de la propia pantalla, tres
+    párrafos más arriba en este mismo archivo— así que ese booleano no era un
+    cinturón sino un **pestillo permanente**: el primer avatar moderado avisaba,
+    quedaba en `true`, y **el segundo ya no avisaba nunca**, con cualquier foto y
+    cualquier timing. Con el path, cada moderación es un evento distinto (cada
+    subida estrena uuid, `rutaAvatar()`) y solo se silencia la repetición del
+    MISMO. Es el criterio que `Avatar.tsx` ya tenía escrito para `pathFallido`
+    —"se guarda el PATH que falló, no un booleano"— y que aquí se había perdido.
+  - **La hipótesis natural al ver ese síntoma es OTRA y está descartada, así que
+    conviene no volver a recorrerla:** "la sesión se estanca en `null` porque
+    nadie llama a `refreshProfile()` tras subir un avatar". **Falso**:
+    `editar-perfil/index.tsx` le pasa `onGuardada: refreshProfile` a
+    `useFotoPerfil()`, que lo espera tras cada subida exitosa (`perfil.ts`), y
+    `completar-perfil.tsx` hace lo mismo. Son CUATRO los llamadores de
+    `refreshProfile()` en el repo, no uno. **Y por eso NO hay que meter el
+    refresh dentro de `guardarFotoPerfil()`:** duplicaría la lectura del perfil
+    en cada cambio de foto y le daría a un módulo de `src/lib/` una dependencia
+    del contexto de sesión que su propio docblock declara que no tiene.
+  - **El síntoma que acompaña tampoco es un segundo bug: "el header del Feed no
+    muestra la foto nueva ni un instante".** Con `foto_url` apuntando a un objeto
+    ya borrado, `expo-image` falla y `Avatar` cae a iniciales por su `onError`
+    (`Avatar.tsx`). Desde afuera se ve **idéntico** a que la sesión tuviera
+    `null`, así que ese síntoma no sirve para diagnosticar: el único observable
+    que distinguía algo era la ausencia del toast.
   - **Solo en Perfil, y no también en "Editar perfil".** A esa pantalla solo se
     llega DESDE Perfil, así que Perfil corre siempre primero y deja la sesión en
     `null`; una segunda detección no podría dispararse nunca y sería código
@@ -622,6 +649,15 @@ Lo que no se ve en el diff:
 - **El aviso del avatar borrado se pierde si el usuario no abre Perfil, o si no
   ve el toast.** Es el límite consciente de la pieza de arriba: un toast se va a
   los 4s y no deja rastro, y la detección solo corre cuando esa pantalla carga.
+  **Y hay un tercer camino por el que se pierde, más angosto y sin cerrar:** si la
+  moderación alcanza a nulificar `foto_url` ANTES de que el `refreshProfile()`
+  posterior a la subida lo lea, la sesión nunca llega a tener el path nuevo y la
+  transición no existe para nadie. Es improbable —el veredicto tarda segundos
+  (descarga del objeto + Vision) y ese refresh ocurre milisegundos después del
+  `update`— pero no imposible, y desde afuera es **indistinguible** del pestillo
+  de arriba: en los dos casos el único síntoma es que no sale el toast. Por eso
+  la prueba manual de esta pieza tiene que ser de DOS eventos con fotos
+  distintas, no de uno.
   **Revisar cuando:** ocurra cualquiera de las dos, y son dos porque la primera
   puede no llegar nunca — (1) alguien reporte que su foto de perfil desapareció
   sin explicación; (2) se modere el avatar de una cuenta que no sea de prueba,
