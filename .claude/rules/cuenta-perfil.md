@@ -584,6 +584,60 @@ Lo que no se ve en el diff:
   controles negativos se corrieron uno por uno y cada uno cae en un solo sitio —
   ver la tabla en CLAUDE.md §3.
 
+- **El avatar borrado por moderación AHORA AVISA (RF-18 Ola 4, 2026-09-21), y
+  hasta entonces las iniciales volvían en silencio.** `moderarAvatar()`
+  (`supabase/functions/moderar-contenido/index.ts`) borra el objeto y pone
+  `foto_url` en `null` cuando Vision da `VERY_LIKELY`. El enforcement existía
+  desde Ola 1.6; lo que no existía era que el usuario se enterara de POR QUÉ.
+  Cinco cosas que no se ven en el diff:
+  - **Cuándo se enteraba antes, por superficie, y por qué era incoherente:** en
+    Perfil, al reenfocar el tab (esa pantalla refetchea en cada foco) pero sin
+    explicación; en "Editar perfil", al re-entrar, tampoco; **y en el header del
+    Feed, NUNCA** — pinta `profile.foto_url` de `SessionProvider`, que se lee una
+    vez por `userId` y solo mueve `refreshProfile()`. O sea que la foto ya
+    borrada podía seguir pintada ahí hasta reiniciar la app, servida desde el
+    disco (`Avatar` usa `cachePolicy="disk"`). Cosmético y solo para el propio
+    dueño —las demás superficies leen `foto_url` del servidor, que ya es
+    `null`—, pero incoherente.
+  - **La señal es INEQUÍVOCA, y por eso alcanza con comparar dos valores en vez
+    de inventar un campo.** El cliente jamás escribe `null` en esa columna:
+    `guardarFotoPerfil()` siempre escribe un path, y `guardarPerfil()` ni
+    siquiera la incluye en `CambiosPerfil`. El único productor de `null` es la
+    Edge Function. La detección compara lo último que la SESIÓN sabía
+    (`profile.foto_url`) contra lo recién traído por `fetchPerfilPublico()`.
+  - **Va en su propio efecto y no dentro del `.then` de la carga.** Ahí tendría
+    que leer `profile`, que `refreshProfile()` cambia — y eso lo volvería
+    dependencia del efecto que hace las SEIS consultas de la pantalla, o sea una
+    recarga completa por cada aviso. Separado, el ciclo se cierra solo: tras el
+    refresh, `profile.foto_url` ya es `null` y el guard corta. El `avisadoRef` es
+    el cinturón para la ventana en la que ese refresh todavía no resolvió.
+  - **Solo en Perfil, y no también en "Editar perfil".** A esa pantalla solo se
+    llega DESDE Perfil, así que Perfil corre siempre primero y deja la sesión en
+    `null`; una segunda detección no podría dispararse nunca y sería código
+    muerto.
+  - **Un toast, así que ningún frame nuevo** — la excepción explícita de §0
+    regla 4, igual que el aviso de "Completar perfil" de más arriba. Copy:
+    *"Quitamos tu foto de perfil porque no pasó la revisión de contenido"*.
+
+- **El aviso del avatar borrado se pierde si el usuario no abre Perfil, o si no
+  ve el toast.** Es el límite consciente de la pieza de arriba: un toast se va a
+  los 4s y no deja rastro, y la detección solo corre cuando esa pantalla carga.
+  **Revisar cuando:** ocurra cualquiera de las dos, y son dos porque la primera
+  puede no llegar nunca — (1) alguien reporte que su foto de perfil desapareció
+  sin explicación; (2) se modere el avatar de una cuenta que no sea de prueba,
+  hoy observable **solo** en los logs de la Edge Function (`supabase functions
+  logs moderar-contenido`) buscando una respuesta con `accion: 'borrar'`.
+  **Y el (2) tiene una trampa medida:** un borrado EXITOSO no imprime nada — el
+  único `console.warn` de ese camino es el del guard de la carrera, o sea el caso
+  en que NO se nulificó `foto_url`—, y los avatares tampoco escriben en
+  `listing_moderacion` (`moderacion.md` §6.4). La señal durable no existe, y esa
+  ausencia es la mitad del problema: el mismo registro que haría detectable el
+  disparador es el que el fix necesita. **Fix**, en este orden: (1) el frame del
+  aviso persistente en `relevo-app.html` (§0 regla 4); (2) dónde vive el "ya se
+  lo dijimos" —una columna en `users` o un valor nuevo de `notification_type`,
+  que cuesta DOS migraciones por el `ALTER TYPE` partido, como
+  `20260917000458`/`:459`—; (3) recién ahí el cliente.
+
 - **La base no ata `users.campus_id` a `users.universidad_id`, y quien sostiene
   esa coherencia es el cliente — ahora en DOS lugares.** No hay FK compuesta ni
   `check` que impida guardar un campus de otra universidad: son dos FKs sueltas

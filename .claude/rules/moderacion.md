@@ -67,6 +67,8 @@ paths:
 | Las dos pantallas de veredicto | **Hecho** (Ola 3) | `(publicar)/revision.tsx`, `(publicar)/no-aprobada.tsx` |
 | Suscripción de Realtime en el cliente | **Hecho** (Ola 3) | `useVeredictoEnVivo()` en `src/lib/moderacion.ts`, consumida por `revision.tsx` |
 | `unirFotoDisparadora()`: la foto sin fila SE evalúa | **Hecho** (2026-09-19), verificado con OCR real end-to-end | `vision.ts` + `probe-moderacion.mjs` (pura) + `probe-moderacion-http.mjs` §7 |
+| Aviso al usuario cuando su avatar se borra por moderación | **Hecho** (Ola 4, 2026-09-21) | `(tabs)/perfil.tsx` + §8 de este archivo |
+| Verificación manual de Realtime (runbook) | **Runbook escrito y observabilidad puesta**; la corrida la hace el usuario | §4.2 y §6.2 |
 | **La Edge Function desplegada en REMOTO** | **SÍ** (2026-09-19) — `list_edge_functions` da `moderar-contenido` **ACTIVE**, `version: 1` | CLAUDE.md §8, "Hecho" |
 
 **Con esto, `moderar-contenido` modera publicaciones Y avatares reales de
@@ -743,6 +745,82 @@ dos migraciones, como `20260917000458`/`:459`) y el push **hoy no entrega**
 que sería infraestructura nueva para una entrega que de todos modos no
 llegaría todavía.
 
+**Los cuatro requisitos están CUMPLIDOS desde la Ola 3**, en
+`useVeredictoEnVivo()` (`src/lib/moderacion.ts`), que es la única llamada a
+`.channel()` del repo. Lo que se sumó en Ola 4 es un quinto que no estaba
+escrito y que hace falta para poder verificar el cuarto:
+
+5. **El canal tiene que poder GRITAR que no conectó.** `.subscribe()` acepta un
+   callback `(status, err)` con cuatro valores
+   (`REALTIME_SUBSCRIBE_STATES`: `SUBSCRIBED`, `TIMED_OUT`, `CLOSED`,
+   `CHANNEL_ERROR`) y se estaba llamando sin él. Con el requisito 4 funcionando,
+   eso vuelve **indistinguible** un canal muerto de uno sano: el veredicto llega
+   igual, por el refetch. Los dos primeros salen por `console.warn`; los otros
+   dos por `console.log`, y `CLOSED` es además lo que hace observable el
+   requisito 2 (un `CLOSED` por cada `SUBSCRIBED` = no quedó canal abierto).
+   Se imprime también **por qué vía** llegó cada veredicto: sin eso, "llegó" y
+   "Realtime funciona" son la misma frase. Los logs no se devuelven desde el
+   hook —`revision.tsx` no los pintaría, y un campo sin consumidor es lo que
+   este repo evita— ni van gateados por `__DEV__`: eso haría que el dev build y
+   el de tienda se comporten distinto justo en el camino que se está
+   verificando. Medido: nada strippea `console.*` aquí (no hay
+   `babel.config.js`, ni `metro.config.js`, ni `transform-remove-console`, y
+   `drop_console` no aparece en `@expo/metro-config`/`metro-config`/
+   `babel-preset-expo`) — pero tampoco hay recolector de logs, así que en
+   release solo los lee quien enchufe el aparato a Xcode o a `adb logcat`.
+
+**No hace falta tocar la propagación del token a Realtime.** `supabase-js`
+llama solo a `realtime.setAuth(token)` en `INITIAL_SESSION`/`SIGNED_IN`/
+`TOKEN_REFRESHED` (`node_modules/@supabase/supabase-js/dist/index.mjs`,
+`_handleTokenChanged`), que es exactamente con lo que el gate por
+`session.access_token` del requisito 3 es consistente.
+
+### 4.2. El runbook de verificación de Realtime (manual, por CLAUDE.md §6)
+
+**Cómo llegar a la pantalla.** El camino real —publicar algo que caiga en
+`pendiente`— cuesta 2 requests a Vision/OpenAI y **no es determinista**: los
+ejes con techo en `pendiente` (OCR, `datos_contacto`) pasan por GPT (§6.3), así
+que puede aterrizar en "Publicación creada". El camino determinista y gratis es
+poner `estado = 'pendiente'` a mano en Studio sobre una publicación propia y
+abrir la pantalla por deep link con el scheme de `app.json`:
+
+```bash
+# iOS — el único entorno disponible hoy
+xcrun simctl openurl booted "relevomarketplace:///revision?id=<ID>"
+# Android — cuando exista el dev build
+adb shell am start -W -a android.intent.action.VIEW -d "relevomarketplace:///revision?id=<ID>"
+```
+
+El grupo `(publicar)` no aparece en la URL (son route groups, el mismo hecho que
+causó la colisión de `index.tsx` de `notificaciones-push.md`), y la pantalla
+solo lee `id` de los params.
+
+**Plataformas: hoy iOS y solo iOS, y no es una omisión.** El repo tiene carpeta
+`ios/` y **no tiene `android/`** — nunca se corrió un prebuild de Android en
+esta máquina. Y para ESTE runbook alcanza, a diferencia de otros pendientes:
+lo que se ejercita (el websocket de Realtime, `useFocusEffect`, `removeChannel`)
+es JS puro de supabase-js y Expo Router, sin ningún módulo nativo de por medio.
+Es lo contrario del pendiente del header `Authorization` de `expo-image`
+(`publicar-fotos.md`), que SÍ exige un Android real porque el bug vive en
+Fresco, y del de push (CLAUDE.md §8), que exige credenciales por tienda.
+
+| Caso | Qué se hace | Qué debe verse |
+|---|---|---|
+| 1 — camino feliz | con la pantalla abierta, mover `estado` a `'activa'` desde Studio; repetir con `'bloqueada'` | navega a "Publicación creada" / "no aprobada" **sin tocar la app**, y el log dice **`por REALTIME`** |
+| 2 — el piso, con Realtime apagado | `alter publication supabase_realtime drop table public.listings` **en LOCAL**, repetir el caso 1, salir de la pantalla y volver | el estado NO llega solo; al reenfocar sí navega, y el log dice **`por REFETCH`** |
+| 3 — el cleanup | entrar y salir de la pantalla varias veces | un `CLOSED` por cada `SUBSCRIBED`; si se acumulan `SUBSCRIBED` sueltos, el canal quedó abierto |
+
+**Lo que hace que el caso 2 no pase por la razón equivocada:** el
+`select * from pg_publication_tables where pubname='supabase_realtime'` **antes
+y después** del `alter`, y que el log siga diciendo **`SUBSCRIBED`**. Quitar la
+tabla de la publicación no hace fallar la suscripción —el canal conecta igual,
+solo deja de entregar—, así que un `CHANNEL_ERROR` ahí significaría otra cosa, y
+un `por REALTIME` significaría que el `drop` no se aplicó. Es literalmente el
+consejo de CLAUDE.md §9: imprimir QUÉ se está comparando contra QUÉ antes de
+confiar en un verde. Restaurar con `alter publication supabase_realtime add
+table public.listings` en el mismo paso, y **nunca sobre la publicación de
+REMOTO**.
+
 ---
 
 ## 5. Rework de `publicar.ts` — diagnóstico de impacto completo
@@ -928,12 +1006,17 @@ ve.
   no se movieron: sus fixtures insertan con la secret key, así que un rojo ahí
   habría significado que el `with_check` estaba atrapando a `service_role`. La
   tabla de qué variante cae en qué aserción está en CLAUDE.md §3.
-- **Realtime: PENDIENTE de correrse a mano**, y es lo único de Ola 3 que no se
-  puede verificar desde aquí. Publicar, ver la pantalla de revisión, mover el
-  estado a mano desde Studio, confirmar que llega. **Y confirmar el fallback con
-  Realtime apagado a propósito** (`alter publication supabase_realtime drop
-  table public.listings`, con `pg_publication_tables` antes y después) — probar
-  solo el camino feliz no dice si el piso existe.
+- **Realtime: sigue siendo manual, y desde 2026-09-21 es CONCLUYENTE.** El
+  runbook completo (los tres casos, cómo llegar a la pantalla gratis, y por qué
+  iOS alcanza) vive en §4.2 de este archivo. Lo que cambió no es el
+  procedimiento sino que ahora se puede distinguir un resultado bueno de uno que
+  solo lo parece: antes, con el piso del refetch funcionando, un canal que jamás
+  conectaba se veía **idéntico** a uno que entregaba —el veredicto llegaba de
+  todos modos—, así que la corrida salía verde sin haber probado Realtime en
+  absoluto. Es la familia de fallos de CLAUDE.md §9. El fallback se sigue
+  probando apagando la publicación a propósito (`alter publication
+  supabase_realtime drop table public.listings`, **en LOCAL**, con
+  `pg_publication_tables` antes y después).
 - **`C` (la migración de Realtime ya aplicada):** `select * from
   pg_publication_tables where pubname='supabase_realtime'` antes y después —
   ya corrido una vez al aplicar `20260917000460`, repetible.
@@ -1306,9 +1389,36 @@ PRODUCCIÓN: HECHO (2026-09-19)** (ver Ola 2 arriba). Es el paso que convirtió
 "verificado en local" en "Hecho" — RF-18 protege de verdad en remoto, probado
 con los dos veredictos reales.
 
-**Ola 4:** Realtime en el cliente + su fallback por refetch (§4.1); avatares
-(§1 cubre el trigger que los toca; el enforcement — borrar objeto + `foto_url
-= null` — es el pendiente de esta ola).
+**Ola 4 — y esta línea decía algo FALSO hasta 2026-09-21, que es la lección de
+la ola.** Decía: *"Realtime en el cliente + su fallback por refetch (§4.1);
+avatares (§1 cubre el trigger que los toca; el enforcement — borrar objeto +
+`foto_url = null` — es el pendiente de esta ola)"*. **Las dos mitades ya estaban
+hechas cuando se leyó**, y las dos contradecían a la tabla de estado del
+encabezado de este mismo archivo:
+
+- el enforcement de avatares es de la **Ola 1.6** (`moderarAvatar()` en
+  `index.ts`, con sus 4 casos en §6.4) — esta línea es anterior a esa ola y
+  nunca se actualizó;
+- la suscripción de Realtime es de la **Ola 3** (`useVeredictoEnVivo()` en
+  `src/lib/moderacion.ts`, consumida por `revision.tsx`), con los cuatro
+  requisitos de §4.1 cumplidos.
+
+O sea que planear Ola 4 desde esta línea habría reconstruido dos cosas que ya
+existían. **Moraleja, hermana de la de los conteos de migraciones de CLAUDE.md
+§3:** un mapa de olas es un plan, no un estado; cuando la prosa del plan y la
+tabla de estado discrepan, **gana la tabla**, y antes de confiar en cualquiera
+de las dos se mira el código.
+
+**Lo que de verdad quedaba, y se hizo (2026-09-21):**
+
+1. **La verificación manual de Realtime**, que §6.2 llevaba marcada PENDIENTE —
+   y que no era concluyente sin un cambio previo: `.subscribe()` no llevaba
+   callback de estado, así que un `CHANNEL_ERROR` era invisible y el piso del
+   refetch entregaba el veredicto igual. Se sumó observabilidad mínima
+   (estado del canal + por qué vía llegó cada veredicto). Ver §4.1.
+2. **El aviso del avatar borrado**, que es lo único que faltaba del lado del
+   CLIENTE una vez que el enforcement ya existía: hasta ahora las iniciales
+   volvían en silencio. Ver §8.
 
 **Lo importante del mapa:** C, D y los dos spikes no dependen de nada entre
 sí y son los que más riesgo quitan más adelante — aunque se consuman en olas
@@ -1339,6 +1449,25 @@ Sin `pendiente` de avatar porque `users` no tiene columna de estado para la
 foto y el bucket es público — crearlo invalidaría la premisa escrita que
 justifica el bucket público (`cuenta-perfil.md:484-485`). Fuera de alcance de
 RF-18, documentado como deuda ahí.
+
+**El AVISO al usuario llegó después, en Ola 4 (2026-09-21), y es lo único que
+faltaba de este camino del lado del cliente.** El enforcement estaba completo
+desde Ola 1.6, pero las iniciales volvían **en silencio** y en momentos
+distintos según la pantalla: en Perfil al reenfocar el tab, en el header del
+Feed nunca (pinta `profile.foto_url` de la sesión, que solo mueve
+`refreshProfile()`). Hoy `(tabs)/perfil.tsx` detecta la transición y avisa con un
+toast, además de refrescar la sesión para que el Feed deje de pintar la foto ya
+borrada. El detalle vive en `cuenta-perfil.md`; lo que importa saber desde aquí
+son dos cosas:
+
+- **La señal es inequívoca y por eso alcanza con compararla:** el ÚNICO
+  productor de `foto_url = null` es `moderarAvatar()`. El cliente jamás escribe
+  `null` ahí (`guardarFotoPerfil()` siempre escribe un path; `guardarPerfil()`
+  ni incluye la columna).
+- **Un toast NO exige frame** (CLAUDE.md §0 regla 4, la excepción explícita), y
+  por eso esta pieza no tocó `relevo-app.html` ni el esquema. Lo que sí quedó
+  abierto —un aviso que sobreviva a no verlo— sí los exigiría, y está como deuda
+  con disparador en `cuenta-perfil.md`.
 
 ---
 

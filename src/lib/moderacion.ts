@@ -9,6 +9,7 @@
  * `src/lib/push.ts` lo es con `expo-notifications`.
  */
 
+import { REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -145,6 +146,24 @@ export async function solicitarModeracion(listingId: number): Promise<EstadoMode
  * suya en cualquier estado — eso último es load-bearing, porque Realtime evalúa
  * la RLS del suscriptor: si alguien endurece esa policy, el vendedor deja de
  * enterarse de su propio veredicto.
+ *
+ * LOS LOGS NO SON DEBUG OLVIDADO: son lo único que hace VERIFICABLE al
+ * requisito 4. Con el piso funcionando, un canal que nunca conecta se ve
+ * exactamente igual que uno que entrega —el veredicto llega de todos modos—,
+ * así que la corrida de verificación saldría verde sin haber probado Realtime en
+ * absoluto. Es el patrón que CLAUDE.md §9 advierte: en este repo, lo que no
+ * falla ruidosamente es lo que hay que mirar dos veces. De ahí que se imprima el
+ * estado del canal Y por qué vía llegó cada veredicto.
+ *
+ * NO van gateados por `__DEV__` —que además no se usa en ningún lado de `src/`—
+ * porque eso haría que el dev build y el build de tienda se comporten distinto
+ * justo en el camino que hay que verificar. Alcance honesto: nada strippea
+ * `console.*` en este proyecto (no hay `babel.config.js` ni
+ * `transform-remove-console`), pero tampoco hay recolector de logs, así que en
+ * release solo los lee quien tenga el aparato enchufado a Xcode o `adb logcat`.
+ *
+ * Y NO se devuelven como parte del valor del hook: `revision.tsx` no los
+ * pintaría, y un campo sin consumidor es justo lo que este repo evita.
  */
 export function useVeredictoEnVivo(listingId: number): {
   titulo: string | null;
@@ -156,13 +175,36 @@ export function useVeredictoEnVivo(listingId: number): {
   const [titulo, setTitulo] = useState<string | null>(null);
   const [estado, setEstado] = useState<EstadoListing | null>(null);
 
+  /**
+   * El último estado conocido, en un REF y no leído del state.
+   *
+   * `leer()` tiene que compararse contra él para saber si lo que trajo es un
+   * cambio o la carga inicial, y hacerlo con `estado` lo metería en las
+   * dependencias de su `useCallback` — que es justo lo que dispara el efecto de
+   * abajo (`useEffect(() => leer(), [leer])`), o sea un bucle de lecturas.
+   */
+  const estadoRef = useRef<EstadoListing | null>(null);
+
   const leer = useCallback(() => {
     if (Number.isNaN(listingId)) return;
     fetchListingById(listingId)
       .then((l) => {
         if (!l) return;
         setTitulo(l.titulo);
+
+        const previo = estadoRef.current;
+        estadoRef.current = l.estado;
         setEstado(l.estado);
+
+        // SOLO si cambió. La primera lectura (previo `null`) es la carga de la
+        // pantalla, no un veredicto: anunciarla como "por refetch" volvería
+        // ilegible el runbook, que se apoya en esta línea para distinguir qué
+        // vía entregó.
+        if (previo !== null && previo !== l.estado) {
+          console.log(
+            `[moderacion] veredicto de ${listingId} por REFETCH: ${previo} → ${l.estado}`
+          );
+        }
       })
       .catch((e: any) =>
         console.warn('[moderacion] no se pudo leer la publicación:', e?.message ?? e)
@@ -203,10 +245,31 @@ export function useVeredictoEnVivo(listingId: number): {
         },
         (payload) => {
           const nuevo = (payload.new as { estado?: EstadoListing } | null)?.estado;
-          if (nuevo) setEstado(nuevo);
+          if (!nuevo) return;
+
+          // SIN condicionar a que haya cambiado, al revés que el refetch: que
+          // llegue un evento ES la prueba de que Realtime entrega, y es
+          // exactamente lo que hay que poder afirmar al apagar la publicación a
+          // propósito para probar el piso.
+          console.log(`[moderacion] veredicto de ${listingId} por REALTIME: ${nuevo}`);
+
+          estadoRef.current = nuevo;
+          setEstado(nuevo);
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (
+          status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR ||
+          status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT
+        ) {
+          console.warn(`[moderacion] canal de ${listingId}: ${status}`, err?.message ?? '');
+          return;
+        }
+        // `SUBSCRIBED` y `CLOSED`. El segundo es lo que hace observable el
+        // requisito 2: si entrar y salir de la pantalla no imprime un `CLOSED`
+        // por cada `SUBSCRIBED`, el canal quedó abierto.
+        console.log(`[moderacion] canal de ${listingId}: ${status}`);
+      });
 
     return () => {
       supabase.removeChannel(canal);

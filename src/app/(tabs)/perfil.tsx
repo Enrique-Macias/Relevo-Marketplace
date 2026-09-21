@@ -40,6 +40,7 @@ import { ListingPhoto } from '@/components/ListingPhoto';
 import { Screen } from '@/components/Screen';
 import { SectionHead } from '@/components/SectionHead';
 import { SkeletonPerfil } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
 import { Avatar } from '@/components/Avatar';
@@ -64,7 +65,8 @@ const TINT_FG: Record<string, string> = {
 };
 
 export default function PerfilScreen() {
-  const { session, signOut } = useSession();
+  const { session, profile, refreshProfile, signOut } = useSession();
+  const { mostrar } = useToast();
   const userId = session?.user.id ?? null;
 
   const [perfil, setPerfil] = useState<PerfilPublico | null>(null);
@@ -131,6 +133,50 @@ export default function PerfilScreen() {
       setRecargas((r) => r + 1);
     }, [])
   );
+
+  /**
+   * AVISO DEL AVATAR BORRADO POR MODERACIÓN (RF-18).
+   *
+   * `moderarAvatar()` (`supabase/functions/moderar-contenido/index.ts`) borra el
+   * objeto y pone `foto_url` en `null` cuando Vision da `VERY_LIKELY`. Sin esto,
+   * el usuario ve volver sus iniciales sin ninguna explicación, y en momentos
+   * distintos según la pantalla: aquí al reenfocar el tab, y en el header del
+   * Feed NUNCA —pinta `profile.foto_url` de la sesión, que solo se mueve con
+   * `refreshProfile()`—.
+   *
+   * LA SEÑAL ES INEQUÍVOCA, y por eso alcanza con compararla: el cliente jamás
+   * escribe `null` en esa columna. `guardarFotoPerfil()` (`src/lib/perfil.ts`)
+   * siempre escribe un path, y `guardarPerfil()` ni siquiera incluye la columna.
+   * El ÚNICO productor de `null` es la Edge Function.
+   *
+   * VA EN SU PROPIO EFECTO y no dentro del `.then` de la carga: ahí tendría que
+   * leer `profile`, que `refreshProfile()` cambia, y eso lo volvería una
+   * dependencia del efecto que hace las SEIS consultas de esta pantalla —o sea
+   * una recarga completa por cada aviso. Aquí el ciclo se cierra solo: tras el
+   * refresh, `profile.foto_url` ya es `null` y el guard de abajo corta.
+   *
+   * `avisadoRef` es el cinturón para la ventana en la que `refreshProfile()`
+   * todavía no resolvió y otro foco vuelve a recargar — mismo idioma que el
+   * `primerFoco` de arriba.
+   *
+   * LÍMITE CONOCIDO, documentado como deuda en `.claude/rules/cuenta-perfil.md`:
+   * si el usuario no abre Perfil, o no ve el toast, no queda rastro. Un aviso
+   * persistente exige frame (CLAUDE.md §0 regla 4) y dónde guardar el "ya se lo
+   * dijimos", o sea esquema.
+   */
+  const avisadoRef = useRef(false);
+  useEffect(() => {
+    if (avisadoRef.current) return;
+    // Sin foto conocida no hubo transición que avisar (cuenta que nunca puso
+    // una, o aviso ya dado).
+    if (!profile?.foto_url) return;
+    if (!perfil || perfil.fotoUrl !== null) return;
+
+    avisadoRef.current = true;
+    mostrar('Quitamos tu foto de perfil porque no pasó la revisión de contenido', 'error');
+    // Para que el header del Feed deje de pintar la foto ya borrada.
+    void refreshProfile();
+  }, [perfil, profile, mostrar, refreshProfile]);
 
   const estado: 'loading' | 'ready' | 'error' =
     errorPara === userId ? 'error' : cargadoPara === userId ? 'ready' : 'loading';

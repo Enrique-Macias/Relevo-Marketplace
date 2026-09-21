@@ -1308,10 +1308,17 @@ debería.** No lleva frame porque su estado resultante YA existe: el enforcement
 de avatares es binario —solo `VERY_LIKELY` borra— y borrar significa objeto
 fuera y `foto_url` en null, o sea el fallback a iniciales que `Avatar` ya pinta.
 No hay estado intermedio que dibujar porque no hay dónde guardarlo (§3).
-**Lo que sí queda abierto es el aviso:** el borrado ocurre después, por el
-trigger de Storage, cuando el usuario ya vio su foto puesta; hoy se entera
-porque en algún momento vuelve a ver sus iniciales. Cerrarlo pide decidir por
-dónde avisa, y si el aviso es persistente exige frame primero (§0 regla 4).
+**El aviso YA EXISTE desde RF-18 Ola 4 (2026-09-21), y SIGUE sin agregar
+pantalla.** Este párrafo decía que quedaba abierto: el borrado ocurre después,
+por el trigger de Storage, cuando el usuario ya vio su foto puesta, así que se
+enteraba solo porque en algún momento volvía a ver sus iniciales. Hoy Perfil
+detecta la transición —`foto_url` a `null` solo lo produce `moderarAvatar()`, el
+cliente jamás la nulifica— y avisa con un **toast**, que es la excepción
+explícita de §0 regla 4 y por eso no pidió frame. **Lo que sigue abierto es más
+chico y es el límite del toast:** si el usuario no abre Perfil, o no lo ve, no
+queda rastro. Eso sí exigiría un aviso persistente —frame primero, más dónde
+guardar el "ya se lo dijimos"—, y está como deuda con disparador en
+`cuenta-perfil.md`.
 
 ### Confianza (4)
 Reportar publicación · Calificar · ¿A quién le vendiste? ·
@@ -1671,6 +1678,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - La cola de `pendiente` mezcla lo marcado por moderación con lo abandonado a media subida → `moderacion.md`
 - La promoción de `moderarListing()` puede reventar con 500 si intenta activar una publicación con 0 fotos → `moderacion.md`
 - El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
+- El aviso del avatar borrado por moderación se pierde si el usuario no abre Perfil o no ve el toast → `cuenta-perfil.md`
 - El reintento solo distingue DOS errores deterministas → `publicar-fotos.md`
 - Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila → `publicar-fotos.md`
 - El tope de 5 fotos SIGUE sin aplicar en Storage → `publicar-fotos.md`
