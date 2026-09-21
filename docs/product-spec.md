@@ -213,57 +213,74 @@ vez validado.
 - **RF-18** Moderación automática de contenido antes de publicarse: fotos de
   publicaciones y de perfil analizadas con Google Cloud Vision (SafeSearch +
   detección de texto en imagen); título y descripción analizados con OpenAI
-  GPT-4o-mini. **🚧 Parcialmente implementado — publicaciones Y avatares YA se
-  moderan de punta a punta con las APIs reales; falta que la app los invoque.**
-  **✅ Hecho:** `listing_status` tiene los valores `pendiente`/`bloqueada` con
-  su RLS; la tabla `listing_moderacion` guarda el motivo de cada veredicto de
-  PUBLICACIÓN (RLS habilitado, cero policies — los avatares no escriben ahí,
-  por diseño: su enforcement es inmediato, sin cola que revisar); y la Edge
-  Function `moderar-contenido` rutea por `ctx.authMode` (el cliente puede
-  promover a `activa`, el trigger de Storage solo puede escalar), valida
-  ownership, y **llama de verdad a Vision y a OpenAI** —con las credenciales
-  reales ya puestas—, descarga las fotos de Storage, arma los cuatro ejes,
-  decide, y escribe el estado más su auditoría. Los cuatro caminos de falla
-  segura de una publicación (Vision caído, OpenAI caído, refusal de OpenAI,
-  falla la descarga de una foto suelta) están cableados y **verificados
-  contra la función viva**, cada uno con su control negativo: ninguno propaga
-  una excepción, los cuatro degradan a `pendiente` en vez de publicar sin
-  mirar. El particionado por tamaño (varias fotos que sumen más de 6 MB)
-  también se verificó con fotos reales: se parte en más de un request a
-  Vision y el veredicto sale igual.
-  **El camino de avatares también está completo:** mismo pipeline de imagen
-  que una publicación (`evaluarFotos()` se parametrizó por bucket para
-  reusarlo, no duplicarlo), enforcement binario (`VERY_LIKELY` borra el
-  objeto y nulifica `foto_url`; `LIKELY` no toca nada), y un guard contra la
-  condición de carrera —el usuario sube un avatar nuevo mientras el viejo
-  sigue evaluándose— **verificado disparándola de verdad**: el veredicto
-  tardío del avatar viejo no le borra la foto al nuevo.
-  162 aserciones propias de RF-18, todas en verde: 120 puras
-  (`scripts/probe-moderacion.mjs`, sin red ni credenciales), 16 de
+  GPT-4o-mini. **✅ Implementado, de punta a punta y EN PRODUCCIÓN** (cerrado
+  2026-09-21): publicaciones y avatares se moderan con las APIs reales, la app
+  ya invoca el flujo desde el alta, y los dos triggers de Storage están
+  activos en remoto — no solo cableados en el esquema.
+  **El flujo, tal como corre hoy:** `publicar.ts` crea la publicación en
+  `pendiente` (ya no en `pausada` ni `activa` directo — el `with_check` de
+  `listings_insert_own` se lo exige al cliente), sube las fotos, y al terminar
+  pide el veredicto a la Edge Function `moderar-contenido`, que rutea por
+  `ctx.authMode` (el cliente puede promover a `activa`; el trigger de Storage
+  solo puede escalar), valida ownership, descarga las fotos de Storage, **llama
+  de verdad a Vision y a OpenAI**, arma los cuatro ejes, decide, y escribe el
+  estado más su auditoría (`listing_moderacion`, RLS habilitado, cero
+  policies — los avatares no escriben ahí, por diseño: su enforcement es
+  inmediato, sin cola que revisar). Según el veredicto, el usuario aterriza en
+  una de TRES pantallas — "Publicación creada" (`activa`), "Publicación en
+  revisión" (`pendiente`, con Realtime: si el veredicto llega mientras el
+  usuario sigue ahí, la pantalla avanza sola) o "Publicación no aprobada"
+  (`bloqueada`) — y "Mis publicaciones"/"Editar publicación"/Detalle ya
+  conocen los dos estados nuevos (chip propio, guard que reemplaza el
+  formulario, el `.sticky-cta` sin acciones editables).
+  Los cuatro caminos de falla segura de una publicación (Vision caído, OpenAI
+  caído, refusal de OpenAI, falla la descarga de una foto suelta) están
+  cableados y verificados contra la función viva, cada uno con su control
+  negativo: ninguno propaga una excepción, los cuatro degradan a `pendiente`
+  en vez de publicar sin mirar. El particionado por tamaño (varias fotos que
+  sumen más de 6 MB) también se verificó con fotos reales.
+  **El camino de avatares está completo:** mismo pipeline de imagen que una
+  publicación (`evaluarFotos()` se parametrizó por bucket para reusarlo, no
+  duplicarlo), enforcement binario (`VERY_LIKELY` borra el objeto y nulifica
+  `foto_url`; `LIKELY` no toca nada), y un guard contra la condición de
+  carrera —el usuario sube un avatar nuevo mientras el viejo sigue
+  evaluándose— verificado disparándola de verdad.
+  **Los dos triggers de Storage disparan solos al subir un objeto**, y desde
+  2026-09-19 evalúan también la foto que los disparó aunque su fila en
+  `listing_photos` todavía no exista (`unirFotoDisparadora()`, en `vision.ts`)
+  — antes, esa foto quedaba evaluada por NADIE, porque el objeto se sube
+  antes de que exista su fila. Verificado con OCR real: una foto genuina
+  (subida como lo hace la app, sin sobrescribir nada) con una palabra
+  prohibida impresa como texto escala la publicación de `activa` a
+  `pendiente`, con esa foto específica —no una vieja— en el detalle de
+  auditoría.
+  173 aserciones propias de RF-18, todas en verde: 124 puras
+  (`scripts/probe-moderacion.mjs`, sin red ni credenciales), 23 de
   autorización/cableado de publicaciones (`scripts/probe-moderacion-http.mjs`),
   10 de particionado/descarga fallida/no-op (`scripts/probe-moderacion-red.mjs`)
   y 16 del camino de avatares (`scripts/probe-moderacion-avatares.mjs`) contra
-  la función corriendo de verdad — más las 2 propias en `rls.sql` (T12, sobre
-  `listing_moderacion`) dentro de las 169 de la suite completa de RLS, que no
-  cambian por esta tarea. **Declinado a propósito, en las dos rondas:** forzar
-  los umbrales `LIKELY`/`VERY_LIKELY` de Vision —para publicaciones o para
-  avatares— con imágenes reales exigiría sourcear o generar contenido sexual o
-  gráficamente violento, algo que este repo no hace ni para pruebas; la lógica
-  de esos umbrales sí está cubierta, de forma determinista y sin necesitar
-  ninguna imagen real, y el CABLEADO alrededor de ella se verificó con un mock
-  que devuelve la forma real de la respuesta de Vision
+  la función corriendo de verdad — más 2 propias en `rls.sql` (T12, sobre
+  `listing_moderacion`) dentro de las 177 de la suite completa de RLS.
+  **Declinado a propósito, en las dos rondas:** forzar los umbrales
+  `LIKELY`/`VERY_LIKELY` de Vision —para publicaciones o para avatares— con
+  imágenes reales exigiría sourcear o generar contenido sexual o gráficamente
+  violento, algo que este repo no hace ni para pruebas; la lógica de esos
+  umbrales sí está cubierta, de forma determinista y sin necesitar ninguna
+  imagen real, y el CABLEADO alrededor de ella se verificó con un mock que
+  devuelve la forma real de la respuesta de Vision
   (`.claude/rules/moderacion.md` §6.3 y §6.4).
-  **🚧 Pendiente:** los dos triggers de Storage que disparan la moderación
-  automáticamente al subir una foto o un avatar; el rework de `publicar.ts`
-  (sigue creando en `pausada` y pasando a `activa` sin pasar por `pendiente`
-  — deuda ya documentada en `publicar-fotos.md`); y la suscripción de
-  Realtime en el cliente. O sea que aunque el pipeline de moderación YA
-  funciona de punta a punta contra las APIs reales para publicaciones y para
-  avatares, nada en la app todavía lo invoca — hace falta el rework de
-  `publicar.ts` y los dos triggers para que un uso real de la app pase por
-  él. Las decisiones de umbral y el mecanismo interino de revisión están en
-  `CLAUDE.md` §3; el plan de implementación completo, en
-  `.claude/rules/moderacion.md`.
+  **Probado de punta a punta en PRODUCCIÓN, los dos veredictos**: una
+  publicación de contenido limpio quedó `activa`; una con una palabra de la
+  lista quedó `bloqueada`. Confirmado en Studio, 2026-09-21.
+  **Deuda consciente, no bloqueante:** cada evento de Editar sigue pagando una
+  evaluación completa (Vision + OpenAI) sobre el set de fotos VIEJO además de
+  la que dispara — reemplazar 5 fotos cuesta 10 requests reales, uno por
+  evento, aunque cada uno ya incluya la foto correcta. Es costo, no
+  incorrección, y se dejó fuera de alcance a propósito (debounce o mover el
+  disparador, sin tocar por ahora). Detalle, disparador de revisión y fix
+  propuesto en `.claude/rules/moderacion.md` §7/§9.
+  Las decisiones de umbral están en `CLAUDE.md` §3; el diseño de
+  implementación completo, en `.claude/rules/moderacion.md`.
 
 ---
 
