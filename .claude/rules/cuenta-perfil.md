@@ -622,6 +622,11 @@ Lo que no se ve en el diff:
     subida estrena uuid, `rutaAvatar()`) y solo se silencia la repetición del
     MISMO. Es el criterio que `Avatar.tsx` ya tenía escrito para `pathFallido`
     —"se guarda el PATH que falló, no un booleano"— y que aquí se había perdido.
+    **Re-verificado a mano tras el fix (2026-09-21)**: dos eventos seguidos con
+    fotos distintas y sin reiniciar la app → toast las dos veces; más el control
+    negativo de un avatar limpio, que no avisa nada. Sin reiniciar entremedio es
+    load-bearing: reiniciar remonta el tab y resetea el ref, o sea que la prueba
+    habría pasado también con el bug viejo.
   - **La hipótesis natural al ver ese síntoma es OTRA y está descartada, así que
     conviene no volver a recorrerla:** "la sesión se estanca en `null` porque
     nadie llama a `refreshProfile()` tras subir un avatar". **Falso**:

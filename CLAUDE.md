@@ -1647,6 +1647,23 @@ de los route groups).
    deuda de COSTO (no de despliegue): Editar sigue pagando 10 requests por 5
    fotos reemplazadas, documentado con su disparador y su fix en
    `.claude/rules/moderacion.md` §7/§9 — decisión aparte, sin tocar.
+3. ~~Las DOS verificaciones manuales de RF-18 Ola 4.~~ **HECHAS (2026-09-21),
+   las dos en verde — con esto RF-18 queda cerrado de punta a punta.** Se
+   registran aquí porque son de las que §6 dice que el simulador headless no
+   puede dar por buenas, y porque cada una tiene un detalle que la hace valer:
+   - **El runbook de Realtime** (`.claude/rules/moderacion.md` §4.2), **los tres
+     casos**, incluido el piso con la publicación apagada a propósito en LOCAL.
+     Ese es el que importa: antes de sumarle observabilidad al hook, esta corrida
+     no era concluyente —con el refetch funcionando, un canal muerto se ve igual
+     que uno sano—, así que el orden fue observabilidad primero y corrida
+     después.
+   - **El aviso del avatar borrado, con DOS eventos seguidos, fotos distintas y
+     sin reiniciar la app**, más el control negativo del avatar limpio. No era
+     formalidad: esa misma prueba fue la que cazó el bug del guard booleano que,
+     en un tab que no se desmonta, era un pestillo permanente y solo avisaba del
+     PRIMER avatar moderado de cada sesión. Corregido guardando el path avisado
+     —el criterio que `Avatar` ya usaba para `pathFallido`— y re-corrido después
+     del fix.
 
 **Deuda consciente — con disparador de revisión, no "algún día":** cada entrada
 vive COMPLETA —con su "Revisar cuando" y su "Fix"— en la regla de su feature, y

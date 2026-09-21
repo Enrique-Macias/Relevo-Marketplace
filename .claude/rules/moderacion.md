@@ -67,8 +67,8 @@ paths:
 | Las dos pantallas de veredicto | **Hecho** (Ola 3) | `(publicar)/revision.tsx`, `(publicar)/no-aprobada.tsx` |
 | Suscripción de Realtime en el cliente | **Hecho** (Ola 3) | `useVeredictoEnVivo()` en `src/lib/moderacion.ts`, consumida por `revision.tsx` |
 | `unirFotoDisparadora()`: la foto sin fila SE evalúa | **Hecho** (2026-09-19), verificado con OCR real end-to-end | `vision.ts` + `probe-moderacion.mjs` (pura) + `probe-moderacion-http.mjs` §7 |
-| Aviso al usuario cuando su avatar se borra por moderación | **Hecho** (Ola 4, 2026-09-21) | `(tabs)/perfil.tsx` + §8 de este archivo |
-| Verificación manual de Realtime (runbook) | **Runbook escrito y observabilidad puesta**; la corrida la hace el usuario | §4.2 y §6.2 |
+| Aviso al usuario cuando su avatar se borra por moderación | **Hecho y VERIFICADO a mano** (Ola 4, 2026-09-21): dos eventos seguidos con fotos distintas y sin reiniciar la app → toast las dos veces, más el control negativo del avatar limpio | `(tabs)/perfil.tsx` + §8 de este archivo + `cuenta-perfil.md` |
+| Verificación manual de Realtime (runbook) | **Hecha** (2026-09-21) — los TRES casos de §4.2, incluido el piso con la publicación apagada | §4.2 y §6.2 |
 | **La Edge Function desplegada en REMOTO** | **SÍ** (2026-09-19) — `list_edge_functions` da `moderar-contenido` **ACTIVE**, `version: 1` | CLAUDE.md §8, "Hecho" |
 
 **Con esto, `moderar-contenido` modera publicaciones Y avatares reales de
@@ -995,7 +995,12 @@ queda sin marcar hasta que algo más la toque (`bloquear` si empeora, o el
 vendedor la reactiva a mano) — aceptable porque mientras está pausada nadie la
 ve.
 
-### 6.2. El resto, todavía sin correr
+### 6.2. El resto — TODO CORRIDO desde 2026-09-21
+
+> El título de esta sección era "El resto, todavía sin correr" y dejó de ser
+> cierto al cerrarse Ola 4: sus cuatro entradas están en verde. Se deja la
+> sección porque cada una registra QUÉ se corrió y con qué resultado, que es lo
+> que hace falta saber la próxima vez que algo de esto se toque.
 
 - **Triggers: HECHO**, y partido en dos scripts con costos distintos — el
   detalle completo, con los cinco controles negativos, en §6.5.
@@ -1006,17 +1011,20 @@ ve.
   no se movieron: sus fixtures insertan con la secret key, así que un rojo ahí
   habría significado que el `with_check` estaba atrapando a `service_role`. La
   tabla de qué variante cae en qué aserción está en CLAUDE.md §3.
-- **Realtime: sigue siendo manual, y desde 2026-09-21 es CONCLUYENTE.** El
-  runbook completo (los tres casos, cómo llegar a la pantalla gratis, y por qué
-  iOS alcanza) vive en §4.2 de este archivo. Lo que cambió no es el
-  procedimiento sino que ahora se puede distinguir un resultado bueno de uno que
-  solo lo parece: antes, con el piso del refetch funcionando, un canal que jamás
-  conectaba se veía **idéntico** a uno que entregaba —el veredicto llegaba de
-  todos modos—, así que la corrida salía verde sin haber probado Realtime en
-  absoluto. Es la familia de fallos de CLAUDE.md §9. El fallback se sigue
-  probando apagando la publicación a propósito (`alter publication
-  supabase_realtime drop table public.listings`, **en LOCAL**, con
-  `pg_publication_tables` antes y después).
+- **Realtime: CORRIDO Y EN VERDE (2026-09-21), los TRES casos.** Fue lo último
+  que quedaba de Ola 4 y estuvo marcado PENDIENTE desde la Ola 3. El runbook
+  completo (cómo llegar a la pantalla gratis, y por qué iOS alcanza) vive en
+  §4.2. Resultado: camino feliz → navega solo, log **`por REALTIME`**; piso con
+  `alter publication supabase_realtime drop table public.listings` **en LOCAL**
+  → el estado NO llega solo y al reenfocar navega con log **`por REFETCH`**;
+  cleanup → un `CLOSED` por cada `SUBSCRIBED`.
+  **Y el caso 2 es el que le da valor a los otros dos**, por el mismo motivo por
+  el que la observabilidad tuvo que ir PRIMERO: antes de ella, con el piso del
+  refetch funcionando, un canal que jamás conectaba se veía **idéntico** a uno
+  que entregaba —el veredicto llegaba de todos modos—, así que esta corrida
+  habría salido verde sin probar Realtime en absoluto. Es la familia de fallos
+  de CLAUDE.md §9, y por eso el orden fue observabilidad → corrida y no al
+  revés.
 - **`C` (la migración de Realtime ya aplicada):** `select * from
   pg_publication_tables where pubname='supabase_realtime'` antes y después —
   ya corrido una vez al aplicar `20260917000460`, repetible.
@@ -1273,11 +1281,16 @@ sin haber ejercitado la rama UPDATE en absoluto.
   Function: decide cómo se autoriza el llamador. **Hecho** — ver §2 de este
   archivo.
 
-**Ola 1 (depende de A, D, E + un paso manual):** la Edge Function
-(`index.ts`). Se puede escribir sin los secretos; no se prueba end-to-end
-hasta `supabase secrets set` (nombres ya decididos, ver §3.1 — hecho) +
-`supabase/functions/.env` local (plantilla ya creada — hecho). **El cuerpo
-de `index.ts` en sí sigue sin escribirse.**
+**Ola 1 (depende de A, D, E + un paso manual): HECHA**, junto con sus dos
+sub-olas — 1.5 (el `fetch` real a Vision y OpenAI, §6.3) y 1.6 (el camino de
+avatares, §6.4). La Edge Function se podía escribir sin los secretos; el
+end-to-end esperó a `supabase secrets set` (nombres decididos en §3.1) +
+`supabase/functions/.env` local.
+**Esta entrada decía "el cuerpo de `index.ts` en sí sigue sin escribirse", y
+era falso desde el mismo 2026-09-18** (hoy son 699 líneas, medidas con `wc -l`).
+Es la TERCERA línea rancia del mapa encontrada en la misma revisión, junto con
+la de Ola 4 y la del enforcement de avatares — la misma moraleja que está escrita
+abajo, en el bloque de Ola 4: **un mapa de olas es un plan, no un estado.**
 
 **Ola 2 (depende de la función + F-spike): HECHA, y ACTIVA en prod desde
 2026-09-19** (los dos secretos de Vault que la encendían ya están puestos —
@@ -1409,16 +1422,40 @@ existían. **Moraleja, hermana de la de los conteos de migraciones de CLAUDE.md
 tabla de estado discrepan, **gana la tabla**, y antes de confiar en cualquiera
 de las dos se mira el código.
 
-**Lo que de verdad quedaba, y se hizo (2026-09-21):**
+**Lo que de verdad quedaba (2026-09-21), partido en lo que YA ESTÁ y lo que
+NO — y este párrafo llegó a decir "y se hizo" de las dos cosas, que es
+exactamente el error que esta misma sección acaba de documentar dos párrafos
+más arriba:**
 
-1. **La verificación manual de Realtime**, que §6.2 llevaba marcada PENDIENTE —
-   y que no era concluyente sin un cambio previo: `.subscribe()` no llevaba
-   callback de estado, así que un `CHANNEL_ERROR` era invisible y el piso del
-   refetch entregaba el veredicto igual. Se sumó observabilidad mínima
-   (estado del canal + por qué vía llegó cada veredicto). Ver §4.1.
-2. **El aviso del avatar borrado**, que es lo único que faltaba del lado del
-   CLIENTE una vez que el enforcement ya existía: hasta ahora las iniciales
-   volvían en silencio. Ver §8.
+**Hecho, en código:**
+
+1. **La observabilidad que hacía falta para poder verificar Realtime.**
+   `.subscribe()` no llevaba callback de estado, así que un `CHANNEL_ERROR` era
+   invisible y el piso del refetch entregaba el veredicto igual: una corrida de
+   verificación habría salido verde sin haber probado Realtime en absoluto. Hoy
+   se imprime el estado del canal y por qué vía llegó cada veredicto. Ver §4.1.
+2. **El aviso del avatar borrado**, que era lo único que faltaba del lado del
+   CLIENTE una vez que el enforcement ya existía: hasta entonces las iniciales
+   volvían en silencio. Ver §8. **Nació con un bug** —un guard booleano que en
+   un tab que no se desmonta era un pestillo permanente, así que solo avisaba el
+   PRIMER avatar moderado de cada sesión—, cazado en pruebas manuales el mismo
+   día y corregido guardando el path avisado en vez de un booleano. El detalle
+   está en `cuenta-perfil.md`.
+
+**Verificado a mano y en verde (2026-09-21), que es lo que CIERRA la ola.**
+Ninguna de las dos corridas la puede dar por buena una sesión de IA
+(CLAUDE.md §6), así que las hizo el usuario:
+
+- **el runbook de Realtime (§4.2), sus TRES casos**, incluido el piso con la
+  publicación apagada a propósito — el que se suele saltar por pedir SQL, y el
+  único que prueba que el fallback existe;
+- **el escenario de DOS eventos de moderación de avatar seguidos, con fotos
+  distintas y sin reiniciar la app** (reiniciar remonta el tab y resetea el ref,
+  o sea que habría pasado también con el bug viejo), más el control negativo del
+  avatar limpio, que no debe avisar nada.
+
+**Con eso, RF-18 queda cerrado de punta a punta.** Lo que sigue vivo son las
+DEUDAS de §9 —decisiones tomadas, no trabajo pendiente— y ninguna bloquea nada.
 
 **Lo importante del mapa:** C, D y los dos spikes no dependen de nada entre
 sí y son los que más riesgo quitan más adelante — aunque se consuman en olas
