@@ -74,10 +74,39 @@ Detalles que no se ven en el diff:
   necesita lo contrario: mantener el grid visible mientras refresca. Por eso
   `refrescar()` pide la página 1 fresca y solo reemplaza
   `items`/`cursor`/`total` al llegar, sin tocar `estado` (salvo devolverlo a
-  `'ready'` si veía un error previo). Hoy solo la usa el Feed
-  (`(tabs)/index.tsx`), vía el `refreshControl` de `Screen`. Categorías y
-  campus activo no se refrescan con el gesto — no cambian dentro de una
-  sesión y no tienen refetch expuesto hoy.
+  `'ready'` si veía un error previo). Hoy la usan el Feed
+  (`(tabs)/index.tsx`), Búsqueda (`(tabs)/buscar.tsx`, las DOS ramas de
+  retorno — recomendados y con/sin resultados, mismo hook subyacente) y
+  Categoría (`(explorar)/categoria/[id].tsx`), los tres vía el
+  `refreshControl` de `Screen`. Categorías y campus activo siguen sin
+  refrescarse con el gesto — no cambian dentro de una sesión y no tienen
+  refetch expuesto.
+
+  **Y desde que Búsqueda/Categoría pueden `refrescar()` mientras `loadMore()`
+  está en vuelo, `useListings` ganó un contador de "generación"**: estado
+  `version` (NO un ref — el reseteo que lo sube corre EN RENDER, y mutar un
+  ref ahí revienta `react-hooks/refs`), más un `versionRef` sincronizado por
+  el mismo efecto-sin-deps que ya sincronizaba `paramsRef`/`keyRef` (corre
+  después de cada render). Sube en cada reseteo por filtro/`recargas` y en
+  cada `refrescar()` exitoso (vía `setVersion`, nunca mutando el ref
+  directamente — mismo criterio). `loadMore()` captura `versionRef.current`
+  antes de pedir la página siguiente y descarta su resultado si cambió
+  mientras viajaba — sin esto, un pull-to-refresh que resuelve mientras una
+  página de scroll infinito sigue en camino podía pegarle esa página encima de
+  una lista que ya se había reemplazado por completo, duplicando o mezclando
+  tarjetas. `keyRef` seguía cubriendo el caso de "cambié de filtro mientras la
+  página viajaba", pero nunca cubrió a `refrescar()`, que deliberadamente no
+  toca `key`/`recargas` por ser silencioso. El chequeo de `version` se suma al
+  de `keyRef`, no lo reemplaza.
+
+  **`useMisListings` (Mis publicaciones) recibió el mismo tratamiento, y de
+  paso corrigió un guard que nunca funcionó.** Su `loadMore()` comparaba
+  `filtroPedido !== estadoFiltro` dentro de su propio `.then()` — pero las dos
+  variables son la MISMA binding cerrada por el closure (`estadoFiltro` es un
+  parámetro de la función del hook, no un ref sincronizado como `keyRef` en
+  `useListings`), así que la comparación nunca podía dar `false`: no
+  descartaba nada. Reemplazado por el mismo par `version`/`versionRef`, que
+  además cierra la misma duplicación de tarjetas que en Búsqueda/Categoría.
 - **`campusSeleccionado` sigue al campus DEL PERFIL cuando ese cambia, pero no
   pisa la elección del selector del Feed** — y esas dos cosas se distinguen con
   un `ref` (`campusPerfilAplicado`), no con el estado. El efecto que carga el
@@ -179,6 +208,51 @@ vendiste?" (RF-12) a alguien que nunca pudo escribirle. Por eso el número va
 primero y su ausencia corta la función. Lo que NO cambió es el fallo suave del
 registro: si el insert revienta, WhatsApp se abre igual y el usuario ve un toast
 (`confianza-ventas.md`, deuda del log perdido).
+
+- **Detalle tiene pull-to-refresh, y su diseño se separó en dos piezas a
+  propósito.** `fetchListingById()` se extrajo a `cargarDetalle(id, {silent?})`
+  — mismo refactor frío/tibio que "Perfil"/"Perfil público": una carga fría
+  (nada en pantalla) que falla pinta `ErrorState`, como siempre; una recarga
+  tibia (foco o gesto de pull) que falla NUNCA tapa el contenido, solo avisa
+  por toast.
+  - **El caso `data === null` no es un error, y tiene su propio estado.**
+    `fetchListingById` usa `.maybeSingle()`: si la publicación dejó de ser
+    visible por RLS (el dueño la pausó, quedó bloqueada por moderación) o se
+    borró, la query resuelve BIEN sin fila — no pasa por el `catch`. Antes de
+    esta tarea esto no tenía ningún manejo: `listing` se quedaba `null` y la
+    pantalla caía en `if (!listing) return null`, es decir, en blanco — el
+    mismo síntoma que ya tenía (y sigue teniendo, fuera de este caso) abrir por
+    deep link una publicación ya oculta. Ahora se marca con `noDisponible` y la
+    pantalla pinta `ErrorState` reutilizado con copy propio ("Esta publicación
+    ya no está disponible…"), sin frame nuevo en `relevo-app.html` — mismo
+    precedente que "Publicar (error de subida)" representando una familia de
+    motivos con un solo patrón visual, y mismo patrón que el guard `esDueno` de
+    `editar/[id].tsx` (`componentes-compartidos.md`): el "Reintentar" de
+    `ErrorState` apunta a `router.back()`, no a la misma query — reintentarla
+    no va a des-esconder la publicación.
+  - **`recargas` sigue viva, pero perdió su único consumidor de refetch del
+    listing.** Antes alimentaba a la vez el efecto de carga (vía su dependencia)
+    Y a `useVentaDetalle`. Ahora solo alimenta a `useVentaDetalle`, y el gesto
+    de pull-to-refresh (`onRefresh`) deliberadamente NUNCA la toca: esa hook
+    resetea `venta`/`yaCalifique` EN RENDER cuando su key cambia, así que
+    bumpearla en cada pull haría parpadear la fila de venta (ej. "Calificar al
+    vendedor" desaparece y reaparece) sin motivo. Solo el FOCO sigue
+    bumpeándola — es el caso real que la necesita (el regreso de
+    `/vendida/[id]` tras marcar una venta). Consecuencia aceptada: el pull
+    refresca disponibilidad/contenido/stats de la publicación, pero el estado
+    de venta/calificación solo se refresca al volver de tab, no con el gesto.
+  - **El `useEffect` de montaje que llama a `cargarDetalle` lleva un
+    `montadoRef` leído ANTES de la llamada — no es ceremonia, es lo que evita
+    que `react-hooks/set-state-in-effect` lo marque.** La regla rastrea que
+    `cargarDetalle` termina en un `setState` cuando se invoca directo desde un
+    `useEffect` normal (el `useFocusEffect` de más abajo no se marca por la
+    misma razón: no lo reconoce como efecto); un guard que lee un ref antes de
+    la llamada hace que el análisis estático se rinda — el mismo blind spot que
+    CLAUDE.md §9 ya documenta para `useListings`, aquí con tres instancias
+    nuevas (Detalle, Perfil, Perfil público). Verificado probando las tres
+    variantes a mano antes de decidir esta (sin guard: marca; con `.catch()` en
+    vez de guard: sigue marcando; con el guard: no marca) — no se asumió por
+    analogía con el gotcha ya escrito.
 
 - **Búsqueda de texto por tsvector** (migración `20260908000444`). Resolvió de
   una sola vez las dos cosas: el índice GIN por fin se usa (medido con

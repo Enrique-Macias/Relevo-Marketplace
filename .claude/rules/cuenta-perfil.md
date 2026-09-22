@@ -52,6 +52,24 @@ una sola fila y es la destructiva. El detalle, en `moderacion.md`.
   efecto de carga es equivalente en el resultado final, pero deja pasar un
   render con la lista VIEJA todavía pintada bajo el filtro/orden nuevo; hacerlo
   en render lo evita.
+- **`useMisListings` ganó `refrescar()` (pull-to-refresh), gemela de
+  `useListings.refrescar()`: pide la página 1 del filtro actual y reemplaza
+  `items`/cursor sin vaciar ni pasar por `'loading'`.** Y de paso corrigió un
+  guard de `loadMore` que nunca funcionó: comparaba `filtroPedido !==
+  estadoFiltro` dentro de su propio `.then()`, pero las dos variables son la
+  MISMA binding cerrada por el closure (`estadoFiltro` es un parámetro de la
+  función del hook, no un ref) — la comparación nunca podía dar `false`, así
+  que nunca descartaba nada. El hook ganó un `versionRef` compartido entre
+  `loadMore` y `refrescar` (sube en cada reseteo por filtro y en cada
+  `refrescar()` exitoso; `loadMore` lo captura antes de pedir y descarta si
+  cambió) — cierra tanto el guard roto de `loadMore` como el caso nuevo de
+  "un `refrescar()` reemplazó la lista mientras una página de scroll infinito
+  seguía en camino", que sin esto podía duplicar tarjetas. En
+  `mis-publicaciones.tsx`, el `useFocusEffect` que antes llamaba a `recargar()`
+  (vacía la lista y pasa por skeleton en cada regreso de tab) ahora llama a
+  este `refrescar()`: el guard de una sola vuelo (`refrescandoRef`) es lo que
+  evita que el foco y el gesto de pull disparen dos cargas a la vez.
+  `recargar()` se queda solo para `ErrorState.onRetry`.
 - **`StatusRow` dejó de ser local de `editar/[id].tsx`** y vive en
   `src/components/StatusRow.tsx`: la hoja es literalmente la `.status-section`
   de ese frame en otro contenedor. `Toggle` sí se quedó allá.
@@ -115,10 +133,21 @@ Feed/Búsqueda.
   "vendida" —esa tarjeta no existe en ningún frame de grid, solo en Detalle
   y en la fila plana de Mis publicaciones—, así que mostrar una vendida aquí
   inventaría un estado fuera del diseño (§0 regla 4).
-- **Sin paginación ni pull-to-refresh**, mismo criterio que
-  `fetchFavoritoIds`: es la lista personal de un estudiante, no un catálogo.
-  Refetch al volver al tab (`useFocusEffect` saltando el primer foco, mismo
-  patrón que `mis-publicaciones.tsx`), no al gesto.
+- **Sigue sin paginar** (mismo criterio que `fetchFavoritoIds`: es la lista
+  personal de un estudiante, no un catálogo), **pero desde ahora SÍ tiene
+  pull-to-refresh** — la razón para no tenerlo nunca fue "es una lista
+  personal", fue que nada lo pedía todavía. Un `refrescar()` hand-rolled EN
+  ESTE ARCHIVO (no una función compartida: sigue siendo la única pantalla con
+  este estado a mano, y extraerlo a un hook para un solo consumidor no se
+  justifica) pide `fetchFavoritos(userId)` de nuevo y reemplaza `items` sin
+  vaciarlo ni pasar por el skeleton — mismo criterio que
+  `useListings.refrescar()`. El `useFocusEffect` que saltaba el primer foco
+  dejó de llamar a `reintentar()` (la que vacía `items` a `[]` y pasa por
+  `'loading'`) y ahora llama a este mismo `refrescar()`: el guard de una sola
+  vuelo (`refrescandoRef`) es lo que evita que el regreso de tab y el gesto de
+  pull compitan si caen casi juntos — el segundo que llegue no-opea.
+  `reintentar()` se queda solo para `ErrorState.onRetry`, donde sí se quiere
+  el vaciado a skeleton.
 - Ver §9 sobre el hallazgo que hizo falta verificar antes de escribir esta
   query: si `order`/`limit` por `referencedTable` funcionan con una ruta
   punteada a DOS niveles de embed (`favorites → listing → fotos`), y no solo
@@ -152,6 +181,17 @@ Seis cosas que no se ven en el diff:
   años.** El frame solo ilustra un ejemplo en meses; sin un estado en
   `relevo-app.html` con una cuenta de más de un año, no se inventa un formato
   `Na` sin evidencia (§0 regla 4).
+- **Perfil público tiene pull-to-refresh, y su refactor es más simple que el de
+  "Perfil": sin `useFocusEffect` que reconciliar.** Las cuatro consultas
+  (`fetchPerfilPublico`, `fetchActivasVendedor`, `fetchVentasVendedor`,
+  `fetchReviews`) se extrajeron a `cargarPerfil(id, {silent?})`, mismo patrón
+  frío/tibio y mismo guard de una sola vuelo (`cargandoRef`) que "Perfil" — pero
+  como esta ruta REMONTA en cada navegación (arriba), el gesto de pull es el
+  ÚNICO llamador en modo `silent`; el mount effect sigue siendo la única carga
+  fría. `recargas` desapareció aquí también: `ErrorState.onRetry` llama a
+  `cargarPerfil` directo. El `refreshControl` va solo en el `<Screen>` del
+  contenido principal, no en el de la rama de error temprana — esa rama no
+  tiene contenido que proteger y ya ofrece "Reintentar".
 - **Las reseñas se piden con un tope de 100, sin paginación** — mismo criterio
   que el inbox de notificaciones: una lista que crece por evento, no un
   catálogo. El `total` de `.profile-rating` sale del `count:'exact'` de esa
@@ -345,6 +385,23 @@ Seis cosas que no se ven en el diff:
   montaje que el primer efecto ya cubrió. Sin el segundo efecto, volver del tab
   Favoritos o de Editar publicación dejaría los números y la mini-grid
   desactualizados hasta cerrar y reabrir la app.
+- **Ese par de efectos se refactorizó al agregar pull-to-refresh, y el
+  contador `recargas` desapareció.** Las seis consultas ahora viven en
+  `cargarPerfil(id, {silent?})`, una función llamable con la misma distinción
+  frío/tibio que Detalle/Perfil público: carga fría (nada en pantalla) que
+  falla pinta `ErrorState`, como antes; recarga tibia (foco o gesto de pull)
+  que falla NUNCA reemplaza un perfil bueno ya visible — solo el llamador
+  decide si avisa. **Esto cierra un bug preexistente, no solo agrega el
+  gesto:** con el `recargas`/efecto viejo, CUALQUIER falla del refresco por
+  foco (`setRecargas` → efecto → `catch` → `setErrorPara`) tapaba un perfil
+  bueno con `ErrorState`, porque los dos caminos —primera carga y recarga de
+  foco— compartían el mismo `setErrorPara`. El guard de una sola vuelo
+  (`cargandoRef`, no un contador) es lo que permite que el mount effect, el
+  foco y el gesto de pull llamen a la MISMA función sin dispararse dos veces a
+  la vez. El `useEffect` de montaje lleva además un `montadoRef` leído ANTES
+  de la llamada — es lo que evita que `react-hooks/set-state-in-effect` lo
+  marque (mismo blind spot que CLAUDE.md §9 documenta para `useListings`,
+  detallado con sus tres instancias en `explorar.md`, bullet de Detalle).
 - **`MiniListingCard` no reusa `ProductCard`, y no es evitar una prop.** El
   frame de Perfil es la PRIMERA vez que el diseño pinta `.sold-badge` sobre una
   tarjeta de GRID — hasta ahora ese overlay solo existía en la fila plana de

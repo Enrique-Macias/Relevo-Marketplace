@@ -2,7 +2,7 @@
 
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, RefreshControl, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GhostButton, PrimaryButton } from '@/components/Buttons';
@@ -81,6 +81,10 @@ export default function DetalleScreen() {
   // `src/lib/session.tsx`.
   const [cargadoPara, setCargadoPara] = useState<number | null>(null);
   const [errorPara, setErrorPara] = useState<number | null>(null);
+  // La publicación resolvió BIEN (sin lanzar) pero sin fila: RLS la esconde
+  // (el dueño la pausó, quedó bloqueada por moderación) o se borró. Distinto
+  // de `errorPara`, que es para fallos de red/base reales — ver `cargarDetalle`.
+  const [noDisponible, setNoDisponible] = useState(false);
   const [ventas, setVentas] = useState(0);
   const [stats, setStats] = useState({ contactos: 0, favoritos: 0 });
   const [recargas, setRecargas] = useState(0);
@@ -132,27 +136,69 @@ export default function DetalleScreen() {
   // que haya que asentar con setState desde un efecto.
   const idValido = !Number.isNaN(listingId);
 
-  useEffect(() => {
-    if (!idValido) return;
+  /**
+   * `fetchListingById`, extraído a una función llamable con distinción
+   * frío/tibio — mismo refactor que "Perfil"/"Perfil público". Frío (nada
+   * cargado todavía): un fallo pinta `ErrorState`, como antes. Tibio (foco o
+   * pull-to-refresh, ya hay contenido en pantalla): un fallo de RED nunca lo
+   * tapa, solo avisa por toast (ver `onRefresh` más abajo).
+   *
+   * El caso de `data === null` es OTRO: `fetchListingById` usa `.maybeSingle()`
+   * y resuelve BIEN sin fila cuando la publicación dejó de ser visible por RLS
+   * (el dueño la pausó, quedó bloqueada por moderación) o se borró — no pasa
+   * por el `catch`. Se marca con `noDisponible`, que la pantalla lee para
+   * pintar un aviso propio en vez de quedarse en blanco.
+   */
+  const cargandoRef = useRef(false);
 
-    let vigente = true;
+  const cargarDetalle = useCallback(
+    async (idPedido: number, opts?: { silent?: boolean }) => {
+      if (cargandoRef.current) return;
+      cargandoRef.current = true;
 
-    fetchListingById(listingId)
-      .then((data) => {
-        if (!vigente) return;
-        setListing(data);
-        setCargadoPara(listingId);
-      })
-      .catch((e) => {
-        if (!vigente) return;
+      try {
+        const data = await fetchListingById(idPedido);
+
+        if (data === null) {
+          setListing(null);
+          setNoDisponible(true);
+        } else {
+          setListing(data);
+          setNoDisponible(false);
+        }
+        setCargadoPara(idPedido);
+        setErrorPara(null);
+      } catch (e: any) {
         console.warn('[detalle] no se pudo leer la publicación:', e?.message ?? e);
-        setErrorPara(listingId);
-      });
+        if (opts?.silent) throw e;
+        setErrorPara(idPedido);
+      } finally {
+        cargandoRef.current = false;
+      }
+    },
+    []
+  );
 
+  /**
+   * `montadoRef`, leído ANTES de la llamada: es lo que evita que
+   * `react-hooks/set-state-in-effect` marque este `useEffect` (la regla puede
+   * rastrear que `cargarDetalle` termina en un `setState` cuando se invoca
+   * directo desde un `useEffect` normal; un guard que lee un ref antes hace que
+   * el análisis estático se rinda — mismo blind spot documentado en CLAUDE.md
+   * §9 para `useListings`). De regalo, es un guard real contra reinvocar la
+   * carga si el efecto llegara a correr después de desmontar.
+   */
+  const montadoRef = useRef(true);
+  useEffect(() => {
     return () => {
-      vigente = false;
+      montadoRef.current = false;
     };
-  }, [listingId, recargas, idValido]);
+  }, []);
+
+  useEffect(() => {
+    if (!idValido || !montadoRef.current) return;
+    void cargarDetalle(listingId);
+  }, [listingId, idValido, cargarDetalle]);
 
   /**
    * Recargar al VOLVER a la pantalla, no solo al montar. Mismo patrón —y mismo
@@ -165,10 +211,15 @@ export default function DetalleScreen() {
    * y "Marcar como vendida" sobre una publicación que ya se vendió, y el primero
    * llevaría a un formulario que la base va a rechazar.
    *
-   * `recargas` alimenta también a `useVentaDetalle`: con el listing fresco pero
-   * la venta vieja, `accionVenta()` vería `estado='vendida'` + `venta=null` y
-   * pintaría el aviso de "ya se vendió" en lugar de "Cambiar comprador", justo
-   * después de registrar al comprador.
+   * `recargas` sigue viva, pero SOLO para `useVentaDetalle` — ya NO dispara
+   * ningún refetch del listing, eso lo hace `cargarDetalle` de arriba. La
+   * separación es a propósito: `useVentaDetalle(..., recargas)` resetea
+   * `venta`/`yaCalifique` EN RENDER cuando su key cambia, así que si el gesto
+   * de pull-to-refresh también bumpeara `recargas`, la fila de venta
+   * parpadearía (ej. "Calificar al vendedor" desaparece y reaparece) en cada
+   * pull. Por eso el gesto (`onRefresh`, más abajo) NUNCA toca `recargas` — solo
+   * el foco, que es el único caso real que necesita refrescar el estado de
+   * venta (el regreso de `/vendida/[id]`).
    */
   const primerFoco = useRef(true);
   useFocusEffect(
@@ -177,9 +228,28 @@ export default function DetalleScreen() {
         primerFoco.current = false;
         return;
       }
+      if (idValido) {
+        void cargarDetalle(listingId, { silent: true }).catch((e: any) =>
+          console.warn('[detalle] falló el refresh al enfocar:', e?.message ?? e)
+        );
+      }
       setRecargas((n) => n + 1);
-    }, [])
+    }, [idValido, listingId, cargarDetalle])
   );
+
+  const [refrescando, setRefrescando] = useState(false);
+  const onRefresh = useCallback(async () => {
+    if (!idValido) return;
+    setRefrescando(true);
+    try {
+      await cargarDetalle(listingId, { silent: true });
+    } catch (e: any) {
+      console.warn('[detalle] falló el refresh:', e?.message ?? e);
+      mostrar('No se pudo actualizar. Intenta de nuevo.', 'error');
+    } finally {
+      setRefrescando(false);
+    }
+  }, [idValido, listingId, cargarDetalle, mostrar]);
 
   const estado: 'loading' | 'ready' | 'error' =
     errorPara === listingId ? 'error' : cargadoPara === listingId ? 'ready' : 'loading';
@@ -345,7 +415,7 @@ export default function DetalleScreen() {
         <ErrorState
           onRetry={() => {
             setErrorPara(null);
-            setRecargas((n) => n + 1);
+            void cargarDetalle(listingId);
           }}
           title="No pudimos abrir la publicación"
           sub="Revisa tu conexión e intenta de nuevo."
@@ -355,7 +425,26 @@ export default function DetalleScreen() {
   }
 
   // Sin skeleton propio: el frame no tiene uno para Detalle y no se inventa.
-  if (estado === 'loading' || !listing) return null;
+  if (estado === 'loading') return null;
+
+  // `fetchListingById` resolvió bien pero sin fila: la publicación dejó de ser
+  // visible (RLS la esconde) o se borró. Mismo patrón que `editar/[id].tsx`
+  // (`componentes-compartidos.md`): `ErrorState` reusado con copy propio, sin
+  // frame nuevo, y su "Reintentar" apunta hacia atrás en vez de a la misma
+  // query — reintentarla no va a des-esconder la publicación.
+  if (noDisponible) {
+    return (
+      <Screen>
+        <ErrorState
+          title="Esta publicación ya no está disponible"
+          sub="Puede que el vendedor la haya pausado o eliminado, o que ya no exista."
+          onRetry={() => router.back()}
+        />
+      </Screen>
+    );
+  }
+
+  if (!listing) return null; // defensivo; con `noDisponible` cubierto no debería alcanzarse
 
   const categoria = getCategoria(listing.categoriaId);
   const tint = categoria?.tint ?? 'brick';
@@ -364,7 +453,17 @@ export default function DetalleScreen() {
 
   return (
     <>
-      <Screen contentStyle={{ paddingBottom: insets.bottom + 90 }}>
+      <Screen
+        contentStyle={{ paddingBottom: insets.bottom + 90 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refrescando}
+            onRefresh={onRefresh}
+            tintColor={Colors.brick}
+            colors={[Colors.brick]}
+          />
+        }
+      >
         <View style={[styles.photo, { backgroundColor: TINT_BG[tint] }]}>
           {/* `.detail-track` — todas las fotos de la publicación (`fotos` ya viene
               ordenada por `orden`), deslizables en horizontal. Va por DEBAJO de

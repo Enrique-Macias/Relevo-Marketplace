@@ -823,19 +823,39 @@ export function useListings(params: FetchListingsParams | null) {
   // render por identidad de objeto, pero sí cuando cambia cualquier valor.
   const key = params ? JSON.stringify(params) : null;
 
-  // `loadMore` necesita los params más recientes sin volverse a crear en cada
-  // render. La asignación va en un efecto, no en el cuerpo del render: este
-  // efecto está declarado ANTES que el de carga, así que para cuando ese corre,
-  // el ref ya trae los params de este render.
+  const enVuelo = useRef(false);
+  const [recargas, setRecargas] = useState(0);
+
+  /**
+   * Contador de "generación": sube en cada reseteo por filtro/recargas (abajo)
+   * y en cada `refrescar()` exitoso. `keyRef` ya protege a `loadMore` de un
+   * cambio de FILTRO mientras la página viaja, pero `refrescar()` no toca
+   * `key`/`recargas` a propósito (es silencioso) — así que sin esto, un
+   * `loadMore()` en vuelo podía resolver DESPUÉS de que un `refrescar()`
+   * concurrente ya reemplazó `items` por completo, y pegarle su página encima
+   * de una lista distinta a la que pidió. `loadMore` lo captura antes de pedir
+   * y descarta si cambió mientras viajaba.
+   *
+   * Es ESTADO (no un ref) precisamente porque el reseteo de abajo corre EN
+   * RENDER: mutar un ref ahí lo rechaza `react-hooks/refs` (los refs no se
+   * leen/escriben durante el render). `versionRef`, sincronizado por el mismo
+   * efecto que ya sincroniza `paramsRef`/`keyRef`, es lo que `loadMore`/
+   * `refrescar` leen para comparar — mismo patrón que esos dos.
+   */
+  const [version, setVersion] = useState(0);
+
+  // `loadMore`/`refrescar` necesitan los valores más recientes sin volverse a
+  // crear en cada render. La asignación va en un efecto, no en el cuerpo del
+  // render: este efecto está declarado ANTES que el de carga, así que para
+  // cuando ese corre, los refs ya traen los valores de este render.
   const paramsRef = useRef(params);
   const keyRef = useRef(key);
+  const versionRef = useRef(version);
   useEffect(() => {
     paramsRef.current = params;
     keyRef.current = key;
+    versionRef.current = version;
   });
-
-  const enVuelo = useRef(false);
-  const [recargas, setRecargas] = useState(0);
 
   /**
    * Reseteo AL CAMBIAR DE LISTA, hecho en render y no en la primera línea del
@@ -870,6 +890,7 @@ export function useListings(params: FetchListingsParams | null) {
     setCursor(null);
     setTotal(null);
     setEstado('loading');
+    setVersion((v) => v + 1);
   }
 
   useEffect(() => {
@@ -909,6 +930,7 @@ export function useListings(params: FetchListingsParams | null) {
     setCargandoMas(true);
     const cursorPedido = cursor;
     const keyPedida = key;
+    const versionPedida = versionRef.current;
 
     fetchListings({ ...p, cursor: cursorPedido, withCount: false })
       .then((page) => {
@@ -922,6 +944,10 @@ export function useListings(params: FetchListingsParams | null) {
         // en desarrollo, o al descartar un render), duplicando la página en la
         // lista. Un ref se lee fuera del ciclo de render y no tiene ese riesgo.
         if (keyRef.current !== keyPedida) return;
+        // Mismo criterio, para el caso que `keyRef` no cubre: un
+        // `refrescar()` (pull-to-refresh) que reemplazó `items` por completo
+        // mientras esta página viajaba, sin tocar el filtro.
+        if (versionRef.current !== versionPedida) return;
         setItems((prev) => [...prev, ...page.items]);
         setCursor(page.nextCursor);
       })
@@ -959,6 +985,9 @@ export function useListings(params: FetchListingsParams | null) {
       // Si veníamos de un error, un refresh exitoso debe sacar la pantalla
       // de ese estado — si no, el ErrorState seguiría tapando el grid nuevo.
       setEstado('ready');
+      // Sube la generación: un `loadMore()` que sigue en vuelo desde ANTES de
+      // este refresh está pidiendo una página de una lista que ya no existe.
+      setVersion((v) => v + 1);
     } finally {
       refrescandoRef.current = false;
     }
@@ -986,6 +1015,26 @@ export function useMisListings(userId: string | null, estadoFiltro?: EstadoFiltr
   const [recargas, setRecargas] = useState(0);
 
   const enVuelo = useRef(false);
+  const refrescandoRef = useRef(false);
+  /**
+   * Contador de "generación" — mismo mecanismo y mismo motivo que en
+   * `useListings`: sube en cada reseteo por filtro/recargas (abajo) y en cada
+   * `refrescar()` exitoso, y es lo que le permite a `loadMore` descartar una
+   * página que llega DESPUÉS de que un pull-to-refresh ya reemplazó `items`
+   * por completo, sin tener que comparar contra `estadoFiltro` directamente
+   * (esa comparación, cerrada por el mismo closure en los dos lados, nunca
+   * podía ser distinta de sí misma — no protegía nada).
+   *
+   * Es ESTADO, no un ref, por la misma razón que en `useListings`: el reseteo
+   * de abajo corre EN RENDER, y mutar un ref ahí lo rechaza `react-hooks/refs`.
+   * `versionRef`, sincronizado en un efecto sin deps (corre después de cada
+   * render), es lo que `loadMore`/`refrescar` leen para comparar.
+   */
+  const [version, setVersion] = useState(0);
+  const versionRef = useRef(version);
+  useEffect(() => {
+    versionRef.current = version;
+  });
 
   /**
    * Reseteo AL CAMBIAR DE LISTA, hecho en render y no dentro del efecto.
@@ -1004,6 +1053,7 @@ export function useMisListings(userId: string | null, estadoFiltro?: EstadoFiltr
     setItems([]);
     setCursor(null);
     setEstado('loading');
+    setVersion((v) => v + 1);
   }
 
   useEffect(() => {
@@ -1034,13 +1084,16 @@ export function useMisListings(userId: string | null, estadoFiltro?: EstadoFiltr
 
     enVuelo.current = true;
     setCargandoMas(true);
-    const filtroPedido = estadoFiltro;
+    const versionPedida = versionRef.current;
 
     fetchMisListings({ userId, estado: estadoFiltro, cursor })
       .then((page) => {
-        // Si el chip cambió mientras la página venía en camino, el efecto de
-        // arriba ya reseteó la lista: descartar en vez de mezclar dos filtros.
-        if (filtroPedido !== estadoFiltro) return;
+        // Si el chip cambió, o un `refrescar()` reemplazó la lista, mientras
+        // esta página venía en camino: descartar en vez de mezclar dos
+        // listas distintas. Va contra `versionRef` y no comparando
+        // `estadoFiltro` directamente — esa comparación estaba cerrada por
+        // el mismo closure a los dos lados y nunca podía dar `false`.
+        if (versionRef.current !== versionPedida) return;
         setItems((prev) => [...prev, ...page.items]);
         setCursor(page.nextCursor);
       })
@@ -1053,5 +1106,37 @@ export function useMisListings(userId: string | null, estadoFiltro?: EstadoFiltr
 
   const recargar = useCallback(() => setRecargas((n) => n + 1), []);
 
-  return { items, setItems, estado, cargandoMas, hayMas: cursor !== null, loadMore, recargar };
+  /**
+   * Refresco silencioso (pull-to-refresh) — gemela de `useListings.refrescar()`.
+   * NO vacía `items` ni pasa `estado` por `'loading'`: pide la página 1 fresca
+   * del filtro actual y solo reemplaza `items`/cursor al llegar.
+   */
+  const refrescar = useCallback(async () => {
+    if (!userId || refrescandoRef.current) return;
+
+    refrescandoRef.current = true;
+    const versionPedida = versionRef.current;
+
+    try {
+      const page = await fetchMisListings({ userId, estado: estadoFiltro });
+      if (versionRef.current !== versionPedida) return;
+      setItems(page.items);
+      setCursor(page.nextCursor);
+      setEstado('ready');
+      setVersion((v) => v + 1);
+    } finally {
+      refrescandoRef.current = false;
+    }
+  }, [userId, estadoFiltro]);
+
+  return {
+    items,
+    setItems,
+    estado,
+    cargandoMas,
+    hayMas: cursor !== null,
+    loadMore,
+    recargar,
+    refrescar,
+  };
 }

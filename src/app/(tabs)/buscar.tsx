@@ -2,7 +2,7 @@
 
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { InteractionManager, Pressable, StyleSheet, Text, View } from 'react-native';
+import { InteractionManager, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { ActiveFilterChip } from '@/components/ActiveFilterChip';
 import { GhostButton } from '@/components/Buttons';
@@ -14,6 +14,7 @@ import { ProductCard } from '@/components/ProductCard';
 import { Screen } from '@/components/Screen';
 import { SectionHead } from '@/components/SectionHead';
 import { SkeletonGrid } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
 import { chunkRows } from '@/lib/grid';
@@ -68,7 +69,7 @@ export default function BuscarScreen() {
   const hayFiltrosActivos = !!(filtros.categoriaId || filtros.condicion || filtros.precioMin || filtros.precioMax);
   const modoRecomendados = queryDiferida.trim() === '' && !hayFiltrosActivos;
 
-  const { items, estado, total, cargandoMas, loadMore, reintentar } = useListings(
+  const { items, estado, total, cargandoMas, loadMore, reintentar, refrescar } = useListings(
     campusSeleccionado
       ? modoRecomendados
         ? { campusId: campusSeleccionado.id, orden: 'recientes' as const, limit: 4 }
@@ -87,6 +88,28 @@ export default function BuscarScreen() {
 
   const cargando = estado === 'loading' || !campusSeleccionado;
 
+  const { mostrar } = useToast();
+  const [refrescando, setRefrescando] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefrescando(true);
+    try {
+      await refrescar();
+    } catch (e: any) {
+      console.warn('[buscar] falló el refresh:', e?.message ?? e);
+      mostrar('No se pudo actualizar. Intenta de nuevo.', 'error');
+    } finally {
+      setRefrescando(false);
+    }
+  }, [refrescar, mostrar]);
+  const refreshControl = (
+    <RefreshControl
+      refreshing={refrescando}
+      onRefresh={onRefresh}
+      tintColor={Colors.brick}
+      colors={[Colors.brick]}
+    />
+  );
+
   const buscador = (
     <View style={styles.searchRow}>
       <SearchField
@@ -104,7 +127,7 @@ export default function BuscarScreen() {
 
   if (modoRecomendados) {
     return (
-      <Screen>
+      <Screen refreshControl={refreshControl}>
         {buscador}
         <SectionHead title="Recomendado para ti" />
         {estado === 'error' ? (
@@ -171,7 +194,7 @@ export default function BuscarScreen() {
   const conteo = total ?? items.length;
 
   return (
-    <Screen onEndReached={loadMore}>
+    <Screen onEndReached={loadMore} refreshControl={refreshControl}>
       {buscador}
 
       <View style={styles.activeChips}>

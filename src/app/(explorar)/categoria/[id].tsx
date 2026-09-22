@@ -1,8 +1,8 @@
 /** Categoría (+ sin resultados) — publicaciones de una categoría, con búsqueda y orden. */
 
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { PrimaryButton } from '@/components/Buttons';
 import { Chip } from '@/components/Chip';
@@ -15,6 +15,7 @@ import { ProductCard } from '@/components/ProductCard';
 import { RoundIconButton } from '@/components/RoundIconButton';
 import { Screen } from '@/components/Screen';
 import { SkeletonGrid } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 import { Colors, ScreenPadding, Typography } from '@/constants/theme';
 import { useDebounce } from '@/lib/use-debounce';
 import { useExplorarState } from '@/lib/explorar-state';
@@ -41,7 +42,7 @@ export default function CategoriaScreen() {
 
   // Misma semántica que tenía el filtrado sobre el mock: la categoría la fija
   // la ruta (no el filtro), y precio/condición/orden salen del contexto.
-  const { items, estado, total, cargandoMas, loadMore, reintentar } = useListings(
+  const { items, estado, total, cargandoMas, loadMore, reintentar, refrescar } = useListings(
     campusSeleccionado
       ? {
           campusId: campusSeleccionado.id,
@@ -59,9 +60,31 @@ export default function CategoriaScreen() {
   const cargando = estado === 'loading' || !campusSeleccionado;
   const conteo = total ?? items.length;
 
+  const { mostrar } = useToast();
+  const [refrescando, setRefrescando] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefrescando(true);
+    try {
+      await refrescar();
+    } catch (e: any) {
+      console.warn('[categoria] falló el refresh:', e?.message ?? e);
+      mostrar('No se pudo actualizar. Intenta de nuevo.', 'error');
+    } finally {
+      setRefrescando(false);
+    }
+  }, [refrescar, mostrar]);
+
   return (
     <Screen
       onEndReached={loadMore}
+      refreshControl={
+        <RefreshControl
+          refreshing={refrescando}
+          onRefresh={onRefresh}
+          tintColor={Colors.brick}
+          colors={[Colors.brick]}
+        />
+      }
       header={
         <PageHeader
           title={categoria?.nombre ?? ''}

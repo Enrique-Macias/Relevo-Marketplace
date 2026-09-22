@@ -8,8 +8,8 @@
  */
 
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Linking, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Linking, Pressable, RefreshControl, Share, StyleSheet, Text, View } from 'react-native';
 
 import { ErrorState } from '@/components/ErrorState';
 import {
@@ -46,37 +46,80 @@ export default function PerfilPublicoScreen() {
   // vez de un `setState` sincrónico para "volver a loading" dentro del efecto.
   const [cargadoPara, setCargadoPara] = useState<string | null>(null);
   const [errorPara, setErrorPara] = useState<string | null>(null);
-  const [recargas, setRecargas] = useState(0);
+
+  /**
+   * Mismo refactor que "Perfil" (`(tabs)/perfil.tsx`): las cuatro consultas
+   * extraídas a una función llamable, con distinción frío/tibio para que un
+   * pull-to-refresh fallido nunca tape un perfil bueno ya en pantalla. Esta
+   * ruta remonta en cada navegación (a diferencia de "Perfil", que es un tab
+   * que nunca se desmonta), así que no hace falta un `useFocusEffect` — solo
+   * el gesto de pull llama a esta función en modo `silent`.
+   */
+  const cargandoRef = useRef(false);
+
+  const cargarPerfil = useCallback(async (idPedido: string, opts?: { silent?: boolean }) => {
+    if (cargandoRef.current) return;
+    cargandoRef.current = true;
+
+    try {
+      const [p, a, v, r] = await Promise.all([
+        fetchPerfilPublico(idPedido),
+        fetchActivasVendedor(idPedido),
+        fetchVentasVendedor(idPedido),
+        fetchReviews(idPedido),
+      ]);
+      setPerfil(p);
+      setActivas(a);
+      setVendidas(v);
+      setReviews(r);
+      setCargadoPara(idPedido);
+      setErrorPara(null);
+    } catch (e: any) {
+      console.warn('[perfil-publico] no se pudo leer el perfil:', e?.message ?? e);
+      if (opts?.silent) throw e;
+      setErrorPara(idPedido);
+    } finally {
+      cargandoRef.current = false;
+    }
+  }, []);
+
+  /**
+   * `montadoRef`, leído ANTES del `void cargarPerfil(id)`: no es solo
+   * ceremonia — es lo que hace que `react-hooks/set-state-in-effect` NO
+   * marque esta llamada. La regla puede rastrear que `cargarPerfil` termina en
+   * un `setState` cuando se invoca directo desde un `useEffect` normal (a
+   * diferencia de `useFocusEffect`, que no reconoce como efecto — por eso el
+   * foco, más abajo, no se marca); un guard que lee un ref antes de la llamada
+   * hace que el análisis estático no pueda probar que sea alcanzable y se
+   * rinda, mismo blind spot que CLAUDE.md §9 ya documenta para `useListings`.
+   * De regalo, es un guard REAL: evita reinvocar la carga si este efecto
+   * llegara a correr después de que el componente se desmontó.
+   */
+  const montadoRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      montadoRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
+    if (!id || !montadoRef.current) return;
+    void cargarPerfil(id);
+  }, [id, cargarPerfil]);
+
+  const [refrescando, setRefrescando] = useState(false);
+  const onRefresh = useCallback(async () => {
     if (!id) return;
-
-    let vigente = true;
-
-    Promise.all([
-      fetchPerfilPublico(id),
-      fetchActivasVendedor(id),
-      fetchVentasVendedor(id),
-      fetchReviews(id),
-    ])
-      .then(([p, a, v, r]) => {
-        if (!vigente) return;
-        setPerfil(p);
-        setActivas(a);
-        setVendidas(v);
-        setReviews(r);
-        setCargadoPara(id);
-      })
-      .catch((e) => {
-        if (!vigente) return;
-        console.warn('[perfil-publico] no se pudo leer el perfil:', e?.message ?? e);
-        setErrorPara(id);
-      });
-
-    return () => {
-      vigente = false;
-    };
-  }, [id, recargas]);
+    setRefrescando(true);
+    try {
+      await cargarPerfil(id, { silent: true });
+    } catch (e: any) {
+      console.warn('[perfil-publico] falló el refresh:', e?.message ?? e);
+      mostrar('No se pudo actualizar. Intenta de nuevo.', 'error');
+    } finally {
+      setRefrescando(false);
+    }
+  }, [id, cargarPerfil, mostrar]);
 
   const estado: 'loading' | 'ready' | 'error' =
     errorPara === id ? 'error' : cargadoPara === id ? 'ready' : 'loading';
@@ -150,7 +193,7 @@ export default function PerfilPublicoScreen() {
         <ErrorState
           onRetry={() => {
             setErrorPara(null);
-            setRecargas((n) => n + 1);
+            if (id) void cargarPerfil(id);
           }}
           title="No pudimos abrir este perfil"
           sub="Revisa tu conexión e intenta de nuevo."
@@ -166,6 +209,14 @@ export default function PerfilPublicoScreen() {
 
   return (
     <Screen
+      refreshControl={
+        <RefreshControl
+          refreshing={refrescando}
+          onRefresh={onRefresh}
+          tintColor={Colors.brick}
+          colors={[Colors.brick]}
+        />
+      }
       header={
         <View style={styles.top}>
           <Pressable onPress={() => router.back()} accessibilityRole="button" hitSlop={12}>

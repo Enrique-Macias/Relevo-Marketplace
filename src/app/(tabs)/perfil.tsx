@@ -20,7 +20,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ErrorState } from '@/components/ErrorState';
@@ -83,45 +83,83 @@ export default function PerfilScreen() {
   // error), en vez de una bandera booleana de loading.
   const [cargadoPara, setCargadoPara] = useState<string | null>(null);
   const [errorPara, setErrorPara] = useState<string | null>(null);
-  const [recargas, setRecargas] = useState(0);
-
-  useEffect(() => {
-    if (!userId) return;
-
-    let vigente = true;
-
-    Promise.all([
-      fetchPerfilPublico(userId),
-      fetchReviews(userId),
-      fetchActivasVendedor(userId),
-      fetchVentasVendedor(userId),
-      fetchFavoritosCount(userId),
-      fetchMisListings({ userId, limit: 2 }),
-    ])
-      .then(([p, r, a, v, f, mis]) => {
-        if (!vigente) return;
-        setPerfil(p);
-        setReviews(r);
-        setActivas(a);
-        setVendidas(v);
-        setFavoritosCount(f);
-        setMisListings(mis.items);
-        setCargadoPara(userId);
-      })
-      .catch((e) => {
-        if (!vigente) return;
-        console.warn('[perfil] no se pudo cargar el perfil:', e?.message ?? e);
-        setErrorPara(userId);
-      });
-
-    return () => {
-      vigente = false;
-    };
-  }, [userId, recargas]);
 
   /**
-   * Refresco al volver al tab — no al montar, eso ya lo cubre el efecto de
-   * arriba. Mismo patrón que `mis-publicaciones.tsx`.
+   * Las seis consultas, extraídas a una función llamable en vez de vivir
+   * dentro de un efecto atado a un contador `recargas` — necesario para poder
+   * distinguir la carga FRÍA (nada en pantalla todavía: un fallo pinta
+   * `ErrorState`, como siempre) de una recarga TIBIA (foco o pull-to-refresh:
+   * un fallo NUNCA debe tapar un perfil bueno ya visible, solo avisar). Antes
+   * las dos compartían el mismo camino de error —`setErrorPara`—, así que
+   * CUALQUIER falla del refresco por foco reemplazaba un perfil bueno con
+   * `ErrorState`; con `opts.silent` eso queda cerrado.
+   *
+   * Guard de una sola vuelo (`cargandoRef`) en vez de por `recargas`: es lo
+   * que permite que el foco y el gesto de pull-to-refresh llamen a la MISMA
+   * función sin arriesgarse a dispararla dos veces a la vez — quien llegue
+   * segundo no-opea.
+   */
+  const cargandoRef = useRef(false);
+
+  const cargarPerfil = useCallback(async (id: string, opts?: { silent?: boolean }) => {
+    if (cargandoRef.current) return;
+    cargandoRef.current = true;
+
+    try {
+      const [p, r, a, v, f, mis] = await Promise.all([
+        fetchPerfilPublico(id),
+        fetchReviews(id),
+        fetchActivasVendedor(id),
+        fetchVentasVendedor(id),
+        fetchFavoritosCount(id),
+        fetchMisListings({ userId: id, limit: 2 }),
+      ]);
+      setPerfil(p);
+      setReviews(r);
+      setActivas(a);
+      setVendidas(v);
+      setFavoritosCount(f);
+      setMisListings(mis.items);
+      setCargadoPara(id);
+      // Un refresco exitoso saca a la pantalla de un error previo — mismo
+      // criterio que `useListings.refrescar()`.
+      setErrorPara(null);
+    } catch (e: any) {
+      console.warn('[perfil] no se pudo cargar el perfil:', e?.message ?? e);
+      // Frío (nada que mostrar todavía): se pinta ErrorState, como antes.
+      // Tibio (ya hay contenido bueno en pantalla): NO se toca `errorPara` —
+      // el llamador decide si avisa (ver `onRefresh` y el foco, abajo).
+      if (opts?.silent) throw e;
+      setErrorPara(id);
+    } finally {
+      cargandoRef.current = false;
+    }
+  }, []);
+
+  /**
+   * `montadoRef`, leído ANTES de la llamada: es lo que evita que
+   * `react-hooks/set-state-in-effect` marque este `useEffect` — mismo blind
+   * spot ya documentado en CLAUDE.md §9 para `useListings`, y de regalo un
+   * guard real contra reinvocar la carga si el efecto llegara a correr
+   * después de desmontar.
+   */
+  const montadoRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      montadoRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!userId || !montadoRef.current) return;
+    void cargarPerfil(userId);
+  }, [userId, cargarPerfil]);
+
+  /**
+   * Refresco silencioso al volver al tab — no al montar, eso ya lo cubre el
+   * efecto de arriba. Mismo patrón que `mis-publicaciones.tsx`/`favoritos.tsx`:
+   * llama a la MISMA función que usa el gesto de pull, así que su guard de una
+   * sola vuelo evita que las dos disparen carga a la vez.
    */
   const primerFoco = useRef(true);
   useFocusEffect(
@@ -130,9 +168,26 @@ export default function PerfilScreen() {
         primerFoco.current = false;
         return;
       }
-      setRecargas((r) => r + 1);
-    }, [])
+      if (!userId) return;
+      void cargarPerfil(userId, { silent: true }).catch((e: any) =>
+        console.warn('[perfil] falló el refresh al enfocar:', e?.message ?? e)
+      );
+    }, [userId, cargarPerfil])
   );
+
+  const [refrescando, setRefrescando] = useState(false);
+  const onRefresh = useCallback(async () => {
+    if (!userId) return;
+    setRefrescando(true);
+    try {
+      await cargarPerfil(userId, { silent: true });
+    } catch (e: any) {
+      console.warn('[perfil] falló el refresh:', e?.message ?? e);
+      mostrar('No se pudo actualizar. Intenta de nuevo.', 'error');
+    } finally {
+      setRefrescando(false);
+    }
+  }, [userId, cargarPerfil, mostrar]);
 
   /**
    * AVISO DEL AVATAR BORRADO POR MODERACIÓN (RF-18).
@@ -215,7 +270,16 @@ export default function PerfilScreen() {
 
   return (
     <>
-      <Screen>
+      <Screen
+        refreshControl={
+          <RefreshControl
+            refreshing={refrescando}
+            onRefresh={onRefresh}
+            tintColor={Colors.brick}
+            colors={[Colors.brick]}
+          />
+        }
+      >
         <StatusBar style="dark" />
 
         <View style={styles.top}>
@@ -230,7 +294,7 @@ export default function PerfilScreen() {
           <ErrorState
             onRetry={() => {
               setErrorPara(null);
-              setRecargas((n) => n + 1);
+              if (userId) void cargarPerfil(userId);
             }}
             title="No pudimos cargar tu perfil"
             sub="Revisa tu conexión e intenta de nuevo."

@@ -8,7 +8,7 @@
  * en el momento del evento y son historia, no estado editable.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
 
@@ -154,7 +154,36 @@ export function useNotificaciones(userId: string | null) {
 
   const recargar = useCallback(() => setRecargas((n) => n + 1), []);
 
-  return { items, estado, marcarLeidas, recargar };
+  /**
+   * Refresco silencioso (pull-to-refresh) — gemela de `useListings.refrescar()`.
+   * NO vacía `items` ni pasa `estado` por `'loading'`: pide el inbox de nuevo y
+   * solo reemplaza `items` al llegar. `userIdRef`, sincronizado en cada render,
+   * es lo que le permite descartar una respuesta que llegó tarde si la cuenta
+   * ya cambió mientras viajaba.
+   */
+  const refrescandoRef = useRef(false);
+  const userIdRef = useRef(userId);
+  useEffect(() => {
+    userIdRef.current = userId;
+  });
+
+  const refrescar = useCallback(async () => {
+    if (!userId || refrescandoRef.current) return;
+
+    refrescandoRef.current = true;
+    const userIdPedido = userId;
+
+    try {
+      const filas = await fetchNotificaciones();
+      if (userIdRef.current !== userIdPedido) return;
+      setItems(filas);
+      setEstado('ready');
+    } finally {
+      refrescandoRef.current = false;
+    }
+  }, [userId]);
+
+  return { items, estado, marcarLeidas, recargar, refrescar };
 }
 
 /**

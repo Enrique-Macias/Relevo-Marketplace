@@ -72,6 +72,15 @@ Detalles que no se ven en el diff:
   sin rollback — mismo criterio que el corazón de favoritos: la policy solo
   compara `user_id = auth.uid()` sobre filas propias, así que no hay rechazo por
   política posible y el costo de equivocarse es que el punto reaparezca.
+- **`useNotificaciones` ganó `refrescar()` (pull-to-refresh), gemela de
+  `useListings.refrescar()`: pide `fetchNotificaciones()` de nuevo y reemplaza
+  `items` sin pasar por `'loading'` ni vaciar la lista.** `recargar()` (la que
+  vacía y muestra skeleton) se queda solo para `ErrorState.onRetry`. El efecto
+  de `marcarLeidas()` (depende de `items`) se re-dispara solo cuando el
+  refresh trae notificaciones nuevas — comportamiento DESEADO, no un efecto
+  colateral: una notificación que llegó vía pull-to-refresh debe marcarse leída
+  igual que cualquier otra recién cargada, verificado leyendo el `useCallback`
+  de `marcarLeidas`.
 
 - **El tercer tipo, `compra_calificable`, NO cambió ni `destino()`
   (`src/lib/push.ts`) ni el `onPress` del inbox.** Trae `listing_id`, así que el

@@ -10,8 +10,8 @@
 
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
@@ -20,6 +20,7 @@ import { NotifRow } from '@/components/NotifRow';
 import { PageHeader } from '@/components/PageHeader';
 import { Screen } from '@/components/Screen';
 import { SkeletonNotifRows } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 import { Colors } from '@/constants/theme';
 import { useNotificaciones } from '@/lib/notificaciones';
 import { useSession } from '@/lib/session';
@@ -27,7 +28,20 @@ import { useSession } from '@/lib/session';
 export default function NotificacionesScreen() {
   const { session } = useSession();
   const userId = session?.user.id ?? null;
-  const { items, estado, marcarLeidas, recargar } = useNotificaciones(userId);
+  const { items, estado, marcarLeidas, recargar, refrescar } = useNotificaciones(userId);
+  const { mostrar } = useToast();
+  const [refrescando, setRefrescando] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefrescando(true);
+    try {
+      await refrescar();
+    } catch (e: any) {
+      console.warn('[notificaciones] falló el refresh:', e?.message ?? e);
+      mostrar('No se pudo actualizar. Intenta de nuevo.', 'error');
+    } finally {
+      setRefrescando(false);
+    }
+  }, [refrescar, mostrar]);
 
   /**
    * Se marcan leídas al terminar de cargar, no al montar: antes de eso `items`
@@ -44,7 +58,17 @@ export default function NotificacionesScreen() {
   }, [estado, marcarLeidas]);
 
   return (
-    <Screen header={<PageHeader title="Notificaciones" />}>
+    <Screen
+      header={<PageHeader title="Notificaciones" />}
+      refreshControl={
+        <RefreshControl
+          refreshing={refrescando}
+          onRefresh={onRefresh}
+          tintColor={Colors.brick}
+          colors={[Colors.brick]}
+        />
+      }
+    >
       <StatusBar style="dark" />
 
       {estado === 'error' ? (

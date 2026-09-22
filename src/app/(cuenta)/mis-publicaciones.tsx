@@ -12,7 +12,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { PrimaryButton } from '@/components/Buttons';
 import { Chip } from '@/components/Chip';
@@ -109,10 +109,8 @@ export default function MisPublicacionesScreen() {
   const userId = session?.user.id ?? null;
 
   const [filtro, setFiltro] = useState<EstadoFiltrable | undefined>(undefined);
-  const { items, setItems, estado, cargandoMas, hayMas, loadMore, recargar } = useMisListings(
-    userId,
-    filtro
-  );
+  const { items, setItems, estado, cargandoMas, hayMas, loadMore, recargar, refrescar } =
+    useMisListings(userId, filtro);
 
   /** La publicación cuyo kebab se tocó: es lo que hace visible la hoja. */
   const [acciones, setAcciones] = useState<MiListing | null>(null);
@@ -120,13 +118,21 @@ export default function MisPublicacionesScreen() {
   const [borrando, setBorrando] = useState(false);
 
   /**
-   * Recargar al volver a la pantalla.
+   * Refrescar al volver a la pantalla.
    *
    * Editar publicación puede haber cambiado título, precio, fotos o estado, y no
    * hay caché compartida en el proyecto que se pueda invalidar (no hay
    * react-query): la lista se vuelve a pedir. Se salta el PRIMER foco porque
    * `useMisListings` ya está cargando para ese montaje — sin este ref, entrar a
    * la pantalla dispararía dos cargas idénticas.
+   *
+   * Va con `refrescar()` (silencioso) y NO con `recargar()` (que vacía la
+   * lista y pasa por el skeleton): antes de pull-to-refresh, volver de tab
+   * SIEMPRE mostraba un parpadeo a skeleton en esta pantalla — ya no hace
+   * falta, y de paso esto es lo que evita que el foco y el gesto de pull
+   * disparen dos cargas a la vez: los dos llaman a la MISMA `refrescar()`, que
+   * tiene su propio guard de una sola vuelo (`refrescandoRef` en
+   * `useMisListings`) — el que llegue segundo no-opea.
    */
   const primerFoco = useRef(true);
   useFocusEffect(
@@ -135,9 +141,24 @@ export default function MisPublicacionesScreen() {
         primerFoco.current = false;
         return;
       }
-      recargar();
-    }, [recargar])
+      void refrescar().catch((e: any) =>
+        console.warn('[mis-publicaciones] falló el refresh al enfocar:', e?.message ?? e)
+      );
+    }, [refrescar])
   );
+
+  const [refrescando, setRefrescando] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefrescando(true);
+    try {
+      await refrescar();
+    } catch (e: any) {
+      console.warn('[mis-publicaciones] falló el refresh:', e?.message ?? e);
+      mostrar('No se pudo actualizar. Intenta de nuevo.', 'error');
+    } finally {
+      setRefrescando(false);
+    }
+  }, [refrescar, mostrar]);
 
   /**
    * Pausar / reactivar. Optimista con rollback, mismo criterio que el toggle de
@@ -218,6 +239,14 @@ export default function MisPublicacionesScreen() {
       <Screen
         header={<PageHeader title="Mis publicaciones" />}
         onEndReached={hayMas ? loadMore : undefined}
+        refreshControl={
+          <RefreshControl
+            refreshing={refrescando}
+            onRefresh={onRefresh}
+            tintColor={Colors.brick}
+            colors={[Colors.brick]}
+          />
+        }
       >
         <StatusBar style="dark" />
 

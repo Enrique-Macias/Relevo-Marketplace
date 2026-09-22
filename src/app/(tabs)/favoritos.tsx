@@ -6,7 +6,7 @@
 
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { PrimaryButton } from '@/components/Buttons';
 import { EmptyState } from '@/components/EmptyState';
@@ -15,6 +15,7 @@ import { IconHeart } from '@/components/icons';
 import { ProductCard } from '@/components/ProductCard';
 import { Screen } from '@/components/Screen';
 import { SkeletonGrid } from '@/components/Skeleton';
+import { useToast } from '@/components/Toast';
 import { Colors, ScreenPadding, Typography } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
 import { chunkRows } from '@/lib/grid';
@@ -71,10 +72,46 @@ export default function FavoritosScreen() {
   const reintentar = useCallback(() => setRecargas((n) => n + 1), []);
 
   /**
+   * Refresco silencioso (pull-to-refresh) — hand-rolled en este archivo y no
+   * extraído a un hook compartido: sigue siendo la única pantalla con este
+   * estado a mano, y un hook para un solo consumidor no se justifica. Mismo
+   * criterio que `useListings.refrescar()`: NO vacía `items` ni pasa `estado`
+   * por `'loading'`. `userIdRef`, sincronizado cada render, descarta la
+   * respuesta si la cuenta cambió mientras viajaba.
+   */
+  const refrescandoRef = useRef(false);
+  const userIdRef = useRef(userId);
+  useEffect(() => {
+    userIdRef.current = userId;
+  });
+
+  const refrescar = useCallback(async () => {
+    if (!userId || refrescandoRef.current) return;
+
+    refrescandoRef.current = true;
+    const userIdPedido = userId;
+
+    try {
+      const data = await fetchFavoritos(userId);
+      if (userIdRef.current !== userIdPedido) return;
+      setItems(data);
+      setEstado('ready');
+    } finally {
+      refrescandoRef.current = false;
+    }
+  }, [userId]);
+
+  /**
    * Refetch al volver al tab, saltando el primer foco (ya cubierto por el
    * efecto de arriba) — mismo patrón que `mis-publicaciones.tsx`. Un
    * favorito puede haberse agregado desde Detalle, Búsqueda o el Feed
    * mientras el usuario no estaba en este tab.
+   *
+   * Va con `refrescar()` (silencioso) y NO con `reintentar()` (que vacía
+   * `items` y pasa por el skeleton) — mismo motivo que en "Mis
+   * publicaciones": esto es lo que evita que el foco y el gesto de pull
+   * disparen dos cargas a la vez, porque comparten el mismo guard de una sola
+   * vuelo (`refrescandoRef`).
    */
   const primerFoco = useRef(true);
   useFocusEffect(
@@ -83,9 +120,25 @@ export default function FavoritosScreen() {
         primerFoco.current = false;
         return;
       }
-      reintentar();
-    }, [reintentar])
+      void refrescar().catch((e: any) =>
+        console.warn('[favoritos] falló el refresh al enfocar:', e?.message ?? e)
+      );
+    }, [refrescar])
   );
+
+  const { mostrar } = useToast();
+  const [refrescando, setRefrescando] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefrescando(true);
+    try {
+      await refrescar();
+    } catch (e: any) {
+      console.warn('[favoritos] falló el refresh:', e?.message ?? e);
+      mostrar('No se pudo actualizar. Intenta de nuevo.', 'error');
+    } finally {
+      setRefrescando(false);
+    }
+  }, [refrescar, mostrar]);
 
   /**
    * La lista que se pinta se DERIVA de `items` (los datos traídos) cruzados
@@ -107,7 +160,16 @@ export default function FavoritosScreen() {
   const vacio = estado === 'ready' && visibles.length === 0;
 
   return (
-    <Screen>
+    <Screen
+      refreshControl={
+        <RefreshControl
+          refreshing={refrescando}
+          onRefresh={onRefresh}
+          tintColor={Colors.brick}
+          colors={[Colors.brick]}
+        />
+      }
+    >
       <Text style={styles.heading}>Favoritos</Text>
 
       {estado === 'error' ? (
