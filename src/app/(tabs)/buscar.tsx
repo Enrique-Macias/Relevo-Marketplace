@@ -1,15 +1,15 @@
 /** Búsqueda — 3 estados: recomendados (sin query/filtros) / resultados / sin resultados. */
 
-import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
+import { InteractionManager, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ActiveFilterChip } from '@/components/ActiveFilterChip';
 import { GhostButton } from '@/components/Buttons';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { IconFilterSliders, IconSearch } from '@/components/icons';
-import { SearchField } from '@/components/ListRow';
+import { SearchField, type SearchFieldHandle } from '@/components/ListRow';
 import { ProductCard } from '@/components/ProductCard';
 import { Screen } from '@/components/Screen';
 import { SectionHead } from '@/components/SectionHead';
@@ -28,9 +28,33 @@ const CONDICION_LABEL: Record<string, string> = {
 };
 
 export default function BuscarScreen() {
-  const { q } = useLocalSearchParams<{ q?: string }>();
+  const { q, autoFocus } = useLocalSearchParams<{ q?: string; autoFocus?: string }>();
   const [query, setQuery] = useState(q ?? '');
   const queryDiferida = useDebounce(query);
+
+  // Búsqueda es la raíz del tab "Buscar" y NO se desmonta al cambiar de tab
+  // (`expo-router/unstable-native-tabs` monta las 4 pantallas de una vez —
+  // ver `.claude/rules/explorar.md`), así que `autoFocus` no puede disparar
+  // el foco en cada `useFocusEffect`: se guarda el ÚLTIMO VALOR consumido
+  // (no un booleano) para poder distinguir un tap nuevo del buscador del
+  // Feed (valor distinto) de un simple regreso de tab con el mismo param ya
+  // visto (mismo valor → no dispara).
+  const searchFieldRef = useRef<SearchFieldHandle>(null);
+  const autoFocusConsumido = useRef<string | undefined>(undefined);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!autoFocus || autoFocus === autoFocusConsumido.current) return;
+      autoFocusConsumido.current = autoFocus;
+      // El foco va DESPUÉS de que termine la transición de navegación, no
+      // durante — `runAfterInteractions` evita que el teclado tire encima
+      // de la animación de cambio de tab.
+      const task = InteractionManager.runAfterInteractions(() => {
+        searchFieldRef.current?.focus();
+      });
+      return () => task.cancel();
+    }, [autoFocus])
+  );
   const {
     filtros,
     setFiltros,
@@ -66,6 +90,7 @@ export default function BuscarScreen() {
   const buscador = (
     <View style={styles.searchRow}>
       <SearchField
+        ref={searchFieldRef}
         placeholder="Busca libros, electrónica, muebles…"
         value={query}
         onChangeText={setQuery}

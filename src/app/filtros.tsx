@@ -1,6 +1,6 @@
 /** Filtros — hoja con categoría, precio, condición y orden. */
 
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { GhostButton, PrimaryButton } from '@/components/Buttons';
@@ -24,6 +24,11 @@ const ORDEN_OPTIONS = [
 
 export default function FiltrosScreen() {
   const { filtros, setFiltros, limpiarFiltros, categorias } = useExplorarState();
+  // Solo el Feed manda este param (`(tabs)/index.tsx`): desde ahí, "Aplicar
+  // filtros" no puede volver al Feed con `back()` — el Feed ignora el
+  // contexto de filtros y el usuario no vería ningún cambio — así que
+  // aterriza directo en Búsqueda "con resultados". Ver `.claude/rules/explorar.md`.
+  const { origin } = useLocalSearchParams<{ origin?: string }>();
 
   return (
     <SheetScreen
@@ -33,7 +38,7 @@ export default function FiltrosScreen() {
           <GhostButton label="Limpiar todo" onPress={limpiarFiltros} style={styles.flex1} />
           <PrimaryButton
             label="Aplicar filtros"
-            onPress={() => router.back()}
+            onPress={() => (origin === 'feed' ? router.dismissTo('/buscar') : router.back())}
             style={styles.applyBtn}
           />
         </>

@@ -10,6 +10,7 @@ paths:
   - "src/lib/categorias.ts"
   - "src/lib/favoritos.ts"
   - "src/lib/grid.ts"
+  - "src/components/ListRow.tsx"
 ---
 
 # Explorar: feed, búsqueda, categorías y Detalle
@@ -208,3 +209,104 @@ registro: si el insert revienta, WhatsApp se abre igual y el usuario ve un toast
   `vercel-react-native-skills`); cambia el contenedor, no el diseño —
   `chunkRows()` desaparece a favor de `numColumns` y `Screen` deja de envolver
   el grid en su `ScrollView` para esas dos pantallas.
+
+## El buscador del Feed abre Búsqueda con teclado, y aplicar filtros aterriza ahí
+
+**El buscador falso del Feed y "Ver todo" dejaron de ser idénticos.** Antes
+los dos hacían el mismo `router.push('/buscar')` sin params. Ahora solo el
+buscador (`(tabs)/index.tsx`, el `Pressable` de `.searchFieldFake`) manda
+`params: { autoFocus: Date.now().toString() }` — "Ver todo" y el tab bar
+siguen sin params, a propósito: son los dos casos donde el usuario llega a
+explorar, no a escribir, así que no deben abrir el teclado.
+
+**Por qué el valor es `Date.now().toString()` y no una constante fija —
+y por qué el guard del lado de Búsqueda compara VALOR y no un booleano.**
+La primera versión de este diseño usaba un `autoFocus: '1'` fijo con un
+`ref` booleano que se ponía en `true` la primera vez que disparaba el foco.
+Es un bug real, detectado en revisión antes de escribir código: Búsqueda es
+la pantalla raíz del tab "Buscar" y **nunca se desmonta** al cambiar de tab
+(ver el punto siguiente), así que ese booleano se queda en `true` para
+siempre — el foco habría funcionado la PRIMERA vez de toda la sesión de la
+app y nunca más, aunque el usuario volviera a tocar el buscador del Feed
+después. Y como el param era el mismo string constante, tampoco había forma
+de que Búsqueda distinguiera "toque nuevo genuino" de "la pantalla recuperó
+el foco con el mismo param que ya había consumido" (el caso que SÍ debe
+seguir bloqueado — volver de Detalle, o cambiar de tab y regresar). Por eso
+`(tabs)/buscar.tsx` guarda en `autoFocusConsumido` (un `ref<string |
+undefined>`) el ÚLTIMO VALOR consumido, no una bandera: dispara el foco solo
+si `autoFocus` está presente y es distinto al último ya visto, y luego lo
+guarda como consumido. Un tap nuevo en el Feed manda un timestamp distinto
+→ dispara; volver de Detalle o cambiar de tab manda el mismo timestamp (o
+ninguno) → no dispara.
+
+**Búsqueda no se desmonta entre tabs — verificado leyendo el código fuente
+instalado, no por analogía con el comentario del Feed sobre el inbox.**
+Medido contra `expo-router@57.0.19` (la versión exacta instalada en este
+repo — `native-tabs` es experimental y esto puede cambiar entre parches, así
+que si se actualiza `expo-router` vale la pena releer estos tres archivos
+antes de asumir que sigue igual):
+- `node_modules/expo-router/build/native-tabs/NativeBottomTabsNavigator.js:94-100` —
+  `visibleTabs` mapea TODAS las `routes` del tab bar y arma un
+  `contentRenderer: () => descriptors[route.key].render()` por cada una, sin
+  condicionar por `state.index` (el tab con foco, que se calcula recién
+  después, solo para saber cuál resaltar).
+- `NativeTabsView.shared.js` (`ScreenContent`) — llama `contentRenderer()`
+  sin ningún gate por `isFocused`; ese flag solo cambia `pointerEvents`
+  (`box-none` vs `none`, es decir si el tab recibe toques), no si está
+  montado.
+- `NativeTabsView.ios.js` / `NativeTabsView.android.js` (idéntico en las dos
+  plataformas) — `children = tabs.map(...)` crea un `<Screen>` por cada tab
+  siempre, sin condicional.
+
+O sea: los 4 tabs se montan de una vez al entrar a `(tabs)` y quedan vivos
+todo el tiempo: cambiar de tab solo mueve qué recibe toques, no qué está
+renderizado. Es la misma razón por la que el `noLeidas` del Feed se
+recuenta con `useFocusEffect` y no solo al montar (`(tabs)/index.tsx:35-40`)
+— pero aquí se verificó en el código de `native-tabs` en vez de asumirlo por
+ese precedente.
+
+**El foco va con `InteractionManager.runAfterInteractions`, no de forma
+síncrona.** Llamar `.focus()` en el mismo tick en que se dispara la
+navegación compite con la transición de cambio de tab — el teclado puede
+tirar del layout mientras la animación todavía está corriendo.
+`runAfterInteractions` encola el foco para después de que el motor de
+interacciones considere terminadas las animaciones en curso, y el `task`
+que devuelve se cancela en el cleanup del `useFocusEffect` por si el
+usuario navega fuera antes de que corra.
+
+**`SearchField` (`src/components/ListRow.tsx`) ganó un ref imperativo** —
+mismo patrón que `PhotoCarouselHandle`
+(`src/components/PhotoCarousel.tsx:57-60,77-116`): un tipo `SearchFieldHandle
+= { focus: () => void }` exportado, `forwardRef` + `useImperativeHandle`
+sobre un `useRef<TextInput>` interno. Es aditivo: los otros 3 consumidores
+(Selector de universidad, Selector de campus, Categoría) no pasan `ref` y
+siguen funcionando igual — `forwardRef` no rompe una llamada sin `ref`.
+
+**Aplicar filtros desde el Feed aterriza en Búsqueda, no vuelve al Feed.**
+Antes "Aplicar filtros" (`filtros.tsx`) siempre hacía `router.back()` — sin
+importar quién lo abrió. Eso era invisible desde el Feed: su grid ignora
+`filtros` por completo (`(tabs)/index.tsx` nunca lee `useExplorarState().filtros`),
+así que el usuario volvía sin ver ningún cambio, aunque el filtro sí había
+quedado guardado en el contexto compartido. Ahora el ícono de filtro del
+Feed manda `params: { origin: 'feed' }`, y "Aplicar filtros" ramifica:
+`origin === 'feed' ? router.dismissTo('/buscar') : router.back()`. Desde
+Búsqueda o Categoría (que no mandan `origin`) el comportamiento no cambió.
+
+**`dismissTo('/buscar')` SÍ conmuta el tab activo del `NativeTabs` anidado —
+confirmado con prueba manual en dispositivo, no asumido por lectura de
+código.** Antes de esa prueba no era obvio: `filtros` se abre como
+`transparentModal` del Stack RAÍZ empujado sobre `(tabs)` mientras el tab
+interno activo sigue siendo Feed, `dismissTo('/buscar')` resuelve un
+`POP_TO` contra ESE Stack raíz, y leyendo el código de
+`expo-router`/React Navigation no quedaba claro si reescribir los `params`
+de la entrada `(tabs)` también reconciliaba el `state.index` del navegador
+de tabs ya montado (a diferencia del caso de "Ver todo", que sí está
+probado por lectura de código: ahí no hay modal de por medio y el
+`NAVIGATE` se despacha directo contra el propio navegador de tabs). La
+prueba en dispositivo lo zanjó: tras "Aplicar filtros" desde el Feed, el
+tab "Buscar" queda VISIBLEMENTE activo mostrando "con resultados" — no hizo
+falta el fallback (`router.back()` + `router.push('/buscar')`) que se había
+dejado escrito como plan B, así que no se implementó. Si en el futuro
+`dismissTo` deja de conmutar el tab (por ejemplo tras actualizar
+`expo-router` más allá de `57.0.19`, la versión con la que se midió esto),
+ese fallback de dos líneas sigue siendo la salida conocida.

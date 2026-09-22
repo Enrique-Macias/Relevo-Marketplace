@@ -154,14 +154,22 @@ export default function InicioScreen() {
             campo de texto de verdad vive solo en (tabs)/buscar.tsx. */}
         <Pressable
           style={styles.searchFieldFake}
-          onPress={() => router.push('/buscar')}
+          // `autoFocus` va con un valor ÚNICO por tap (no una constante fija)
+          // para que Búsqueda pueda distinguir "toque nuevo" de "la pantalla
+          // recuperó el foco con el mismo param ya consumido" — ver
+          // `.claude/rules/explorar.md`.
+          onPress={() => router.push({ pathname: '/buscar', params: { autoFocus: Date.now().toString() } })}
           accessibilityRole="button"
           accessibilityLabel="Buscar"
         >
           <IconSearch size={15} />
           <Text style={styles.searchFieldFakeText}>Busca libros, electrónica, muebles…</Text>
         </Pressable>
-        <Pressable style={styles.filterBtn} onPress={() => router.push('/filtros')} accessibilityRole="button">
+        <Pressable
+          style={styles.filterBtn}
+          onPress={() => router.push({ pathname: '/filtros', params: { origin: 'feed' } })}
+          accessibilityRole="button"
+        >
           <IconFilterSliders size={16} color="#F3F0EA" />
         </Pressable>
       </View>

@@ -1,6 +1,7 @@
 /** `.form-header`, `.search-field`, `.list-row` y `.radio-circle` — el sistema de los dos selectores. */
 
 import { router } from 'expo-router';
+import { forwardRef, useImperativeHandle, useRef } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, type ViewStyle } from 'react-native';
 
 import { IconChevronLeft, IconClose, IconSearch } from '@/components/icons';
@@ -67,13 +68,7 @@ export function FormHeader({
   );
 }
 
-export function SearchField({
-  placeholder,
-  value,
-  onChangeText,
-  onSubmitEditing,
-  containerStyle,
-}: {
+type SearchFieldProps = {
   placeholder: string;
   value: string;
   onChangeText: (text: string) => void;
@@ -90,11 +85,29 @@ export function SearchField({
    * `{flex:1}`.
    */
   containerStyle?: ViewStyle;
-}) {
+};
+
+/** Lo usa Búsqueda para enfocar el campo imperativamente al llegar desde el
+ * buscador del Feed — ver `.claude/rules/explorar.md`. */
+export type SearchFieldHandle = { focus: () => void };
+
+export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(function SearchField(
+  { placeholder, value, onChangeText, onSubmitEditing, containerStyle },
+  ref
+) {
+  const inputRef = useRef<TextInput>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus() {
+      inputRef.current?.focus();
+    },
+  }), []);
+
   return (
     <View style={[styles.searchField, containerStyle]}>
       <IconSearch size={15} />
       <TextInput
+        ref={inputRef}
         style={styles.searchInput}
         placeholder={placeholder}
         placeholderTextColor={Colors.placeholder}
@@ -106,7 +119,7 @@ export function SearchField({
       />
     </View>
   );
-}
+});
 
 export function ListRow({
   name,
