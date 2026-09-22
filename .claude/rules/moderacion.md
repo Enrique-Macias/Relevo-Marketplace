@@ -1694,6 +1694,172 @@ son dos cosas:
 
 ---
 
+## 8b. Limitación conocida: FALSOS NEGATIVOS de Rekognition
+
+> **Esto NO es la deuda de §9, y la diferencia es estructural.** §9 es sobre
+> falsos POSITIVOS (contenido legítimo marcado) y tiene disparador numérico
+> porque **un falso positivo se auto-registra**: deja su fila con su etiqueta y
+> se cuenta con SQL. Un falso NEGATIVO no deja nada — cuando AWS no devuelve
+> etiqueta, no hay fila, ni columna, ni rastro. Por eso esto va como limitación
+> aceptada y no como deuda con número: un "Revisar cuando N falsos negativos"
+> sería **incontable por construcción**.
+
+**Nota de una investigación CERRADA que salió del mismo lote:** una
+publicación de esas pruebas quedó `bloqueada` por Vision con
+`racy: VERY_LIKELY`, y se sospechó un falso positivo de SafeSearch. **No lo
+era**: el desarrollador la subió con contenido sexual explícito a propósito
+para verificar ese eje. El bloqueo fue correcto, la foto y la publicación ya se
+borraron de producción, y no hay nada que arreglar ahí. Se deja escrito para
+que nadie la reabra al ver la fila.
+
+**El hallazgo, medido en producción el 2026-09-22** sobre las publicaciones de
+prueba del desarrollador, y ampliado con fotos de Wikimedia llamando a AWS
+directo con el firmador de producción:
+
+**El mismo tipo de contenido da resultados dispares, y no es aleatorio: es que
+ese contenido cae encima de la frontera de decisión del modelo.**
+
+| Contenido | Confianza L1 de `Drugs & Tobacco` | Consecuencia |
+|---|---|---|
+| Cajetilla de cigarros | **99.9** | detecta sólido, siempre actúa |
+| Pluma de vape (4 fotos distintas) | **98.1 / 60.8 / 51.6 / ninguna** | de "actúa" a "invisible" |
+
+Los cigarros son robustos. **Las plumas de vape/wax están repartidas a lo ancho
+del umbral**, incluso entre fotos del mismo objeto. Esa es la explicación del
+síntoma "unas quedan en pendiente y otras pasan".
+
+### La tasa medida: 3 de 6 (n=6), y solo 2 atrapadas de forma fiable
+
+Ground truth confirmado por el desarrollador, que subió las publicaciones: **6
+eran plumas de wax** (#76, #79, #80, #81, #82, #83) y **3 eran controles
+legítimos** (calculadora #74, baraja #77, frasco de vitaminas #78). Los tres
+controles dieron **cero** etiquetas de Rekognition, o sea ningún falso positivo
+entre ellos.
+
+| # | Título | Rekognition | Resultado |
+|---|---|---|---|
+| 80 | Plumas diferentes modelos | `Drugs & Tobacco` @99.5 | **pendiente** (rekognition) |
+| 81 | Plumas W | `Drugs & Tobacco` @96.0 | **pendiente** (rekognition) |
+| 82 | Libro Whale | `Drugs & Tobacco` @50.2 (no actúa) | pendiente (**gptTexto, y por azar** — ver abajo) |
+| 76 | Plumas bic | — | **activa** |
+| 79 | Libretas Bic | — | **activa** |
+| 83 | Plumas Bic | — | **activa** |
+
+**3 de 6 escaparon. El denominador va SIEMPRE explícito (n=6)** y no redondeado
+a un porcentaje suelto: con seis casos esto es indicativo, no una tasa estable,
+y citarlo como "50%" sin el n invitaría a tratarlo como medición estadística.
+
+**Y el número bueno es peor que ese: solo 2 de 6 se atraparon de forma
+FIABLE.** El tercero, #82, lo escaló GPT — y GPT sobre ESE texto exacto es una
+moneda al aire. Medido corriendo el mismo título y descripción tres veces
+contra la API real:
+
+| Texto evaluado | 3 corridas |
+|---|---|
+| `Libro Whale` / `Libro whale barato` (**el caso real**) | `limpio` · `estafa_spam=posible` · `limpio` |
+| `Libro azul` / `Libro azul barato` | limpio · limpio · limpio |
+| `Libro Ballena` (Whale en español) | limpio · limpio · limpio |
+| `Whale` / `Whale barato` (sin "libro") | `estafa_spam` · `articulo_prohibido` · `articulo_prohibido` |
+| `Plumas bic` / `Plumas baratas` (control) | limpio · limpio · limpio |
+
+Producción había dado `articulo_prohibido=posible`; o sea **cuatro
+observaciones y tres respuestas distintas**. Lo que dispara es la palabra
+**"Whale" en inglés** —"Ballena" y "azul" salen limpios siempre— y solo cuando
+no queda diluida por "Libro". **#82 pudo haber quedado `activa` perfectamente.**
+
+**Lo decisivo para no tocar el umbral de acción:** de las publicaciones de
+prueba que pasaron a `activa`, **ninguna fue un "casi"**. Todas tenían ausencia
+TOTAL de etiqueta en esa categoría. Bajar el umbral de acción de 70 a 55 —o a
+51— **no habría atrapado ni una sola**, y sí habría convertido en escalada un
+caso que hoy no lo es. El modo de falla no es "se quedó corto": es "el modelo
+no lo vio".
+
+### `MinConfidence`: propuesta CERRADA SIN ACCIÓN (2026-09-22)
+
+> **Estado: cerrada. No se aplicó y no se debe reproponer sin datos nuevos.**
+> El cambio era **seguro pero inútil**, según su propia medición — no es una
+> deuda pendiente ni un "algún día": es una opción evaluada y descartada.
+
+Se propuso bajar el piso de REGISTRO (50) sin tocar el de ACCIÓN (70), que son
+independientes por diseño, para ganar visibilidad de casi-aciertos sin mover el
+riesgo de falsos positivos. **La medición lo descartó:**
+
+| `MinConfidence` | Tamaño de respuesta | Qué aparece de nuevo |
+|---|---|---|
+| 50 (actual) | 72-353 B | — |
+| **20** | **idéntico, 0 bytes de más** | **NADA, en las 4 fotos probadas** |
+| 0 | ~5,700-5,800 B (**16-80×**) | ruido de un dígito (`Gambling@2.6` sobre una baraja) |
+
+En estas fotos no hay etiquetas entre 20 y 50: están arriba de 50 o en ruido
+cerca de cero. O sea que **bajar a 20 es un no-op** y bajar a ~0 compra ruido,
+no señal. Y sobre todo: **la banda 50-70 YA captura los casi-aciertos** — las
+plumas a 51.6 y 60.8 se registran hoy sin actuar, que es exactamente lo que se
+quería. El piso actual no es el que esconde los casos perdidos; los perdidos
+están por debajo de donde hay señal utilizable.
+
+**Ojo antes de reproponerlo:** nada en el parseo ni en `nivelDeRekognition()`
+asume el piso de 50 (verificado con grep), así que el cambio es técnicamente
+seguro — es **inútil**, no peligroso. Lo único que lo pinea es una aserción de
+`probe-moderacion.mjs`, que existe justamente para que el cambio sea deliberado.
+
+### El TÍTULO DISFRAZADO, y por qué debilita el consuelo de arriba
+
+**Las publicaciones de wax que se escaparon no tenían título neutro por azar:
+estaban disfrazadas de "Bic"** (confirmado por el desarrollador, que las subió
+así a propósito). Eso importa más que el porcentaje, porque **desarma la otra
+línea de defensa justo cuando más falta hace**:
+
+- GPT evalúa "Plumas Bic" y ve un artículo de papelería. No hay nada que marcar.
+- La lista de palabras no machea nada por el mismo motivo.
+- El OCR solo ve lo impreso en la foto, que en una pluma de wax no dice "wax".
+
+**HIPÓTESIS A VIGILAR (n=6, indicativa y NO concluyente): los tres que
+escaparon son exactamente los tres que usaban el disfraz `Bic`.** Los que
+usaron otro nombre ("Plumas W", "Plumas diferentes modelos", "Libro Whale")
+fueron atrapados. La lectura es que hace falta que se cumplan **DOS condiciones
+independientes a la vez**, no una:
+
+1. que la foto quede por debajo del umbral del eje de imagen, y
+2. que el título no le dé a GPT nada de qué agarrarse.
+
+**Y hay un matiz mecánico que impide leer esto como "el disfraz engaña a la
+moderación": el título NO puede influir en Rekognition, que solo ve la
+imagen.** Así que `Bic` no causó la ceguera del eje de imagen — esa es de la
+foto. Lo que un nombre de marca real y reconocible hace es satisfacer la
+condición (2) **de forma fiable**, mientras que un nombre raro como "Whale" la
+satisface solo a veces. Que las dos condiciones coincidieran justo en los tres
+`Bic` puede ser causal o puede ser que se eligieran esas fotos para ese
+disfraz; con n=6 no se distingue. **Se anota para vigilarla si RF-14 trae casos
+reales**, no como conclusión.
+
+O sea que **contra un evasor deliberado, el eje de imagen no es una de tres
+líneas de defensa: es la ÚNICA**, y es precisamente el eje con la tasa de fuga
+medida arriba. Una versión anterior de esta sección decía que el texto y el OCR
+"sostienen la defensa mientras tanto"; eso es cierto para contenido subido sin
+mala fe —el frasco de vitaminas escaló por `gptTexto`— y **falso para el caso
+que la moderación existe para atrapar**.
+
+### Qué SÍ sostiene la defensa mientras tanto, con su alcance honesto
+
+- **El texto tecleado** (GPT + lista) atrapa lo que se describe con su nombre.
+  Medido: dos publicaciones escalaron por `gptTexto` con Rekognition en cero.
+  **No atrapa nada si el título miente.**
+- **El OCR** compara lo impreso en la foto contra la misma lista, con techo en
+  `pendiente`. Útil contra empaques con la palabra a la vista; inútil contra un
+  objeto sin texto.
+- `peor()` es monótona: que este eje se quede corto no absuelve a los otros —
+  pero tampoco hace que los otros vean lo que no pueden ver.
+- **El reporte de usuario (RF-14)** deja de ser un extra y pasa a ser la red
+  principal para este caso.
+
+**Revisar cuando** — sin número, porque no lo hay: si aparece un reporte de
+usuario (RF-14) sobre contenido que pasó la moderación, la primera pregunta es
+si este eje lo vio y en cuánto. La fila de `listing_moderacion` responde eso
+gratis, y **ese** es el mecanismo de detección realista mientras RF-17 no
+exista.
+
+---
+
 ## 9. Deuda consciente de moderación — con disparador, no "algún día"
 
 - **El umbral de Rekognition está topado en `revisar` y nunca bloquea solo.**
@@ -1740,6 +1906,26 @@ son dos cosas:
   **Fix:** agregar la banda `bloquear` en `nivelDeRekognition()` **por
   categoría**, nunca para el eje entero — la evidencia de `Drugs & Tobacco` no
   dice nada sobre `Alcohol`.
+
+  **PRIMERA EVIDENCIA REAL (2026-09-22), y corrige dos predicciones de esta
+  misma entrada.** De las pruebas manuales en producción:
+
+  - **Una `Silla gamer` recibió `Alcohol` @95.7** y quedó en `pendiente`. Es el
+    **primer falso positivo medido de Rekognition**, y valida la preocupación —
+    pero con `Alcohol`, no con la categoría que se temía. Cuenta 1 de las 50
+    para esa categoría; con n=1 no decide nada, que es justo el punto del
+    disparador.
+  - **El escenario `Pills` sobre un frasco de vitaminas NO se materializó.** Un
+    `Frasco vitaminas C` real dio **cero etiquetas** de Rekognition; lo que lo
+    mandó a `pendiente` fue `gptTexto`, o sea el eje de TEXTO, por la palabra
+    "vitaminas". La justificación del techo que citaba ese caso era plausible y
+    resultó falsa en la primera prueba — el techo se sostiene igual, por el
+    argumento general de no tener datos, y ahora por la silla.
+  - **De regalo, un dato contraintuitivo:** la etiqueta L3 `Pills` **sí** se
+    dispara… sobre una **cajetilla de cigarros** (`Pills@99.9` medido sobre una
+    foto de Marlboro). O sea que esa etiqueta es más ruidosa de lo que su
+    nombre sugiere. No afecta la decisión —solo miramos L1— pero desaconseja
+    razonar sobre las L3 por su nombre.
 
   **Dos cosas honestas sobre este disparador.** (a) **Puede no sonar nunca a
   volumen actual, y está bien**: a ~60 publicaciones/mes, una categoría que

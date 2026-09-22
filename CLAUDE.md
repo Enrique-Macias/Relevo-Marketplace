@@ -1178,7 +1178,24 @@ sigan viviendo solo en una conversación:
   frasco de vitaminas o de proteína**, venta legítima entre estudiantes); y (b)
   **`bloqueada` no tiene recurso hoy** — ni edición ni apelación, solo eliminar,
   y RF-17 no existe. El techo se aplica al EJE y no por categoría justamente
-  para que no se pueda romper agregando una categoría y olvidándole el suyo.
+  para que no se pueda romper agregando una categoría y olvidándole el suyo. **Primera
+  evidencia real (2026-09-22):** una `Silla gamer` recibió `Alcohol` @95.7 — el
+  techo hizo que quedara en `pendiente` y no bloqueada. En cambio el caso de las
+  vitaminas que este párrafo cita **no se materializó**: un frasco real dio cero
+  etiquetas de Rekognition y lo escaló el eje de TEXTO. Detalle en
+  `.claude/rules/moderacion.md` §9.
+- **Falsos NEGATIVOS: limitación conocida y distinta de lo anterior.** El mismo
+  contenido da resultados dispares porque cae encima de la frontera del modelo —
+  medido: una cajetilla de cigarros da 99.9, pero cuatro fotos de plumas de vape
+  dan 98.1 / 60.8 / 51.6 / nada. En una prueba deliberada con contenido
+  disfrazado, **3 de 6 (n=6) evadieron el eje de imagen por completo, y solo 2
+  de 6 se atraparon de forma fiable** —la tercera la escaló GPT sobre un texto
+  cuyo veredicto es una moneda al aire, medido—. **Bajar el umbral no lo
+  arregla** (los que escaparon no fueron "casi", fueron ausencia total) y
+  **bajar `MinConfidence` a 20 es un no-op medido**. No hay disparador numérico
+  posible porque un falso negativo no deja fila que contar: la vía realista es
+  el reporte de usuario (RF-14). Completo, con todas las mediciones, en
+  `.claude/rules/moderacion.md` §8b.
 - **Se le piden a AWS las etiquetas desde `MinConfidence: 50`, pero se ACTÚA
   desde 70**, y esa diferencia es el diseño entero: la banda 50-70 **se registra
   en `listing_moderacion.detalle` y no hace nada**. Es el dataset con el que se
