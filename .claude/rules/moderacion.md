@@ -57,7 +57,7 @@ paths:
 | Particionado, request y parseo de Vision (sin el `fetch`) | **Hecho** | `supabase/functions/moderar-contenido/vision.ts` |
 | Schema, body y parseo de OpenAI, refusal incluido (sin el `fetch`) | **Hecho** | `supabase/functions/moderar-contenido/openai.ts` |
 | **Eje de Amazon Rekognition, puro**: cuerpo, parseo, techo del eje, y el **firmador SigV4** | **Hecho** (2026-09-21), con los vectores oficiales de AWS en verde | `supabase/functions/moderar-contenido/rekognition.ts` + `decision.ts` |
-| **El `fetch` firmado a Rekognition + `descargarFotos()` compartida** | **Hecho**, pendiente de correr contra AWS real (falta el paso manual de IAM) | `index.ts`, `evaluarRekognition()` / `llamarRekognition()` |
+| **El `fetch` firmado a Rekognition + `descargarFotos()` compartida** | **Hecho y VERIFICADO contra AWS real** (2026-09-22, §6.7): HTTP 200, `Alcohol` 99.9 → `revisar` | `index.ts`, `evaluarRekognition()` / `llamarRekognition()` |
 | **El `fetch` real a Vision y a OpenAI** (Ola 1.5) | **Hecho, con credenciales reales puestas** | `index.ts`, `llamarLoteVision()` / `evaluarTexto()` |
 | **La descarga desde Storage + `encodeBase64`** | **Hecho** | `index.ts`, `evaluarFotos()` |
 | **Armar los `Ejes` + `decidirListing()` + escritura + auditoría, para PUBLICACIONES** | **Hecho, con el guard de promoción probado end-to-end (§6.3)** | `index.ts`, `evaluarListing()` |
@@ -1372,10 +1372,81 @@ tiene que costar tocar una prueba a propósito. Se agregaron tres pines: el 70,
 el 50 y la lista exacta de categorías. Es la misma familia que `:C` en T11b —
 una aserción que pasa sin probar lo que dice.
 
-**Lo que este probe NO prueba, y por eso no cierra el eje:** que AWS acepte la
-firma. Eso es una llamada real y depende del paso manual de IAM. La firma está
-verificada contra los vectores; que las credenciales y el permiso sean los
-correctos, no.
+**Lo que este probe NO prueba:** que AWS acepte la firma. Eso es una llamada
+real — ver §6.7, donde ya está corrida.
+
+### 6.7. Contra AWS y la función VIVAS (2026-09-22) — las cuatro corridas
+
+Todo contra el stack **LOCAL**. Remoto no se tocó: `moderar-contenido` sigue en
+la v4 del 2026-09-19, sin una sola línea de Rekognition (verificado bajando el
+fuente desplegado y grepeándolo, no por inspección de config).
+
+| # | Qué | Resultado |
+|---|---|---|
+| 1 | El firmador dentro del edge runtime | `coincide: true` en `supabase-edge-runtime-1.74.3 / Deno v2.1.4` |
+| 2 | `probe-moderacion-http.mjs` | **23/23**, con `"rekognition":[]` ya en el detalle de auditoría |
+| 3 | End-to-end con foto real de botella de vino | `activa → pendiente`, `Alcohol` L1 **99.89** guardada |
+| 4 | Falla segura (endpoint a host que no resuelve) | `revisar` / `pendiente`, motivo con el error de DNS, **cero etiquetas inventadas** |
+
+**El spike (1) se diseñó para aislar, y por eso NO usa las credenciales
+reales:** firma el vector `get-vanilla` con las de EJEMPLO de la suite dentro
+de Deno y compara contra la firma conocida. Eso separa *"¿`crypto.subtle` se
+porta igual aquí?"* de *"¿mis llaves y mi policy de IAM están bien?"* — que es
+exactamente la ambigüedad del 403 opaco. Se borró al terminar.
+
+**Contra AWS de verdad, con el firmador de producción llamado desde Node** (se
+puede porque el módulo es puro — esa propiedad paga dos veces):
+
+| Foto (Wikimedia, dominio público) | Etiquetas de AWS | Eje |
+|---|---|---|
+| botella de vino y copa | `Alcohol` L1 **99.9** + `Alcoholic Beverages` L2 | **`revisar`** |
+| primer plano de cartas de póker | **ninguna** | `limpio` |
+
+**Dos hallazgos de esa tabla que valen más que el "pasó".** El primero: una
+foto de alcohol a **99.9 de confianza da `revisar`, no `bloquear`** — el techo
+del eje demostrado contra dato real en el peor caso posible, no solo con
+etiquetas sintéticas. El segundo, inesperado: **`Gambling` NO disparó con un
+primer plano de cartas.** La definición de AWS es más estrecha de lo que sugiere
+("participar en juegos de azar… en casinos"), así que el miedo a falsos
+positivos por vender una baraja puede ser menor de lo asumido. **Una foto no es
+una tasa** — es justo el dato que la deuda de §9 existe para acumular en serio,
+y no cambia el techo.
+
+**LA CORRIDA 3 FALLÓ LA PRIMERA VEZ Y ESA ES LA LECCIÓN DE LA SECCIÓN.** El
+fixture decía *"Cava de madera para seis botellas"*, GPT lo marcó, y
+`eje_que_manda` reportó `gptTexto`. Dos problemas de golpe, y el segundo es el
+grave:
+
+- **La aserción estaba mal escrita**: afirmaba sobre `eje_que_manda`, que
+  desempata por ORDEN FIJO —`vision` y `gptTexto` van antes que
+  `rekognition`—, así que ataba la prueba a lo que conteste un modelo. Es
+  **exactamente** lo que §6.5 ya advierte para la sección 6 de
+  `probe-moderacion-http.mjs`, reencontrado por no leer la propia advertencia.
+- **El fixture estaba contaminado**: con GPT marcando el texto, la escalada a
+  `pendiente` podía ocurrir SIN Rekognition. La prueba habría pasado por la
+  razón equivocada — la familia de `:C` en T11b otra vez.
+
+El arreglo fue texto neutro ("Lámpara de escritorio LED") **y** afirmar sobre
+los otros ejes en vez de sobre `eje_que_manda`: se comprueba que GPT devolvió
+las seis categorías en `ninguno`, que las dos listas vinieron vacías y que
+SafeSearch dio `VERY_UNLIKELY` en todas las fotos — con lo que el `revisar`
+**solo puede** venir de Rekognition. Eso es una deducción verificable, no una
+aserción sobre un desempate.
+
+**La corrida 4 necesita editar el fuente** (`hostRekognition()` a un host que
+no resuelve) y reiniciar, igual que los casos 6-8 de §6.3 — y por eso no vive
+en un script permanente. Al restaurar se re-corrió la 3 en verde y se comprobó
+con `git status` que el fuente quedó idéntico al commit; restaurar sin
+verificar es el fallo silencioso de CLAUDE.md §9.
+
+**Dos tropiezos de herramienta, anotados para no repetirlos.** (a) `supabase
+functions serve` **reinicia solo al detectar un archivo nuevo** y choca con
+`Conflict: container name already in use` — hay que `docker rm -f
+supabase_edge_runtime_<proyecto>` antes de relanzar. (b) `psql` imprime la
+línea de estado (`INSERT 0 1`) junto a las filas devueltas, así que un
+`RETURNING` leído a pelo sale contaminado; y **Postgres no garantiza
+short-circuit en un `WHERE`**, así que `jsonb_typeof(x)='array' and
+jsonb_array_length(x)>0` revienta igual — va con `case`.
 
 ## 7. Orden y dependencias — mapa completo de olas
 

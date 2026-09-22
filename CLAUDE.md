@@ -1667,26 +1667,28 @@ de los route groups).
   relación con que esto ya esté en producción.
 
 **Pendiente, en este orden de prioridad:**
-0. **Las credenciales de AWS para el eje de Rekognition (RF-18).** Paso manual
-   y BLOQUEANTE, igual que los de Vision/OpenAI y los de Vault: una credencial
-   no se comitea. El código está completo y verificado hasta donde se puede sin
-   ellas —la firma SigV4 pasa contra los vectores oficiales de AWS, y el módulo
-   puro tiene sus 5 controles negativos (`.claude/rules/moderacion.md` §6.6)—,
-   pero **ninguna llamada real a AWS se ha hecho todavía**.
-   - En la consola de AWS: usuario de IAM dedicado, solo programático, con una
-     policy de **una sola acción**, `rekognition:DetectModerationLabels`
-     (`Resource: "*"` no es laxitud — sobre `Image.Bytes` no hay ARN que acotar;
-     lo que acota es la única `Action`).
-   - Los tres valores a `supabase/functions/.env` (LOCAL): `AWS_ACCESS_KEY_ID`,
-     `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`. Sin ellos **la función ni arranca**
-     — `resolverConfig()` falla al arrancar a propósito, así que hoy
-     `supabase functions serve` no levanta y los pasos 4 y 6 de §6 no se pueden
-     correr.
-   - Para REMOTO, y **en este orden**: `supabase secrets set` con las tres
-     ANTES de `supabase functions deploy moderar-contenido`. Al revés deja la
-     función sin arrancar y **rompe publicar en producción** hasta que existan.
+0. **Desplegar el eje de Rekognition a producción (RF-18).** Es lo ÚNICO que
+   falta: el código está completo y **verificado de punta a punta contra AWS
+   real y contra la función viva, en LOCAL** (`.claude/rules/moderacion.md`
+   §6.7: firmador dentro de Deno, `probe-moderacion-http` 23/23, foto real de
+   alcohol → `Alcohol` 99.9 → `revisar` → `pendiente`, y la falla segura con el
+   endpoint muerto). Las credenciales de IAM ya están puestas en local y en
+   remoto.
+   - **Producción todavía NO lo tiene**, y está medido, no supuesto:
+     `moderar-contenido` sigue en la **v4 del 2026-09-19** y su fuente
+     desplegado no menciona Rekognition por ningún lado. **No hay CI/CD en este
+     repo** —ni `.github/workflows` ni nada— así que el push a `main` no
+     despliega: el deploy es manual, siempre.
+   - Un solo comando: `supabase functions deploy moderar-contenido`. Los
+     secretos ya están, así que el orden "secretos antes que deploy" ya se
+     cumplió; si alguna vez se rota una llave, ese orden vuelve a importar —
+     `resolverConfig()` falla al ARRANCAR, así que desplegar sin secretos deja
+     la función sin subir y **rompe publicar en producción**.
    - Sin migración y sin `db push`: esta tarea no toca esquema, policies ni
      grants.
+   - Tras desplegar, remedir y no recordar: `list_edge_functions` debe dar
+     `ACTIVE` con la versión incrementada, y una publicación de prueba con foto
+     limpia debe seguir quedando `activa`.
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
