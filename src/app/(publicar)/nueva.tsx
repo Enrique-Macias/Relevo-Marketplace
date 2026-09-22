@@ -181,6 +181,19 @@ export default function PublicarScreen() {
    */
   const [eligiendoFotos, setEligiendoFotos] = useState(false);
 
+  /**
+   * Ref, no estado — mismo criterio que `procesandoRef` de arriba, pero para
+   * `publicar()`: dos botones distintos la invocan (el "Guardar" del header y
+   * el CTA de abajo), y los dos derivan su `disabled`/`busy` de `ocupado`, que
+   * solo se actualiza cuando React repinta tras `setFase(...)`. Entre el
+   * primer tap y ese repintado hay una ventana real en la que ambos Pressable
+   * siguen leyendo el `fase` del render viejo. Sin este guard síncrono, un
+   * doble-tap en esa ventana crea DOS publicaciones `pendiente`, paga
+   * moderación (Vision/OpenAI/Rekognition) dos veces y puede dejar dos
+   * publicaciones `activa` duplicadas en el catálogo.
+   */
+  const publicandoRef = useRef(false);
+
   async function agregarFoto() {
     if (procesandoRef.current) return;
     const disponibles = MAX_FOTOS - form.fotos.length;
@@ -214,97 +227,111 @@ export default function PublicarScreen() {
     }
   }
 
-  /** Publicar y reintentar son la MISMA función: lo que cambia es si ya hay id. */
+  /**
+   * Publicar y reintentar son la MISMA función: lo que cambia es si ya hay id.
+   *
+   * `publicandoRef` (arriba) es el guard de reentrada: se marca ANTES de
+   * cualquier `await` y el `finally` lo libera en TODOS los caminos de salida
+   * —éxito con navegación, fallo de teléfono, fallo de
+   * `publicarListing`/`finalizarPublicacion`, o "sin fallos pero tampoco
+   * veredicto"— para que "Reintentar" siga funcionando después de un fallo.
+   */
   async function publicar() {
+    if (publicandoRef.current) return;
     if (!listoParaGuardar) return;
 
-    setFase({ t: 'subiendo', progreso: null });
-    setFalloGeneral(null);
-    const onProgreso = (progreso: ProgresoFoto) => setFase({ t: 'subiendo', progreso });
-    const onModerando = () => setFase({ t: 'moderando' });
-
-    /**
-     * El teléfono va PRIMERO, y el orden es deliberado — el mismo criterio que
-     * "Completar perfil" con la contraseña: si esto falla, todavía no se creó
-     * ninguna publicación y no hay nada que recuperar. Al revés dejaría una
-     * publicación `pausada` cuyo dueño sigue sin ser contactable.
-     *
-     * Solo en el primer intento: para cuando hay `listingId`, el número ya se
-     * guardó y `faltaTelefono` ya es false.
-     */
-    if (faltaTelefono) {
-      try {
-        await guardarTelefono(userId!, telefono);
-        // Para que `tiene_telefono` pase a true y el campo desaparezca. Si esto
-        // fallara, lo peor que pasa es que el campo siga a la vista con el
-        // número ya guardado; el siguiente arranque lo corrige.
-        await refreshProfile();
-      } catch (e: any) {
-        console.warn('[publicar] no se pudo guardar el teléfono:', e?.message ?? e);
-        mostrar('No pudimos guardar tu WhatsApp. Intenta de nuevo.', 'error');
-        setFase({ t: 'form' });
-        return;
-      }
-    }
-
+    publicandoRef.current = true;
     try {
-      const resultado =
-        listingId === null
-          ? await publicarListing({
-              input: form.aInput(profile!.universidad_id!, campus!.id),
-              userId: userId!,
-              fotos: fotosParaGuardar(form.fotos),
-              onProgreso,
-              onModerando,
-              // Se guarda ANTES de subir, no al terminar: si la subida falla,
-              // este id es lo único que hace posible el reintento.
-              onListingCreado: setListingId,
-            })
-          : await finalizarPublicacion({
-              listingId,
-              fotos: fotosParaGuardar(form.fotos),
-              onProgreso,
-              onModerando,
-            });
+      setFase({ t: 'subiendo', progreso: null });
+      setFalloGeneral(null);
+      const onProgreso = (progreso: ProgresoFoto) => setFase({ t: 'subiendo', progreso });
+      const onModerando = () => setFase({ t: 'moderando' });
 
-      // Siempre: las que subieron pasan a 'storage' y las que fallaron quedan
-      // marcadas con su motivo. De aquí sale el aviso en el próximo render.
-      form.setFotos(resultado.fotos);
-      setFalloGeneral(resultado.falloGeneral);
-      setFase({ t: 'form' });
-
-      if (resultado.falloGeneral !== null || fallosDe(resultado.fotos).length > 0) return;
-
-      /*
-        RF-18: son TRES destinos, no uno, y los decide el veredicto que la Edge
-        Function acaba de devolver. Ninguno cambia en vivo — el cliente ESPERÓ
-        la respuesta, así que para cuando se navega el estado ya es definitivo
-        (salvo que se quede en `pendiente`, que es justo lo que esa pantalla
-        vigila con Realtime).
-
-        `replace` y no `push`: el formulario ya se envió, y "atrás" desde la
-        confirmación no debe devolver a una pantalla que volvería a publicar.
-      */
-      const params = { id: String(resultado.listingId) };
-      if (resultado.estado === 'activa') {
-        router.replace({ pathname: '/(publicar)/creada', params });
-      } else if (resultado.estado === 'bloqueada') {
-        router.replace({ pathname: '/(publicar)/no-aprobada', params });
-      } else {
-        // 'pendiente', y también cualquier valor que no debería llegar aquí:
-        // es el único destino que no le promete al usuario algo que no pasó.
-        if (resultado.estado !== 'pendiente') {
-          console.warn(`[publicar] veredicto inesperado: ${resultado.estado}`);
+      /**
+       * El teléfono va PRIMERO, y el orden es deliberado — el mismo criterio que
+       * "Completar perfil" con la contraseña: si esto falla, todavía no se creó
+       * ninguna publicación y no hay nada que recuperar. Al revés dejaría una
+       * publicación `pausada` cuyo dueño sigue sin ser contactable.
+       *
+       * Solo en el primer intento: para cuando hay `listingId`, el número ya se
+       * guardó y `faltaTelefono` ya es false.
+       */
+      if (faltaTelefono) {
+        try {
+          await guardarTelefono(userId!, telefono);
+          // Para que `tiene_telefono` pase a true y el campo desaparezca. Si esto
+          // fallara, lo peor que pasa es que el campo siga a la vista con el
+          // número ya guardado; el siguiente arranque lo corrige.
+          await refreshProfile();
+        } catch (e: any) {
+          console.warn('[publicar] no se pudo guardar el teléfono:', e?.message ?? e);
+          mostrar('No pudimos guardar tu WhatsApp. Intenta de nuevo.', 'error');
+          setFase({ t: 'form' });
+          return;
         }
-        router.replace({ pathname: '/(publicar)/revision', params });
       }
-    } catch (e: any) {
-      // Solo llega aquí si falló `crearListing`: `finalizarPublicacion` no
-      // propaga (devuelve `falloGeneral`). No se tocó Storage, no hay nada que
-      // recuperar, y el formulario sigue completo.
-      console.warn('[publicar] no se pudo crear la publicación:', e?.message ?? e);
-      mostrar('No pudimos publicar tu artículo. Intenta de nuevo.', 'error');
-      setFase({ t: 'form' });
+
+      try {
+        const resultado =
+          listingId === null
+            ? await publicarListing({
+                input: form.aInput(profile!.universidad_id!, campus!.id),
+                userId: userId!,
+                fotos: fotosParaGuardar(form.fotos),
+                onProgreso,
+                onModerando,
+                // Se guarda ANTES de subir, no al terminar: si la subida falla,
+                // este id es lo único que hace posible el reintento.
+                onListingCreado: setListingId,
+              })
+            : await finalizarPublicacion({
+                listingId,
+                fotos: fotosParaGuardar(form.fotos),
+                onProgreso,
+                onModerando,
+              });
+
+        // Siempre: las que subieron pasan a 'storage' y las que fallaron quedan
+        // marcadas con su motivo. De aquí sale el aviso en el próximo render.
+        form.setFotos(resultado.fotos);
+        setFalloGeneral(resultado.falloGeneral);
+        setFase({ t: 'form' });
+
+        if (resultado.falloGeneral !== null || fallosDe(resultado.fotos).length > 0) return;
+
+        /*
+          RF-18: son TRES destinos, no uno, y los decide el veredicto que la Edge
+          Function acaba de devolver. Ninguno cambia en vivo — el cliente ESPERÓ
+          la respuesta, así que para cuando se navega el estado ya es definitivo
+          (salvo que se quede en `pendiente`, que es justo lo que esa pantalla
+          vigila con Realtime).
+
+          `replace` y no `push`: el formulario ya se envió, y "atrás" desde la
+          confirmación no debe devolver a una pantalla que volvería a publicar.
+        */
+        const params = { id: String(resultado.listingId) };
+        if (resultado.estado === 'activa') {
+          router.replace({ pathname: '/(publicar)/creada', params });
+        } else if (resultado.estado === 'bloqueada') {
+          router.replace({ pathname: '/(publicar)/no-aprobada', params });
+        } else {
+          // 'pendiente', y también cualquier valor que no debería llegar aquí:
+          // es el único destino que no le promete al usuario algo que no pasó.
+          if (resultado.estado !== 'pendiente') {
+            console.warn(`[publicar] veredicto inesperado: ${resultado.estado}`);
+          }
+          router.replace({ pathname: '/(publicar)/revision', params });
+        }
+      } catch (e: any) {
+        // Solo llega aquí si falló `crearListing`: `finalizarPublicacion` no
+        // propaga (devuelve `falloGeneral`). No se tocó Storage, no hay nada que
+        // recuperar, y el formulario sigue completo.
+        console.warn('[publicar] no se pudo crear la publicación:', e?.message ?? e);
+        mostrar('No pudimos publicar tu artículo. Intenta de nuevo.', 'error');
+        setFase({ t: 'form' });
+      }
+    } finally {
+      publicandoRef.current = false;
     }
   }
 

@@ -1774,6 +1774,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
 - El aviso del avatar borrado por moderación se pierde si el usuario no abre Perfil o no ve el toast → `cuenta-perfil.md`
 - El reintento solo distingue DOS errores deterministas → `publicar-fotos.md`
+- `publicandoRef` (`nueva.tsx`) solo cubre el doble-tap dentro de la misma sesión: un crash/reinicio de la app entre que `crearListing()` resuelve en el servidor y el cliente recibe la confirmación puede seguir creando una publicación duplicada — eso necesita idempotencia del lado del servidor → `publicar-fotos.md`
 - Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila → `publicar-fotos.md`
 - El tope de 5 fotos SIGUE sin aplicar en Storage → `publicar-fotos.md`
 - Borrar una publicación no borra sus fotos de Storage **[CERRADA]** → `publicar-fotos.md`
