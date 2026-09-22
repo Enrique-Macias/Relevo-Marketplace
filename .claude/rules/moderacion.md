@@ -71,7 +71,8 @@ paths:
 | `unirFotoDisparadora()`: la foto sin fila SE evalúa | **Hecho** (2026-09-19), verificado con OCR real end-to-end | `vision.ts` + `probe-moderacion.mjs` (pura) + `probe-moderacion-http.mjs` §7 |
 | Aviso al usuario cuando su avatar se borra por moderación | **Hecho y VERIFICADO a mano** (Ola 4, 2026-09-21): dos eventos seguidos con fotos distintas y sin reiniciar la app → toast las dos veces, más el control negativo del avatar limpio | `(tabs)/perfil.tsx` + §8 de este archivo + `cuenta-perfil.md` |
 | Verificación manual de Realtime (runbook) | **Hecha** (2026-09-21) — los TRES casos de §4.2, incluido el piso con la publicación apagada | §4.2 y §6.2 |
-| **La Edge Function desplegada en REMOTO** | **SÍ** (2026-09-19) — `list_edge_functions` da `moderar-contenido` **ACTIVE**, `version: 1` | CLAUDE.md §8, "Hecho" |
+| **La Edge Function desplegada en REMOTO** | **SÍ** — `ACTIVE`. Iba en `version: 1` (2026-09-19) y hoy en **`version: 5`** (2026-09-22), que es la primera con el eje de Rekognition | CLAUDE.md §8, "Hecho" |
+| **El eje de Rekognition EN PRODUCCIÓN** | **Hecho** (2026-09-22, §6.8): desplegado a mano y probado a mano; de esa prueba salieron §8b y el primer FP de §9 | `index.ts` + `rekognition.ts` |
 
 **Con esto, `moderar-contenido` modera publicaciones Y avatares reales de
 punta a punta, y desde la Ola 2 los dos triggers de Storage la disparan solos al
@@ -82,7 +83,7 @@ publicación `activa` la escala a `bloqueada` (§6.5).
 no protege nada" porque faltaban los cuatro pasos manuales del runbook de
 CLAUDE.md §8 — los cuatro están dados, remedidos contra remoto y no repetidos
 de memoria: la Edge Function está **ACTIVE** (`list_edge_functions`,
-`version: 1`), `mcp__supabase__list_migrations` da **27**, igual que
+`version: 1` **en esa fecha** — hoy va en `version: 5`, ver §6.8), `mcp__supabase__list_migrations` da **27**, igual que
 `ls supabase/migrations | wc -l` en el repo (**27**, incluida `20260919000463`),
 y `select count(*) from vault.secrets where name like 'moderar_contenido_%'`
 da **2**. **Y probado de punta a punta en remoto, desde el dev build, los DOS
@@ -1377,9 +1378,16 @@ real — ver §6.7, donde ya está corrida.
 
 ### 6.7. Contra AWS y la función VIVAS (2026-09-22) — las cuatro corridas
 
-Todo contra el stack **LOCAL**. Remoto no se tocó: `moderar-contenido` sigue en
-la v4 del 2026-09-19, sin una sola línea de Rekognition (verificado bajando el
-fuente desplegado y grepeándolo, no por inspección de config).
+Todo contra el stack **LOCAL**. Remoto no se tocó en NINGUNA de estas cuatro
+corridas: al hacerlas, `moderar-contenido` seguía en la v4 del 2026-09-19, sin
+una sola línea de Rekognition (verificado bajando el fuente desplegado y
+grepeándolo, no por inspección de config).
+
+> **Ese estado ya cambió, y la frase de arriba es un registro fechado, no el
+> estado actual: el eje se desplegó a producción horas después, el 2026-09-22
+> (v5).** Ver §6.8 y CLAUDE.md §8. Se deja escrito así a propósito — estas
+> cuatro verificaciones valen porque se hicieron ANTES de desplegar, y
+> reescribirlas en presente borraría justamente eso.
 
 | # | Qué | Resultado |
 |---|---|---|
@@ -1447,6 +1455,40 @@ línea de estado (`INSERT 0 1`) junto a las filas devueltas, así que un
 `RETURNING` leído a pelo sale contaminado; y **Postgres no garantiza
 short-circuit en un `WHERE`**, así que `jsonb_typeof(x)='array' and
 jsonb_array_length(x)>0` revienta igual — va con `case`.
+
+### 6.8. En PRODUCCIÓN (2026-09-22) — desplegado y probado a mano
+
+`supabase functions deploy moderar-contenido`, **a mano, porque este repo no
+tiene CI/CD**: no hay `.github/workflows` ni ninguna otra config, así que el
+push a `main` no despliega nunca. Se comprobó empíricamente antes del deploy —
+el commit ya estaba en `origin/main` y producción seguía en la versión
+anterior—, que es evidencia más fuerte que inspeccionar la config.
+
+Remedido contra remoto, no recordado:
+
+| Comprobación | Resultado |
+|---|---|
+| `list_edge_functions` | `moderar-contenido` **ACTIVE**, **`version: 5`**, 2026-09-22 |
+| Fuente desplegado | trae `DetectModerationLabels`, `firmarSigV4`, `evaluarRekognition`, "Los cinco ejes" |
+| …y del código viejo | **cero** `evaluarFotos(db, config`, **cero** "Los cuatro ejes" |
+| `list_migrations` vs repo | **27 = 27** — esta tarea no agregó migraciones |
+
+**La prueba manual en producción dio más de lo que buscaba**, y es el origen de
+media sección de este archivo:
+
+- El **techo contra dato real**: una foto de alcohol escaló a `pendiente` con
+  `Alcohol` @99.9, sin bloquear.
+- El **primer falso positivo medido** de Rekognition: `Silla gamer` →
+  `Alcohol` @95.7 (§9).
+- La **limitación de falsos negativos** entera (§8b): 3 de 6 (n=6) evadieron el
+  eje de imagen, y solo 2 de 6 se atraparon de forma fiable.
+- Que el escenario `Pills` sobre vitaminas **no** se materializaba (§9).
+
+O sea que el valor del despliegue no fue "quedó encendido": fue que el
+contenido real produjo hallazgos que ninguna de las cuatro corridas de §6.7
+—todas con fotos elegidas por nosotros— podía producir.
+
+---
 
 ## 7. Orden y dependencias — mapa completo de olas
 

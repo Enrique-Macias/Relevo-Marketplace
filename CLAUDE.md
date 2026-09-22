@@ -1668,7 +1668,8 @@ de los route groups).
   la migración del `with_check`, los dos secretos de Vault— están dados, y los
   cuatro se remidieron contra remoto en vez de darse por hechos de memoria:
   - `mcp__supabase__list_edge_functions` → `moderar-contenido` **ACTIVE**,
-    `version: 1`.
+    `version: 1` *(ese número es de ESA fecha; hoy va en `version: 5` — ver la
+    entrada de Rekognition más abajo. La versión se remide, no se cita de aquí)*.
   - `mcp__supabase__list_migrations` da **27**, igual que
     `ls supabase/migrations | wc -l` en el repo (**27**) — a la par, incluida
     `20260919000463`.
@@ -1683,29 +1684,26 @@ de los route groups).
   fotos reemplazadas, `.claude/rules/moderacion.md` §7/§9) sigue abierta, sin
   relación con que esto ya esté en producción.
 
+- **Rekognition EN PRODUCCIÓN (2026-09-22), el quinto eje de RF-18.** Desplegado
+  con `supabase functions deploy moderar-contenido` —paso manual, porque **este
+  repo no tiene CI/CD** (ni `.github/workflows` ni nada: el push a `main` no
+  despliega nunca)— y remedido contra remoto en vez de darse por hecho:
+  - `mcp__supabase__list_edge_functions` → `moderar-contenido` **ACTIVE**,
+    **`version: 5`**, actualizada el 2026-09-22.
+  - El fuente DESPLEGADO sí trae el eje: `DetectModerationLabels`,
+    `firmarSigV4`, `evaluarRekognition`, "Los cinco ejes" — y **cero**
+    marcadores del código anterior (`evaluarFotos(db, config`, "Los cuatro
+    ejes"). Bajado y grepeado, no inspeccionado de config.
+  - `list_migrations` da **27**, igual que `ls supabase/migrations | wc -l`
+    (**27**): esta tarea no agregó ninguna migración, como estaba previsto.
+  - **Probado a mano en producción**, y las pruebas dieron más de lo que
+    buscaban: una foto de alcohol escaló a `pendiente` con `Alcohol` @99.9 sin
+    bloquear (el techo, contra dato real), apareció el primer falso positivo
+    medido (`Silla gamer` → `Alcohol` @95.7) y, sobre todo, salió la
+    **limitación de falsos negativos** que documenta
+    `.claude/rules/moderacion.md` §8b: 3 de 6 (n=6) evadieron el eje de imagen.
+
 **Pendiente, en este orden de prioridad:**
-0. **Desplegar el eje de Rekognition a producción (RF-18).** Es lo ÚNICO que
-   falta: el código está completo y **verificado de punta a punta contra AWS
-   real y contra la función viva, en LOCAL** (`.claude/rules/moderacion.md`
-   §6.7: firmador dentro de Deno, `probe-moderacion-http` 23/23, foto real de
-   alcohol → `Alcohol` 99.9 → `revisar` → `pendiente`, y la falla segura con el
-   endpoint muerto). Las credenciales de IAM ya están puestas en local y en
-   remoto.
-   - **Producción todavía NO lo tiene**, y está medido, no supuesto:
-     `moderar-contenido` sigue en la **v4 del 2026-09-19** y su fuente
-     desplegado no menciona Rekognition por ningún lado. **No hay CI/CD en este
-     repo** —ni `.github/workflows` ni nada— así que el push a `main` no
-     despliega: el deploy es manual, siempre.
-   - Un solo comando: `supabase functions deploy moderar-contenido`. Los
-     secretos ya están, así que el orden "secretos antes que deploy" ya se
-     cumplió; si alguna vez se rota una llave, ese orden vuelve a importar —
-     `resolverConfig()` falla al ARRANCAR, así que desplegar sin secretos deja
-     la función sin subir y **rompe publicar en producción**.
-   - Sin migración y sin `db push`: esta tarea no toca esquema, policies ni
-     grants.
-   - Tras desplegar, remedir y no recordar: `list_edge_functions` debe dar
-     `ACTIVE` con la versión incrementada, y una publicación de prueba con foto
-     limpia debe seguir quedando `activa`.
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
