@@ -51,8 +51,10 @@ import {
   esPromocion,
   nivelDeLista,
   nivelDeTexto,
-  peor,
+  nivelDeRekognition,
+  etiquetasParaAuditoria,
   veredicto,
+  type EtiquetaModeracion,
   type Ejes,
   type EstadoListing,
   type Nivel,
@@ -77,6 +79,17 @@ import {
   type ParseTexto,
   type RespuestaOpenAI,
 } from './openai.ts';
+import {
+  amzDateDe,
+  CONTENT_TYPE_AWS_JSON,
+  cuerpoRekognition,
+  ejeRekognition,
+  firmarSigV4,
+  hostRekognition,
+  parsearRespuestaRekognition,
+  SERVICIO_AWS,
+  TARGET_DETECT_MODERATION,
+} from './rekognition.ts';
 
 /**
  * A NIVEL DE MÓDULO, no dentro del handler, y no es estilo: el docblock de
@@ -306,8 +319,20 @@ async function moderarListing(
 const BUCKET_LISTING_PHOTOS: Bucket = 'listing-photos';
 const BUCKET_AVATARS: Bucket = 'avatars';
 
+/** Una foto ya bajada de Storage, lista para ir a Vision y a Rekognition. */
+type FotoDescargada = { storagePath: string; tamano: number; bytes: Uint8Array };
+
 /**
- * Los cuatro ejes de una publicación real — Vision + OpenAI en `Promise.all`,
+ * Tope de Rekognition para bytes CRUDOS pasados como parámetro: **5 MB**
+ * (`docs.aws.amazon.com/rekognition/latest/dg/limits.html`). Ojo: son 5 MB
+ * decimales, y el bucket corta en 5 MiB (5,242,880), o sea que una foto en el
+ * límite del bucket SÍ puede pasarse de este tope. No se descarta en
+ * silencio — cuenta como no evaluable, igual que en Vision.
+ */
+const MAX_BYTES_REKOGNITION = 5_000_000;
+
+/**
+ * Los cinco ejes de una publicación real — Vision, Rekognition y OpenAI en
  * texto/OCR contra la lista en local (`.claude/rules/moderacion.md` §3 y §5).
  *
  * **Vision y OpenAI corren en paralelo**, no en serie: no hay dependencia
@@ -360,10 +385,26 @@ async function evaluarListing(
   // `storagePathsBase` tal cual.
   const storagePaths = unirFotoDisparadora(storagePathsBase, nombreDisparador);
 
-  const [fotosResultado, resultadoTexto] = await Promise.all([
-    evaluarFotos(db, config, storagePaths, BUCKET_LISTING_PHOTOS),
+  // LA FORMA DE LA CONCURRENCIA, que cambió al entrar Rekognition: la
+  // descarga se hace UNA vez y sus bytes alimentan a los dos servicios de
+  // imagen, que corren en paralelo entre sí y en paralelo con OpenAI.
+  // Latencia = max(descarga + max(vision, rekognition), gpt) — nada
+  // secuencial nuevo en el camino del cliente, que espera el veredicto.
+  const [imagen, resultadoTexto] = await Promise.all([
+    (async () => {
+      const { descargadas, fallosDeDescarga } = await descargarFotos(
+        db,
+        storagePaths,
+        BUCKET_LISTING_PHOTOS
+      );
+      return await Promise.all([
+        evaluarFotos(config, descargadas, fallosDeDescarga),
+        evaluarRekognition(config, descargadas, fallosDeDescarga),
+      ]);
+    })(),
     evaluarTexto(config, fila.titulo, fila.descripcion),
   ]);
+  const [fotosResultado, rekognitionResultado] = imagen;
   const { resultados: resultadosFotos, lotesVision } = fotosResultado;
 
   const textoTecleado = `${fila.titulo} ${fila.descripcion ?? ''}`;
@@ -375,17 +416,41 @@ async function evaluarListing(
     gptTexto: resultadoTexto.ok ? nivelDeTexto(resultadoTexto.veredicto) : NO_EVALUADO,
     listaTecleada: nivelDeLista(matchesTecleado, 'tecleado'),
     listaOcr: nivelDeLista(matchesOcr, 'ocr'),
+    rekognition: rekognitionResultado.nivel,
   };
 
   // `detalle` guarda POR QUÉ se marcó cada publicación — es la razón de ser de
   // `listing_moderacion` (migración 20260918000461). SafeSearch por foto CON
   // su `storage_path`, las palabras macheadas en texto tecleado y en OCR POR
   // SEPARADO, el veredicto de GPT por categoría, y CUÁL eje mandó.
+  // Las etiquetas de Rekognition se indexan por ruta para poder colgarlas de
+  // la MISMA entrada de foto que su `safe_search`. Un revisor que abre una
+  // fila de auditoría quiere ver los dos ejes de esa foto juntos, no dos
+  // listas que hay que cruzar a mano.
+  const rekognitionPorRuta = new Map(
+    rekognitionResultado.resultados.map((r) => [r.storagePath, r])
+  );
+  const rekognitionDe = (ruta: string) => {
+    const r = rekognitionPorRuta.get(ruta);
+    if (!r) return undefined;
+    return r.estado === 'evaluada' ? r.etiquetas : { estado: r.estado, motivo: r.motivo };
+  };
+
   const detalle: Detalle = {
     fotos: resultadosFotos.map((r) =>
       r.estado === 'evaluada'
-        ? { storage_path: r.storagePath, estado: r.estado, safe_search: r.safeSearch }
-        : { storage_path: r.storagePath, estado: r.estado, motivo: r.motivo }
+        ? {
+            storage_path: r.storagePath,
+            estado: r.estado,
+            safe_search: r.safeSearch,
+            rekognition: rekognitionDe(r.storagePath),
+          }
+        : {
+            storage_path: r.storagePath,
+            estado: r.estado,
+            motivo: r.motivo,
+            rekognition: rekognitionDe(r.storagePath),
+          }
     ),
     lista_tecleada: matchesTecleado,
     lista_ocr: matchesOcr,
@@ -424,16 +489,13 @@ async function evaluarListing(
  * de avatares esto no aplica: `moderarAvatar()` siempre manda exactamente una
  * ruta.)
  */
-async function evaluarFotos(
+async function descargarFotos(
   // deno-lint-ignore no-explicit-any
   db: any,
-  config: ConfigModeracion,
   storagePaths: readonly string[],
   bucket: Bucket
-): Promise<{ resultados: ResultadoFoto[]; lotesVision: number }> {
-  if (storagePaths.length === 0) return { resultados: [], lotesVision: 0 };
-
-  const descargadas: { storagePath: string; tamano: number; bytes: Uint8Array }[] = [];
+): Promise<{ descargadas: FotoDescargada[]; fallosDeDescarga: ResultadoFoto[] }> {
+  const descargadas: FotoDescargada[] = [];
   const fallosDeDescarga: ResultadoFoto[] = [];
 
   for (const storagePath of storagePaths) {
@@ -468,6 +530,25 @@ async function evaluarFotos(
     }
   }
 
+  return { descargadas, fallosDeDescarga };
+}
+
+/**
+ * Vision sobre fotos YA DESCARGADAS.
+ *
+ * La descarga se extrajo a `descargarFotos()` porque Rekognition necesita
+ * EXACTAMENTE los mismos bytes: bajarlos dos veces pagaría el doble de
+ * latencia de Storage por nada. Es el único motivo del corte.
+ */
+async function evaluarFotos(
+  config: ConfigModeracion,
+  descargadas: readonly FotoDescargada[],
+  fallosDeDescarga: readonly ResultadoFoto[]
+): Promise<{ resultados: ResultadoFoto[]; lotesVision: number }> {
+  if (descargadas.length === 0 && fallosDeDescarga.length === 0) {
+    return { resultados: [], lotesVision: 0 };
+  }
+
   const { lotes, demasiadoGrandes } = particionar(descargadas);
 
   // Las que pasan el tope POR IMAGEN de Vision no se mandan, pero TAMPOCO se
@@ -487,6 +568,137 @@ async function evaluarFotos(
     resultados: [...fallosDeDescarga, ...demasiadoGrandesComoResultado, ...resultadosPorLote.flat()],
     lotesVision: lotes.length,
   };
+}
+
+/** El veredicto de Rekognition para UNA foto. */
+type ResultadoRekognitionFoto =
+  | { estado: 'evaluada'; storagePath: string; etiquetas: EtiquetaModeracion[]; nivel: Nivel }
+  | { estado: 'no_evaluable'; storagePath: string; motivo: string };
+
+/**
+ * Amazon Rekognition sobre fotos ya descargadas — el QUINTO eje.
+ *
+ * **UNA LLAMADA POR FOTO, en paralelo.** `DetectModerationLabels` no batchea,
+ * al revés de `images:annotate` de Vision, que acepta un arreglo. No es una
+ * elección: es la forma del API.
+ *
+ * LOS TRES CAMINOS DE FALLA SEGURA, y ninguno propaga excepción — el eje
+ * queda en `NO_EVALUADO` (`'revisar'`), nunca en `'limpio'`:
+ *
+ *  1. La llamada falla (red, throttling, credenciales, firma mal hecha).
+ *  2. `InvalidImageFormatException`: Rekognition acepta **solo JPEG y PNG**, y
+ *     el bucket permite además `webp`. Una webp no es un bug, es una foto que
+ *     este eje no puede ver. Hoy no es alcanzable desde la app —`normalizar()`
+ *     entrega siempre JPEG, y las 46 fotos reales del bucket son `.jpg`,
+ *     medido— pero sí desde una subida directa al Storage API o desde Studio.
+ *  3. `ImageTooLargeException`: el tope de bytes crudos es 5 MB decimales y el
+ *     bucket corta en 5 MiB, así que hay una franja real donde una foto pasa
+ *     el bucket y no pasa a Rekognition. Se detecta ANTES de gastar la
+ *     llamada, con `MAX_BYTES_REKOGNITION`.
+ */
+async function evaluarRekognition(
+  config: ConfigModeracion,
+  descargadas: readonly FotoDescargada[],
+  fallosDeDescarga: readonly ResultadoFoto[]
+): Promise<{ resultados: ResultadoRekognitionFoto[]; nivel: Nivel }> {
+  const deDescarga: ResultadoRekognitionFoto[] = fallosDeDescarga.map((f) => ({
+    estado: 'no_evaluable',
+    storagePath: f.storagePath,
+    motivo: f.estado === 'no_evaluable' ? f.motivo : 'no se pudo descargar',
+  }));
+
+  const propios = await Promise.all(
+    descargadas.map((foto) => llamarRekognition(config, foto))
+  );
+
+  const resultados = [...deDescarga, ...propios];
+
+  return {
+    resultados,
+    nivel: ejeRekognition(
+      resultados.map((r) => (r.estado === 'evaluada' ? r.nivel : NO_EVALUADO))
+    ),
+  };
+}
+
+/** Una foto, una llamada firmada con SigV4. */
+async function llamarRekognition(
+  config: ConfigModeracion,
+  foto: FotoDescargada
+): Promise<ResultadoRekognitionFoto> {
+  if (foto.tamano > MAX_BYTES_REKOGNITION) {
+    return {
+      estado: 'no_evaluable',
+      storagePath: foto.storagePath,
+      motivo: `excede el tope de Rekognition por imagen (${MAX_BYTES_REKOGNITION} bytes)`,
+    };
+  }
+
+  try {
+    const host = hostRekognition(config.awsRegion);
+    const cuerpo = cuerpoRekognition(encodeBase64(foto.bytes));
+
+    const firma = await firmarSigV4({
+      metodo: 'POST',
+      host,
+      ruta: '/',
+      query: '',
+      headers: {
+        'Content-Type': CONTENT_TYPE_AWS_JSON,
+        'X-Amz-Target': TARGET_DETECT_MODERATION,
+      },
+      cuerpo,
+      region: config.awsRegion,
+      servicio: SERVICIO_AWS,
+      accessKeyId: config.awsAccessKeyId,
+      secretAccessKey: config.awsSecretAccessKey,
+      amzDate: amzDateDe(new Date()),
+    });
+
+    const res = await fetch(`https://${host}/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': CONTENT_TYPE_AWS_JSON,
+        'X-Amz-Target': TARGET_DETECT_MODERATION,
+        'X-Amz-Date': firma.amzDate,
+        Authorization: firma.authorization,
+      },
+      body: cuerpo,
+    });
+
+    const json = await res.json().catch(() => null);
+    const parseado = parsearRespuestaRekognition(json);
+
+    if (!parseado.ok) {
+      console.error(
+        '[moderar-contenido] rekognition',
+        res.status,
+        parseado.motivo,
+        parseado.detalle
+      );
+      return {
+        estado: 'no_evaluable',
+        storagePath: foto.storagePath,
+        motivo: `${parseado.motivo}${parseado.detalle ? `: ${parseado.detalle}` : ''}`,
+      };
+    }
+
+    return {
+      estado: 'evaluada',
+      storagePath: foto.storagePath,
+      // A la AUDITORÍA van también las de la banda 50-70, que no mueven nada
+      // — ver `etiquetasParaAuditoria()` en `decision.ts`.
+      etiquetas: etiquetasParaAuditoria(parseado.etiquetas),
+      nivel: nivelDeRekognition(parseado.etiquetas),
+    };
+  } catch (e) {
+    console.error('[moderar-contenido] rekognition', e instanceof Error ? e.message : e);
+    return {
+      estado: 'no_evaluable',
+      storagePath: foto.storagePath,
+      motivo: `excepción: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
 }
 
 /**
@@ -578,7 +790,7 @@ async function evaluarTexto(
 }
 
 /**
- * Cuál de los cuatro ejes es el que decide el veredicto — solo para el
+ * Cuál de los cinco ejes es el que decide el veredicto — solo para el
  * `detalle` de auditoría, NO participa en `decidirListing()`.
  *
  * En caso de empate manda el PRIMERO en este orden fijo (`vision` primero),
@@ -587,8 +799,18 @@ async function evaluarTexto(
  * sin importar cuál de los empatados se reporte aquí.
  */
 function ejeQueManda(ejes: Ejes): keyof Ejes {
-  const max = peor(ejes.vision, ejes.gptTexto, ejes.listaTecleada, ejes.listaOcr);
-  const orden: (keyof Ejes)[] = ['vision', 'gptTexto', 'listaTecleada', 'listaOcr'];
+  // `veredicto(ejes)` y no `peor(...)` con la lista repetida a mano: eran dos
+  // copias de la misma enumeración de ejes, y agregar el quinto obligaba a
+  // tocar las dos. Desincronizarlas no da ningún error — solo hace que el eje
+  // reportado en la auditoría no sea el que de verdad mandó.
+  const max = veredicto(ejes);
+  const orden: (keyof Ejes)[] = [
+    'vision',
+    'gptTexto',
+    'listaTecleada',
+    'listaOcr',
+    'rekognition',
+  ];
   return orden.find((k) => ejes[k] === max) ?? 'vision';
 }
 
@@ -626,7 +848,12 @@ async function moderarAvatar(
   entityId: string,
   name: string
 ): Promise<Response> {
-  const { resultados } = await evaluarFotos(db, config, [name], BUCKET_AVATARS);
+  // SIN REKOGNITION, a propósito: drogas/alcohol/gambling es una señal de
+  // CATÁLOGO, no de foto de perfil, y `decidirAvatar()` borra de forma
+  // irreversible — un falso positivo aquí no tiene cola donde caer. Por eso
+  // `decidirAvatar()` sigue tomando solo `vision` y `listaOcr`.
+  const { descargadas, fallosDeDescarga } = await descargarFotos(db, [name], BUCKET_AVATARS);
+  const { resultados } = await evaluarFotos(config, descargadas, fallosDeDescarga);
 
   const ejes: Pick<Ejes, 'vision' | 'listaOcr'> = {
     vision: ejeVision(resultados),

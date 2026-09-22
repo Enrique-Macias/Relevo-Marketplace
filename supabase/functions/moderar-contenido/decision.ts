@@ -124,8 +124,13 @@ export function nivelDeTexto(v: VeredictoTexto): Nivel {
   );
 }
 
-/** Baja un nivel hasta el máximo permitido. */
-function techo(n: Nivel, maximo: Nivel): Nivel {
+/**
+ * Baja un nivel hasta el máximo permitido.
+ *
+ * Exportada desde que existe el eje de Rekognition, que lo aplica al EJE
+ * COMPLETO y no por categoría — ver `nivelDeRekognition()`.
+ */
+export function techo(n: Nivel, maximo: Nivel): Nivel {
   return SEVERIDAD[n] > SEVERIDAD[maximo] ? maximo : n;
 }
 
@@ -155,6 +160,102 @@ export function nivelDeLista(
 }
 
 // ---------------------------------------------------------------------------
+// Rekognition (Amazon)
+// ---------------------------------------------------------------------------
+
+/** Una etiqueta de moderación tal cual la devuelve `DetectModerationLabels`. */
+export type EtiquetaModeracion = {
+  name: string;
+  confidence: number;
+  taxonomy_level: number;
+};
+
+/**
+ * Las TRES categorías de nivel 1 que miramos, con el nombre EXACTO del
+ * taxonomy v7 de AWS. Cubren el hueco que ni SafeSearch ni GPT miran: drogas,
+ * tabaco, alcohol y gambling en la imagen.
+ *
+ * Se miran solo etiquetas L1 porque la propia doc de AWS lo recomienda ("we
+ * recommend using L1 or L2 categories to moderate your content") y porque L1
+ * es exactamente el grano de estas cuatro preocupaciones. `Drugs & Tobacco`
+ * cubre tabaco y drogas en una sola etiqueta L1; sus L2 son `Products` y
+ * `Drugs & Tobacco Paraphernalia & Use`.
+ */
+export const CATEGORIAS_REKOGNITION = [
+  'Drugs & Tobacco',
+  'Alcohol',
+  'Gambling',
+] as const;
+
+/**
+ * Desde dónde una etiqueta MUEVE el veredicto.
+ *
+ * A AWS se le piden las etiquetas desde 50 (`MIN_CONFIDENCE_PEDIDA` en
+ * `rekognition.ts`) aunque aquí se actúe desde 70, y la diferencia es el punto
+ * entero del diseño: **la banda 50-70 se registra en la auditoría y no hace
+ * nada**. Ese es el dataset con el que algún día se decide si subir el umbral
+ * a `bloquear`, y se acumula solo desde la primera publicación en vez de
+ * exigir re-moderar nada. Registrar por debajo del umbral de acción, actuar
+ * por encima.
+ */
+export const CONFIANZA_ACCION = 70;
+
+/**
+ * **EL EJE ENTERO TIENE TECHO EN `revisar`: Rekognition NUNCA bloquea solo.**
+ *
+ * No es un olvido ni un placeholder, y el techo va al EJE y no por categoría
+ * a propósito — así no se puede romper agregando una categoría nueva y
+ * olvidándole el suyo.
+ *
+ * Las dos razones:
+ *
+ *  1. **Cero datos medidos de falsos positivos sobre ESTE catálogo.** Es el
+ *     mismo argumento por el que `medical` quedó fuera de Vision (CLAUDE.md
+ *     §3), y las definiciones de AWS lo hacen concreto: `Alcoholic Beverages`
+ *     es "close up of one or multiple bottles of alcohol or liquor, glasses or
+ *     mugs" (un juego de copas, una hielera); `Gambling` es "playing cards,
+ *     blackjack, roulette" (una baraja, un set de póker); y
+ *     `Drugs & Tobacco → Products → Pills` es "pills presented as standalones,
+ *     in a bottle, or a transparent packet" — un frasco de vitaminas o de
+ *     proteína, venta legítima y común en un mercado de estudiantes.
+ *  2. **`bloqueada` no tiene recurso hoy.** Ni edición ni apelación: al dueño
+ *     solo le queda eliminarla (`.claude/rules/moderacion.md` §7), y RF-17 no
+ *     existe. Perder automatización es recuperable; bloquear una venta
+ *     legítima sin salida no lo es.
+ *
+ * El umbral sube a `bloquear` más adelante y CON DATOS — la deuda, con su
+ * número (50 publicaciones por categoría) y su comando, está en
+ * `.claude/rules/moderacion.md` §9.
+ */
+export function nivelDeRekognition(etiquetas: readonly EtiquetaModeracion[]): Nivel {
+  const hayAcierto = etiquetas.some(
+    (e) =>
+      e.taxonomy_level === 1 &&
+      e.confidence >= CONFIANZA_ACCION &&
+      (CATEGORIAS_REKOGNITION as readonly string[]).includes(e.name)
+  );
+  return techo(hayAcierto ? 'bloquear' : 'limpio', 'revisar');
+}
+
+/**
+ * Las etiquetas que van a la AUDITORÍA — que no son las mismas que mueven el
+ * veredicto, y ahí está el punto.
+ *
+ * Incluye la banda 50-70, o sea etiquetas que NO hicieron nada. Si alguien
+ * "optimiza" esto para guardar solo las que superaron `CONFIANZA_ACCION`, el
+ * comando que mide la deuda de §9 deja de poder calcular una tasa de falsos
+ * positivos y la deuda se vuelve incobrable en silencio. Tiene aserción propia
+ * en `probe-moderacion.mjs`.
+ */
+export function etiquetasParaAuditoria(
+  etiquetas: readonly EtiquetaModeracion[]
+): EtiquetaModeracion[] {
+  return etiquetas.filter(
+    (e) => e.taxonomy_level === 1 && (CATEGORIAS_REKOGNITION as readonly string[]).includes(e.name)
+  );
+}
+
+// ---------------------------------------------------------------------------
 // La decisión
 // ---------------------------------------------------------------------------
 
@@ -165,7 +266,7 @@ export type EstadoListing =
   | 'pendiente'
   | 'bloqueada';
 
-/** Los cuatro ejes, ya reducidos a nivel. Ninguno absuelve a los otros. */
+/** Los cinco ejes, ya reducidos a nivel. Ninguno absuelve a los otros. */
 export type Ejes = {
   /** Peor de las TRES categorías sobre TODAS las fotos. */
   vision: Nivel;
@@ -175,10 +276,22 @@ export type Ejes = {
   listaTecleada: Nivel;
   /** Lista contra el texto de OCR. Ya viene con su techo aplicado. */
   listaOcr: Nivel;
+  /**
+   * Amazon Rekognition sobre TODAS las fotos. Ya viene con su techo aplicado:
+   * nunca vale `'bloquear'` (ver `nivelDeRekognition`). **Solo publicaciones**
+   * — `decidirAvatar()` no lo mira.
+   */
+  rekognition: Nivel;
 };
 
 export function veredicto(ejes: Ejes): Nivel {
-  return peor(ejes.vision, ejes.gptTexto, ejes.listaTecleada, ejes.listaOcr);
+  return peor(
+    ejes.vision,
+    ejes.gptTexto,
+    ejes.listaTecleada,
+    ejes.listaOcr,
+    ejes.rekognition
+  );
 }
 
 /**

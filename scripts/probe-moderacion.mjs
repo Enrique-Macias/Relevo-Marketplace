@@ -5,12 +5,14 @@
 //     node scripts/probe-moderacion.mjs
 //
 // No necesita el stack local, ni red, ni credenciales: las piezas que prueba
-// son puras a propósito. Cubre CUATRO módulos:
+// son puras a propósito. Cubre CINCO módulos:
 //
 //   decision.ts           los umbrales y la regla del piso
 //   palabras-prohibidas.ts  la lista y su normalización
 //   vision.ts             particionado, forma del request, parseo, el eje
 //   openai.ts             schema, body, parseo (incluido el refusal)
+//   rekognition.ts        cuerpo, parseo, el eje, y la FIRMA SigV4 contra los
+//                         vectores oficiales de AWS
 //
 // QUE SEAN CUATRO Y NO UNO ES LA DECISIÓN DE DISEÑO QUE HACE POSIBLE ESTE
 // ARCHIVO. `vision.ts` y `openai.ts` existen separados de `index.ts`
@@ -60,6 +62,10 @@ import {
   nivelDeLista,
   peor,
   esPromocion,
+  nivelDeRekognition,
+  etiquetasParaAuditoria,
+  CATEGORIAS_REKOGNITION,
+  CONFIANZA_ACCION,
 } from '../supabase/functions/moderar-contenido/decision.ts';
 import {
   coincidencias,
@@ -88,6 +94,17 @@ import {
   cuerpoOpenAI,
   parsearRespuestaOpenAI,
 } from '../supabase/functions/moderar-contenido/openai.ts';
+import {
+  cuerpoRekognition,
+  parsearRespuestaRekognition,
+  ejeRekognition,
+  firmarSigV4,
+  amzDateDe,
+  MIN_CONFIDENCE_PEDIDA,
+  SERVICIO_AWS,
+  TARGET_DETECT_MODERATION,
+  hostRekognition,
+} from '../supabase/functions/moderar-contenido/rekognition.ts';
 
 let pasadas = 0;
 const fallos = [];
@@ -112,6 +129,7 @@ const LIMPIO = {
   gptTexto: 'limpio',
   listaTecleada: 'limpio',
   listaOcr: 'limpio',
+  rekognition: 'limpio',
 };
 const ejes = (parcial) => ({ ...LIMPIO, ...parcial });
 
@@ -465,19 +483,20 @@ for (const vision of NIVELES)
   for (const gptTexto of NIVELES)
     for (const listaTecleada of NIVELES)
       for (const listaOcr of NIVELES)
-        for (const estado of ESTADOS) {
-          const nuevo = decidirListing(
-            { vision, gptTexto, listaTecleada, listaOcr },
-            estado
-          );
-          const subeVisibilidad = VISIBILIDAD[nuevo] > VISIBILIDAD[estado];
-          if (subeVisibilidad !== esPromocion(estado, nuevo)) {
-            promocionesNoReconocidas.push(`${estado} → ${nuevo}`);
+        for (const rekognition of NIVELES)
+          for (const estado of ESTADOS) {
+            const nuevo = decidirListing(
+              { vision, gptTexto, listaTecleada, listaOcr, rekognition },
+              estado
+            );
+            const subeVisibilidad = VISIBILIDAD[nuevo] > VISIBILIDAD[estado];
+            if (subeVisibilidad !== esPromocion(estado, nuevo)) {
+              promocionesNoReconocidas.push(`${estado} → ${nuevo}`);
+            }
           }
-        }
 
 ok(
-  'esPromocion() reconoce TODO cambio que suba la visibilidad (405 combinaciones)',
+  'esPromocion() reconoce TODO cambio que suba la visibilidad (1215 combinaciones)',
   promocionesNoReconocidas.length === 0,
   promocionesNoReconocidas.length
     ? `sin reconocer: ${JSON.stringify([...new Set(promocionesNoReconocidas)])}`
@@ -923,6 +942,288 @@ igual(
   const r = parsearRespuestaOpenAI({ output_text: JSON.stringify(raro) });
   igual('un grado fuera del enum se rechaza', r.ok === false && r.motivo, 'forma_invalida');
 }
+
+// ===========================================================================
+// REKOGNITION — el quinto eje
+// ===========================================================================
+
+const etq = (name, confidence, taxonomy_level = 1) => ({ name, confidence, taxonomy_level });
+
+// Los dos números CLAVADOS, no comparados entre sí. Casi todas las aserciones
+// de abajo usan `CONFIANZA_ACCION` de forma simbólica —`CONFIANZA_ACCION - 1`
+// y demás—, así que se MUEVEN con él y no pueden cazar un cambio de umbral.
+// Se descubrió corriendo el control negativo de bajar el umbral a 50: caía una
+// sola aserción, y por la razón lateral. Estas dos son las que lo fijan: los
+// umbrales son SPEC (CLAUDE.md §3), así que cambiarlos tiene que costar tocar
+// una prueba a propósito, no pasar solo.
+igual('el umbral de ACCIÓN de Rekognition es 70', CONFIANZA_ACCION, 70);
+igual('…y a AWS se le piden las etiquetas desde 50', MIN_CONFIDENCE_PEDIDA, 50);
+igual(
+  'las categorías vigiladas son exactamente esas tres',
+  [...CATEGORIAS_REKOGNITION].join(' | '),
+  'Drugs & Tobacco | Alcohol | Gambling'
+);
+
+// --- umbrales -------------------------------------------------------------
+
+for (const categoria of CATEGORIAS_REKOGNITION) {
+  igual(
+    `Rekognition: "${categoria}" a ${CONFIANZA_ACCION} mueve el eje`,
+    nivelDeRekognition([etq(categoria, CONFIANZA_ACCION)]),
+    'revisar'
+  );
+}
+
+// LA aserción que protege la decisión de esta tarea. Su control negativo es
+// quitar el `techo()` de `nivelDeRekognition`.
+igual(
+  'Rekognition NUNCA bloquea: las tres categorías a 99 siguen en revisar',
+  nivelDeRekognition(CATEGORIAS_REKOGNITION.map((c) => etq(c, 99))),
+  'revisar'
+);
+
+// La banda 50-70: DOS aserciones, y no son la misma. La primera dice que no
+// actúa; la segunda, que igual se guarda. Sin la segunda, un parseo que
+// descartara esas etiquetas pasaría en verde y dejaría la deuda de §9 sin
+// forma de calcularse nunca.
+igual(
+  'Rekognition: la banda 50-70 NO mueve el veredicto',
+  nivelDeRekognition([etq('Alcohol', CONFIANZA_ACCION - 1)]),
+  'limpio'
+);
+igual(
+  'Rekognition: …pero la banda 50-70 SÍ va a la auditoría',
+  etiquetasParaAuditoria([etq('Alcohol', CONFIANZA_ACCION - 1)]).length,
+  1
+);
+
+igual(
+  'Rekognition: una categoría que no vigilamos no mueve nada ni a 99',
+  nivelDeRekognition([etq('Violence', 99)]),
+  'limpio'
+);
+igual(
+  'Rekognition: una etiqueta L2 no cuenta (solo miramos L1)',
+  nivelDeRekognition([etq('Alcohol', 99, 2)]),
+  'limpio'
+);
+igual('Rekognition: sin etiquetas es limpio', nivelDeRekognition([]), 'limpio');
+igual(
+  'Rekognition: la auditoría tampoco guarda categorías ajenas',
+  etiquetasParaAuditoria([etq('Violence', 99), etq('Gambling', 55)]).length,
+  1
+);
+
+// --- el eje dentro del veredicto -----------------------------------------
+
+igual(
+  'Rekognition solo manda una activa a pendiente',
+  decidirListing(ejes({ rekognition: 'revisar' }), 'activa'),
+  'pendiente'
+);
+// `peor()` en las dos direcciones, como los casos 4a/4b: con un solo orden,
+// una implementación que devolviera el último eje evaluado pasaría igual.
+igual(
+  'Rekognition revisar + GPT claro = bloqueada (gana el peor)',
+  decidirListing(
+    ejes({ rekognition: 'revisar', gptTexto: nivelDeTexto({ ...TXT_LIMPIO, articulo_prohibido: 'claro' }) }),
+    'activa'
+  ),
+  'bloqueada'
+);
+igual(
+  'lista tecleada bloquea + Rekognition limpio = bloqueada (gana el peor)',
+  decidirListing(
+    ejes({ rekognition: 'limpio', listaTecleada: nivelDeLista(['pistola'], 'tecleado') }),
+    'activa'
+  ),
+  'bloqueada'
+);
+
+// Que el techo no se pueda esquivar por NINGUNA combinación de entradas.
+{
+  const confianzas = [0, 49, 50, 69, 70, 90, 99, 100];
+  let peorVisto = 'limpio';
+  for (const c of confianzas)
+    for (const cat of CATEGORIAS_REKOGNITION)
+      for (const nivelTax of [1, 2, 3])
+        peorVisto = peor(peorVisto, nivelDeRekognition([etq(cat, c, nivelTax)]));
+  igual(
+    `el eje de Rekognition jamás llega a bloquear (${confianzas.length * CATEGORIAS_REKOGNITION.length * 3} combinaciones)`,
+    peorVisto,
+    'revisar'
+  );
+}
+
+igual('ejeRekognition toma el peor de las fotos', ejeRekognition(['limpio', 'revisar', 'limpio']), 'revisar');
+igual('ejeRekognition sin fotos es limpio', ejeRekognition([]), 'limpio');
+
+// --- cuerpo y parseo ------------------------------------------------------
+
+{
+  const cuerpo = JSON.parse(cuerpoRekognition('QUJD'));
+  igual('el cuerpo pide MinConfidence 50, no 70', cuerpo.MinConfidence, MIN_CONFIDENCE_PEDIDA);
+  igual('  …y 50 es MENOR que el umbral de acción', MIN_CONFIDENCE_PEDIDA < CONFIANZA_ACCION, true);
+  igual('el cuerpo lleva la imagen en Image.Bytes', cuerpo.Image.Bytes, 'QUJD');
+}
+
+{
+  const r = parsearRespuestaRekognition({
+    ModerationLabels: [{ Name: 'Alcohol', Confidence: 81.25, TaxonomyLevel: 1 }],
+  });
+  ok('parseo: una respuesta bien formada se acepta', r.ok === true);
+  igual('  …con la confianza intacta', r.ok === true && r.etiquetas[0].confidence, 81.25);
+}
+{
+  const r = parsearRespuestaRekognition({ ModerationLabels: [] });
+  ok('parseo: sin etiquetas es EVALUADA Y LIMPIA, no un fallo', r.ok === true && r.etiquetas.length === 0);
+}
+{
+  const r = parsearRespuestaRekognition({ otraCosa: 1 });
+  ok('parseo: sin ModerationLabels se RECHAZA (no se lee como limpia)', r.ok === false);
+}
+{
+  const r = parsearRespuestaRekognition({ ModerationLabels: [{ Name: 'Alcohol' }] });
+  ok('parseo: una etiqueta sin Confidence se rechaza', r.ok === false);
+}
+{
+  const r = parsearRespuestaRekognition({
+    __type: 'InvalidImageFormatException',
+    message: 'Request has invalid image format',
+  });
+  igual('parseo: un error de AWS conserva su __type', r.ok === false && r.motivo, 'InvalidImageFormatException');
+}
+
+// --- firma SigV4, contra los vectores OFICIALES de AWS --------------------
+//
+// Los vectores salen de `aws-sig-v4-test-suite`, la suite oficial de AWS. Son
+// la razón por la que el firmador se escribió a mano en vez de usar
+// `npm:aws4fetch`: con una librería, la firma no tiene cobertura, y un bug de
+// firma se ve como un 403 opaco.
+//
+// Credenciales fijas de la suite — son de ejemplo y públicas, no un secreto.
+
+const V4 = {
+  accessKeyId: 'AKIDEXAMPLE',
+  secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY',
+  region: 'us-east-1',
+  servicio: 'service',
+  amzDate: '20150830T123600Z',
+  host: 'example.amazonaws.com',
+};
+
+{
+  const f = await firmarSigV4({
+    ...V4,
+    metodo: 'GET',
+    ruta: '/',
+    query: '',
+    headers: {},
+    cuerpo: '',
+  });
+
+  igual(
+    'SigV4 get-vanilla: canonical request exacto',
+    f.canonicalRequest,
+    'GET\n/\n\nhost:example.amazonaws.com\nx-amz-date:20150830T123600Z\n\nhost;x-amz-date\n' +
+      'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+  );
+  igual(
+    'SigV4 get-vanilla: string to sign exacto',
+    f.stringToSign,
+    'AWS4-HMAC-SHA256\n20150830T123600Z\n20150830/us-east-1/service/aws4_request\n' +
+      'bb579772317eb040ac9ed261061d46c1f17a8133879d6129b6e1c25292927e63'
+  );
+  igual(
+    'SigV4 get-vanilla: Authorization exacto (la firma completa)',
+    f.authorization,
+    'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, ' +
+      'SignedHeaders=host;x-amz-date, ' +
+      'Signature=5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31'
+  );
+}
+
+// El caso con CUERPO, que es la forma real de Rekognition (POST con JSON).
+//
+// OJO, Y ESTO ES UNA TRAMPA DE LA SUITE, NO UN BUG NUESTRO — **medido, no
+// deducido**: el `.creq` oficial de este caso incluye `content-length` entre
+// los headers firmados, pero su `.sts` y su `.authz` se calcularon SIN él
+// (`SignedHeaders=content-type;host;x-amz-date`). O sea que los tres ficheros
+// de AWS no son consistentes entre sí; es el mismo desacuerdo que reportó
+// aws/aws-sdk-js#853.
+//
+// Cómo se comprobó, porque la primera versión de esta prueba falló aquí y la
+// tentación era "ajustar el esperado hasta que pase": se firmó el caso con y
+// sin `content-length` y se comparó cada variante contra los tres ficheros.
+// CON content-length reproduce el `.creq` y ningún otro; SIN content-length
+// reproduce el `.sts` Y el `.authz` exactos. Dos de tres ficheros mandan, y
+// además son los dos que dependen de la cadena HMAC completa.
+//
+// Se firma entonces SIN `content-length`, que es entre otras cosas la forma
+// correcta: AWS no exige firmar `content-length`, y nuestra petición real a
+// Rekognition tampoco lo firma.
+{
+  const f = await firmarSigV4({
+    ...V4,
+    metodo: 'POST',
+    ruta: '/',
+    query: '',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    cuerpo: 'Param1=value1',
+  });
+
+  // El hash del CUERPO, que es lo que get-vanilla no puede probar (su payload
+  // es la cadena vacía). Este valor sí viene del `.creq` oficial.
+  ok(
+    'SigV4 post-con-cuerpo: el hash del cuerpo es el del vector oficial',
+    f.canonicalRequest.endsWith(
+      '9095672bbd1f56dfc5b65f3e153adc8731a4a654192329106275f4c7b24d0b6e'
+    ),
+    f.canonicalRequest
+  );
+  igual(
+    'SigV4 post-con-cuerpo: string to sign exacto',
+    f.stringToSign,
+    'AWS4-HMAC-SHA256\n20150830T123600Z\n20150830/us-east-1/service/aws4_request\n' +
+      '42a5e5bb34198acb3e84da4f085bb7927f2bc277ca766e6d19c73c2154021281'
+  );
+  igual(
+    'SigV4 post-con-cuerpo: Authorization exacto (segundo vector completo, con cuerpo)',
+    f.authorization,
+    'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, ' +
+      'SignedHeaders=content-type;host;x-amz-date, ' +
+      'Signature=ff11897932ad3f4e8b18135d722051e5ac45fc38421b1da7b9d196a0fe09473a'
+  );
+}
+
+// La forma real con la que se va a llamar a Rekognition.
+{
+  const f = await firmarSigV4({
+    accessKeyId: 'AKIDEXAMPLE',
+    secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY',
+    region: 'us-east-2',
+    servicio: SERVICIO_AWS,
+    amzDate: '20260921T120000Z',
+    host: hostRekognition('us-east-2'),
+    metodo: 'POST',
+    ruta: '/',
+    query: '',
+    headers: { 'Content-Type': 'application/x-amz-json-1.1', 'X-Amz-Target': TARGET_DETECT_MODERATION },
+    cuerpo: cuerpoRekognition('QUJD'),
+  });
+  ok(
+    'la petición real firma x-amz-target (sin él, AWS no sabe qué operación es)',
+    f.canonicalRequest.includes('x-amz-target:RekognitionService.DetectModerationLabels'),
+    f.canonicalRequest
+  );
+  ok(
+    '  …y el host regional entra en la firma',
+    f.canonicalRequest.includes('host:rekognition.us-east-2.amazonaws.com')
+  );
+  ok('  …con scope de la región correcta', f.authorization.includes('/us-east-2/rekognition/aws4_request'));
+}
+
+igual('amzDateDe produce el formato de AWS', amzDateDe(new Date(Date.UTC(2026, 8, 21, 14, 30, 0))), '20260921T143000Z');
 
 // ---------------------------------------------------------------------------
 console.log('');

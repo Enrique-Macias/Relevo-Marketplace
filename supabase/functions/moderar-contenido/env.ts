@@ -28,6 +28,9 @@
 export type ConfigModeracion = {
   googleCloudVisionApiKey: string;
   openaiApiKey: string;
+  awsAccessKeyId: string;
+  awsSecretAccessKey: string;
+  awsRegion: string;
 };
 
 /**
@@ -48,6 +51,14 @@ export type ConfigModeracion = {
 const NOMBRES = {
   googleCloudVisionApiKey: 'GOOGLE_CLOUD_VISION_API_KEY',
   openaiApiKey: 'OPENAI_API_KEY',
+  //  · Los tres de AWS usan los nombres CANÓNICOS del SDK, mismo criterio que
+  //    `OPENAI_API_KEY`: cualquier herramienta de AWS los lee por convención,
+  //    así que inventarles un prefijo propio solo crearía una traducción que
+  //    mantener. El usuario de IAM detrás de ellos tiene UNA sola acción
+  //    permitida, `rekognition:DetectModerationLabels`.
+  awsAccessKeyId: 'AWS_ACCESS_KEY_ID',
+  awsSecretAccessKey: 'AWS_SECRET_ACCESS_KEY',
+  awsRegion: 'AWS_REGION',
 } as const;
 
 /**
@@ -62,6 +73,9 @@ const NOMBRES = {
 export function resolverConfig(): ConfigModeracion {
   const googleCloudVisionApiKey = Deno.env.get(NOMBRES.googleCloudVisionApiKey);
   const openaiApiKey = Deno.env.get(NOMBRES.openaiApiKey);
+  const awsAccessKeyId = Deno.env.get(NOMBRES.awsAccessKeyId);
+  const awsSecretAccessKey = Deno.env.get(NOMBRES.awsSecretAccessKey);
+  const awsRegion = Deno.env.get(NOMBRES.awsRegion);
 
   // Va como dos `if` y no como un `.filter()` sobre un arreglo de
   // `false | string`: aquella forma no typechea —el predicado `n is string` no
@@ -72,16 +86,28 @@ export function resolverConfig(): ConfigModeracion {
   const faltantes: string[] = [];
   if (!googleCloudVisionApiKey) faltantes.push(NOMBRES.googleCloudVisionApiKey);
   if (!openaiApiKey) faltantes.push(NOMBRES.openaiApiKey);
+  if (!awsAccessKeyId) faltantes.push(NOMBRES.awsAccessKeyId);
+  if (!awsSecretAccessKey) faltantes.push(NOMBRES.awsSecretAccessKey);
+  if (!awsRegion) faltantes.push(NOMBRES.awsRegion);
 
   if (faltantes.length > 0) {
+    // El artículo también se pluraliza: decía `el secretos` en cuanto faltaba
+    // más de uno, y con los tres de AWS ese camino pasó a ser el COMÚN.
+    const plural = faltantes.length > 1;
+    const comando = faltantes.map((n) => `${n}=...`).join(' ');
     throw new Error(
-      `moderar-contenido: falta${faltantes.length > 1 ? 'n' : ''} el secreto${
-        faltantes.length > 1 ? 's' : ''
-      } ${faltantes.join(', ')}. Corre: supabase secrets set ${faltantes
-        .map((n) => `${n}=...`)
-        .join(' ')}`
+      `moderar-contenido: falta${plural ? 'n' : ''} ${plural ? 'los' : 'el'} ` +
+        `secreto${plural ? 's' : ''} ${faltantes.join(', ')}. ` +
+        `En LOCAL van en supabase/functions/.env; para REMOTO corre: ` +
+        `supabase secrets set ${comando}`
     );
   }
 
-  return { googleCloudVisionApiKey: googleCloudVisionApiKey!, openaiApiKey: openaiApiKey! };
+  return {
+    googleCloudVisionApiKey: googleCloudVisionApiKey!,
+    openaiApiKey: openaiApiKey!,
+    awsAccessKeyId: awsAccessKeyId!,
+    awsSecretAccessKey: awsSecretAccessKey!,
+    awsRegion: awsRegion!,
+  };
 }

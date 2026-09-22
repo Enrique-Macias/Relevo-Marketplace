@@ -86,6 +86,7 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
 | Cliente BD | `@supabase/supabase-js` (versión fijada, sin `^`) | Ver sección 8 para el wrapper (`src/lib/supabase.ts`) y por qué usa `expo-crypto` en vez de `react-native-get-random-values` |
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
+| Moderación de imagen | Google Cloud Vision (SafeSearch + OCR) **+ Amazon Rekognition** (`DetectModerationLabels`) | Dos proveedores porque cubren cosas distintas: SafeSearch no mira drogas/alcohol/gambling y Rekognition no hace OCR. Rekognition **no batchea** (una llamada por imagen) y acepta **solo JPEG/PNG**, al revés de Vision — ver §3 |
 | Admin / moderación | Supabase Studio | Panel de reportes y suspensión de usuarios/publicaciones, sin desarrollo adicional |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
@@ -1142,7 +1143,10 @@ gobernar cómo se usa ese enum ya están tomadas, y quedan aquí para que no
 sigan viviendo solo en una conversación:
 
 - **Son DOS umbrales, no uno: `LIKELY → pendiente`, `VERY_LIKELY →
-  bloqueada`.** Una publicación que Google Cloud Vision marque `LIKELY` en
+  bloqueada`. ESTO ES DE VISION Y SOLO DE VISION** — el eje de Rekognition, más
+  abajo, NO sigue esta forma (tiene techo y nunca bloquea), así que no leas este
+  párrafo como si aplicara a todos los ejes de imagen. Una publicación que
+  Google Cloud Vision marque `LIKELY` en
   alguna de las categorías que miramos queda en `pendiente`, a la espera de
   revisión humana; `VERY_LIKELY` la bloquea **automáticamente**, sin pasar por
   una persona. `LIKELY` como umbral de revisión es deliberadamente sensible —
@@ -1156,6 +1160,33 @@ sigan viviendo solo en una conversación:
   imagen es una versión alterada de una canónica—, y `medical` porque en ESTE
   catálogo es una fábrica de falsos positivos: libros de anatomía, batas,
   estetoscopios, muletas, botiquines.
+- **Amazon Rekognition es un QUINTO eje, junto a Vision y OpenAI, NO en
+  reemplazo de ninguno.** Cubre lo que ni SafeSearch ni GPT miran: **drogas,
+  tabaco, alcohol y gambling en la IMAGEN**. Son tres categorías de nivel 1 del
+  taxonomy v7, con el nombre exacto de AWS: `Drugs & Tobacco`, `Alcohol` y
+  `Gambling`. Solo L1 (es lo que la propia doc de AWS recomienda), y **solo
+  publicaciones: los avatares no pasan por este eje** —drogas/alcohol es señal
+  de catálogo, no de foto de perfil, y `decidirAvatar()` borra de forma
+  irreversible, sin cola donde caer un falso positivo—.
+- **El eje ENTERO tiene techo en `revisar`: Rekognition NUNCA bloquea solo.**
+  Es la diferencia con Vision, y es deliberada, no una etapa a medio hacer. Dos
+  razones: (a) **cero datos medidos de falsos positivos** sobre este catálogo —
+  mismo argumento que dejó `medical` fuera de Vision, y las definiciones de AWS
+  lo hacen concreto: `Alcoholic Beverages` es "close up of bottles, glasses or
+  mugs" (un juego de copas), `Gambling` es "playing cards, blackjack" (una
+  baraja) y `Drugs & Tobacco → Products → Pills` es "pills in a bottle" (**un
+  frasco de vitaminas o de proteína**, venta legítima entre estudiantes); y (b)
+  **`bloqueada` no tiene recurso hoy** — ni edición ni apelación, solo eliminar,
+  y RF-17 no existe. El techo se aplica al EJE y no por categoría justamente
+  para que no se pueda romper agregando una categoría y olvidándole el suyo.
+- **Se le piden a AWS las etiquetas desde `MinConfidence: 50`, pero se ACTÚA
+  desde 70**, y esa diferencia es el diseño entero: la banda 50-70 **se registra
+  en `listing_moderacion.detalle` y no hace nada**. Es el dataset con el que se
+  decidirá si subir el umbral a `bloquear`, y se acumula solo desde la primera
+  publicación en vez de exigir re-moderar nada. Registrar por debajo del umbral
+  de acción, actuar por encima. La deuda de subir el umbral tiene **número y
+  comando** (50 publicaciones por categoría, con su SQL) en
+  `.claude/rules/moderacion.md` §9 — no dice "cuando haya suficientes".
 - **`vendida` y `pausada` SÍ escalan a `bloqueada`, pero el pipeline NUNCA las
   promueve a `activa`.** Es la regla menos obvia de todo esto y es asimétrica a
   propósito. Escalan porque si no, `pausada` sería un escondite —pausar, cambiar
@@ -1448,14 +1479,23 @@ Toast de éxito · Toast de error · Loading / skeleton
      por qué borrar cualquiera deja un hueco medido.
   4. `node scripts/probe-moderacion.mjs` — todo lo PURO de RF-18: los umbrales
      (la función de decisión y la lista de palabras), el particionado de fotos
-     para Vision, y el schema/parseo de OpenAI. **No necesita el stack local**
+     para Vision, el schema/parseo de OpenAI, y el eje de **Rekognition**: su
+     techo, la banda 50-70 que se registra sin actuar, y **la firma SigV4
+     contra los vectores oficiales de AWS**. **No necesita el stack local**
      (el paso 5 tampoco): las piezas que prueba son puras a propósito, sin red
      ni Supabase, y por eso corre en menos de un segundo.
      Y es el único que importa la implementación **REAL** en vez de
-     transcribirla: los cuatro módulos que cubre
-     (`supabase/functions/moderar-contenido/{decision,palabras-prohibidas,vision,openai}.ts`)
+     transcribirla: los cinco módulos que cubre
+     (`supabase/functions/moderar-contenido/{decision,palabras-prohibidas,vision,openai,rekognition}.ts`)
      no importan nada fuera de `decision.ts`, así que Node los carga directo
-     (type stripping, v22.6+). **Ese "no importan nada" es la precondición, no
+     (type stripping, v22.6+).
+     **El firmador SigV4 es la excepción deliberada a "el `fetch` vive en
+     `index.ts`"**: no usa `fetch` ni nada Deno-only, solo `crypto.subtle`, que
+     Node también tiene — y ponerlo del lado puro es lo ÚNICO que permite
+     verificarlo contra los vectores de AWS. Se descartó `npm:aws4fetch` por
+     eso: con una librería la firma no tiene cobertura a ningún precio, y un
+     bug de firma se manifiesta como un **403 opaco**, indistinguible de una
+     credencial mal puesta o una región equivocada. **Ese "no importan nada" es la precondición, no
      una casualidad:** `vision.ts` y `openai.ts` existen separados de `index.ts`
      justamente para que el `fetch`, la descarga de Storage y el `encodeBase64`
      —lo Deno-only— queden del otro lado de la línea y no arrastren el resto a
@@ -1627,6 +1667,26 @@ de los route groups).
   relación con que esto ya esté en producción.
 
 **Pendiente, en este orden de prioridad:**
+0. **Las credenciales de AWS para el eje de Rekognition (RF-18).** Paso manual
+   y BLOQUEANTE, igual que los de Vision/OpenAI y los de Vault: una credencial
+   no se comitea. El código está completo y verificado hasta donde se puede sin
+   ellas —la firma SigV4 pasa contra los vectores oficiales de AWS, y el módulo
+   puro tiene sus 5 controles negativos (`.claude/rules/moderacion.md` §6.6)—,
+   pero **ninguna llamada real a AWS se ha hecho todavía**.
+   - En la consola de AWS: usuario de IAM dedicado, solo programático, con una
+     policy de **una sola acción**, `rekognition:DetectModerationLabels`
+     (`Resource: "*"` no es laxitud — sobre `Image.Bytes` no hay ARN que acotar;
+     lo que acota es la única `Action`).
+   - Los tres valores a `supabase/functions/.env` (LOCAL): `AWS_ACCESS_KEY_ID`,
+     `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`. Sin ellos **la función ni arranca**
+     — `resolverConfig()` falla al arrancar a propósito, así que hoy
+     `supabase functions serve` no levanta y los pasos 4 y 6 de §6 no se pueden
+     correr.
+   - Para REMOTO, y **en este orden**: `supabase secrets set` con las tres
+     ANTES de `supabase functions deploy moderar-contenido`. Al revés deja la
+     función sin arrancar y **rompe publicar en producción** hasta que existan.
+   - Sin migración y sin `db push`: esta tarea no toca esquema, policies ni
+     grants.
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:

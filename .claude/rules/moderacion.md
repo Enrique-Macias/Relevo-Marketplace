@@ -45,7 +45,7 @@ paths:
 
 | Pieza | Estado | Dónde |
 |---|---|---|
-| Función pura de decisión (los 4 ejes, la regla del piso, la asimetría) | **Hecho** | `supabase/functions/moderar-contenido/decision.ts` |
+| Función pura de decisión (los 5 ejes, la regla del piso, la asimetría) | **Hecho** | `supabase/functions/moderar-contenido/decision.ts` |
 | Lista de palabras prohibidas | **Hecho** | `supabase/functions/moderar-contenido/palabras-prohibidas.ts` |
 | Resolución de los dos secretos (`Deno.env.get`, fail-fast) | **Hecho** | `supabase/functions/moderar-contenido/env.ts` |
 | `listings` en la publicación de Realtime | **Hecho** | `supabase/migrations/20260917000460_listings_realtime.sql` |
@@ -56,6 +56,8 @@ paths:
 | Typecheck propio de la carpeta de funciones | **Hecho** | `npm run check:functions` |
 | Particionado, request y parseo de Vision (sin el `fetch`) | **Hecho** | `supabase/functions/moderar-contenido/vision.ts` |
 | Schema, body y parseo de OpenAI, refusal incluido (sin el `fetch`) | **Hecho** | `supabase/functions/moderar-contenido/openai.ts` |
+| **Eje de Amazon Rekognition, puro**: cuerpo, parseo, techo del eje, y el **firmador SigV4** | **Hecho** (2026-09-21), con los vectores oficiales de AWS en verde | `supabase/functions/moderar-contenido/rekognition.ts` + `decision.ts` |
+| **El `fetch` firmado a Rekognition + `descargarFotos()` compartida** | **Hecho**, pendiente de correr contra AWS real (falta el paso manual de IAM) | `index.ts`, `evaluarRekognition()` / `llamarRekognition()` |
 | **El `fetch` real a Vision y a OpenAI** (Ola 1.5) | **Hecho, con credenciales reales puestas** | `index.ts`, `llamarLoteVision()` / `evaluarTexto()` |
 | **La descarga desde Storage + `encodeBase64`** | **Hecho** | `index.ts`, `evaluarFotos()` |
 | **Armar los `Ejes` + `decidirListing()` + escritura + auditoría, para PUBLICACIONES** | **Hecho, con el guard de promoción probado end-to-end (§6.3)** | `index.ts`, `evaluarListing()` |
@@ -554,6 +556,53 @@ const [vision, gptTexto] = await Promise.all([
 // decision.ts no hace red.
 ```
 
+### 3.2. La forma CAMBIÓ al entrar Rekognition (2026-09-21)
+
+**Rekognition NO batchea: `DetectModerationLabels` es una imagen por llamada**,
+al revés de `images:annotate`, que acepta un arreglo. No es una elección de
+diseño nuestra, es la forma del API. O sea que N fotos son N llamadas, en
+paralelo.
+
+Y las dos APIs de imagen necesitan **exactamente los mismos bytes**, así que
+bajarlos dos veces pagaría el doble de latencia de Storage por nada. Ese es el
+único motivo por el que la descarga se extrajo de `evaluarFotos()` a
+`descargarFotos()` propia:
+
+```ts
+const [imagen, resultadoTexto] = await Promise.all([
+  (async () => {
+    const { descargadas, fallosDeDescarga } = await descargarFotos(db, paths, bucket);
+    return await Promise.all([
+      evaluarFotos(config, descargadas, fallosDeDescarga),        // Vision, lotes
+      evaluarRekognition(config, descargadas, fallosDeDescarga),  // N llamadas
+    ]);
+  })(),
+  evaluarTexto(config, titulo, descripcion),
+]);
+```
+
+Latencia = `max(descarga + max(vision, rekognition), gpt)` — nada secuencial
+nuevo en el camino del cliente, que espera el veredicto (§4).
+
+**`moderarAvatar()` usa los dos pasos pero NO llama a Rekognition**, y eso es
+decisión de producto, no una omisión: drogas/alcohol/gambling es una señal de
+CATÁLOGO, no de foto de perfil, y `decidirAvatar()` borra de forma
+irreversible — un falso positivo ahí no tiene cola donde caer.
+
+**Los TRES caminos de falla segura del eje nuevo**, ninguno propaga excepción
+y todos terminan en `'revisar'`, nunca en `'limpio'`:
+
+1. La llamada falla (red, throttling, credenciales, firma mal hecha).
+2. **`InvalidImageFormatException`** — Rekognition acepta **solo JPEG y PNG**
+   y el bucket permite además `webp`. Hoy no es alcanzable desde la app
+   (`normalizar()` entrega siempre JPEG) y **está medido**: las 46 fotos reales
+   del bucket remoto son `.jpg`, cero webp y cero png. Sí es alcanzable desde
+   una subida directa al Storage API o desde Studio.
+3. **`ImageTooLargeException`** — el tope de bytes CRUDOS es **5 MB decimales**
+   y el bucket corta en **5 MiB (5,242,880)**, así que existe una franja real
+   donde una foto pasa el bucket y no pasa a Rekognition. Se detecta ANTES de
+   gastar la llamada, con `MAX_BYTES_REKOGNITION`.
+
 Latencia esperada: `max(vision, gpt)`, no la suma de las dos ni la suma de 5
 llamadas a Vision. **Esto es una estimación, no una medición** — al migrar
 esto no había función corriendo todavía para cronometrarla contra las APIs
@@ -670,7 +719,7 @@ ESQUELETO (2026-09-18, primera mitad del día): ruteo, ownership, el guard de
 `esPromocion()` y la escritura de estado ya estaban, pero `evaluarListing()` y
 `moderarAvatar()` eran stubs. **Los stubs fallaban seguro en la dirección de
 cada camino, y las dos direcciones eran opuestas a propósito:** una
-publicación sin evaluar reportaba los cuatro ejes como `'revisar'` y
+publicación sin evaluar reportaba todos los ejes como `'revisar'` y
 terminaba en `pendiente` (inútil pero nunca peligrosa — un stub que
 devolviera `'limpio'` habría publicado sin mirar); un avatar sin evaluar se
 CONSERVABA, porque `decidirAvatar()` solo borra con `bloquear` y un stub que
@@ -1035,7 +1084,7 @@ ve.
 
 | Script | Qué prueba | ¿Cuesta dinero? | ¿Necesita servidor? |
 |---|---|---|---|
-| `probe-moderacion.mjs` | DECISIONES puras (120 aserciones) | No | No |
+| `probe-moderacion.mjs` | DECISIONES puras (**162** al 2026-09-21; se mide, no se recuerda) | No | No |
 | `probe-moderacion-http.mjs` | AUTORIZACIÓN/CABLEADO (16) | **Sí, desde la Ola 1.5** | Sí |
 | `probe-moderacion-red.mjs` | Particionado, descarga fallida, no-op (10) | Sí | Sí |
 
@@ -1261,6 +1310,72 @@ sin haber ejercitado la rama UPDATE en absoluto.
 
 
 ---
+
+### 6.6. El eje de Rekognition (2026-09-21) — lo puro, corrido y en verde
+
+`node scripts/probe-moderacion.mjs` pasó de **124 a 162 aserciones**, las dos
+cifras medidas con el comando (`git stash` para el baseline), no recordadas.
+**Y el baseline desmintió a este mismo archivo**, que en §6.3 decía 120: la
+moraleja de los conteos de CLAUDE.md §3 otra vez, encontrada al medir para
+otra cosa. Corregido también allá. Lo que cubre y que no se ve en el diff:
+
+**La firma SigV4 va contra los vectores OFICIALES de AWS**, bajados de
+`aws-sig-v4-test-suite`. Son la razón entera de haber escrito el firmador a
+mano en vez de usar `npm:aws4fetch`: con una librería la firma no tiene
+cobertura a ningún precio, y un bug de firma se manifiesta como un **403
+opaco** — indistinguible de una credencial mal puesta, un permiso de IAM
+faltante o una región equivocada. Dos vectores completos:
+
+| Vector | Qué agrega |
+|---|---|
+| `get-vanilla` | la cadena HMAC completa y el formato del `Authorization`, con payload vacío |
+| `post-x-www-form-urlencoded` | el **hash del CUERPO** y el orden de varios headers |
+
+**Y ese segundo vector trae una trampa de la SUITE, no un bug nuestro —
+medida, no deducida.** El `.creq` oficial de ese caso incluye `content-length`
+entre los headers firmados, pero su `.sts` y su `.authz` se calcularon SIN él
+(`SignedHeaders=content-type;host;x-amz-date`): los tres ficheros de AWS no son
+consistentes entre sí. Es el mismo desacuerdo que reportó aws/aws-sdk-js#853.
+
+Cómo se resolvió, porque la primera corrida falló ahí y la tentación era
+**ajustar el esperado hasta que pase**: se firmó el caso con y sin
+`content-length` y se comparó cada variante contra los tres ficheros. CON
+reproduce el `.creq` y ningún otro; SIN reproduce el `.sts` **y** el `.authz`
+exactos. Dos de tres ficheros mandan, y son los dos que dependen de la cadena
+HMAC completa — así que se firma sin `content-length`, que además es lo
+correcto (AWS no exige firmarlo, y nuestra petición real tampoco lo firma).
+
+**Los cinco controles negativos, corridos UNO A LA VEZ**, verificando con
+`grep` que la variante rota de verdad se aplicó ANTES de correr (CLAUDE.md §9,
+"una verificación que sale sospechosamente limpia"):
+
+| Variante rota | Cae en |
+|---|---|
+| sin el `techo()` del eje | las 3 de categoría, la de "NUNCA bloquea" y el barrido de 72 combinaciones |
+| la auditoría descarta la banda 50-70 | "la banda 50-70 SÍ va a la auditoría" y la de categorías ajenas |
+| umbral de acción 70 → 50 | "el umbral de ACCIÓN de Rekognition es 70" |
+| cadena HMAC en mal orden (región ↔ servicio) | **solo** los dos `Authorization` — ni el canonical request ni el string to sign |
+| parseo laxo (forma inválida se lee como limpia) | "sin ModerationLabels se RECHAZA" |
+
+**Dos cosas de esa tabla que conviene no suponer.** La cuarta fila es
+informativa, no un hueco: el canonical request y el string to sign NO dependen
+de la llave, así que es correcto que no caigan — lo que prueba es que las
+aserciones de `Authorization` son las que cargan esa cobertura, y borrarlas la
+dejaría sin red.
+
+Y la tercera fila **destapó un hueco real y agregó aserciones**. La primera
+versión no fijaba los números: casi todas las aserciones usaban
+`CONFIANZA_ACCION` de forma simbólica (`CONFIANZA_ACCION - 1` y demás), así que
+**se movían con él** y bajar el umbral a 50 hacía caer una sola aserción, por
+una razón lateral. Los umbrales son SPEC (CLAUDE.md §3), o sea que cambiarlos
+tiene que costar tocar una prueba a propósito. Se agregaron tres pines: el 70,
+el 50 y la lista exacta de categorías. Es la misma familia que `:C` en T11b —
+una aserción que pasa sin probar lo que dice.
+
+**Lo que este probe NO prueba, y por eso no cierra el eje:** que AWS acepte la
+firma. Eso es una llamada real y depende del paso manual de IAM. La firma está
+verificada contra los vectores; que las credenciales y el permiso sean los
+correctos, no.
 
 ## 7. Orden y dependencias — mapa completo de olas
 
@@ -1509,6 +1624,61 @@ son dos cosas:
 ---
 
 ## 9. Deuda consciente de moderación — con disparador, no "algún día"
+
+- **El umbral de Rekognition está topado en `revisar` y nunca bloquea solo.**
+  Es decisión, no omisión: se tomó sin un solo dato medido de falsos positivos
+  sobre este catálogo, y `bloqueada` no tiene recurso hoy (§7).
+
+  **Revisar cuando** una categoría L1 acumule **50 publicaciones distintas**
+  con etiqueta de esa categoría a confianza ≥ 70. **Por categoría y por
+  separado** — `Drugs & Tobacco`, `Alcohol` y `Gambling` acumulan evidencia a
+  ritmos distintos, así que la primera en llegar a 50 se revisa sola. Se mide
+  con este comando, no se estima:
+
+  ```sql
+  select etiqueta->>'name' as categoria,
+         count(distinct m.listing_id) as publicaciones
+  from public.listing_moderacion m,
+       jsonb_array_elements(m.detalle->'fotos') foto,
+       jsonb_array_elements(foto->'rekognition') etiqueta
+  where (etiqueta->>'taxonomy_level')::int = 1
+    and (etiqueta->>'confidence')::numeric >= 70
+  group by 1 order by 2 desc;
+  ```
+
+  **Por qué 50, con la cota que de verdad corresponde.** Todas las cotas de
+  abajo son **Clopper–Pearson bilateral al 95%**, una sola convención para
+  todas las celdas — ojo con la "regla de tres" (`3/n`), que da 6% para 0/50
+  pero es la cota **unilateral**: mezclarla con una cota para 1 evento compara
+  dos cosas distintas.
+
+  | Observado en 50 | Cota superior real | Qué se hace |
+  |---|---|---|
+  | **0 falsos positivos** | **7.1%** | Subir a `bloquear` |
+  | 1 falso positivo | **10.6%** | NO subir — seguir hasta 150 |
+  | ≥2 falsos positivos | >13% | NO subir; el techo se queda |
+  | 0-1 FP en 150 | ≤3.7% | Subir a `bloquear` |
+
+  **La tolerancia es CERO a n=50**, y es deliberado: una versión anterior de
+  esta entrada justificaba el 50 con la cota de cero eventos (6%) y a la vez
+  permitía 1, cuya cota real es **10.6%** — casi el doble, y por encima de lo
+  aceptable para una acción irreversible sin apelación. Un solo falso positivo
+  no cierra la puerta, solo mueve la decisión a n=150, donde 1 evento cae en
+  3.7%. A n=30 la cota con 0 eventos es 11.6%, demasiado alta para decidir.
+
+  **Fix:** agregar la banda `bloquear` en `nivelDeRekognition()` **por
+  categoría**, nunca para el eje entero — la evidencia de `Drugs & Tobacco` no
+  dice nada sobre `Alcohol`.
+
+  **Dos cosas honestas sobre este disparador.** (a) **Puede no sonar nunca a
+  volumen actual, y está bien**: a ~60 publicaciones/mes, una categoría que
+  aparezca en el 3% del catálogo tarda ~28 meses en llegar a 50. El techo es el
+  default seguro, así que un disparador que no suena no cuesta nada — lo que
+  costaría es lo contrario. (b) **El conteo solo existe porque se registra la
+  banda 50-70**: si alguien "optimiza" `etiquetasParaAuditoria()` para guardar
+  solo lo que superó el umbral de acción, este comando deja de poder calcular
+  nada y la deuda se vuelve incobrable en silencio. Tiene aserción propia en el
+  probe, con su control negativo (§6.6).
 
 - ~~**El trigger de `listing-photos` evalúa el set ANTERIOR y nunca la foto que lo
   disparó.**~~ **CERRADA** (2026-09-19) — `unirFotoDisparadora()` en `vision.ts`,
