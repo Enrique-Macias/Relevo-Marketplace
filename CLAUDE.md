@@ -195,13 +195,18 @@ más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando y
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto NO están a la par: 30 y 29** (medido el 2026-09-23 con
-`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`). La que
-falta es `20260924000466` (la universidad sale del dominio del correo, fase
-2A), que espera su runbook: el pendiente 0 de §8, con un paso 0 BLOQUEANTE.
-Antes de eso decía "29 y 29", medido después de que `20260923000465` viajara a
-remoto. Es un estado transitorio, como dice la moraleja de abajo: se remide
-antes de confiar en él.
+**Repo y remoto están a la par: 30 y 30** (remedido el 2026-09-23 con
+`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`, tras
+correr el runbook de la fase 2A y aplicar `20260924000466` con `supabase db
+push`). Es un estado transitorio, como dice la moraleja de abajo: la próxima
+migración lo rompe hasta su `db push`, así que se remide antes de confiar en
+él.
+
+**Por OCTAVA vez:** este párrafo decía "30 y 29", con `20260924000466` marcada
+como "sin pushear" — y en la MISMA sesión que lo escribió, un runbook
+explícito corrió el `db push` que la llevó a remoto; quedó obsoleto antes de
+que la tarea terminara, exactamente como ya le pasó a "23 y 21" más abajo. La
+historia de antes, tal como estaba:
 
 **Por SÉPTIMA vez:** este párrafo decía "28 y 27", con `20260922000464`
 marcada como "sin pushear", y al remedirlo contra remoto ya había viajado: el
@@ -2043,37 +2048,50 @@ de los route groups).
   que no hay que tocar nada en el Dashboard. **No se hace con `db push
   --include-seed`**: eso también sembraría lo que traiga `seed.sql`.
 
+- **Fase 2A (universidad derivada del dominio, `20260924000466`) EN REMOTO
+  (2026-09-23).** Los pasos 0-5 del runbook (CLAUDE.md §8, antes pendiente 0)
+  corrieron en orden, cada uno remedido en vez de darse por hecho — **falta
+  solo el paso 6** (una alta real de un dispositivo), que queda como prueba
+  manual pendiente:
+  - **Paso 0, bloqueante:** fase 1 viva — `list_migrations` con `20260923000465`
+    (29 migraciones), `universidad_dominios` con 2 filas
+    (`exatec.tec.mx→1, tec.mx→1`), `run_hook` reciente en los logs de Auth. Los
+    conteos a/c/d en 0 (7 usuarios, 76 publicaciones, ninguno incoherente).
+  - **Diff de grants, antes y después del push**: exactamente 3 filas menos
+    (`UPDATE` sobre `users.universidad_id`, `listings.universidad_id` y
+    `listings.campus_id`) y **ninguna nueva** — medido con
+    `scripts/grants-users-listings.sql` vía `execute_sql`, guardando las dos
+    salidas.
+  - **`supabase db push`** aplicó `20260924000466`. `list_migrations` pasó a
+    **30**, igual que `ls supabase/migrations | wc -l` (**30**).
+  - **`prosrc` de `private.handle_new_user()`** confirmado con el lookup a
+    `universidad_dominios` vía `split_part(…, -1)`, igual que el fuente.
+  - **Los seis constraints nuevos, confirmados en `pg_constraint`**:
+    `campus_universidad_id_id_key`, `users_campus_universidad_fkey` (reemplazó
+    a `users_campus_id_fkey`), `listings_campus_universidad_fkey` (reemplazó a
+    `listings_campus_id_fkey`), `users_campus_requiere_universidad`,
+    `users_id_universidad_id_key`, `listings_user_universidad_fkey` (`on
+    update/delete cascade`).
+  - **`npm run gen:types`** cambió `database.types.ts`: reemplaza las dos FKs
+    sueltas por las compuestas y agrega la relación nueva — exactamente lo que
+    predecía la migración, nada más. Commiteado aparte
+    (`chore: regenerar tipos tras 20260924000466`), con `tsc`/lint en verde.
+  - **El build nuevo se instaló de inmediato** después del push (paso 5 del
+    runbook), para no dejar abierta la ventana de incompatibilidad en ningún
+    sentido.
+  **Falta:** paso 6, una alta real `tec.mx`/`exatec.tec.mx` desde un
+  dispositivo, con su `universidad_id` confirmado — es la única prueba que
+  exige un teléfono de verdad y por eso queda para el usuario (ver Pendiente).
+
 **Pendiente, en este orden de prioridad:**
-0. **Llevar la fase 2A a remoto (`20260924000466`) — hecha y probada en local,
-   NO aplicada en remoto.** Runbook, en este orden:
-   0. **BLOQUEANTE, la fase 1 viva en remoto** (se remide, no se copia de aquí):
-      (a) `list_migrations` incluye `20260923000465`; (b)
-      `select dominio, universidad_id from public.universidad_dominios` da ≥1
-      fila; (c) los logs de Auth muestran `run_hook` sobre
-      `hook_before_user_created`. **Si (b) da 0, NO se aplica**: con la tabla
-      vacía el trigger nuevo haría nacer toda cuenta sin universidad, y todas
-      caerían en "sin universidad asignada". Después, remedir que a) usuarios
-      con universidad distinta a la de su dominio, c) usuarios con campus ajeno
-      y d) publicaciones incoherentes den 0 (las FKs nuevas validan las filas
-      existentes al crearse). Medido el 2026-09-23: 29 migraciones con la de
-      fase 1, dominios `exatec.tec.mx→1, tec.mx→1`, `run_hook` a las
-      06:54:02Z, y a/c/d en 0.
-   1. `scripts/grants-users-listings.sql` por `execute_sql` ANTES del push, y se
-      guarda la salida.
-   2. `supabase db push`.
-   3. La misma consulta DESPUÉS: el diff tiene que dar exactamente tres filas
-      menos (UPDATE en `users.universidad_id`, `listings.universidad_id` y
-      `listings.campus_id`) y ninguna más. Además, `prosrc` de
-      `handle_new_user` y los constraints en `pg_constraint`.
-   4. `npm run gen:types` (es `--linked`: hasta el push no ve las FKs nuevas).
-   5. **Instalar el build nuevo en seguida.** Hay una ventana de
-      incompatibilidad en los dos sentidos: un build viejo manda
-      `universidad_id` en Completar/Editar perfil y recibe 42501; el build
-      nuevo contra el esquema viejo dejaría altas sin universidad. Primero la
-      migración y de inmediato el build.
-   6. Una alta real `tec.mx`/`exatec.tec.mx` y comprobar su `universidad_id`
-      (conteo, sin correos).
-   Recién entonces se mueve a "Hecho".
+0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
+   CLAUDE.md §8 arriba).** Los pasos 0-5 ya corrieron y están en "Hecho"
+   (2026-09-23), con la migración `20260924000466` aplicada. Lo único que
+   queda: una alta real `tec.mx`/`exatec.tec.mx` desde un dispositivo
+   (Verificación → código → Completar perfil), confirmando que la Universidad
+   aparece fija y correcta y que el usuario puede elegir campus y entrar al
+   Feed. Necesita un teléfono de verdad — por §6 el simulador headless no
+   cuenta como prueba. Cuando se confirme, este punto se borra.
 0b. **(No bloqueante) Medir en remoto el timeout del hook de registro.** En local
    GoTrue corta a los **10 s** con `504`; la doc dice 2 s. Los dos casos fallan
    cerrado, pero con un corte de 2 s una función lenta rechazaría en remoto
