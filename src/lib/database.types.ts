@@ -278,11 +278,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "listings_campus_id_fkey"
-            columns: ["campus_id"]
+            foreignKeyName: "listings_campus_universidad_fkey"
+            columns: ["universidad_id", "campus_id"]
             isOneToOne: false
             referencedRelation: "campus"
-            referencedColumns: ["id"]
+            referencedColumns: ["universidad_id", "id"]
           },
           {
             foreignKeyName: "listings_categoria_id_fkey"
@@ -304,6 +304,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "listings_user_universidad_fkey"
+            columns: ["user_id", "universidad_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id", "universidad_id"]
           },
         ]
       }
@@ -589,11 +596,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "users_campus_id_fkey"
-            columns: ["campus_id"]
+            foreignKeyName: "users_campus_universidad_fkey"
+            columns: ["universidad_id", "campus_id"]
             isOneToOne: false
             referencedRelation: "campus"
-            referencedColumns: ["id"]
+            referencedColumns: ["universidad_id", "id"]
           },
           {
             foreignKeyName: "users_universidad_id_fkey"
