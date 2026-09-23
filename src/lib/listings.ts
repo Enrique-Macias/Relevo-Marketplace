@@ -607,6 +607,18 @@ export type ListingInput = {
   precio: number;
   categoriaId: number;
   condicion: Condicion;
+};
+
+/**
+ * DÓNDE vive la publicación. Va aparte de `ListingInput` porque solo se escribe
+ * al CREARLA: una publicación conserva el campus con el que nació, aunque su
+ * dueño cambie después de campus en "Editar perfil" (`explorar.md`).
+ *
+ * Por eso `actualizarListing` no la recibe. Antes sí la mandaba, con el campus
+ * ACTUAL del perfil, así que cada guardado de "Editar publicación" movía la
+ * publicación en silencio al campus nuevo de su dueño.
+ */
+export type UbicacionListing = {
   universidadId: number;
   campusId: number;
 };
@@ -618,8 +630,6 @@ function aFila(input: ListingInput) {
     precio: input.precio,
     categoria_id: input.categoriaId,
     condicion: input.condicion,
-    universidad_id: input.universidadId,
-    campus_id: input.campusId,
   };
 }
 
@@ -655,12 +665,19 @@ function aFila(input: ListingInput) {
  */
 export async function crearListing(
   input: ListingInput,
+  ubicacion: UbicacionListing,
   userId: string,
   estado: 'pendiente'
 ): Promise<number> {
   const { data, error } = await supabase
     .from('listings')
-    .insert({ ...aFila(input), user_id: userId, estado })
+    .insert({
+      ...aFila(input),
+      universidad_id: ubicacion.universidadId,
+      campus_id: ubicacion.campusId,
+      user_id: userId,
+      estado,
+    })
     .select('id')
     .single();
 

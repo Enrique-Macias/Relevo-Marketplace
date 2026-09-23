@@ -275,7 +275,8 @@ export default function PublicarScreen() {
         const resultado =
           listingId === null
             ? await publicarListing({
-                input: form.aInput(profile!.universidad_id!, campus!.id),
+                input: form.aInput(),
+                ubicacion: { universidadId: profile!.universidad_id!, campusId: campus!.id },
                 userId: userId!,
                 fotos: fotosParaGuardar(form.fotos),
                 onProgreso,

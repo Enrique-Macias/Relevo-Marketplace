@@ -234,12 +234,12 @@ export function useListingForm(iniciales: ValoresIniciales = FORMULARIO_VACIO) {
     !fotos.some((f) => f.origen === 'procesando');
 
   /**
-   * Los campos listos para la base. `universidadId`/`campusId` no son del
-   * formulario: salen del perfil (la zona de entrega es un campo deshabilitado),
-   * por eso entran por parámetro.
+   * Los campos listos para la base. La ubicación (universidad/campus) no es del
+   * formulario ni viaja aquí: la fija el alta desde el perfil
+   * (`UbicacionListing`, `src/lib/listings.ts`) y editar no la toca.
    */
   const aInput = useCallback(
-    (universidadId: number, campusId: number): ListingInput => ({
+    (): ListingInput => ({
       titulo: titulo.trim(),
       // `null` y no `''`: la columna es nullable y `busqueda` ya hace
       // `coalesce(descripcion, '')`. Guardar la cadena vacía sería un valor
@@ -248,8 +248,6 @@ export function useListingForm(iniciales: ValoresIniciales = FORMULARIO_VACIO) {
       precio: precioNum,
       categoriaId: categoriaId!,
       condicion: condicion!,
-      universidadId,
-      campusId,
     }),
     [titulo, descripcion, precioNum, categoriaId, condicion]
   );

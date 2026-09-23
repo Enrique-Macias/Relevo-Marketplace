@@ -150,8 +150,8 @@ export default function EditarPublicacionScreen() {
  * obligaría a limpiarlo a mano en cada cambio de id.
  */
 function FormularioCargado({ listing }: { listing: ListingDetalle }) {
-  const { session, profile } = useSession();
-  const { categorias, campusDisponibles } = useExplorarState();
+  const { session } = useSession();
+  const { categorias } = useExplorarState();
   const { mostrar } = useToast();
 
   const [guardando, setGuardando] = useState(false);
@@ -193,9 +193,11 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
   const accion = accionVenta(listing.estado, venta);
 
   const userId = session?.user.id ?? null;
-  const universidadId = profile?.universidad_id ?? null;
-  const campusId = profile?.campus_id ?? null;
-  const campusNombre = campusDisponibles.find((c) => c.id === campusId)?.nombre;
+  // La zona de entrega es el campus DE LA PUBLICACIÓN, no el del perfil: una
+  // publicación conserva el campus con el que se creó aunque su dueño se mude
+  // después. Antes se leía del perfil y además se MANDABA en el guardado, así
+  // que editar movía la publicación en silencio al campus actual del usuario.
+  const campusNombre = listing.campusNombre || undefined;
 
   const fotosIniciales: FotoEnEdicion[] = useMemo(
     () => listing.fotos.map((path) => ({ origen: 'storage' as const, path })),
@@ -299,7 +301,7 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
   }
 
   async function guardar() {
-    if (!form.puedeGuardar || universidadId == null || campusId == null) return;
+    if (!form.puedeGuardar) return;
 
     setGuardando(true);
     setProgreso(null);
@@ -307,7 +309,7 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
     try {
       const resultado = await guardarEdicion({
         listingId: listing.id,
-        input: form.aInput(universidadId, campusId),
+        input: form.aInput(),
         fotos: fotosParaGuardar(form.fotos),
         // `fotosGuardadas`, no `listing.fotos`: mismo bug que `firmaGuardada`
         // arriba. Con la lista congelada, un segundo guardado calcularía

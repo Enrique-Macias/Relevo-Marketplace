@@ -24,6 +24,7 @@ import {
   crearListing,
   guardarFotos,
   type ListingInput,
+  type UbicacionListing,
 } from '@/lib/listings';
 import {
   ModeracionEstadoInesperadoError,
@@ -340,6 +341,8 @@ async function subirPendientes(
  */
 export async function publicarListing(params: {
   input: ListingInput;
+  /** Campus y universidad del perfil al momento de publicar. Solo se fijan aquí. */
+  ubicacion: UbicacionListing;
   userId: string;
   fotos: FotoParaGuardar[];
   onProgreso?: (p: ProgresoFoto) => void;
@@ -347,7 +350,7 @@ export async function publicarListing(params: {
   onModerando?: () => void;
   onListingCreado?: (listingId: number) => void;
 }): Promise<ResultadoGuardado> {
-  const listingId = await crearListing(params.input, params.userId, 'pendiente');
+  const listingId = await crearListing(params.input, params.ubicacion, params.userId, 'pendiente');
   params.onListingCreado?.(listingId);
 
   return finalizarPublicacion({
