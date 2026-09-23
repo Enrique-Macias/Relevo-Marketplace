@@ -10,7 +10,7 @@
 
 import { StyleSheet, View } from 'react-native';
 
-import { Field, PhoneField, SelectField } from '@/components/Field';
+import { Field, FixedField, PhoneField, SelectField } from '@/components/Field';
 import { PhotoRow } from '@/components/PhotoRow';
 import { SegmentedControl } from '@/components/SegmentedControl';
 import { ScreenPadding } from '@/constants/theme';
@@ -20,8 +20,23 @@ import { CONDICIONES, type ListingForm } from '@/lib/listing-form';
 type ListingFormFieldsProps = {
   form: ListingForm;
   categorias: Categoria[];
-  /** Nombre del campus del perfil — el valor inerte de "Zona de entrega". */
+  /**
+   * Nombre del campus — el valor inerte de "Zona de entrega". En Publicar es el
+   * campus del PERFIL al momento de crear; en Editar, el de la publicación (fase
+   * 2A, `20260924000466`): editar ya no lo mueve de campus.
+   */
   zonaEntrega: string | undefined;
+  /**
+   * Publicar (default `false`) vs. Editar: los dos muestran "Zona de entrega"
+   * deshabilitado, pero con significado distinto y por eso NO son el mismo
+   * componente por dentro. En Publicar (`SelectField`) el chevron promete que
+   * algo se abre —hoy no hace nada, pero el campo describe DÓNDE va a nacer la
+   * publicación, un dato que sigue teniendo sentido "elegible" en abstracto—.
+   * En Editar (`FixedField`, sin chevron) el campo describe dónde YA nació una
+   * publicación existente, que la base impide mover (`listings.campus_id` fuera
+   * del grant de update): prometer un chevron ahí sería literalmente falso.
+   */
+  zonaEntregaFija?: boolean;
   onAgregarFoto: () => void;
   /** Congela los campos del formulario mientras se guarda. */
   disabled?: boolean;
@@ -63,6 +78,7 @@ export function ListingFormFields({
   form,
   categorias,
   zonaEntrega,
+  zonaEntregaFija = false,
   onAgregarFoto,
   disabled = false,
   fotosDisabled = disabled,
@@ -133,19 +149,30 @@ export function ListingFormFields({
       />
 
       {/*
-        Zona de entrega: el campus del perfil, no una elección de esta pantalla
-        (CLAUDE.md §5 — el campus se fija en "Completar perfil" y el selector del
-        Feed solo cambia qué catálogo se MIRA, no dónde se entrega lo que uno
-        vende). Va con el estado deshabilitado compartido del prototipo.
+        Zona de entrega. En Publicar es el campus del perfil, no una elección de
+        esta pantalla (CLAUDE.md §5 — el campus se fija en "Completar perfil" y
+        el selector del Feed solo cambia qué catálogo se MIRA, no dónde se
+        entrega lo que uno vende): `SelectField` deshabilitado, con chevron. En
+        Editar es el campus DE LA PUBLICACIÓN, fijo de verdad (fase 2A): sin
+        chevron, vía `FixedField` — ver el porqué en `zonaEntregaFija` arriba.
       */}
-      <SelectField
-        label="Zona de entrega"
-        value={zonaEntrega}
-        placeholder="Sin campus"
-        onPress={() => {}}
-        disabled
-        containerStyle={telefono ? undefined : styles.ultimoCampo}
-      />
+      {zonaEntregaFija ? (
+        <FixedField
+          label="Zona de entrega"
+          value={zonaEntrega}
+          placeholder="Sin campus"
+          containerStyle={telefono ? undefined : styles.ultimoCampo}
+        />
+      ) : (
+        <SelectField
+          label="Zona de entrega"
+          value={zonaEntrega}
+          placeholder="Sin campus"
+          onPress={() => {}}
+          disabled
+          containerStyle={telefono ? undefined : styles.ultimoCampo}
+        />
+      )}
 
       {/*
         Solo cuando el perfil todavía no tiene número (RF-13). Va al final y no

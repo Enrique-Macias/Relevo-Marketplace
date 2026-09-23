@@ -542,6 +542,7 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
           form={form}
           categorias={categorias}
           zonaEntrega={campusNombre}
+          zonaEntregaFija
           onAgregarFoto={agregarFoto}
           disabled={ocupado}
           eligiendoFotos={eligiendoFotos}
