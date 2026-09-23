@@ -4539,14 +4539,19 @@
             <textarea class="textarea-field">Libro de cálculo diferencial e integral, 9a edición. Sin subrayados ni marcas, pasta en buen estado.</textarea>
           </div>
 
-          <!-- La zona de entrega sale del perfil y no se elige aquí: se pinta
-               con el estado deshabilitado compartido (.select-field.disabled),
-               igual que en "Publicar". -->
+          <!-- La zona de entrega es el campus CON EL QUE NACIÓ la publicación, y
+               en Editar no se puede cambiar (fase 2A, 20260924000466): editar ya
+               no mueve la publicación de campus, así que este campo pasó de
+               "deshabilitado mientras tanto" a "fijo, punto". SIN chevron —igual
+               que la Universidad de "Completar perfil"/"Editar perfil"— porque
+               ya no promete que algo se abra. En "Publicar" SÍ conserva el
+               chevron: ahí "Zona de entrega" muestra el campus del PERFIL en el
+               momento de crear, que es distinto de congelarlo en la publicación
+               ya creada. -->
           <div class="field" style="margin-bottom:0;">
             <label class="field-label">Zona de entrega</label>
             <div class="select-field disabled">
               <span>Tec de Monterrey</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
             </div>
           </div>
         </div>
