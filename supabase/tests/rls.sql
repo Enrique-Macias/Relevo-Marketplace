@@ -2583,6 +2583,142 @@ select pg_temp.expect_error(:X::uuid,
   '(j) precio = 10.50 se rechaza en UPDATE');
 
 \echo ''
+\echo '== T27 — dominios de registro y el Auth Hook (20260923000465) =='
+-- Autocontenida: siembra su propia universidad y su propio dominio
+-- (`rls-t27.mx`) en vez de apoyarse en el `tec.mx` de seed.sql, y su propio
+-- usuario :Y.
+--
+-- ALCANCE: esta sección prueba los GRANTS y la LÓGICA de la función,
+-- llamándola directo como `postgres`. NO prueba que GoTrue la invoque, ni que
+-- la policy de `supabase_auth_admin` deje leer la tabla: `postgres` tiene
+-- bypassrls y no es miembro de `supabase_auth_admin`, así que aquí la policy no
+-- se evalúa nunca. Eso lo cubre `scripts/probe-registro.mjs`, contra el Auth
+-- local. Sin ese probe, borrar la policy daría esta sección entera en verde
+-- mientras el hook rechaza TODOS los registros.
+--
+--   :Y — un usuario activo, para comprobar con comportamiento (no solo con
+--        el catálogo) que `authenticated` no lee la tabla ni ejecuta la
+--        función.
+
+\set Y '''59595959-0000-0000-0000-000000005959'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:Y::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-y@tec.mx', '', now(), now(), now());
+
+insert into public.universidades (nombre) values ('RLS T27 Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t27.mx', id from public.universidades where nombre = 'RLS T27 Universidad';
+
+-- Lo que devuelve el hook para un email dado (null = sin campo `email`).
+create or replace function pg_temp.hook(p_email text) returns jsonb
+language sql as $$
+  select public.hook_before_user_created(
+    jsonb_build_object('user', jsonb_build_object('email', p_email)))
+$$;
+
+-- El rechazo exacto que reconoce el cliente (`src/lib/registro.ts`).
+create or replace function pg_temp.rechazo() returns jsonb
+language sql as $$
+  select '{"error": {"http_code": 403, "message": "dominio_no_participante"}}'::jsonb
+$$;
+
+-- (a) Ni table_privileges NI column_privileges para anon/authenticated. Son
+-- las dos, igual que listing_moderacion en T12: un `grant select (dominio)`
+-- acotado solo aparece en la segunda.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee in ('authenticated', 'anon')
+                and table_schema = 'public' and table_name = 'universidad_dominios')
+  and not exists (select 1 from information_schema.column_privileges
+                  where grantee in ('authenticated', 'anon')
+                    and table_schema = 'public' and table_name = 'universidad_dominios'),
+  '(a) universidad_dominios no tiene ni un privilegio para authenticated ni anon');
+
+-- (b) Y con comportamiento: un autenticado de verdad no la lee.
+select pg_temp.expect_error(:Y::uuid,
+  'select count(*) from public.universidad_dominios',
+  '(b) authenticated no puede leer universidad_dominios');
+
+-- (c) Nadie más que supabase_auth_admin ejecuta el hook. `public` incluido:
+-- sin su revoke, anon y authenticated lo heredarían por PUBLIC.
+select pg_temp.assert(
+  not has_function_privilege('anon', 'public.hook_before_user_created(jsonb)', 'execute')
+  and not has_function_privilege('authenticated', 'public.hook_before_user_created(jsonb)', 'execute')
+  and not exists (select 1 from pg_proc p, aclexplode(p.proacl) a
+                  where p.oid = 'public.hook_before_user_created(jsonb)'::regprocedure
+                    and a.grantee = 0 and a.privilege_type = 'EXECUTE'),
+  '(c) ni anon, ni authenticated, ni PUBLIC ejecutan hook_before_user_created');
+
+-- (d) Con comportamiento: un autenticado no puede invocarlo (ni por RPC).
+select pg_temp.expect_error(:Y::uuid,
+  'select public.hook_before_user_created(''{}''::jsonb)',
+  '(d) authenticated no puede ejecutar hook_before_user_created');
+
+-- (e) Y el positivo: GoTrue sí tiene lo que necesita. Sin esto, un revoke de
+-- más pasaría (a)-(d) en verde y el hook fallaría cerrado para todos.
+select pg_temp.assert(
+  has_function_privilege('supabase_auth_admin', 'public.hook_before_user_created(jsonb)', 'execute')
+  and has_table_privilege('supabase_auth_admin', 'public.universidad_dominios', 'select')
+  and (select count(*) from pg_policies
+       where schemaname = 'public' and tablename = 'universidad_dominios'
+         and roles = '{supabase_auth_admin}' and cmd = 'SELECT') = 1
+  and (select count(*) from pg_policies
+       where schemaname = 'public' and tablename = 'universidad_dominios') = 1,
+  '(e) supabase_auth_admin ejecuta el hook, lee la tabla y tiene la ÚNICA policy');
+
+-- (f) La lógica: permite el dominio exacto, sin importar mayúsculas ni espacios.
+select pg_temp.assert(
+  pg_temp.hook('a01@rls-t27.mx') = '{}'::jsonb
+  and pg_temp.hook('A01@RLS-T27.MX') = '{}'::jsonb
+  and pg_temp.hook('  a01@rls-t27.mx  ') = '{}'::jsonb,
+  '(f) el dominio sembrado pasa, en minúsculas, mayúsculas y con espacios');
+
+-- (g) Coincidencia EXACTA: ni subdominios, ni sufijos, ni prefijos.
+select pg_temp.assert(
+  pg_temp.hook('x@estudiante.rls-t27.mx') = pg_temp.rechazo()
+  and pg_temp.hook('x@rls-t27.mx.evil.com') = pg_temp.rechazo()
+  and pg_temp.hook('x@evilrls-t27.mx') = pg_temp.rechazo(),
+  '(g) subdominio, sufijo e imitación por prefijo se rechazan');
+
+-- (h) Se toma lo que sigue al ÚLTIMO '@'. GoTrue ya rechaza estos correos por
+-- formato antes del hook (medido: 400 validation_failed), así que esto
+-- protege la función por sí sola, no un camino alcanzable hoy.
+select pg_temp.assert(
+  pg_temp.hook('x@rls-t27.mx@gmail.com') = pg_temp.rechazo()
+  and pg_temp.hook('x@gmail.com@rls-t27.mx') = '{}'::jsonb,
+  '(h) el dominio es lo que sigue al último @');
+
+-- (i) Falla cerrado: un dominio desconocido, un email vacío o ausente rechazan.
+select pg_temp.assert(
+  pg_temp.hook('x@gmail.com') = pg_temp.rechazo()
+  and pg_temp.hook('') = pg_temp.rechazo()
+  and pg_temp.hook(null) = pg_temp.rechazo()
+  and public.hook_before_user_created('{}'::jsonb) = pg_temp.rechazo(),
+  '(i) gmail, email vacío, email null y evento sin usuario se rechazan');
+
+-- (j) El check guarda el dominio ya normalizado: con mayúsculas, espacios o
+-- '@' no machearía nunca contra lo que extrae el hook, así que se rechaza al
+-- darlo de alta en vez de fallar en silencio al registrarse.
+create or replace function pg_temp.rechaza_dominio(p_dominio text) returns boolean
+language plpgsql as $$
+begin
+  insert into public.universidad_dominios (dominio, universidad_id)
+  select p_dominio, id from public.universidades where nombre = 'RLS T27 Universidad';
+  return false;
+exception when check_violation then
+  return true;
+end $$;
+select pg_temp.assert(
+  pg_temp.rechaza_dominio('Otra.mx')
+  and pg_temp.rechaza_dominio(' otra.mx')
+  and pg_temp.rechaza_dominio('a@otra.mx')
+  and pg_temp.rechaza_dominio(''),
+  '(j) el check rechaza dominios con mayúsculas, espacios, @ o vacíos');
+
+\echo ''
 \echo '==========================================='
 \echo '   TODAS LAS PRUEBAS PASARON'
 \echo '==========================================='

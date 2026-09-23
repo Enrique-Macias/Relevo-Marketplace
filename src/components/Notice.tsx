@@ -9,8 +9,10 @@
  * absolute`: ocupa su lugar en la columna en vez de tapar algo.
  *
  * Vivió dentro de "Publicación creada (fotos faltantes)", el frame que el modelo
- * atómico de publicación eliminó. Hoy su único uso es el error de subida en el
- * `.sticky-cta` de Publicar, pegado al botón "Reintentar" que lo resuelve.
+ * atómico de publicación eliminó. Hoy tiene dos usos: el error de subida en el
+ * `.sticky-cta` de Publicar, pegado al botón "Reintentar" que lo resuelve, y el
+ * rechazo por dominio no participante en Verificación, pegado al campo del
+ * correo que lo causó.
  */
 
 import { StyleSheet, Text, View, type ViewStyle } from 'react-native';

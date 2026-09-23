@@ -53,7 +53,7 @@ export default function IniciarSesionScreen() {
 
         <Field
           label="Correo institucional"
-          placeholder="nombre@estudiante.tec.mx"
+          placeholder="estudiante@institución.mx"
           value={correo}
           onChangeText={setCorreo}
           keyboardType="email-address"

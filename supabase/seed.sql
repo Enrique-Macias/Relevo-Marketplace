@@ -27,3 +27,15 @@ on conflict (nombre) do nothing;
 insert into public.campus (universidad_id, nombre, ciudad)
 select id, 'Monterrey', 'Monterrey, N.L.' from public.universidades where nombre = 'Tec de Monterrey'
 on conflict (universidad_id, nombre) do nothing;
+
+-- Dominios de correo con los que se puede REGISTRAR una cuenta (Auth Hook
+-- "Before User Created", migración 20260923000465). Sin al menos uno, el hook
+-- rechaza TODO registro, porque falla cerrado. Además los probes de scripts/
+-- crean sus usuarios `@tec.mx` por el admin API.
+--
+-- OJO: este seed también viaja a remoto con `db push --include-seed`, así que
+-- correr ese comando da de alta `tec.mx` en producción. En remoto los dominios
+-- reales se dan de alta en Studio (runbook de CLAUDE.md §8).
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'tec.mx', id from public.universidades where nombre = 'Tec de Monterrey'
+on conflict (dominio) do nothing;

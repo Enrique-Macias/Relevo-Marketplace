@@ -335,9 +335,15 @@ max_frequency = "5s"
 # inactivity_timeout = "8h"
 
 # This hook runs before a new user is created and allows developers to reject the request based on the incoming user object.
-# [auth.hook.before_user_created]
-# enabled = true
-# uri = "pg-functions://postgres/auth/before-user-created-hook"
+# Relevo: el registro solo admite dominios de `public.universidad_dominios`
+# (migración 20260923000465). Esto activa el hook SOLO en local: este archivo no
+# se empuja a remoto (CLAUDE.md §9, `config push`), donde se activa desde el
+# Dashboard siguiendo el runbook de §8. Falla CERRADO: con la tabla vacía
+# rechaza todos los registros, y `seed.sql` siembra `tec.mx` para que eso no
+# pase aquí.
+[auth.hook.before_user_created]
+enabled = true
+uri = "pg-functions://postgres/public/hook_before_user_created"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
 # [auth.hook.custom_access_token]

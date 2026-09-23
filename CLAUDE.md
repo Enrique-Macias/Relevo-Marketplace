@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 59 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 60 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -182,22 +182,29 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 26 migraciones (`supabase/migrations/`), con RLS activo y probado en
-las 14 tablas más los DOS buckets de Storage. Este es el esquema **real**, no
-solo la intención original.
+Definido en 29 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l`), con RLS activo y probado en las 15 tablas más
+los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
+original.
 
-**Ese 14 son 13 con policies más `listing_moderacion`, que tiene RLS habilitado
+**Ese 15 son 14 con policies más `listing_moderacion`, que tiene RLS habilitado
 y CERO policies a propósito** (su bloque propio, más abajo) — no es una tabla a medio
-configurar. El número venía diciendo "12" desde antes de esta tanda, cuando ya
+configurar. **`universidad_dominios` cuenta entre las 14 "con policies", pero
+su única policy es para `supabase_auth_admin`, no para el cliente** (su bloque,
+más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto NO están a la par: 28 y 27**, medido con
+**Repo y remoto NO están a la par: 29 y 28**, medido con
 `ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. La única de
-más es `20260922000464` (el check de precio entero, RF-05), escrita y validada
-en local y **sin pushear**.
+más es `20260923000465` (dominios de registro y el Auth Hook), escrita y
+validada en local y **sin pushear**.
 
-**Y este número acaba de volver a demostrar su propia moraleja, por SEXTA
+**Y por SÉPTIMA vez:** este párrafo decía "28 y 27", con `20260922000464`
+marcada como "sin pushear", y al remedirlo contra remoto ya había viajado: el
+remoto tiene 28 con ella incluida. La historia de antes, tal como estaba:
+
+**Este número acaba de volver a demostrar su propia moraleja, por SEXTA
 vez.** Este párrafo decía "27 y 26", con `20260919000463` marcada como "sin
 pushear" — y al remedirlo contra remoto resultó que **ya había viajado**: el
 remoto tiene **27**, no 26, con `20260919000463` incluida
@@ -234,6 +241,11 @@ universidades   (id, nombre único)
 campus          (id, universidad_id → universidades, nombre, ciudad,
                  único por (universidad_id, nombre))
 categories      (id, nombre único) — 12 filas sembradas, ver seed.sql
+universidad_dominios (dominio text PK, universidad_id → universidades on delete
+                 cascade, created_at) — con qué dominios de correo se puede
+                 REGISTRAR una cuenta. Check: minúsculas, sin espacios, sin '@'.
+                 NO es legible por el cliente (ni anon ni authenticated): la lee
+                 solo el Auth Hook. Ver abajo.
 
 -- Perfil (provisto automáticamente por trigger al verificar correo)
 users
@@ -871,7 +883,52 @@ dónde ir. Cuatro cosas que no se ven en el diff:
   escriben aquí** — no tienen `listing_id` y su enforcement es inmediato (borrar
   o nada), sin cola que revisar; su rastro es el `console.error`.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 177 aserciones, corre dentro de
+**El registro solo admite correos de dominios dados de alta en
+`universidad_dominios`, y el candado es el Auth Hook "Before User Created"**
+(`20260923000465`, implementado como función de Postgres:
+`public.hook_before_user_created(jsonb)`). GoTrue lo invoca ANTES de insertar
+en `auth.users`, así que un rechazo no deja fila ni manda el correo del OTP. Las
+altas de dominios se hacen desde Studio/`service_role`, igual que los demás
+catálogos. Todo lo que sigue está **medido** contra GoTrue v2.196.0 local con
+`scripts/probe-registro.mjs`, no leído de la doc: la doc del hook no enumera qué
+flujos lo disparan ni qué pasa si falla.
+
+- **La regla:** el dominio es lo que sigue al ÚLTIMO `@`, en minúsculas y sin
+  espacios, con coincidencia EXACTA. `estudiante.tec.mx` no hereda de `tec.mx`,
+  y `eviltec.mx` o `tec.mx.evil.com` tampoco machean. Solo un match explícito
+  permite; todo lo demás rechaza, incluido un email NULL. El rechazo es
+  `{"error":{"http_code":403,"message":"dominio_no_participante"}}`, y GoTrue lo
+  entrega como `403` con `msg` = ese código. El copy lo pone el cliente.
+- **Falla CERRADO, medido:** una función que lanza da `500` y cero filas; una que
+  tarda de más da `504 request_timeout` a los **10 s** en local (la doc dice 2 s;
+  en remoto puede ser ese el corte) y tampoco crea fila. **Con la tabla vacía
+  rechaza TODO**, y por eso el runbook de §8 da de alta los dominios ANTES de
+  activar el hook.
+- **Solo afecta el ALTA.** Login con contraseña, `resetPasswordForEmail`,
+  `verifyOtp({type:'recovery'})` y un `signInWithOtp` sobre una cuenta que ya
+  existe no pasan por él: las cuentas previas de cualquier dominio (en remoto hay
+  gmail/hotmail/outlook) siguen entrando. Tampoco pasa por él el **admin API**
+  (`POST /admin/users` con la secret key crea una cuenta gmail sin problema): el
+  corte es por LLAVE, el mismo patrón que `minimum_password_length` (§9).
+- **La policy para `supabase_auth_admin` es portante, y quitarla falla en
+  silencio.** Ese rol NO tiene `bypassrls` (medido), así que sin su policy la
+  tabla se le ve vacía y el hook rechaza a todo el mundo con el MISMO 403 que a
+  un gmail: indistinguible de "tu dominio no está dado de alta". T27 no lo puede
+  ver (corre como `postgres`, que salta la RLS); lo caza el probe.
+- **Va en `public`, no en `private`**, al revés que el resto de funciones
+  internas: `supabase_auth_admin` tiene `USAGE` sobre `public` y no sobre
+  `private` (medido), y el Dashboard la busca ahí. No queda expuesta por
+  PostgREST porque solo `supabase_auth_admin` tiene `EXECUTE`: se revocó a
+  `public`, `anon` y `authenticated`. `service_role` conserva el `EXECUTE` que le da
+  `pg_default_acl`, sin consecuencia. Es `sql`, no `plpgsql`, y **no** es
+  `SECURITY DEFINER`: corre como `supabase_auth_admin` con su grant y su policy.
+- **El cliente no valida nada.** `src/lib/registro.ts` solo reconoce el 403 con
+  ese código y lo traduce al `.notice` del frame "Verificación (correo no
+  participante)". No hay lista de dominios del lado del cliente (§0 regla 7).
+  El probe importa ese módulo y lo compara contra lo que devuelve GoTrue: ese es
+  el amarre entre el string de SQL y el de TypeScript.
+
+**Regresión de RLS:** `supabase/tests/rls.sql`, 196 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -1171,6 +1228,45 @@ que probaba `$99.50, antes $2,900`): escribir un precio con decimales ya es un
 error de `check`, no algo que valga la pena probar en el trigger de
 notificaciones — de ahí que el total neto sea +9 (177 - 1 + 10) y no +10.
 
+Y a **196** con las 10 de T27 (dominios de registro y el Auth Hook,
+`20260923000465`), autocontenida con su propia universidad, su dominio
+`rls-t27.mx` y su usuario `:Y`. Nada en T12: la aserción universal de RLS ya
+cubre la tabla nueva, y la invariante de acceso vive en T27 porque va junto con
+la lógica de la función. **Su alcance es la mitad del candado, y lo dice en su
+cabecera:** prueba los grants y la función llamada directo como `postgres`, que
+tiene bypassrls y no es miembro de `supabase_auth_admin`. O sea que la policy de
+ese rol nunca se evalúa aquí, y la otra mitad —que GoTrue invoque el hook, que
+la policy deje leer, que un rechazo no deje fila ni correo— vive en
+`scripts/probe-registro.mjs`. Los nueve controles de T27 se corrieron uno a la
+vez contra la suite completa, cada uno imprimiendo primero lo aplicado:
+
+| Variante rota | Cae en |
+|---|---|
+| `grant select` de tabla a `authenticated` | T27 (a) |
+| `grant select (dominio)` a `authenticated` | T27 (a) |
+| `grant execute` a `anon` | T27 (c) |
+| `grant execute` a `public` | T27 (c) |
+| `revoke select` a `supabase_auth_admin` | T27 (e) |
+| una policy permisiva extra para `authenticated` | T27 (e) |
+| match por sufijo (`like '%' \|\| dominio`) | T27 (g) |
+| el PRIMER `@` en vez del último | T27 (h) |
+| sin el `check` del dominio | T27 (j) |
+
+Y los seis del probe, contra el Auth local:
+
+| Variante rota | Cae en |
+|---|---|
+| hook `enabled = false` en config.toml | casos 2 y 4 (gmail y las imitaciones pasan) |
+| tabla vacía | casos 1 y 3 (se rechaza también `tec.mx`) |
+| sin la policy de `supabase_auth_admin` | casos 1 y 3: el MISMO rechazo silencioso |
+| match por sufijo | caso 4 (`estudiante.tec.mx`, `eviltec.mx`) |
+| la función lanza `raise exception` | todos los de alta: 500, **sin fila** (fail-closed) |
+| la función tarda 3 s y luego permite | casos 2 y 4: pasan, porque en local no hay timeout de 2 s |
+
+La última fila es la sorpresa de la tarea, y por eso se midió aparte con
+`pg_sleep(40)`: GoTrue local corta a los **10 s** con `504` y no crea la fila. O
+sea que el timeout también falla cerrado, pero con un techo de 10 s y no de 2.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -1292,15 +1388,16 @@ los dos secretos de Vault de los triggers (§8, pendiente 2).
 
 ---
 
-## 4. Inventario completo de pantallas (59)
+## 4. Inventario completo de pantallas (60)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
 usa el filtro visual del prototipo. Para el estado de qué grupo ya existe
 como código real (vs. solo diseño), ver §8 y las reglas de `.claude/rules/`.
 
-### Onboarding (15)
+### Onboarding (16)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
+**Verificación (correo no participante)** ·
 Código de verificación · Completar perfil ·
 Completar perfil (estado inicial) · Completar perfil (selector de campus) ·
 Selector de universidad · Permiso de notificaciones ·
@@ -1314,6 +1411,16 @@ OTP. "Código de recuperación" es casi gemela de "Código de verificación" —
 que las tres pantallas del reset comparten el candado; quien viera la "R" del alta
 a mitad de una recuperación no sabría en cuál de los dos está. Por eso son frames
 distintos y no una variante etiquetada.
+
+"Verificación (correo no participante)" llegó con el candado de dominios
+(`20260923000465`). Es el mismo frame de "Verificación" con un `.notice` de error
+entre el campo y el botón, y es frame y no toast porque es copy persistente (§0
+regla 4): el usuario lo lee mientras corrige el correo. Lo pinta el cliente solo
+cuando el Auth Hook rechaza el alta; el cliente no decide nada, solo traduce ese
+rechazo. En la misma tarea, el placeholder de los tres campos "Correo
+institucional" (Verificación, Iniciar sesión, Recuperar contraseña) pasó de
+`nombre@estudiante.tec.mx` a `estudiante@institución.mx`: el viejo sugería un
+subdominio que el hook rechaza.
 
 ### Explorar (14)
 Feed · Selector de campus · Categoría · Categoría sin resultados ·
@@ -1491,7 +1598,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 59 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 60 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -1511,7 +1618,7 @@ Toast de éxito · Toast de error · Loading / skeleton
   visible con solo "que compile" — se necesitó revisión deliberada.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son SEIS pasos, no uno:
+  `postgres`/superusuario. Son SIETE pasos, no uno:
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
      **`psql` puede no estar instalado en la máquina** (no lo está en la de
      desarrollo actual, aunque este comando lo dé por supuesto). El contenedor
@@ -1587,7 +1694,18 @@ Toast de éxito · Toast de error · Loading / skeleton
      genuinamente limpio y VERIFICADO —no texto al azar: un título sin sentido
      le dio a GPT un veredicto no determinista entre corridas, medido
      (`.claude/rules/moderacion.md` §6.3).
-  Los probes 2, 3 y 6 necesitan el stack local arriba y limpian lo suyo en un
+  7. `node scripts/probe-registro.mjs`: el Auth Hook de dominios contra GoTrue
+     local. Cubre lo que T27 no puede ver: que el hook esté cableado, que la
+     policy de `supabase_auth_admin` deje leer, que un rechazo no deje fila ni
+     correo (lo lee de Mailpit, `:54324`), que login y recuperación de una cuenta
+     existente de dominio no permitido sigan funcionando, y que el admin API NO
+     pasa por el hook. Importa `src/lib/registro.ts`, que es el amarre entre el
+     código de rechazo de SQL y el que reconoce el cliente.
+     **Necesita el hook ACTIVO en `config.toml`**: cambiarlo exige
+     `supabase stop && supabase start`, porque `db reset` no recarga la config de
+     Auth. Imprime al arrancar los dominios, las policies y las variables
+     `GOTRUE_HOOK_*` del contenedor, para que se vea contra qué estado corre.
+  Los probes 2, 3, 6 y 7 necesitan el stack local arriba y limpian lo suyo en un
   `finally`; si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4 y 5 no necesitan nada: ni stack, ni red, ni credenciales.
 
@@ -1668,7 +1786,7 @@ de los route groups).
 
 | Regla | Cubre | Dispara al tocar |
 |---|---|---|
-| `onboarding-auth.md` | Onboarding, OTP, gating de sesión, RF-04 | `src/app/(onboarding)/**`, `src/lib/session.tsx`, `src/lib/supabase.ts` |
+| `onboarding-auth.md` | Onboarding, OTP, gating de sesión, RF-04, registro por dominio | `src/app/(onboarding)/**`, `src/lib/session.tsx`, `src/lib/supabase.ts`, `src/lib/registro.ts`, `scripts/probe-registro.mjs` |
 | `explorar.md` | Feed, Búsqueda, Categoría, Detalle, favoritos | `src/app/(explorar)/**`, `(tabs)/index.tsx`, `(tabs)/buscar.tsx`, `src/lib/listings.ts` |
 | `publicar-fotos.md` | Publicar atómico, fotos, bucket de Storage | `src/app/(publicar)/**`, `src/lib/{publicar,storage,foto-picker,listing-form}.ts` |
 | `cuenta-perfil.md` | Mis publicaciones, Favoritos, Perfil, Editar perfil, Perfil público, RF-13 | `src/app/(cuenta)/**`, `(tabs)/perfil.tsx`, `(tabs)/favoritos.tsx`, `src/lib/perfil*.ts` |
@@ -1744,6 +1862,28 @@ de los route groups).
     `.claude/rules/moderacion.md` §8b: 3 de 6 (n=6) evadieron el eje de imagen.
 
 **Pendiente, en este orden de prioridad:**
+0. **Activar en remoto el candado de dominios de registro (`20260923000465`).**
+   Está hecho y probado en local; en remoto no está hecho **nada**. Son cuatro
+   pasos manuales, y **el orden es parte del candado**:
+   1. **Aplicar la migración** (`supabase db push`). No bloquea ningún registro
+      por sí sola: crea la tabla y la función, pero el hook sigue apagado.
+      Después, `npm run gen:types` (el script genera desde remoto, así que antes
+      de este paso la tabla nueva no aparece en los tipos).
+   2. **Dar de alta los dominios reales en Studio** y comprobarlos con
+      `select * from public.universidad_dominios`. Tienen que ir en minúsculas,
+      sin espacios y sin `@` (el `check` rechaza lo demás). Va ANTES del paso 3
+      porque el hook falla cerrado: con la tabla vacía, activarlo bloquea
+      **todos** los registros. Ojo: `db push --include-seed` también sembraría
+      `tec.mx` desde `seed.sql`.
+   3. **Activar el hook**: Dashboard → Authentication → Hooks → Before User
+      Created → tipo Postgres → `public.hook_before_user_created`. NO se hace con
+      `config push` (§9).
+   4. **Prueba real**: un registro con un dominio dado de alta tiene que llegar a
+      "Ingresa el código", y uno con gmail tiene que mostrar el aviso sin dejar
+      fila (`select count(*) from auth.users where email = '…'`).
+   **Medir en remoto el timeout del hook**: en local el corte es de 10 s
+   (`504`); la doc dice 2 s. Los dos casos fallan cerrado, pero una función
+   lenta rechazaría en remoto registros que en local pasan.
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
@@ -2252,6 +2392,20 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   sí importa es que `PUT /user` valide, porque es el ÚNICO camino donde la app fija
   una contraseña ("Completar perfil" y "Nueva contraseña"): ahí el `MIN_PASSWORD`
   del cliente traduce la regla, no la sustituye.
+
+  **El Auth Hook "Before User Created" sigue el MISMO corte por llave** (medido,
+  `probe-registro.mjs` caso 7): `POST /admin/users` con la secret key crea una
+  cuenta `@gmail.com` aunque el hook rechace ese dominio en `/otp`. Todo lo que
+  pasa por la secret key (Studio, `service_role`, los `probe-*.mjs`) queda fuera
+  de las reglas de alta de GoTrue: la de fortaleza de contraseña y la de dominio.
+- **Un Auth Hook de Postgres que lanza una excepción le manda su TEXTO al
+  cliente.** Medido con un `raise exception 'CONTROL ROTO'`: GoTrue responde
+  `500` y `msg: "CONTROL ROTO"`, y auth-js lo pone en `error.message`. Nada que
+  no deba leer el usuario (nombres de tabla, datos de otra fila) va en un
+  `raise` dentro de un hook, porque termina en pantalla. Mismo medido: la
+  excepción falla CERRADO (no se crea el usuario), así que no hay que
+  atraparla por seguridad. El hook de dominios no lanza nunca: devuelve el
+  objeto `error` que pide la doc.
 - **La regla `react-hooks/set-state-in-effect` no detecta el patrón cuando el
   guard lee un ref antes del `setState`.** Verificado con 4 variantes mínimas
   linteadas una por una: un `if (!valor) return` sobre un `useState`/prop normal

@@ -6,6 +6,8 @@ paths:
   - "src/lib/onboarding-flag.ts"
   - "src/components/OtpInput.tsx"
   - "supabase/templates/**"
+  - "src/lib/registro.ts"
+  - "scripts/probe-registro.mjs"
 ---
 
 # Onboarding y autenticación (RF-01, RF-02, RF-04)
@@ -73,6 +75,39 @@ Componentes nuevos: **`OtpInput`** (`src/components/OtpInput.tsx`), extraído de
 también `OTP_LENGTH`. Y dos constantes que dejaron de estar duplicadas antes de
 poder duplicarse: `CORREO_RE` (de `verificacion.tsx`) y `MIN_PASSWORD` (de
 `completar-perfil.tsx`), esta última ahora emparejada con el servidor — ver §9.
+
+**Registro restringido a dominios institucionales, fase 1 (candado + mensaje).**
+El alta solo admite correos de dominios dados de alta en `universidad_dominios`,
+y el candado es el Auth Hook "Before User Created" de GoTrue (CLAUDE.md §3, el
+bloque del hook, con todo lo medido). Del lado de la app:
+
+- **Flujo:** `verificacion.tsx` sigue llamando a `signInWithOtp({ shouldCreateUser:
+  true })` sin cambios. Si el dominio no está dado de alta, GoTrue responde `403`
+  con `msg: "dominio_no_participante"`: no crea la cuenta ni manda el correo, y
+  el usuario se queda en Verificación.
+- **Mensaje:** `esDominioNoParticipante(e)` (`src/lib/registro.ts`) reconoce ese
+  rechazo por `status === 403` **y** `message`. El `error_code` que manda GoTrue
+  es `unknown`, así que no sirve para distinguirlo. Con eso se pinta el
+  `Notice` del frame "Verificación (correo no participante)" entre el campo y
+  el botón: *"Ese correo no pertenece a una universidad participante. Usa el
+  correo que te dio tu universidad."* Cualquier otro error sigue saliendo como
+  antes, en texto bajo el botón. El aviso se borra en cuanto el usuario edita
+  el correo, porque habla del correo que se mandó.
+- **El cliente solo traduce.** No hay lista de dominios en la app, ni hace falta:
+  la pantalla corre sin sesión, `anon` no tiene grants y la tabla no es legible
+  por nadie más que `supabase_auth_admin`. Un dominio nuevo se da de alta en
+  Studio y funciona sin publicar otra versión de la app.
+- **No afecta a quien ya tiene cuenta.** Login, recuperación de contraseña y el
+  "Reenviar" de `codigo.tsx` (sobre una cuenta ya creada) no pasan por el hook:
+  medido en `probe-registro.mjs` casos 5 y 6. Las cuentas gmail/hotmail que ya
+  existen en remoto siguen entrando.
+- **`src/lib/registro.ts` no tiene imports a propósito**: `probe-registro.mjs` lo
+  carga desde Node y compara `DOMINIO_NO_PARTICIPANTE` contra la respuesta real
+  de GoTrue. Si el string cambia en la función SQL sin cambiar aquí, el aviso
+  deja de salir y el usuario ve el código crudo. El probe lo caza.
+- **Fuera de alcance, para la fase 2:** el Selector de universidad y Editar
+  perfil siguen sin mirar el dominio del correo (un usuario de `tec.mx` puede
+  elegir otra universidad).
 
 - **Auth gating cableado end-to-end y confirmado con una cuenta real de Tec
   de Monterrey**: `SessionProvider` (`src/lib/session.tsx`) escucha

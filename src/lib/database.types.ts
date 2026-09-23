@@ -127,6 +127,41 @@ export type Database = {
           },
         ]
       }
+      listing_moderacion: {
+        Row: {
+          created_at: string
+          detalle: Json
+          estado_resultante: Database["public"]["Enums"]["listing_status"]
+          id: number
+          listing_id: number
+          veredicto: string
+        }
+        Insert: {
+          created_at?: string
+          detalle: Json
+          estado_resultante: Database["public"]["Enums"]["listing_status"]
+          id?: never
+          listing_id: number
+          veredicto: string
+        }
+        Update: {
+          created_at?: string
+          detalle?: Json
+          estado_resultante?: Database["public"]["Enums"]["listing_status"]
+          id?: never
+          listing_id?: number
+          veredicto?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_moderacion_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       listing_photos: {
         Row: {
           created_at: string
@@ -468,6 +503,32 @@ export type Database = {
           },
         ]
       }
+      universidad_dominios: {
+        Row: {
+          created_at: string
+          dominio: string
+          universidad_id: number
+        }
+        Insert: {
+          created_at?: string
+          dominio: string
+          universidad_id: number
+        }
+        Update: {
+          created_at?: string
+          dominio?: string
+          universidad_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "universidad_dominios_universidad_id_fkey"
+            columns: ["universidad_id"]
+            isOneToOne: false
+            referencedRelation: "universidades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       universidades: {
         Row: {
           id: number
@@ -548,6 +609,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      hook_before_user_created: { Args: { event: Json }; Returns: Json }
       increment_listing_view: {
         Args: { p_listing_id: number }
         Returns: undefined
