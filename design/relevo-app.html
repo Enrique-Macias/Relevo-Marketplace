@@ -344,6 +344,21 @@
     margin-top:auto;
   }
   .meta .sep{color:var(--line);}
+  /* Fase 2B: el primer <span> de .meta es la UNIVERSIDAD de la publicación
+     (etiqueta de confianza: la base garantiza que es la de su dueño).
+     En UNA línea junto a la fecha, en una tarjeta de 2 columnas ni siquiera
+     "Tec de Monterrey" cabía ("Tec de M…"), y una etiqueta de confianza
+     truncada no dice nada. Por eso la fecha baja a su propia línea (sin el
+     separador) y la universidad se queda con todo el ancho; solo un nombre
+     realmente largo se trunca, con elipsis al final. La tarjeta crece una
+     línea de 11px; precio y título no se mueven. */
+  .meta{flex-wrap:wrap; row-gap:3px;}
+  .meta > span{white-space:nowrap;}
+  .meta > span:first-of-type{flex:0 1 calc(100% - 15px); min-width:0; overflow:hidden; text-overflow:ellipsis;}
+  .meta > .sep{display:none;}
+  .meta > span:last-of-type{flex-basis:100%; padding-left:15px;}
+  /* El chip de alcance del Feed trunca igual: al final, en una línea. */
+  .campus-chip span{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px;}
 
   .tabbar{
     position:absolute; bottom:0; left:0; right:0;
@@ -1137,7 +1152,7 @@
       </div>
       <div class="campus-chip">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1 2.5 2.5 6 2.5s6-1.5 6-2.5v-4.5"/></svg>
-        <span>Tec de Monterrey</span>
+        <span>Monterrey</span>
         <svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
       </div>
 
@@ -1145,7 +1160,7 @@
         <div class="hero-eyebrow">HECHO PARA ESTUDIANTES</div>
         <div class="hero-headline">Compra y vende sin salir del campus.</div>
         <div class="hero-stats">
-          <div class="hero-stat">800+ publicaciones</div>
+          <div class="hero-stat">128 publicaciones</div>
           <div class="hero-stat">Verificado por correo institucional</div>
         </div>
         <svg class="hero-skyline" viewBox="0 0 335 60" preserveAspectRatio="none">
@@ -1253,7 +1268,7 @@
           <div class="title">Monitor Dell 24" IPS</div>
           <div class="meta">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
-            <span>Tec de Monterrey</span><span class="sep">·</span><span>hace 5h</span>
+            <span>Universidad Autónoma de Nuevo León</span><span class="sep">·</span><span>hace 5h</span>
           </div>
         </div>
       </div>
@@ -1317,6 +1332,188 @@
       </div>
 
     </div>
+
+    <div style="margin:26px 20px 110px; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): el chip según el alcance
+            </div>
+            <!-- El MISMO .campus-chip en sus cuatro lecturas. Una sola función arma
+                 este texto (etiquetaAlcance) y lo reusan el chip de Búsqueda y el
+                 "N publicaciones en …" de Categoría, así que las tres superficies
+                 dicen lo mismo. La regla que importa: un campus de OTRA
+                 universidad lleva " · universidad", el tuyo no — ahí está la
+                 señal de que no estás mirando tu campus.
+                 El .hero-stat "N publicaciones" es el conteo REAL del alcance
+                 (misma consulta del grid, sin request extra) y se esconde con 0;
+                 ver "Feed (sin publicaciones)". Elegir otro alcance dura la
+                 sesión: al reabrir la app vuelve al campus del perfil. -->
+            <div style="display:flex; flex-direction:column; gap:10px; font-size:11px; color:var(--ink-soft);">
+              <div><div style="margin-bottom:2px;">Tu campus (default)</div><div class="campus-chip" style="margin-top:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1 2.5 2.5 6 2.5s6-1.5 6-2.5v-4.5"/></svg><span>Monterrey</span><svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div></div>
+              <div><div style="margin-bottom:2px;">Campus de otra universidad</div><div class="campus-chip" style="margin-top:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1 2.5 2.5 6 2.5s6-1.5 6-2.5v-4.5"/></svg><span>Mederos · UANL</span><svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div></div>
+              <div><div style="margin-bottom:2px;">Toda una universidad (la tuya o cualquier otra)</div><div class="campus-chip" style="margin-top:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1 2.5 2.5 6 2.5s6-1.5 6-2.5v-4.5"/></svg><span>Todo Tec de Monterrey</span><svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div></div>
+              <div><div style="margin-bottom:2px;">Todo el catálogo</div><div class="campus-chip" style="margin-top:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1 2.5 2.5 6 2.5s6-1.5 6-2.5v-4.5"/></svg><span>Todas las universidades</span><svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div></div>
+              <div><div style="margin-bottom:2px;">Nombre largo: trunca al final</div><div class="campus-chip" style="margin-top:0; max-width:100%;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1 2.5 2.5 6 2.5s6-1.5 6-2.5v-4.5"/></svg><span style="max-width:250px;">Campus Norte · Universidad Autónoma de Nuevo León</span><svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div></div>
+            </div>
+          </div>
+  </div>
+
+  <div class="tabbar">
+    <div class="tab active">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>
+      Inicio
+    </div>
+    <div class="tab">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      Buscar
+    </div>
+    <div class="tab">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 000-7.8z"/></svg>
+      Favoritos
+    </div>
+    <div class="tab">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+      Perfil
+    </div>
+  </div>
+</div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Feed (sin publicaciones)</div>
+<div class="device">
+  <div class="notch"></div>
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="icons">
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+      <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+      <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+    </div>
+  </div>
+
+  <div class="screen">
+    <header class="top">
+      <div class="brand-row">
+        <div class="wordmark">Relevo</div>
+        <div class="top-actions">
+          <div class="icon-btn">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="1.8" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+            <div class="dot"></div>
+          </div>
+          <div class="avatar">EM</div>
+        </div>
+      </div>
+      <div class="campus-chip">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1 2.5 2.5 6 2.5s6-1.5 6-2.5v-4.5"/></svg>
+        <span>Mederos · UANL</span>
+        <svg class="chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+
+      <div class="hero">
+        <div class="hero-eyebrow">HECHO PARA ESTUDIANTES</div>
+        <div class="hero-headline">Compra y vende sin salir del campus.</div>
+        <div class="hero-stats">
+          <div class="hero-stat">Verificado por correo institucional</div>
+        </div>
+        <svg class="hero-skyline" viewBox="0 0 335 60" preserveAspectRatio="none">
+          <path d="M0 60 L0 38 L30 38 L34 24 L40 24 L46 12 L52 24 L60 24 L64 34 L90 34 L94 20 L102 20 L108 6 L114 20 L122 20 L126 40 L150 40 L154 30 L162 30 L168 44 L200 44 L206 18 L216 18 L224 4 L232 18 L242 18 L248 42 L280 42 L284 32 L294 32 L300 46 L335 46 L335 60 Z" fill="rgba(243,240,234,0.16)"/>
+        </svg>
+      </div>
+    </header>
+
+    <div class="search-row">
+      <div class="search-field">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="text" placeholder="Busca libros, electrónica, muebles…">
+      </div>
+      <div class="filter-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F3F0EA" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+      </div>
+    </div>
+
+    <div class="section-head" style="padding-top:20px;">
+      <div class="section-title">Categorías</div>
+      <div class="section-link">Ver todas <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    </div>
+
+    <div class="cat-grid">
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+        </div>
+        <div class="cat-label">Libros</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+        </div>
+        <div class="cat-label">Electrónica</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+        </div>
+        <div class="cat-label">Muebles</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg>
+        </div>
+        <div class="cat-label">Ropa</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><circle cx="12" cy="12" r="7"/><path d="M12 5v14M5 12h14" stroke-width="1"/></svg>
+        </div>
+        <div class="cat-label">Deportes</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        </div>
+        <div class="cat-label">Apuntes</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
+        </div>
+        <div class="cat-label">Hogar</div>
+      </div>
+      <div class="cat-item">
+        <div class="cat-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+        </div>
+        <div class="cat-label">Más</div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Recomendado para ti</div>
+      <div class="section-link">Ver todo <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    </div>
+
+    <!-- Frame nuevo de la fase 2B. Antes, un alcance sin publicaciones pintaba
+         la sección "Recomendado para ti" con el grid vacío y sin decir nada;
+         con alcances de otras universidades (y campus recién dados de alta) es
+         un caso del primer día, no un borde.
+         · El .hero-stat de conteo DESAPARECE con 0 (queda solo el de
+           verificación): "0 publicaciones" lee como fracaso.
+         · El copy nombra el alcance con la misma etiqueta del chip.
+         · NO dice "sé el primero en publicar aquí": si el alcance es de otra
+           universidad, el usuario no puede publicar ahí (su publicación nace
+           en el campus de SU perfil).
+         · Una sola acción: abrir el selector. Mismo copy en "Búsqueda
+           (recomendados)" cuando el alcance está vacío. -->
+    <div class="empty-state" style="padding-top:34px; padding-bottom:110px;">
+      <div class="empty-icon">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.8"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1 2.5 2.5 6 2.5s6-1.5 6-2.5v-4.5"/></svg>
+      </div>
+      <div class="empty-title">Nadie ha publicado todavía en Mederos</div>
+      <div class="empty-sub">Prueba con otro campus o con toda la universidad.</div>
+      <div class="empty-actions">
+        <button class="ghost-btn">Cambiar campus</button>
+      </div>
+    </div>
   </div>
 
   <div class="tabbar">
@@ -1369,41 +1566,113 @@
             Detectar campus más cercano
           </div>
 
-          <div class="list-section-label">Campus en Monterrey</div>
+          <!-- Fase 2B: el selector navega TODO el catálogo, agrupado por
+               universidad. Tres niveles de alcance: todo, una universidad
+               entera ("Todos los campus de …", primera fila de cada grupo) o
+               un campus. La universidad propia va primero y lo dice su
+               rótulo; las demás, en orden alfabético. Tap selecciona y cierra.
+               Elegir aquí NO cambia el perfil ni dónde se publica: solo qué
+               catálogo se mira, y dura la sesión.
+               "Detectar campus más cercano" queda igual (fase 2C). -->
+                    <div class="list-row">
+            <div>
+              <div class="list-row-name">Todas las universidades</div>
+              <div class="list-row-sub">Todo el catálogo de Relevo</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">Tec de Monterrey · Tu universidad</div>
           <div class="list-row">
             <div>
-              <div class="list-row-name">Tec de Monterrey</div>
+              <div class="list-row-name">Todos los campus de Tec de Monterrey</div>
+              <div class="list-row-sub">2 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Monterrey</div>
               <div class="list-row-sub">Monterrey, N.L.</div>
             </div>
             <div class="radio-circle selected"></div>
           </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Santa Fe</div>
+              <div class="list-row-sub">Ciudad de México</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UANL</div>
           <div class="list-row">
             <div>
-              <div class="list-row-name">UANL</div>
+              <div class="list-row-name">Todos los campus de UANL</div>
+              <div class="list-row-sub">3 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Ciudad Universitaria</div>
               <div class="list-row-sub">San Nicolás de la Garza, N.L.</div>
             </div>
             <div class="radio-circle"></div>
           </div>
           <div class="list-row">
             <div>
-              <div class="list-row-name">UDEM</div>
-              <div class="list-row-sub">San Pedro Garza García, N.L.</div>
-            </div>
-            <div class="radio-circle"></div>
-          </div>
-          <div class="list-row">
-            <div>
-              <div class="list-row-name">U-ERRE</div>
+              <div class="list-row-name">Mederos</div>
               <div class="list-row-sub">Monterrey, N.L.</div>
             </div>
             <div class="radio-circle"></div>
           </div>
           <div class="list-row" style="border-bottom:none;">
             <div>
-              <div class="list-row-name">UVM</div>
+              <div class="list-row-name">Campus Salud</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UDEM</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UDEM</div>
+              <div class="list-row-sub">1 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus San Pedro</div>
               <div class="list-row-sub">San Pedro Garza García, N.L.</div>
             </div>
             <div class="radio-circle"></div>
+          </div>
+
+          <div style="margin:22px 0 24px; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): buscando "salud"
+            </div>
+            <!-- Busca por nombre de universidad Y de campus (y ciudad). Si machea
+                 la UNIVERSIDAD, sale su grupo entero, con su "Todos los campus".
+                 Si solo machea un campus o una ciudad, sale ese campus bajo el
+                 rótulo de su universidad, SIN la fila "Todos" (no es lo que se
+                 buscó). Mientras hay texto, "Todas las universidades" se oculta. -->
+            <div class="search-field" style="margin-bottom:4px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <input type="text" value="salud" placeholder="Busca tu universidad o campus">
+            </div>
+            <div class="list-section-label">UANL</div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus Salud</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+            <div style="font-size:12.5px; color:var(--ink-soft); text-align:center; padding:20px 0 0;">Sin coincidencias se lee: No encontramos esa universidad o campus.</div>
           </div>
         </div>
       </div>
@@ -1491,9 +1760,14 @@
 
           <div class="detail-section">
             <div class="detail-section-title">Detalles</div>
+            <!-- Fase 2B: .detail-meta nombra la UNIVERSIDAD (la etiqueta de confianza,
+                 igual que la tarjeta); aquí van las tres: universidad, y en
+                 "Zona de entrega" campus · ciudad. Mismo reparto en los tres
+                 frames de Detalle. -->
             <div class="spec-row"><span class="spec-key">Categoría</span><span class="spec-val">Libros</span></div>
             <div class="spec-row"><span class="spec-key">Condición</span><span class="spec-val">Como nuevo</span></div>
-            <div class="spec-row"><span class="spec-key">Zona de entrega</span><span class="spec-val">Tec de Monterrey</span></div>
+            <div class="spec-row"><span class="spec-key">Universidad</span><span class="spec-val">Tec de Monterrey</span></div>
+            <div class="spec-row"><span class="spec-key">Zona de entrega</span><span class="spec-val">Monterrey · Monterrey, N.L.</span></div>
             <div class="spec-row"><span class="spec-key">Publicado</span><span class="spec-val">Hace 2 horas</span></div>
           </div>
         </div>
@@ -1608,7 +1882,8 @@
             <div class="detail-section-title">Detalles</div>
             <div class="spec-row"><span class="spec-key">Categoría</span><span class="spec-val">Libros</span></div>
             <div class="spec-row"><span class="spec-key">Condición</span><span class="spec-val">Como nuevo</span></div>
-            <div class="spec-row"><span class="spec-key">Zona de entrega</span><span class="spec-val">Tec de Monterrey</span></div>
+            <div class="spec-row"><span class="spec-key">Universidad</span><span class="spec-val">Tec de Monterrey</span></div>
+            <div class="spec-row"><span class="spec-key">Zona de entrega</span><span class="spec-val">Monterrey · Monterrey, N.L.</span></div>
             <div class="spec-row"><span class="spec-key">Publicado</span><span class="spec-val">Hace 2 días</span></div>
           </div>
 
@@ -1715,7 +1990,8 @@
             <div class="detail-section-title">Detalles</div>
             <div class="spec-row"><span class="spec-key">Categoría</span><span class="spec-val">Libros</span></div>
             <div class="spec-row"><span class="spec-key">Condición</span><span class="spec-val">Como nuevo</span></div>
-            <div class="spec-row"><span class="spec-key">Zona de entrega</span><span class="spec-val">Tec de Monterrey</span></div>
+            <div class="spec-row"><span class="spec-key">Universidad</span><span class="spec-val">Tec de Monterrey</span></div>
+            <div class="spec-row"><span class="spec-key">Zona de entrega</span><span class="spec-val">Monterrey · Monterrey, N.L.</span></div>
             <div class="spec-row"><span class="spec-key">Publicado</span><span class="spec-val">Hace 2 horas</span></div>
           </div>
           <!-- Variante (doc, no es parte del flujo): el reparto TERMINAL, que es
@@ -2981,7 +3257,7 @@
               <div class="title">Sudadera Tec talla M</div>
               <div class="meta">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B6660" stroke-width="2.5"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
-                <span>Tec de Monterrey</span><span class="sep">·</span><span>hace 1d</span>
+                <span>Universidad Autónoma de Nuevo León</span><span class="sep">·</span><span>hace 1d</span>
               </div>
             </div>
           </div>
@@ -3267,6 +3543,22 @@
             </div>
           </div>
         </div>
+
+        <div style="margin:10px 20px 110px; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): el alcance elegido no tiene publicaciones (mismo copy que "Feed (sin publicaciones)")
+            </div>
+            <div class="empty-state" style="padding-top:10px;">
+              <div class="empty-icon">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.8"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1 2.5 2.5 6 2.5s6-1.5 6-2.5v-4.5"/></svg>
+              </div>
+              <div class="empty-title">Nadie ha publicado todavía en Mederos</div>
+              <div class="empty-sub">Prueba con otro campus o con toda la universidad.</div>
+              <div class="empty-actions">
+                <button class="ghost-btn">Cambiar campus</button>
+              </div>
+            </div>
+          </div>
       </div>
 
       <div class="tabbar">
@@ -3316,7 +3608,7 @@
         <div class="active-chips">
           <div class="active-chip">Libros <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
           <div class="active-chip">Bajo $500 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
-          <div class="active-chip">Tec de Monterrey <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
+          <div class="active-chip">Monterrey <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
         </div>
 
         <div class="results-count">14 resultados para "cálculo"</div>
@@ -3398,7 +3690,7 @@
         </div>
 
         <div class="active-chips">
-          <div class="active-chip">Tec de Monterrey <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
+          <div class="active-chip">Monterrey <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
         </div>
 
         <div class="empty-state" style="padding-top:50px;">
@@ -3772,7 +4064,7 @@
           </div>
         </div>
 
-        <div class="results-count" style="padding-top:12px;">32 publicaciones en Tec de Monterrey</div>
+        <div class="results-count" style="padding-top:12px;">32 publicaciones en Monterrey</div>
 
         <div class="chips">
           <div class="chip active">Recientes</div>
@@ -3876,9 +4168,12 @@
             <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           </div>
           <div class="empty-title">No encontramos "manga" en Libros</div>
-          <div class="empty-sub">Nadie ha publicado eso en esta categoría todavía. Prueba buscando en todo el catálogo.</div>
+          <!-- "Buscar en todo Relevo" se leía como "todas las universidades" en cuanto
+               existieron los alcances (fase 2B). Lo que hace es quitar la
+               CATEGORÍA, conservando el alcance elegido. -->
+          <div class="empty-sub">Nadie ha publicado eso en esta categoría todavía. Prueba buscando en todas las categorías.</div>
           <div class="empty-actions">
-            <button class="primary-btn" style="margin-top:0;">Buscar en todo Relevo</button>
+            <button class="primary-btn" style="margin-top:0;">Buscar en todas las categorías</button>
           </div>
         </div>
       </div>
