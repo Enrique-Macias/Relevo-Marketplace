@@ -541,7 +541,11 @@ export default function DetalleScreen() {
           <Text style={styles.title}>{listing.titulo}</Text>
           <View style={styles.meta}>
             <IconMapPin size={12} color={Colors.inkSoft} />
-            <Text style={styles.metaText}>{listing.campusNombre}</Text>
+            {/* La UNIVERSIDAD, igual que la tarjeta: es la etiqueta de confianza
+                (fase 2B). Un nombre largo se trunca; la fecha y las vistas no. */}
+            <Text style={[styles.metaText, styles.metaLugar]} numberOfLines={1}>
+              {listing.universidadNombre}
+            </Text>
             <Text style={styles.metaSep}>·</Text>
             <Text style={styles.metaText}>{formatRelativo(createdAt)}</Text>
             <Text style={styles.metaSep}>·</Text>
@@ -628,8 +632,16 @@ export default function DetalleScreen() {
               <Text style={styles.specVal}>{CONDICION_LABEL[listing.condicion]}</Text>
             </View>
             <View style={styles.specRow}>
+              <Text style={styles.specKey}>Universidad</Text>
+              <Text style={styles.specVal}>{listing.universidadNombre}</Text>
+            </View>
+            <View style={styles.specRow}>
               <Text style={styles.specKey}>Zona de entrega</Text>
-              <Text style={styles.specVal}>{listing.campusNombre}</Text>
+              <Text style={styles.specVal}>
+                {listing.campusCiudad
+                  ? `${listing.campusNombre} · ${listing.campusCiudad}`
+                  : listing.campusNombre}
+              </Text>
             </View>
             <View style={[styles.specRow, styles.specRowLast]}>
               <Text style={styles.specKey}>Publicado</Text>
@@ -866,6 +878,9 @@ const styles = StyleSheet.create({
     ...Typography.meta,
     color: Colors.inkSoft,
   },
+  metaLugar: {
+    flexShrink: 1,
+  },
   metaSep: {
     ...Typography.meta,
     color: Colors.line,
@@ -973,6 +988,11 @@ const styles = StyleSheet.create({
   specVal: {
     ...Typography.bodyStrong,
     color: Colors.ink,
+    // Una universidad de nombre largo baja de línea alineada a la derecha, en
+    // vez de empujar a la etiqueta de la izquierda fuera de la fila.
+    flexShrink: 1,
+    textAlign: 'right',
+    marginLeft: 16,
   },
   cta: {
     position: 'absolute',

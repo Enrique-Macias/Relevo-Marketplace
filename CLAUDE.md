@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 59 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 60 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -1521,7 +1521,7 @@ los dos secretos de Vault de los triggers (§8, pendiente 2).
 
 ---
 
-## 4. Inventario completo de pantallas (59)
+## 4. Inventario completo de pantallas (60)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -1550,7 +1550,7 @@ etiquetada, "sin universidad asignada"**, que no cuenta aparte: la cuenta
 creada por llave secreta con un dominio no registrado, con un `.notice` y la
 salida "Usar otro correo". Los conteos se midieron sobre el HTML
 (`grep -o 'class="phone-block" data-cat="…"' | sort | uniq -c`): 59 en total, 15
-de onboarding.
+de onboarding (al cerrar la fase 2A; hoy son 60, ver Explorar).
 
 Las dos últimas llegaron con RF-04, y son el segundo y tercer paso del reset por
 OTP. "Código de recuperación" es casi gemela de "Código de verificación" —misma
@@ -1570,8 +1570,9 @@ institucional" (Verificación, Iniciar sesión, Recuperar contraseña) pasó de
 `nombre@estudiante.tec.mx` a `estudiante@institución.mx`: el viejo sugería un
 subdominio que el hook rechaza.
 
-### Explorar (14)
-Feed · Selector de campus · Categoría · Categoría sin resultados ·
+### Explorar (15)
+Feed · **Feed (sin publicaciones)** · Selector de campus · Categoría ·
+Categoría sin resultados ·
 Ver todas (categorías) · Búsqueda (recomendados) · Búsqueda ·
 Búsqueda sin resultados · Filtros · Detalle de publicación ·
 **Detalle (vendida)** · Detalle (vista vendedor) ·
@@ -1592,6 +1593,23 @@ altura — un frame estático no puede animarlo. **Es documentación de un estad
 transitorio, no una pantalla en la que la app se quede**, igual que
 `.photo-add.is-busy` dentro de "Publicar (procesando fotos)"; se cuenta porque
 es un `phone-block` propio y el filtro del prototipo lo cuenta.
+
+**"Feed (sin publicaciones)" llegó con la fase 2B** (navegar el catálogo de
+otras universidades), y es el único frame nuevo de esa tarea: 60 en total, 15 de
+Explorar, medido con el mismo `grep | uniq -c`. Antes, un alcance vacío pintaba
+"Recomendado para ti" con el grid en blanco y sin decir nada; con campus de
+otras universidades (y campus recién dados de alta) es un caso del primer día.
+Su copy **no** dice "sé el primero en publicar": si el alcance es de otra
+universidad, ahí no se puede publicar. Todo lo demás de la fase 2B son cambios o
+variantes etiquetadas de frames que ya existían, así que no cuentan aparte:
+- el Selector de campus, reescrito y agrupado por universidad, con una variante
+  de búsqueda;
+- las cuatro lecturas del chip del Feed, en una variante;
+- la universidad en la tarjeta (en `.meta`, con la fecha en su propia línea) y
+  en Detalle;
+- la variante vacía de "Búsqueda (recomendados)";
+- el botón de "Categoría sin resultados", que pasó a "Buscar en todas las
+  categorías".
 
 ### Publicar (10)
 Publicar · Publicar (procesando fotos) · Publicar (subiendo imágenes) ·
@@ -1726,10 +1744,12 @@ Toast de éxito · Toast de error · Loading / skeleton
   - En Completar perfil y Editar perfil, el bottom sheet de campus FIJA el
     campus del perfil, dentro de su universidad.
   - En el Feed, "Selector de campus" (bottom sheet, ligero) cambia qué catálogo
-    se MIRA sin tocar el perfil, pensado para cuando una universidad tenga
-    varios campus.
-  - Navegar el catálogo de OTRAS universidades es una tarea aparte, todavía
-    sin diseño.
+    se MIRA sin tocar el perfil. Desde la fase 2B navega TODO el catálogo, en
+    tres niveles de alcance: un campus (de cualquier universidad), una
+    universidad entera o todas. Lo siguen el Feed, Búsqueda y Categoría; no lo
+    siguen Favoritos ni Mis publicaciones. Arranca en el campus del perfil y la
+    elección dura la sesión. Publicar sigue naciendo en el campus del perfil.
+    Detalle en `explorar.md`.
 - **El buscador de Feed y el de Búsqueda se ven idénticos pero se comportan
   distinto — no es un bug, es la intención.** En Feed es un punto de entrada,
   **no editable**: tocar en cualquier parte navega directo a Búsqueda en su
@@ -1755,7 +1775,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 59 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 60 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -2098,6 +2118,13 @@ de los route groups).
    registros que en local pasan. Hoy el hook tarda de 1 a 10 ms en producción,
    así que no hay urgencia. **Revisar cuando:** el hook haga algo más que una
    búsqueda por PK, o los logs de Auth muestren `request_timeout` en `/otp`.
+0c. **Borrar de remoto los datos de prueba de la fase 2B antes de que entren
+   usuarios reales.** Son "Universidad de Prueba 2B" (id 2), sus campus "Campus
+   Norte (prueba 2B)" (id 3, con 3 publicaciones) y "Campus Sur (prueba 2B)" (id
+   4, vacío), más la cuenta `prueba-2b@example.com`, que no tiene contraseña.
+   Existen para probar a mano la navegación entre universidades. Los nombres
+   exactos, los ids y el SQL de limpieza en orden están en `explorar.md`, sección
+   "Datos de prueba en remoto".
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
@@ -2173,6 +2200,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila → `publicar-fotos.md`
 - El tope de 5 fotos SIGUE sin aplicar en Storage → `publicar-fotos.md`
 - Borrar una publicación no borra sus fotos de Storage **[CERRADA]** → `publicar-fotos.md`
+- Ningún índice cubre los alcances "toda una universidad" y "todas las universidades" (seq scan + sort, medido) → `explorar.md`
 - La búsqueda de texto es por palabra completa (websearch/tsvector), no por prefijo → `explorar.md`
 - Scroll infinito sin virtualización → `explorar.md`
 - El log de contactos que falla se pierde → `confianza-ventas.md`
@@ -2212,7 +2240,6 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `Screen` | `Screen`, `useScreenScrollViewRef` | Contenedor de pantalla con su `ScrollView` |
 | `SectionHead` | `SectionHead` | Encabezado de sección con "Ver todo" |
 | `SegmentedControl` | `SegmentedControl` | Control segmentado |
-| `SelectorCatalogo` | `SelectorCatalogo` | Selector de pantalla completa con buscador. **Sin consumidor desde la fase 2A**: sus dos usos eran los selectores de universidad, que desaparecieron. Se conserva para "navegar otras universidades" |
 | `SheetScreen` | `SheetScreen` | Hoja de Stack `transparentModal` **declarada en el Stack raíz** |
 | `Skeleton` | `SkeletonPiece`, `SkeletonGrid`, `SkeletonCatGrid`, `SkeletonRows`, `SkeletonNotifRows`, `SkeletonPerfilForm`, `SkeletonPerfil` | Un esqueleto por FORMA de lo que viene |
 | `StarRating` | `StarRating` | Estrellas de Calificar |

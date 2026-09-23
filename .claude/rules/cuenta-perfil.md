@@ -6,7 +6,6 @@ paths:
   - "src/lib/perfil.ts"
   - "src/lib/perfil-publico.ts"
   - "src/lib/catalogos.ts"
-  - "src/components/SelectorCatalogo.tsx"
 ---
 
 # Cuenta: Mis publicaciones, Favoritos, Perfil, Editar perfil, Perfil público
@@ -290,7 +289,8 @@ Diez cosas que no se ven en el diff:
   **Historia, para no reintroducirla:** antes había una ruta hija
   `/editar-perfil/universidad` (se llamaba así y no `selector-universidad.tsx`
   por el gotcha de rutas ambiguas de más abajo) con un `_layout.tsx` y su
-  contexto, porque `SelectorCatalogo` hace `router.back()` adentro y no cabía en
+  contexto, porque `SelectorCatalogo` (borrado en la fase 2B, sin consumidores
+  desde la 2A) hacía `router.back()` adentro y no cabía en
   un `Modal`. Desaparecieron las dos: sin ruta hija el contexto no tenía
   razón de ser, y el campus volvió al estado local del formulario.
 - **Esta pantalla NO recarga al recuperar el foco**, al revés que
@@ -325,7 +325,7 @@ Diez cosas que no se ven en el diff:
   número al entrar a Editar perfil.
 
 Componentes nuevos: ninguno de UI — reusa `Field`, `PhoneField`, `SelectField`,
-`FormHeader`, `CampusBottomSheet`, `SelectorCatalogo` y `ErrorState` tal cual. Lo
+`FormHeader`, `CampusBottomSheet`, `SelectorCatalogo` (hoy borrado, fase 2B) y `ErrorState` tal cual. Lo
 único nuevo es `SkeletonPerfilForm` (círculo de 84 + 5 cajas de campo), tercer
 hermano de `SkeletonRows`/`SkeletonNotifRows` por el mismo motivo de siempre: el
 esqueleto anticipa la forma de lo que viene. Y un rol de `Typography`,
@@ -345,8 +345,8 @@ archivo (Babel, que es lo que corre Metro), un `export { OpcionCatalogo }` sin
 aunque `tsc` pasara — por eso van con `type` tanto el re-export como el `import
 { type OpcionCatalogo }`. Medido: el JS que Babel emite para ese layout es
 **byte por byte el mismo** antes y después del movimiento. Ojo, es un tipo
-distinto de `ItemCatalogo` (`src/components/SelectorCatalogo.tsx`), que lleva
-`subtitulo` y es el del selector, no el del borrador.
+distinto de `ItemCatalogo` (el de `src/components/SelectorCatalogo.tsx`, borrado
+en la fase 2B), que llevaba `subtitulo` y era el del selector, no el del borrador.
 
 **"Perfil" (el propio) construida y conectada — cierra el grupo Cuenta (8/8).**
 Vive en `src/app/(tabs)/perfil.tsx`, sin ningún archivo nuevo de datos: reusa

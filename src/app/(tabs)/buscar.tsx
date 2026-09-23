@@ -8,7 +8,7 @@ import { ActiveFilterChip } from '@/components/ActiveFilterChip';
 import { GhostButton } from '@/components/Buttons';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
-import { IconFilterSliders, IconSearch } from '@/components/icons';
+import { IconCampusFlag, IconFilterSliders, IconSearch } from '@/components/icons';
 import { SearchField, type SearchFieldHandle } from '@/components/ListRow';
 import { ProductCard } from '@/components/ProductCard';
 import { Screen } from '@/components/Screen';
@@ -16,9 +16,10 @@ import { SectionHead } from '@/components/SectionHead';
 import { SkeletonGrid } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
-import { useExplorarState } from '@/lib/explorar-state';
+import { alcanceFiltro, etiquetaAlcance, lugarAlcance, useExplorarState } from '@/lib/explorar-state';
 import { chunkRows } from '@/lib/grid';
 import { useListings } from '@/lib/listings';
+import { useSession } from '@/lib/session';
 import { useDebounce } from '@/lib/use-debounce';
 
 const CONDICION_LABEL: Record<string, string> = {
@@ -60,7 +61,7 @@ export default function BuscarScreen() {
     filtros,
     setFiltros,
     limpiarFiltros,
-    campusSeleccionado,
+    alcance,
     favoritos,
     toggleFavorito,
     getCategoria,
@@ -69,12 +70,15 @@ export default function BuscarScreen() {
   const hayFiltrosActivos = !!(filtros.categoriaId || filtros.condicion || filtros.precioMin || filtros.precioMax);
   const modoRecomendados = queryDiferida.trim() === '' && !hayFiltrosActivos;
 
+  const { profile } = useSession();
+
+  // Las dos ramas siguen el alcance elegido en el selector del Feed (fase 2B).
   const { items, estado, total, cargandoMas, loadMore, reintentar, refrescar } = useListings(
-    campusSeleccionado
+    alcance
       ? modoRecomendados
-        ? { campusId: campusSeleccionado.id, orden: 'recientes' as const, limit: 4 }
+        ? { alcance: alcanceFiltro(alcance), orden: 'recientes' as const, limit: 4 }
         : {
-            campusId: campusSeleccionado.id,
+            alcance: alcanceFiltro(alcance),
             q: queryDiferida,
             categoriaId: filtros.categoriaId,
             precioMin: filtros.precioMin ? Number(filtros.precioMin) : undefined,
@@ -86,7 +90,7 @@ export default function BuscarScreen() {
       : null
   );
 
-  const cargando = estado === 'loading' || !campusSeleccionado;
+  const cargando = estado === 'loading' || !alcance;
 
   const { mostrar } = useToast();
   const [refrescando, setRefrescando] = useState(false);
@@ -134,6 +138,17 @@ export default function BuscarScreen() {
           <ErrorState onRetry={reintentar} />
         ) : cargando ? (
           <SkeletonGrid tarjetas={4} style={styles.skeleton} />
+        ) : items.length === 0 && alcance ? (
+          // Mismo copy que "Feed (sin publicaciones)" — variante del frame
+          // "Búsqueda (recomendados)".
+          <EmptyState
+            icon={<IconCampusFlag size={30} color={Colors.inkSoft} />}
+            title={`Nadie ha publicado todavía en ${lugarAlcance(alcance)}`}
+            sub="Prueba con otro campus o con toda la universidad."
+            style={{ paddingTop: 10 }}
+          >
+            <GhostButton label="Cambiar campus" onPress={() => router.push('/selector-campus')} />
+          </EmptyState>
         ) : (
           <View style={styles.grid}>
             {chunkRows(items, 2).map((row, i) => (
@@ -185,7 +200,7 @@ export default function BuscarScreen() {
   }
   chips.push({
     key: 'campus',
-    label: campusSeleccionado?.nombre ?? '',
+    label: alcance ? etiquetaAlcance(alcance, profile?.universidad_id ?? null) : '',
     onRemove: () => router.push('/selector-campus'),
   });
 

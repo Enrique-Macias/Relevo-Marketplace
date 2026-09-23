@@ -67,7 +67,7 @@ type Fase =
 export default function PublicarScreen() {
   const insets = useSafeAreaInsets();
   const { session, profile, refreshProfile } = useSession();
-  const { categorias, campusDisponibles } = useExplorarState();
+  const { categorias, getCampus } = useExplorarState();
   const { mostrar } = useToast();
 
   const form = useListingForm();
@@ -96,10 +96,12 @@ export default function PublicarScreen() {
   const [telefono, setTelefono] = useState('');
 
   const userId = session?.user.id ?? null;
-  // La zona de entrega es el campus DEL PERFIL, no el que el usuario tenga
-  // seleccionado en el Feed: ese selector cambia qué catálogo se mira, no dónde
-  // se entrega lo que uno vende (CLAUDE.md §5).
-  const campus = campusDisponibles.find((c) => c.id === profile?.campus_id);
+  // La zona de entrega es el campus DEL PERFIL, no el alcance que el usuario
+  // esté mirando en el Feed (que puede ser otra universidad entera): ese
+  // selector cambia qué catálogo se mira, no dónde se entrega lo que uno vende
+  // (CLAUDE.md §5). `getCampus` es solo el diccionario id → campus; la base
+  // además exige que el campus sea de la universidad del dueño.
+  const campus = getCampus(profile?.campus_id);
 
   /**
    * RF-13: no se puede publicar sin un WhatsApp al que contactar.

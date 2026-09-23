@@ -7,6 +7,9 @@ paths:
   - "src/app/selector-campus.tsx"
   - "src/lib/listings.ts"
   - "src/lib/explorar-state.tsx"
+  - "src/lib/catalogos.ts"
+  - "src/components/ProductCard.tsx"
+  - "supabase/seeds-local/**"
   - "src/lib/categorias.ts"
   - "src/lib/favoritos.ts"
   - "src/lib/grid.ts"
@@ -24,13 +27,14 @@ paths:
 existen como código (7 archivos de ruta, algunos cubren varios estados:
 Categoría 2 estados, Búsqueda 3 estados, Detalle 2 estados comprador/vendedor)
 y leen del proyecto remoto. `src/lib/explorar-state.tsx` sigue siendo el estado
-compartido, pero ahora guarda solo los *valores* (campus elegido, filtros,
-catálogo de categorías, set de favoritos): el filtrado dejó de recorrer un
+compartido, pero ahora guarda solo los *valores* (alcance elegido, filtros,
+catálogos de campus y categorías, set de favoritos): el filtrado dejó de recorrer un
 arreglo y es una query en `src/lib/listings.ts`.
 
 **Qué quedó conectado:** el catálogo de `listings` (con su join a `categories`,
-`campus` y `listing_photos`), las `categories` reales, el catálogo de `campus`
-filtrado por la universidad del perfil, `favorites` con optimistic update y
+`campus`, `universidades` y `listing_photos`), las `categories` reales, el
+catálogo COMPLETO de universidades y campus (fase 2B; antes solo los de la
+universidad del perfil), `favorites` con optimistic update y
 rollback por id, el insert a `listing_contacts` en el botón de WhatsApp, la RPC
 `increment_listing_view` al abrir Detalle, `listing_favorites_count` para el
 stat del vendedor, y la búsqueda de texto completa por tsvector.
@@ -78,9 +82,10 @@ Detalles que no se ven en el diff:
   (`(tabs)/index.tsx`), Búsqueda (`(tabs)/buscar.tsx`, las DOS ramas de
   retorno — recomendados y con/sin resultados, mismo hook subyacente) y
   Categoría (`(explorar)/categoria/[id].tsx`), los tres vía el
-  `refreshControl` de `Screen`. Categorías y campus activo siguen sin
-  refrescarse con el gesto — no cambian dentro de una sesión y no tienen
-  refetch expuesto.
+  `refreshControl` de `Screen`. Categorías y el catálogo de universidades y
+  campus siguen sin refrescarse con el gesto — no cambian dentro de una sesión
+  y no tienen refetch expuesto. El pull del Feed sí trae el conteo nuevo del
+  hero, que viaja en la misma consulta del grid.
 
   **Y desde que Búsqueda/Categoría pueden `refrescar()` mientras `loadMore()`
   está en vuelo, `useListings` ganó un contador de "generación"**: estado
@@ -107,24 +112,22 @@ Detalles que no se ven en el diff:
   `useListings`), así que la comparación nunca podía dar `false`: no
   descartaba nada. Reemplazado por el mismo par `version`/`versionRef`, que
   además cierra la misma duplicación de tarjetas que en Búsqueda/Categoría.
-- **`campusSeleccionado` sigue al campus DEL PERFIL cuando ese cambia, pero no
-  pisa la elección del selector del Feed** — y esas dos cosas se distinguen con
-  un `ref` (`campusPerfilAplicado`), no con el estado. El efecto que carga el
-  catálogo puede volver a correr por dos razones opuestas: si es una recarga con
-  el mismo campus de perfil, hay que respetar lo que el usuario haya elegido en
-  el bottom sheet (eso es lo que protege el `return actual`); si el campus del
-  PERFIL cambió —solo pasa en "Editar perfil"—, hay que reapuntar, o el Feed se
-  queda en el campus viejo el resto de la sesión aunque el usuario acabe de
-  mudarse. Cambiar de UNIVERSIDAD nunca necesitó esto: el campus viejo ya no
-  aparece en la lista nueva y cae solo. Lo que NO se toca son las publicaciones
-  ya creadas, que conservan su `campus_id` del insert — eso es correcto, no un
-  efecto que haya que compensar. **Ojo: durante un tiempo esta frase fue
-  FALSA** y nadie lo vio: "Editar publicación" mandaba en cada guardado el
-  campus ACTUAL del perfil, así que editar movía la publicación en silencio.
-  Desde la fase 2A es cierta y tiene candado: `actualizarListing` ya no manda
-  ubicación (`UbicacionListing`, `src/lib/listings.ts`, solo la recibe el alta),
-  y `authenticated` no tiene UPDATE sobre `listings.universidad_id`/`campus_id`
-  (`20260924000466`, T28 (d4)).
+- **El alcance vuelve al campus DEL PERFIL cuando ese cambia, sin pisar lo
+  elegido en el selector mientras no cambie.** Lo que el usuario elige se guarda
+  aparte (`eleccion`) y el default se DERIVA del perfil. La elección se descarta
+  EN RENDER cuando cambia la clave `userId|campus_id del perfil`. Así, mudarse de
+  campus en "Editar perfil" se nota de inmediato en el Feed, y otra cuenta en el
+  mismo teléfono no hereda lo que miraba la anterior. Esto reemplazó al ref
+  `campusPerfilAplicado` de antes de la fase 2B. Lo que NO se toca son las
+  publicaciones ya creadas: conservan su `campus_id` del insert, y eso es
+  correcto. **Ojo: durante un tiempo esta frase fue FALSA** y nadie lo vio:
+  "Editar publicación" mandaba en cada guardado el campus ACTUAL del perfil, así
+  que editar movía la publicación en silencio. Desde la fase 2A es cierta y tiene
+  candado:
+  - `actualizarListing` ya no manda ubicación (`UbicacionListing`,
+    `src/lib/listings.ts`, solo la recibe el alta);
+  - `authenticated` no tiene UPDATE sobre `listings.universidad_id` /
+    `campus_id` (`20260924000466`, T28 (d4)).
 - **El hero de Detalle es un CARRUSEL, y su visor a pantalla completa es un
   `Modal`, no una ruta.** Las fotos siempre estuvieron completas en
   `fetchListingById()` (`fotos: string[]`, ordenadas por `orden`); lo que
@@ -391,3 +394,162 @@ dejado escrito como plan B, así que no se implementó. Si en el futuro
 `dismissTo` deja de conmutar el tab (por ejemplo tras actualizar
 `expo-router` más allá de `57.0.19`, la versión con la que se midió esto),
 ese fallback de dos líneas sigue siendo la salida conocida.
+
+## Alcance del catálogo: un campus, una universidad o todo (fase 2B)
+
+**Qué es.** `Alcance` (`src/lib/explorar-state.tsx`) es una unión discriminada:
+`{tipo:'campus', campus}`, `{tipo:'universidad', universidad}` o
+`{tipo:'todo'}`. El campus lleva su universidad ADENTRO (`CampusCatalogo`,
+`src/lib/catalogos.ts`), así que no se puede escribir un campus con la
+universidad equivocada. `fetchListings` recibe solo ids (`AlcanceFiltro`), y
+esa unión es cerrada: una consulta de catálogo sin alcance no compila, en vez
+de caer en silencio a "todo".
+
+**Quién lo sigue:**
+- el Feed;
+- Búsqueda, en sus dos ramas (recomendados y con resultados, incluido su chip
+  de alcance);
+- Categoría (el "N publicaciones en …").
+
+**Quién no lo sigue:** Favoritos y Mis publicaciones, que son listas
+personales. Tampoco Publicar: una publicación nace SIEMPRE en el campus del
+perfil (`(publicar)/nueva.tsx`, `getCampus(profile.campus_id)`), y la base lo
+impone con `listings_user_universidad_fkey` y `listings_campus_universidad_fkey`.
+
+**Default y persistencia.**
+- Arranca en el campus del perfil.
+- Si el perfil no tiene campus, cae a su universidad entera, y sin universidad
+  a "todo". Esa cuenta de todos modos no pasa de "Completar perfil".
+- Es `null` mientras falte el catálogo o el perfil. Sin la segunda guarda, el
+  Feed pediría un instante "todo" y luego el campus: dos consultas y un
+  parpadeo.
+- La elección vive solo en memoria: al reabrir la app vuelve al campus propio.
+  Es decisión de producto, no falta de persistencia.
+
+**Una sola etiqueta.** `etiquetaAlcance()` arma el texto del chip del Feed, del
+chip de Búsqueda y del conteo de Categoría:
+- un campus de OTRA universidad lleva ` · universidad`, y el propio no (esa
+  diferencia es la señal);
+- una universidad se lee "Todo {universidad}";
+- el catálogo completo, "Todas las universidades".
+
+`lugarAlcance()` es la versión para frases ("Nadie ha publicado todavía en …").
+Con alcance "todo" dice "Relevo".
+
+**Cambiar de alcance reinicia la paginación sin mezclar.** No hay mecanismo
+nuevo: el alcance entra en `key` de `useListings` (JSON de los params), así que
+cambiarlo resetea la lista EN RENDER y pide la página 1. `keyRef`/`version`
+descartan cualquier `loadMore()` o `refrescar()` que venga en vuelo del alcance
+anterior. `refrescar()` y el pull-to-refresh no se tocaron.
+
+**El selector** (`src/app/selector-campus.tsx`) lista TODO el catálogo:
+- una sola consulta, `fetchCatalogoCampus()`, por sesión;
+- agrupado por universidad, la propia primero ("· Tu universidad") y el resto
+  por nombre;
+- "Todas las universidades" arriba, y cada grupo abre con "Todos los campus de
+  …".
+
+El buscador normaliza acentos y funciona así:
+- si machea la universidad, sale el grupo entero;
+- si solo machea un campus o una ciudad, sale ese campus sin la fila "Todos";
+- mientras hay texto, "Todas las universidades" se oculta;
+- una universidad sin campus no se lista.
+
+**No es `CampusBottomSheet`.** Ese FIJA el campus del perfil y sigue acotado a
+la universidad propia (`fetchCampus`), sin cambios. "Detectar campus más
+cercano" sigue inerte: es la fase 2C.
+
+**La universidad como etiqueta de confianza.**
+- `SELECT_CARD` y `SELECT_DETALLE` embeben `universidad:universidades(nombre)`
+  en la MISMA consulta, sin una consulta por tarjeta.
+- **Sin hint, y medido:** `listings` tiene una sola FK hacia `universidades`.
+  Por HTTP como authenticated da 200 en Feed, Búsqueda, Categoría (los tres
+  alcances), Detalle, Favoritos (embed anidado `listing→universidades`), Mis
+  publicaciones y el catálogo del selector.
+- El control de ambigüedad `users(nombre)` sí da PGRST201. Hoy lista DOS FKs
+  (`listings_user_id_fkey` y `listings_user_universidad_fkey`), por eso
+  `VENDEDOR` lleva hint.
+- `ProductCard` pinta la universidad en su propia línea de `.meta`, con la fecha
+  debajo. En una sola línea ni "Tec de Monterrey" cabía en una tarjeta de 2
+  columnas ("Tec de M…"), y una etiqueta de confianza truncada no dice nada.
+- Detalle pinta la universidad en la meta, y en "Detalles" las filas
+  "Universidad" y "Zona de entrega" = campus · ciudad.
+- `MiListing` trae `universidadNombre` vacío: `SELECT_MIAS` no la embebe porque
+  esa pantalla no la muestra.
+
+**El hero del Feed cuenta de verdad.** "800+ publicaciones" era texto fijo. Hoy
+es el `total` de la misma consulta del grid (`withCount: true`), sin request
+aparte, y se esconde con 0 y mientras no hay número. Frame "Feed (sin
+publicaciones)".
+
+**Copy del vacío, alcance por alcance.** El frame solo define el caso campus. En
+"una universidad" y en "todo" se reusa el mismo sub ("Prueba con otro campus o
+con toda la universidad."), que ahí se lee raro. Hoy es inalcanzable en la
+práctica: significaría una universidad sin ninguna publicación, o el catálogo
+entero vacío. **Revisar cuando:** se dé de alta una universidad sin
+publicaciones. **Fix:** una variante del frame con su propio copy (§0 regla 4).
+
+- **Ningún índice cubre los alcances "universidad" y "todo".** Salida real de
+  `\d+ public.listings`: solo `listings_feed_idx (campus_id, estado,
+  created_at DESC)` más índices de una columna. El `explain` de
+  `where estado='activa' order by created_at desc, id desc limit 20` da
+  `Limit → Sort → Seq Scan`, y "universidad" hace lo mismo sobre
+  `listings_universidad_id_idx`. Con 54 activas en remoto no importa. El
+  `count exact` del hero, de Búsqueda y de Categoría recorre el alcance entero,
+  así que en "todo" escala con el catálogo.
+  **Revisar cuando:** haya ~10 000 activas, o `explain analyze` del Feed en
+  "todo" muestre un Sort de más de ~20 ms.
+  **Fix** (una migración, sin tocar el cliente):
+  - `create index on listings (created_at desc, id desc) where estado = 'activa'`;
+  - `create index on listings (universidad_id, created_at desc, id desc) where estado = 'activa'`;
+  - si el conteo pesa, cambiar el hero a `count: 'estimated'`.
+
+**Pruebas locales.** `supabase/seeds-local/multiuniversidad.sql` siembra una
+segunda universidad de nombre largo con dos campus (uno vacío), un campus vacío
+en el Tec, 10 publicaciones y dos cuentas con contraseña `prueba-1234`. Va FUERA
+de `sql_paths` porque `seed.sql` viaja a remoto con `--include-seed`. Se corre
+DESPUÉS de la suite de RLS, porque T0 cuenta todos los perfiles; su cabecera
+dice cómo.
+
+## Datos de prueba en remoto — BORRAR antes de usuarios reales
+
+Sembrados el 2026-09-23 por `execute_sql`, para probar a mano la fase 2B en
+producción, que solo tiene una universidad real:
+
+| Qué | Nombre exacto | id |
+|---|---|---|
+| universidad | `Universidad de Prueba 2B` | 2 |
+| campus | `Campus Norte (prueba 2B)`, ciudad `Ciudad de Prueba` | 3 |
+| campus | `Campus Sur (prueba 2B)`, ciudad `Ciudad de Prueba` | 4 |
+| cuenta (auth + perfil) | `prueba-2b@example.com`, **sin contraseña** (no puede iniciar sesión) | `7f50bc00-68de-4c01-bdd6-a68362653b1a` |
+| publicaciones | 3 `activa` en Campus Norte, sin fotos, descripción "Publicación de prueba de la fase 2B…" | — |
+
+**No se dio de alta ningún dominio** para esa universidad, así que nadie se
+puede registrar en ella.
+
+**La cuenta se creó con un INSERT directo en `auth.users`, no por el admin API
+como decía el plan**, porque en esa sesión no había acceso a la secret key del
+proyecto remoto: el único canal a remoto era `execute_sql` del MCP, que no la
+expone, y ningún `.env` del repo la tiene. El efecto es equivalente para esta
+prueba: el trigger de alta corrió igual, y dejó `universidad_id` en NULL porque
+`example.com` no está en `universidad_dominios`. La diferencia es que la fila no
+tiene contraseña (`encrypted_password` en NULL) ni identidad en
+`auth.identities`, así que nadie puede iniciar sesión con ella. "Campus Prueba" (id 2, Tec) ya existía antes de esta
+tarea: no es parte de esto y no se borra aquí.
+
+Limpieza, en este orden. El borrado del auth user se lleva `public.users`
+(`on delete cascade`) y con él sus publicaciones (`listings_user_id_fkey`, también
+cascade). Después, los campus ya no los referencia nadie (solo los referencian
+`users` y `listings`, medido):
+```sql
+begin;
+delete from auth.users where email = 'prueba-2b@example.com';
+delete from public.campus where universidad_id = (select id from public.universidades where nombre = 'Universidad de Prueba 2B');
+delete from public.universidades where nombre = 'Universidad de Prueba 2B';
+commit;
+-- Verificar: debe dar 0 | 0 | 51 (si nadie publicó nada más)
+select (select count(*) from public.universidades where nombre like '%Prueba 2B%'),
+       (select count(*) from auth.users where email = 'prueba-2b@example.com'),
+       (select count(*) from public.listings where estado = 'activa');
+```
+Cuando se borren, se quita esta sección y el pendiente 0c de CLAUDE.md §8.

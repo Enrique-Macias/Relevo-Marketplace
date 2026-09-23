@@ -141,7 +141,7 @@ export function ListRow({
       accessibilityRole="radio"
       accessibilityState={{ selected }}
     >
-      <View>
+      <View style={styles.listRowText}>
         <Text style={styles.listRowName}>{name}</Text>
         <Text style={styles.listRowSub}>{sub}</Text>
       </View>
@@ -221,6 +221,12 @@ const styles = StyleSheet.create({
   // .list-row:last-child{border-bottom:none;}
   listRowLast: {
     borderBottomWidth: 0,
+  },
+  // Sin esto un nombre largo ("Todos los campus de Universidad Autónoma de …",
+  // fase 2B) empujaba el radio fuera de la fila en vez de bajar de línea.
+  listRowText: {
+    flexShrink: 1,
+    marginRight: 12,
   },
   listRowName: {
     ...Typography.emphasis,

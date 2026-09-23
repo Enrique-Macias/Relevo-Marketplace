@@ -82,9 +82,21 @@ const VENDEDOR =
  */
 const FOTO_PORTADA = 'fotos:listing_photos(storage_path, orden)';
 
+/**
+ * La universidad de la publicación, para la tarjeta y Detalle (fase 2B). Es la
+ * etiqueta de confianza: desde 20260924000466 la base garantiza que es la de su
+ * dueño (`listings_user_universidad_fkey`), así que no se puede falsificar.
+ *
+ * Sin hint, y MEDIDO: `listings` tiene una sola FK hacia `universidades`
+ * (`listings_universidad_id_fkey`); las compuestas apuntan a `users` y
+ * `campus`. Por HTTP como authenticated da 200, sin PGRST201.
+ */
+const UNIVERSIDAD = 'universidad:universidades(nombre)';
+
 const SELECT_CARD = `
   id, titulo, precio, condicion, created_at, categoria_id, user_id,
   campus:campus(id, nombre, ciudad),
+  ${UNIVERSIDAD},
   ${FOTO_PORTADA},
   ${VENDEDOR}
 `;
@@ -93,6 +105,7 @@ const SELECT_DETALLE = `
   id, titulo, descripcion, precio, condicion, estado, vistas_count, created_at,
   categoria_id, user_id,
   campus:campus(id, nombre, ciudad),
+  ${UNIVERSIDAD},
   fotos:listing_photos(storage_path, orden),
   ${VENDEDOR}
 `;
@@ -106,6 +119,12 @@ export type ListingCard = {
   categoriaId: number;
   userId: string;
   campusNombre: string;
+  campusCiudad: string;
+  /**
+   * La que pinta la tarjeta. Vacía en `MiListing`: `SELECT_MIAS` no la embebe,
+   * porque "Mis publicaciones" no la muestra.
+   */
+  universidadNombre: string;
   /**
    * RUTA de la foto de portada dentro del bucket privado, o `null` si la
    * publicación no tiene ninguna. No es una URL — ver `ListingDetalle.fotos`.
@@ -176,8 +195,22 @@ export type ListingsPage = {
   total: number | null;
 };
 
+/**
+ * QUÉ parte del catálogo se lista (fase 2B): un campus, una universidad entera
+ * o todo. Unión cerrada a propósito: una consulta de catálogo sin alcance no
+ * compila, en vez de caer en silencio a "todo".
+ *
+ * Es solo el filtro de la CONSULTA, no autorización: `listings_select` no mira
+ * la universidad, así que cualquier autenticado puede leer cualquier alcance.
+ * El estado de UI que lo produce vive en `explorar-state.tsx` (`Alcance`).
+ */
+export type AlcanceFiltro =
+  | { tipo: 'campus'; campusId: number }
+  | { tipo: 'universidad'; universidadId: number }
+  | { tipo: 'todo' };
+
 export type FetchListingsParams = {
-  campusId: number;
+  alcance: AlcanceFiltro;
   categoriaId?: number;
   q?: string;
   precioMin?: number;
@@ -201,6 +234,8 @@ function mapCard(row: any): ListingCard {
     categoriaId: row.categoria_id,
     userId: row.user_id,
     campusNombre: row.campus?.nombre ?? '',
+    campusCiudad: row.campus?.ciudad ?? '',
+    universidadNombre: row.universidad?.nombre ?? '',
     // `fotos` viene ya acotado a 1 por el `.limit(referencedTable)` de
     // `fetchListings`. `fetchListingById` usa otro select y no pasa por aquí
     // para las fotos: ahí se leen todas.
@@ -215,8 +250,13 @@ export async function fetchListings(p: FetchListingsParams): Promise<ListingsPag
   let query = supabase
     .from('listings')
     .select(SELECT_CARD, p.withCount ? { count: 'exact' } : undefined)
-    .eq('campus_id', p.campusId)
     .eq('estado', 'activa');
+
+  // "Todas las universidades" no filtra nada. Ojo con el índice: solo "un
+  // campus" camina sobre `listings_feed_idx`; los otros dos alcances hacen scan
+  // + sort (medido con `explain`, deuda con disparador en `explorar.md`).
+  if (p.alcance.tipo === 'campus') query = query.eq('campus_id', p.alcance.campusId);
+  else if (p.alcance.tipo === 'universidad') query = query.eq('universidad_id', p.alcance.universidadId);
 
   /**
    * Acota el embed de fotos a la de menor `orden` — la portada de la tarjeta.
@@ -266,8 +306,9 @@ export async function fetchListings(p: FetchListingsParams): Promise<ListingsPag
   }
 
   if (p.orden === 'recientes') {
-    // Keyset: el cursor es la última fila vista, no un desplazamiento. Camina
-    // sobre listings_feed_idx (campus_id, estado, created_at desc) y es inmune
+    // Keyset: el cursor es la última fila vista, no un desplazamiento. Con el
+    // alcance "un campus" camina sobre listings_feed_idx (campus_id, estado,
+    // created_at desc), y con cualquier alcance es inmune
     // a que entren publicaciones nuevas mientras el usuario hace scroll.
     // El desempate por `id` importa: dos publicaciones con el mismo
     // `created_at` se saltarían con un `lt` simple.
@@ -822,10 +863,11 @@ type EstadoLista = 'loading' | 'ready' | 'error';
  * No hay capa de caché en el proyecto (no hay react-query ni SWR, y no se
  * agrega una): cada pantalla tiene su propio estado y este hook lo maneja.
  *
- * El "invalidar al cambiar de campus" no es un mecanismo aparte — es este
- * efecto: `campusId` forma parte de `key`, así que cambiarlo redispara el
- * efecto. La bandera `vigente` es lo que evita la carrera clásica: si el
- * usuario cambia de campus mientras la página anterior está en vuelo, esa
+ * El "invalidar al cambiar de alcance" no es un mecanismo aparte — es este
+ * efecto: `alcance` forma parte de `key`, así que cambiarlo (de campus, a una
+ * universidad entera o a todo) resetea la lista en render y redispara el
+ * efecto desde la página 1. La bandera `vigente` es lo que evita la carrera
+ * clásica: si el usuario cambia de alcance mientras la página anterior está en vuelo, esa
  * respuesta llega y se descarta en vez de pintarse encima de la nueva. Mismo
  * patrón que `session.tsx`.
  */

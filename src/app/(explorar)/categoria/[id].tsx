@@ -18,9 +18,10 @@ import { SkeletonGrid } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 import { Colors, ScreenPadding, Typography } from '@/constants/theme';
 import { useDebounce } from '@/lib/use-debounce';
-import { useExplorarState } from '@/lib/explorar-state';
+import { alcanceFiltro, etiquetaAlcance, useExplorarState } from '@/lib/explorar-state';
 import { chunkRows } from '@/lib/grid';
 import { useListings } from '@/lib/listings';
+import { useSession } from '@/lib/session';
 
 const ORDEN_CHIPS = [
   { value: 'recientes', label: 'Recientes' },
@@ -35,17 +36,17 @@ export default function CategoriaScreen() {
   const categoriaId = Number(id);
   const [query, setQuery] = useState('');
   const queryDiferida = useDebounce(query);
-  const { filtros, setFiltros, campusSeleccionado, favoritos, toggleFavorito, getCategoria } =
-    useExplorarState();
+  const { filtros, setFiltros, alcance, favoritos, toggleFavorito, getCategoria } = useExplorarState();
+  const { profile } = useSession();
 
   const categoria = getCategoria(categoriaId);
 
   // Misma semántica que tenía el filtrado sobre el mock: la categoría la fija
   // la ruta (no el filtro), y precio/condición/orden salen del contexto.
   const { items, estado, total, cargandoMas, loadMore, reintentar, refrescar } = useListings(
-    campusSeleccionado
+    alcance
       ? {
-          campusId: campusSeleccionado.id,
+          alcance: alcanceFiltro(alcance),
           categoriaId,
           q: queryDiferida,
           precioMin: filtros.precioMin ? Number(filtros.precioMin) : undefined,
@@ -57,7 +58,7 @@ export default function CategoriaScreen() {
       : null
   );
 
-  const cargando = estado === 'loading' || !campusSeleccionado;
+  const cargando = estado === 'loading' || !alcance;
   const conteo = total ?? items.length;
 
   const { mostrar } = useToast();
@@ -106,7 +107,7 @@ export default function CategoriaScreen() {
 
       <Text style={styles.resultsCount}>
         {conteo} {conteo === 1 ? 'publicación' : 'publicaciones'} en{' '}
-        {campusSeleccionado?.nombre ?? ''}
+        {alcance ? etiquetaAlcance(alcance, profile?.universidad_id ?? null) : ''}
       </Text>
 
       <ScrollView
@@ -137,10 +138,13 @@ export default function CategoriaScreen() {
               ? `No encontramos "${queryDiferida}" en ${categoria?.nombre ?? ''}`
               : `No encontramos publicaciones en ${categoria?.nombre ?? ''}`
           }
-          sub="Nadie ha publicado eso en esta categoría todavía. Prueba buscando en todo el catálogo."
+          sub="Nadie ha publicado eso en esta categoría todavía. Prueba buscando en todas las categorías."
         >
+          {/* Quita la CATEGORÍA y conserva el alcance. Antes decía "Buscar en
+              todo Relevo", que con alcances se leía como "todas las
+              universidades" (fase 2B). */}
           <PrimaryButton
-            label="Buscar en todo Relevo"
+            label="Buscar en todas las categorías"
             onPress={() => router.push({ pathname: '/buscar', params: { q: query } })}
           />
         </EmptyState>

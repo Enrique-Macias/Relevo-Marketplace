@@ -1,4 +1,4 @@
-/** `.card` — tarjeta de producto (Feed, Búsqueda, Categoría). */
+/** `.card` — tarjeta de producto (Feed, Búsqueda, Categoría, Favoritos). */
 
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -72,13 +72,18 @@ export function ProductCard({ listing, onPress, favorito, onToggleFavorito }: Pr
         <Text style={styles.title} numberOfLines={1}>
           {listing.titulo}
         </Text>
+        {/* `.meta` de la fase 2B: la UNIVERSIDAD en su propia línea (es la
+            etiqueta de confianza, y junto a la fecha ni "Tec de Monterrey"
+            cabía en una tarjeta de 2 columnas) y la fecha abajo, alineada con
+            el texto de arriba. Solo un nombre muy largo se trunca. */}
         <View style={styles.meta}>
-          <IconMapPin size={10} color={Colors.inkSoft} />
-          <Text style={[styles.metaText, styles.metaCampus]} numberOfLines={1}>
-            {listing.campusNombre}
-          </Text>
-          <Text style={styles.metaSep}>·</Text>
-          <Text style={styles.metaText} numberOfLines={1}>
+          <View style={styles.metaLinea}>
+            <IconMapPin size={10} color={Colors.inkSoft} />
+            <Text style={[styles.metaText, styles.metaLugar]} numberOfLines={1}>
+              {listing.universidadNombre}
+            </Text>
+          </View>
+          <Text style={[styles.metaText, styles.metaFecha]} numberOfLines={1}>
             {formatRelativo(new Date(listing.createdAt))}
           </Text>
         </View>
@@ -151,22 +156,25 @@ const styles = StyleSheet.create({
     color: Colors.ink,
     marginBottom: 6,
   },
+  // .meta{flex-wrap:wrap; row-gap:3px;} — dos líneas: lugar y fecha.
   meta: {
+    gap: 3,
+    marginTop: 'auto',
+  },
+  metaLinea: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginTop: 'auto',
   },
   metaText: {
     ...Typography.metaLight,
     color: Colors.inkSoft,
-    flexShrink: 0,
   },
-  metaCampus: {
+  metaLugar: {
     flexShrink: 1,
   },
-  metaSep: {
-    ...Typography.metaLight,
-    color: Colors.line,
+  // .meta > span:last-of-type{padding-left:15px;} — ícono (10) + gap (5).
+  metaFecha: {
+    paddingLeft: 15,
   },
 });

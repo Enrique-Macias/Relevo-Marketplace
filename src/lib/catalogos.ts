@@ -82,6 +82,49 @@ export async function fetchUniversidad(id: number): Promise<OpcionCatalogo | nul
   return data;
 }
 
+/**
+ * Un campus del catálogo NAVEGABLE (fase 2B), con su universidad adentro.
+ *
+ * La universidad va como objeto dentro del campus y no como un `universidadId`
+ * suelto a propósito: así el alcance "un campus" (`explorar-state.tsx`) no
+ * puede representar un campus con la universidad equivocada, y el chip de un
+ * campus de otra universidad tiene su nombre a mano sin buscarlo.
+ */
+export type CampusCatalogo = Campus & { universidad: { id: number; nombre: string } };
+
+export type UniversidadCatalogo = {
+  id: number;
+  nombre: string;
+  campus: CampusCatalogo[];
+};
+
+/**
+ * TODO el catálogo de universidades con sus campus, en una sola consulta: el
+ * "Selector de campus" del Feed navega cualquier universidad (fase 2B). Las
+ * policies de `universidades` y `campus` son `using (true)` para
+ * `authenticated`, así que no hay nada que la RLS esconda aquí.
+ *
+ * No reemplaza a `fetchCampus`: fijar el campus del PERFIL
+ * (`CampusBottomSheet`) sigue acotado a la universidad propia.
+ */
+export async function fetchCatalogoCampus(): Promise<UniversidadCatalogo[]> {
+  const { data, error } = await supabase
+    .from('universidades')
+    .select('id, nombre, campus(id, nombre, ciudad)')
+    .order('nombre')
+    .order('nombre', { referencedTable: 'campus' });
+
+  if (error) throw error;
+
+  return (data ?? []).map((u) => {
+    const universidad = { id: u.id, nombre: u.nombre };
+    return {
+      ...universidad,
+      campus: (u.campus ?? []).map((c) => ({ ...c, universidad })),
+    };
+  });
+}
+
 export async function fetchCampus(universidadId: number): Promise<Campus[]> {
   const { data, error } = await supabase
     .from('campus')

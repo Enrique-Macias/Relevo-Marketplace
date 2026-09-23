@@ -6,7 +6,9 @@ import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
 
+import { GhostButton } from '@/components/Buttons';
 import { CategoryTile } from '@/components/CategoryTile';
+import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { IconBell, IconCampusFlag, IconChevronDown, IconFilterSliders, IconSearch } from '@/components/icons';
 import { ProductCard } from '@/components/ProductCard';
@@ -16,7 +18,7 @@ import { SkeletonCatGrid, SkeletonGrid } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
 import { categoriasFeed } from '@/lib/categorias';
-import { useExplorarState } from '@/lib/explorar-state';
+import { alcanceFiltro, etiquetaAlcance, lugarAlcance, useExplorarState } from '@/lib/explorar-state';
 import { Avatar } from '@/components/Avatar';
 import { chunkRows } from '@/lib/grid';
 import { useListings } from '@/lib/listings';
@@ -29,8 +31,7 @@ const TILE_MAS = { id: null, slug: 'otros', nombre: 'Más' } as const;
 
 export default function InicioScreen() {
   const { profile, session } = useSession();
-  const { campusSeleccionado, categorias, categoriasListas, favoritos, toggleFavorito } =
-    useExplorarState();
+  const { alcance, categorias, categoriasListas, favoritos, toggleFavorito } = useExplorarState();
 
   // El punto de la campana. Se recuenta al ENFOCAR y no solo al montar: el Feed
   // es un tab, así que vuelve del inbox sin desmontarse nunca, y ese regreso es
@@ -41,10 +42,13 @@ export default function InicioScreen() {
 
   // El Feed no es una lista infinita: el frame muestra un grid de 6 con
   // "Ver todo" hacia Búsqueda, que es donde vive la paginación (RNF-01).
-  const { items, estado, reintentar, refrescar } = useListings(
-    campusSeleccionado
-      ? { campusId: campusSeleccionado.id, orden: 'recientes' as const, limit: 6 }
-      : null
+  //
+  // `withCount` alimenta el "N publicaciones" del hero (antes un "800+" fijo):
+  // viaja en la MISMA consulta del grid, sin request aparte. El costo es el
+  // `count exact` de Postgres sobre el alcance, que en "Todas las
+  // universidades" crece con el catálogo entero (ver `explorar.md`).
+  const { items, estado, total, reintentar, refrescar } = useListings(
+    alcance ? { alcance: alcanceFiltro(alcance), orden: 'recientes' as const, limit: 6, withCount: true } : null
   );
 
   const { mostrar } = useToast();
@@ -66,7 +70,7 @@ export default function InicioScreen() {
   }, [refrescar, mostrar]);
 
   const tiles = [...categoriasFeed(categorias), TILE_MAS];
-  const cargando = estado === 'loading' || !campusSeleccionado;
+  const cargando = estado === 'loading' || !alcance;
 
   return (
     <Screen
@@ -112,7 +116,9 @@ export default function InicioScreen() {
 
         <Pressable style={styles.campusChip} onPress={() => router.push('/selector-campus')}>
           <IconCampusFlag size={14} color={Colors.brick} />
-          <Text style={styles.campusChipText}>{campusSeleccionado?.nombre ?? ''}</Text>
+          <Text style={styles.campusChipText} numberOfLines={1}>
+            {alcance ? etiquetaAlcance(alcance, profile?.universidad_id ?? null) : ''}
+          </Text>
           <IconChevronDown size={13} color={Colors.inkSoft} />
         </Pressable>
 
@@ -125,9 +131,16 @@ export default function InicioScreen() {
           <Text style={styles.heroEyebrow}>HECHO PARA ESTUDIANTES</Text>
           <Text style={styles.heroHeadline}>Compra y vende sin salir del campus.</Text>
           <View style={styles.heroStats}>
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatText}>800+ publicaciones</Text>
-            </View>
+            {/* El conteo real del alcance. Se esconde con 0 —"0 publicaciones"
+                lee como fracaso— y mientras no hay número (cargando, o un
+                refresco que todavía no llega). Frame "Feed (sin publicaciones)". */}
+            {total ? (
+              <View style={styles.heroStat}>
+                <Text style={styles.heroStatText}>
+                  {total} {total === 1 ? 'publicación' : 'publicaciones'}
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.heroStat}>
               <Text style={styles.heroStatText}>Verificado por correo institucional</Text>
             </View>
@@ -209,6 +222,17 @@ export default function InicioScreen() {
         <ErrorState onRetry={reintentar} style={styles.errorState} />
       ) : cargando ? (
         <SkeletonGrid tarjetas={6} style={styles.skeletonGrid} />
+      ) : items.length === 0 && alcance ? (
+        // Frame "Feed (sin publicaciones)". Sin "sé el primero en publicar":
+        // si el alcance es de otra universidad, aquí no se puede publicar.
+        <EmptyState
+          icon={<IconCampusFlag size={30} color={Colors.inkSoft} />}
+          title={`Nadie ha publicado todavía en ${lugarAlcance(alcance)}`}
+          sub="Prueba con otro campus o con toda la universidad."
+          style={styles.emptyState}
+        >
+          <GhostButton label="Cambiar campus" onPress={() => router.push('/selector-campus')} />
+        </EmptyState>
       ) : (
         <View style={styles.grid}>
           {chunkRows(items, 2).map((row, i) => (
@@ -284,12 +308,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
+    maxWidth: '100%',
     gap: 5,
     marginTop: 8,
   },
   campusChipText: {
     ...Typography.campusChip,
     color: Colors.ink,
+    // `.campus-chip span`: una línea, elipsis al final. Sin esto, un nombre
+    // largo ("Campus Norte · Universidad Autónoma de …") empujaría el chevron
+    // fuera de la pantalla.
+    flexShrink: 1,
   },
   hero: {
     marginTop: 14,
@@ -388,6 +417,12 @@ const styles = StyleSheet.create({
   },
   padCell: {
     flex: 1,
+  },
+  // .empty-state del frame "Feed (sin publicaciones)": padding-top 34, y el
+  // mismo colchón inferior que `grid` para el tab bar.
+  emptyState: {
+    paddingTop: 34,
+    paddingBottom: 110,
   },
   errorState: {
     paddingTop: 30,

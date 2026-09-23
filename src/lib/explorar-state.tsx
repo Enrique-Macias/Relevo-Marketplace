@@ -7,21 +7,82 @@
  * de Búsqueda.
  *
  * Qué vive aquí y qué no, ahora que los datos son reales:
- *  - SÍ: los VALORES de filtro, el campus elegido, el catálogo de categorías y
- *    el set de favoritos. Todo eso lo comparten varias pantallas.
+ *  - SÍ: los VALORES de filtro, el alcance elegido (campus, universidad o todo),
+ *    el catálogo de campus y de categorías, y el set de favoritos. Todo eso lo
+ *    comparten varias pantallas.
  *  - NO: la lógica de filtrado, que antes recorría el arreglo mock y ahora es
  *    una query (`src/lib/listings.ts`). El contexto dice *qué* filtrar; la
  *    query decide *cómo*.
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { fetchCampus, type Campus } from '@/lib/catalogos';
+import {
+  fetchCatalogoCampus,
+  type Campus,
+  type CampusCatalogo,
+  type UniversidadCatalogo,
+} from '@/lib/catalogos';
 import { fetchCategorias, type Categoria } from '@/lib/categorias';
 import { agregarFavorito, fetchFavoritoIds, quitarFavorito } from '@/lib/favoritos';
+import type { AlcanceFiltro } from '@/lib/listings';
 import { useSession } from '@/lib/session';
 
-export type { Campus, Categoria };
+export type { Campus, CampusCatalogo, Categoria, UniversidadCatalogo };
+
+/**
+ * QUÉ parte del catálogo se está mirando (fase 2B). Lo siguen el Feed, Búsqueda
+ * (las dos ramas) y Categoría; NO lo siguen Favoritos ni "Mis publicaciones",
+ * que son listas personales.
+ *
+ * Unión discriminada para que un estado inválido no se pueda escribir: el
+ * alcance "un campus" lleva el campus CON su universidad adentro
+ * (`CampusCatalogo`), así que no existe la combinación "campus X de la
+ * universidad Y" con Y equivocada, ni un campus sin universidad.
+ *
+ * Es solo NAVEGACIÓN: no toca el perfil ni dónde nace una publicación, que
+ * siempre es el campus del perfil (`(publicar)/nueva.tsx`, y la base lo impone
+ * con `listings_user_universidad_fkey`).
+ */
+export type Alcance =
+  | { tipo: 'campus'; campus: CampusCatalogo }
+  | { tipo: 'universidad'; universidad: { id: number; nombre: string } }
+  | { tipo: 'todo' };
+
+/** Lo que `fetchListings` necesita del alcance: solo ids. */
+export function alcanceFiltro(a: Alcance): AlcanceFiltro {
+  if (a.tipo === 'campus') return { tipo: 'campus', campusId: a.campus.id };
+  if (a.tipo === 'universidad') return { tipo: 'universidad', universidadId: a.universidad.id };
+  return { tipo: 'todo' };
+}
+
+/**
+ * EL texto del alcance: el chip del Feed, el chip de Búsqueda y el
+ * "N publicaciones en …" de Categoría usan este, para que las tres superficies
+ * digan lo mismo (frame "Feed", variante "el chip según el alcance").
+ *
+ * Un campus de OTRA universidad lleva " · universidad"; el propio no. Esa
+ * diferencia es la que avisa que no estás mirando tu universidad.
+ */
+export function etiquetaAlcance(a: Alcance, universidadPropiaId: number | null): string {
+  if (a.tipo === 'campus') {
+    return a.campus.universidad.id === universidadPropiaId
+      ? a.campus.nombre
+      : `${a.campus.nombre} · ${a.campus.universidad.nombre}`;
+  }
+  if (a.tipo === 'universidad') return `Todo ${a.universidad.nombre}`;
+  return 'Todas las universidades';
+}
+
+/**
+ * El lugar dentro de una frase ("Nadie ha publicado todavía en …", frame
+ * "Feed (sin publicaciones)"): el campus a secas, o la universidad sin "Todo".
+ */
+export function lugarAlcance(a: Alcance): string {
+  if (a.tipo === 'campus') return a.campus.nombre;
+  if (a.tipo === 'universidad') return a.universidad.nombre;
+  return 'Relevo';
+}
 
 export type Condicion = 'nuevo' | 'como_nuevo' | 'buen_estado' | 'usado';
 
@@ -43,10 +104,13 @@ const FILTROS_VACIOS: Filtros = { orden: 'recientes' };
 const VACIO: Set<number> = new Set();
 
 type ExplorarState = {
-  /** `null` hasta que se resuelve el campus del perfil. */
-  campusSeleccionado: Campus | null;
-  campusDisponibles: Campus[];
-  setCampusSeleccionado: (campus: Campus) => void;
+  /** `null` hasta que cargan el catálogo y el perfil. */
+  alcance: Alcance | null;
+  setAlcance: (alcance: Alcance) => void;
+  /** Todas las universidades con sus campus, ordenadas por nombre. */
+  catalogo: UniversidadCatalogo[];
+  /** Un campus del catálogo por id, de cualquier universidad. */
+  getCampus: (id: number | null | undefined) => CampusCatalogo | undefined;
   categorias: Categoria[];
   getCategoria: (id: number | undefined) => Categoria | undefined;
   categoriasListas: boolean;
@@ -69,8 +133,7 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
   const { session, profile } = useSession();
   const userId = session?.user.id ?? null;
 
-  const [campusDisponibles, setCampusDisponibles] = useState<Campus[]>([]);
-  const [campusSeleccionado, setCampusSeleccionado] = useState<Campus | null>(null);
+  const [catalogo, setCatalogo] = useState<UniversidadCatalogo[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [categoriasListas, setCategoriasListas] = useState(false);
   const [filtros, setFiltrosState] = useState<Filtros>(FILTROS_VACIOS);
@@ -81,54 +144,86 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
   const [favoritosDe, setFavoritosDe] = useState<string | null>(null);
 
   /**
-   * Catálogo de campus de la universidad del usuario, y campus inicial.
-   *
-   * El campus por default es el del perfil (elegido en "Completar perfil"), no
-   * el primero de la lista: es el contexto que el usuario ya declaró. El
-   * selector del Feed sirve para moverse entre los campus de SU universidad
-   * (CLAUDE.md §5), de ahí el filtro por `universidad_id`.
+   * El catálogo NAVEGABLE: todas las universidades con sus campus (fase 2B).
+   * Una consulta por sesión: universidades y campus solo cambian desde Studio.
    */
-  const universidadId = profile?.universidad_id ?? null;
-  const campusIdPerfil = profile?.campus_id ?? null;
-
-  /**
-   * El último `campus_id` DE PERFIL que ya se aplicó a la selección.
-   *
-   * Distingue las dos razones por las que este efecto puede volver a correr, que
-   * piden lo contrario una de la otra:
-   *  - se recargó el catálogo con el mismo campus de perfil → hay que respetar lo
-   *    que el usuario haya elegido con el selector del Feed;
-   *  - el campus DEL PERFIL cambió (pasó en "Editar perfil") → hay que
-   *    reapuntar, o el Feed se queda en el campus viejo el resto de la sesión
-   *    aunque el usuario acabe de mudarse.
-   * Sin esto último, cambiar de campus en el perfil no se notaba en ninguna
-   * pantalla hasta el siguiente arranque.
-   */
-  const campusPerfilAplicado = useRef<number | null>(null);
-
   useEffect(() => {
-    if (universidadId === null) return;
+    if (!userId) return;
 
     let vigente = true;
-    fetchCampus(universidadId)
+    fetchCatalogoCampus()
       .then((lista) => {
-        if (!vigente) return;
-        setCampusDisponibles(lista);
-        // El ref se lee y se escribe AFUERA del updater: React puede invocarlo
-        // dos veces (StrictMode) y un efecto secundario adentro sería frágil.
-        const perfilCambio = campusIdPerfil !== campusPerfilAplicado.current;
-        campusPerfilAplicado.current = campusIdPerfil;
-        setCampusSeleccionado((actual) => {
-          if (!perfilCambio && actual && lista.some((c) => c.id === actual.id)) return actual;
-          return lista.find((c) => c.id === campusIdPerfil) ?? lista[0] ?? null;
-        });
+        if (vigente) setCatalogo(lista);
       })
       .catch((e) => console.warn('[explorar] no se pudo leer el catálogo de campus:', e?.message ?? e));
 
     return () => {
       vigente = false;
     };
-  }, [universidadId, campusIdPerfil]);
+  }, [userId]);
+
+  const universidadIdPerfil = profile?.universidad_id ?? null;
+  const campusIdPerfil = profile?.campus_id ?? null;
+
+  const getCampus = useCallback(
+    (id: number | null | undefined) => {
+      if (id == null) return undefined;
+      for (const u of catalogo) {
+        const c = u.campus.find((x) => x.id === id);
+        if (c) return c;
+      }
+      return undefined;
+    },
+    [catalogo]
+  );
+
+  /**
+   * El alcance por default: el campus DEL PERFIL (lo que el usuario ya declaró
+   * en "Completar perfil"). Derivado, no guardado: así nunca queda desfasado de
+   * un perfil que cambió.
+   *
+   * Si el perfil no tiene campus (la cuenta sin universidad asignada, que de
+   * todos modos no pasa de "Completar perfil"), cae a su universidad entera y,
+   * sin universidad, a todo. Antes caía al primer campus de la lista, que no
+   * era de nadie en particular.
+   *
+   * Es `null` mientras falte el catálogo O el perfil: sin la segunda guarda, el
+   * Feed pediría un instante "todo" (perfil aún sin campus) y luego el campus
+   * propio — dos consultas y un parpadeo. Memoizado porque un objeto nuevo en
+   * cada render invalidaría el `value` del contexto.
+   */
+  const perfilListo = profile != null;
+  const alcancePorDefault = useMemo<Alcance | null>(() => {
+    if (catalogo.length === 0 || !perfilListo) return null;
+    const campusPerfil = getCampus(campusIdPerfil);
+    if (campusPerfil) return { tipo: 'campus', campus: campusPerfil };
+    const u = catalogo.find((x) => x.id === universidadIdPerfil);
+    if (u) return { tipo: 'universidad', universidad: { id: u.id, nombre: u.nombre } };
+    return { tipo: 'todo' };
+  }, [catalogo, perfilListo, getCampus, campusIdPerfil, universidadIdPerfil]);
+
+  /**
+   * Lo que el usuario eligió en el selector, o `null` si no ha elegido nada. Vive
+   * en memoria y nada más: al reabrir la app vuelve al campus del perfil
+   * (decisión de producto, fase 2B).
+   *
+   * Se DESCARTA cuando cambia la cuenta o el campus del perfil ("Editar
+   * perfil"): mudarse de campus debe notarse en el Feed de inmediato, y otra
+   * cuenta en el mismo teléfono no hereda lo que miraba la anterior. El reseteo
+   * va EN RENDER (el patrón de React para "ajustar estado cuando cambia una
+   * prop", mismo que `useListings`), no en un efecto, para no pintar ni un frame
+   * con la elección vieja. Sustituye al ref `campusPerfilAplicado`, que hacía lo
+   * mismo cuando el campus elegido se guardaba en el estado.
+   */
+  const [eleccion, setEleccion] = useState<Alcance | null>(null);
+  const clavePerfil = `${userId ?? ''}|${campusIdPerfil ?? ''}`;
+  const [clavePerfilVista, setClavePerfilVista] = useState(clavePerfil);
+  if (clavePerfil !== clavePerfilVista) {
+    setClavePerfilVista(clavePerfil);
+    setEleccion(null);
+  }
+
+  const alcance = eleccion ?? alcancePorDefault;
 
   // Las categorías no dependen del campus ni del usuario: se cargan una vez.
   useEffect(() => {
@@ -228,9 +323,10 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
 
   const value = useMemo<ExplorarState>(
     () => ({
-      campusSeleccionado,
-      campusDisponibles,
-      setCampusSeleccionado,
+      alcance,
+      setAlcance: setEleccion,
+      catalogo,
+      getCampus,
       categorias,
       getCategoria,
       categoriasListas,
@@ -241,8 +337,9 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
       toggleFavorito,
     }),
     [
-      campusSeleccionado,
-      campusDisponibles,
+      alcance,
+      catalogo,
+      getCampus,
       categorias,
       getCategoria,
       categoriasListas,
