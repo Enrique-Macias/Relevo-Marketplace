@@ -6,11 +6,16 @@
  * WhatsApp era el gate de Publicar, así que quien ya había publicado no tenía
  * cómo corregirlo. Y es el primer camino de código que escribe `carrera`.
  *
- * No toca la base: las cinco columnas que escribe ya están en el grant de update
- * (`20260906000438:110` + `20260910000448:62`) y `users_update_own` no lleva
+ * Las columnas que escribe están en el grant de update de `users`
+ * (`20260924000466`, que dejó fuera `universidad_id`), y `users_update_own` no lleva
  * `is_active_user()` — un usuario SUSPENDIDO puede editar su propio perfil,
  * incluido su teléfono, y eso es decisión de producto documentada (CLAUDE.md §3,
  * tabla de decisión), no un descuido de la policy.
+ *
+ * La UNIVERSIDAD se muestra fija y no se edita: la asignó el servidor desde el
+ * dominio del correo al crear la cuenta (20260924000466). El campus sí, y solo
+ * entre los de esa universidad; que no pueda ser de otra lo garantiza la base
+ * (FK compuesta `users_campus_universidad_fkey`), no esta pantalla.
  */
 
 import { router } from 'expo-router';
@@ -22,7 +27,7 @@ import { Avatar } from '@/components/Avatar';
 import { BlinkingDots } from '@/components/BlinkingDots';
 import { CampusBottomSheet } from '@/components/CampusBottomSheet';
 import { ErrorState } from '@/components/ErrorState';
-import { Field, PhoneField, SelectField } from '@/components/Field';
+import { Field, FixedField, PhoneField, SelectField } from '@/components/Field';
 import { IconCamera } from '@/components/icons';
 import { FormHeader } from '@/components/ListRow';
 import { Screen } from '@/components/Screen';
@@ -38,15 +43,13 @@ import {
   useFotoPerfil,
   type PerfilEditable,
 } from '@/lib/perfil';
+import { type OpcionCatalogo } from '@/lib/catalogos';
 import { useSession } from '@/lib/session';
-
-import { useInstitucionalDraft } from './_layout';
 
 type Datos = { perfil: PerfilEditable; telefono: string | null };
 
 export default function EditarPerfilScreen() {
   const { session } = useSession();
-  const { hidratar } = useInstitucionalDraft();
   const userId = session?.user.id ?? null;
 
   const [datos, setDatos] = useState<Datos | null>(null);
@@ -58,10 +61,11 @@ export default function EditarPerfilScreen() {
    * fuera del grant de select (RNF-05) y solo sale por `seller_whatsapp`.
    *
    * OJO — aquí NO hay refetch al recuperar el foco, al revés que
-   * `mis-publicaciones.tsx` o `(publicar)/editar/[id].tsx`. La única ruta hija es
-   * el selector de universidad, que no escribe en la base sino en el borrador del
-   * layout: recargar al volver de ahí pisaría la universidad que el usuario
-   * acaba de elegir con la que sigue guardada.
+   * `mis-publicaciones.tsx` o `(publicar)/editar/[id].tsx`: esta pantalla no
+   * empuja ninguna ruta (el campus se elige en un `Modal`), así que nunca
+   * "vuelve" a ella con datos que refrescar. Antes tenía una ruta hija, el
+   * selector de universidad, que desapareció cuando la universidad dejó de
+   * elegirse (20260924000466).
    */
   useEffect(() => {
     if (!userId) return;
@@ -74,10 +78,6 @@ export default function EditarPerfilScreen() {
           setError(true);
           return;
         }
-        // El borrador del bloque institucional se siembra aquí, no en el
-        // formulario: es el layout quien lo guarda, para que el selector de
-        // universidad —otra ruta— pueda escribirlo.
-        hidratar({ universidad: perfil.universidad, campus: perfil.campus });
         setDatos({ perfil, telefono });
       })
       .catch((e) => {
@@ -89,9 +89,7 @@ export default function EditarPerfilScreen() {
     return () => {
       vigente = false;
     };
-    // `hidratar` entra a las deps sin re-disparar nada: es el `setValor` de
-    // `useState` del layout, o sea la misma referencia en todos los renders.
-  }, [userId, recargas, hidratar]);
+  }, [userId, recargas]);
 
   if (datos && userId) {
     return <Formulario userId={userId} perfil={datos.perfil} telefonoGuardado={datos.telefono} />;
@@ -127,8 +125,11 @@ function Formulario({
   telefonoGuardado: string | null;
 }) {
   const { profile, refreshProfile } = useSession();
-  const { universidad, campus, setCampus } = useInstitucionalDraft();
   const { mostrar } = useToast();
+
+  // Solo se muestra: la universidad no se cambia desde la app.
+  const universidad = perfil.universidad;
+  const [campus, setCampus] = useState<OpcionCatalogo | null>(perfil.campus);
 
   const [nombre, setNombre] = useState(perfil.nombre);
   const [carrera, setCarrera] = useState(perfil.carrera);
@@ -194,7 +195,6 @@ function Formulario({
       await guardarPerfil(userId, {
         nombre,
         carrera,
-        universidadId: universidad!.id,
         campusId: campus!.id,
         ...(mandaTelefono ? { telefono } : {}),
       });
@@ -332,12 +332,11 @@ function Formulario({
               }}
               editable={!guardando}
             />
-            <SelectField
+            {/* Fija, sin chevron: la asigna el servidor, no se elige. */}
+            <FixedField
               label="Universidad"
               value={universidad?.nombre}
-              placeholder="Selecciona tu universidad"
-              onPress={() => router.push('/editar-perfil/universidad')}
-              disabled={guardando}
+              placeholder="Sin universidad asignada"
             />
             {/* Último `.field` del frame: `margin-bottom:0`. */}
             <SelectField

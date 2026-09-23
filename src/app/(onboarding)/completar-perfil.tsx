@@ -1,18 +1,27 @@
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { AuthBody, AuthHeadline, AuthSub, AuthTerms } from '@/components/AuthBody';
+import {
+  AuthBody,
+  AuthHeadline,
+  AuthLink,
+  AuthLinkStrong,
+  AuthSub,
+  AuthTerms,
+} from '@/components/AuthBody';
 import { Avatar } from '@/components/Avatar';
 import { BlinkingDots } from '@/components/BlinkingDots';
 import { PrimaryButton } from '@/components/Buttons';
 import { CampusBottomSheet } from '@/components/CampusBottomSheet';
-import { Field, SelectField } from '@/components/Field';
+import { Field, FixedField, SelectField } from '@/components/Field';
 import { IconCamera, IconPlus } from '@/components/icons';
+import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { fetchUniversidad, type OpcionCatalogo } from '@/lib/catalogos';
 import { useFotoPerfil } from '@/lib/perfil';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
@@ -34,11 +43,10 @@ export const MIN_PASSWORD = 8;
 
 /** Frame "Completar perfil". Sin `.auth-logo`: el frame no lo tiene. */
 export default function CompletarPerfilScreen() {
-  const { session, profile, refreshProfile } = useSession();
+  const { session, profile, refreshProfile, signOut } = useSession();
   const {
     nombre,
     setNombre,
-    universidad,
     campus,
     setCampus,
     password,
@@ -50,6 +58,40 @@ export default function CompletarPerfilScreen() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [campusSheetVisible, setCampusSheetVisible] = useState(false);
+
+  /**
+   * La universidad NO se elige: la asignó el trigger de alta desde el dominio
+   * del correo (20260924000466), y aquí solo se muestra. La sesión trae el id
+   * (`PROFILE_COLUMNS`); el nombre se lee aparte.
+   *
+   * `sinUniversidad` es la variante "sin universidad asignada" del frame. Solo
+   * le pasa a una cuenta creada con la llave secreta (Studio, admin API) con un
+   * dominio no registrado, porque el alta normal pasa por el Auth Hook. Sin
+   * universidad la base no deja fijar campus (check
+   * `users_campus_requiere_universidad`) ni publicar, así que la única salida es
+   * cerrar sesión. Se mira `profile !== null` para no confundir "todavía no
+   * carga" con "no tiene".
+   */
+  const universidadId = profile?.universidad_id ?? null;
+  const sinUniversidad = profile !== null && universidadId === null;
+  const [universidad, setUniversidad] = useState<OpcionCatalogo | null>(null);
+
+  useEffect(() => {
+    if (universidadId === null) return;
+    let vigente = true;
+    fetchUniversidad(universidadId)
+      .then((u) => {
+        if (vigente) setUniversidad(u);
+      })
+      .catch((e) => {
+        // Sin el nombre la pantalla sigue funcionando: el campus se elige por
+        // `universidadId`, que ya está en la sesión. Solo queda el campo vacío.
+        console.warn('[completar-perfil] no se pudo leer la universidad:', e?.message ?? e);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [universidadId]);
 
   /**
    * El aviso del fallo de foto va por TOAST y no por el `<Text style={error}>`
@@ -80,7 +122,7 @@ export default function CompletarPerfilScreen() {
 
   const passwordOk = password.length >= MIN_PASSWORD && password === passwordConfirm;
   const puedeGuardar =
-    nombre.trim().length > 0 && universidad !== null && campus !== null && passwordOk;
+    nombre.trim().length > 0 && universidadId !== null && campus !== null && passwordOk;
 
   const guardar = async () => {
     if (!session?.user) return;
@@ -100,13 +142,14 @@ export default function CompletarPerfilScreen() {
     }
 
     // Solo las columnas del grant de update. Mandar `correo`/`estado`/
-    // `rating_promedio`, aunque fuera sin cambiarlas, rechaza el statement
-    // completo por privilegios de columna.
+    // `rating_promedio` —o `universidad_id`, que salió del grant en
+    // 20260924000466—, aunque fuera sin cambiarlas, rechaza el statement
+    // completo por privilegios de columna. Que el campus sea de SU universidad
+    // lo garantiza la base (`users_campus_universidad_fkey`), no este cliente.
     const { error: ePerfil } = await supabase
       .from('users')
       .update({
         nombre: nombre.trim(),
-        universidad_id: universidad!.id,
         campus_id: campus!.id,
       })
       .eq('id', session.user.id);
@@ -183,18 +226,15 @@ export default function CompletarPerfilScreen() {
           onChangeText={setNombre}
           editable={!guardando}
         />
-        <SelectField
+        {/* Fija, sin chevron: la asigna el servidor, no se elige (ver arriba). */}
+        <FixedField
           label="Universidad"
           value={universidad?.nombre}
-          placeholder="Selecciona tu universidad"
-          onPress={() => router.push('/selector-universidad')}
-          disabled={guardando}
+          placeholder={sinUniversidad ? 'Sin universidad asignada' : ''}
         />
         {/*
-          El campus depende de la universidad: `campus.universidad_id` es FK, así
-          que sin universidad elegida no hay lista que mostrar. El cambio de
-          universidad limpia el campus en el borrador (ver `_layout.tsx`).
-          Se presenta como bottom sheet, no pantalla completa — ver
+          El campus se elige SOLO entre los de la universidad asignada. Se
+          presenta como bottom sheet, no pantalla completa — ver
           CampusBottomSheet.tsx y el frame "Completar perfil (selector de
           campus)" en relevo-app.html.
         */}
@@ -203,7 +243,7 @@ export default function CompletarPerfilScreen() {
           value={campus?.nombre}
           placeholder="Selecciona tu campus"
           onPress={() => setCampusSheetVisible(true)}
-          disabled={universidad === null || guardando}
+          disabled={universidadId === null || guardando}
         />
         <Field
           label="Crea una contraseña"
@@ -226,13 +266,42 @@ export default function CompletarPerfilScreen() {
         {/* `.auth-terms` con `style="margin-top:6px"`, como en el frame. */}
         <AuthTerms style={styles.hint}>Usa al menos {MIN_PASSWORD} caracteres.</AuthTerms>
 
+        {/* Variante "sin universidad asignada": el `.notice` va entre la
+            contraseña y el botón, con los 28px que el frame le da al botón. */}
+        {sinUniversidad ? (
+          <Notice
+            text="Tu correo no pertenece a una universidad participante. Entra con el correo que te dio tu universidad."
+            style={styles.noticeSinUniversidad}
+          />
+        ) : null}
+
         {/* El frame le pone `style="margin-top:28px"` al botón. */}
         <PrimaryButton
           label={guardando ? 'Guardando…' : 'Continuar'}
           onPress={guardar}
           disabled={!puedeGuardar || guardando}
-          style={styles.submit}
+          style={sinUniversidad ? undefined : styles.submit}
         />
+
+        {/*
+          La salida de la variante: sin ella, el gating (`isProfileComplete`)
+          devolvería a esta pantalla para siempre. El `signOut` de useSession y
+          no `supabase.auth.signOut()`, por el orden del push token
+          (`nueva-password.tsx`).
+        */}
+        {sinUniversidad ? (
+          <AuthLink>
+            ¿Es otro correo?{' '}
+            <AuthLinkStrong
+              onPress={async () => {
+                await signOut();
+                router.replace('/verificacion');
+              }}
+            >
+              Usar otro correo
+            </AuthLinkStrong>
+          </AuthLink>
+        ) : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         </AuthBody>
@@ -240,7 +309,7 @@ export default function CompletarPerfilScreen() {
 
       <CampusBottomSheet
         visible={campusSheetVisible}
-        universidadId={universidad?.id ?? null}
+        universidadId={universidadId}
         selectedId={campus?.id ?? null}
         onSelect={setCampus}
         onClose={() => setCampusSheetVisible(false)}
@@ -313,6 +382,10 @@ const styles = StyleSheet.create({
   },
   submit: {
     marginTop: 28,
+  },
+  noticeSinUniversidad: {
+    marginTop: 28,
+    marginBottom: 12,
   },
   error: {
     ...Typography.meta,

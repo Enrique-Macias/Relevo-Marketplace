@@ -12,7 +12,7 @@
  * pedir el de alguien más cuando hay que abrir WhatsApp. El resto del archivo es
  * lo que "Editar perfil" necesita y `useSession()` no puede dar: los NOMBRES de
  * universidad y campus (el perfil de la sesión solo trae los ids) y la escritura
- * de las cinco columnas editables.
+ * de las columnas editables.
  */
 
 import { useCallback, useRef, useState } from 'react';
@@ -192,8 +192,10 @@ export type PerfilEditable = {
  *
  * Los embeds no necesitan desambiguar la FK, al revés que
  * `users!listings_user_id_fkey` en `src/lib/listings.ts`: entre `users` y cada
- * catálogo hay UN solo camino (`users_universidad_id_fkey`,
- * `users_campus_id_fkey`), así que no hay `PGRST201` que esquivar. Es el mismo
+ * catálogo hay UN solo camino (`users_universidad_id_fkey`, y hacia `campus`
+ * la FK compuesta `users_campus_universidad_fkey`, que REEMPLAZÓ a la suelta
+ * en 20260924000466 justo para no abrir un segundo camino), así que no hay
+ * `PGRST201` que esquivar. Es el mismo
  * caso que `fetchPerfilPublico` (`src/lib/perfil-publico.ts`), que ya embebe
  * `universidades` de esta misma forma.
  *
@@ -227,7 +229,12 @@ export type CambiosPerfil = {
   nombre: string;
   /** Vacío significa "sin carrera" y se guarda como `null`, no como `''`. */
   carrera: string;
-  universidadId: number;
+  /**
+   * Solo el campus: `universidad_id` salió del grant de update (20260924000466)
+   * y mandarlo, aunque fuera con el mismo valor, rechazaría el statement entero
+   * con 42501. Que el campus sea de la universidad del usuario lo garantiza la
+   * base (FK compuesta), no esta función.
+   */
   campusId: number;
   /**
    * AUSENTE por default, y esa ausencia es la que protege el número guardado.
@@ -241,7 +248,8 @@ export type CambiosPerfil = {
 };
 
 /**
- * Las cinco columnas editables del perfil, en UN solo statement.
+ * Las columnas editables del perfil (nombre, carrera, campus y, si viene, el
+ * teléfono), en UN solo statement. La foto va aparte (`guardarFotoPerfil()`).
  *
  * Por qué no se reusa `guardarTelefono()` de arriba: aquella escribe una sola
  * columna, que es lo correcto en Publicar. Aquí partiría el guardado en dos
@@ -267,7 +275,6 @@ export async function guardarPerfil(userId: string, cambios: CambiosPerfil): Pro
     .update({
       nombre: cambios.nombre.trim(),
       carrera: cambios.carrera.trim() || null,
-      universidad_id: cambios.universidadId,
       campus_id: cambios.campusId,
       ...(cambios.telefono !== undefined ? { telefono: aE164(cambios.telefono) } : {}),
     })

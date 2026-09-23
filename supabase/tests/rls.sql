@@ -151,6 +151,19 @@ select pg_temp.assert(
   (select count(*) from public.users where id in (:A::uuid, :B::uuid, :C::uuid)) = 3,
   'handle_new_user creó los 3 perfiles desde auth.users');
 
+-- Y con la universidad de su dominio (20260924000466). No es redundante con
+-- T28 (a): las publicaciones sembradas justo abajo dependen de esto, porque
+-- `listings_user_universidad_fkey` exige que la universidad de la publicación
+-- sea la del dueño. Sin esta aserción, un trigger que dejara de asignarla
+-- tumbaría la suite en el insert de abajo con un error crudo de FK, lejos de
+-- su causa.
+select pg_temp.assert(
+  (select count(*) from public.users
+    where id in (:A::uuid, :B::uuid, :C::uuid)
+      and universidad_id = (select universidad_id from public.universidad_dominios
+                             where dominio = 'tec.mx')) = 3,
+  'los 3 perfiles nacen con la universidad de su dominio (tec.mx)');
+
 update public.users set nombre = 'Ana'  where id = :A::uuid;
 update public.users set nombre = 'Beto' where id = :B::uuid;
 update public.users set nombre = 'Caro' where id = :C::uuid;
@@ -2351,6 +2364,18 @@ select pg_temp.assert(
                 and privilege_type = 'UPDATE'),
   'authenticated no puede escribir listings.vistas_count');
 
+-- Fase 2A (20260924000466): la universidad de un usuario la asigna el trigger
+-- de alta, y una publicación conserva la universidad y el campus con los que
+-- nació. Ninguna de las tres columnas se escribe desde el cliente después.
+-- (`users.campus_id` SÍ: el usuario cambia de campus dentro de su universidad.)
+select pg_temp.assert(
+  not exists (select 1 from information_schema.column_privileges
+              where grantee in ('authenticated', 'anon') and table_schema = 'public'
+                and privilege_type = 'UPDATE'
+                and ((table_name = 'users' and column_name = 'universidad_id')
+                  or (table_name = 'listings' and column_name in ('universidad_id', 'campus_id')))),
+  'authenticated no puede escribir users.universidad_id ni la universidad/campus de una publicación');
+
 select pg_temp.assert(
   not exists (select 1 from information_schema.column_privileges
               where grantee = 'authenticated' and table_schema = 'public'
@@ -2717,6 +2742,247 @@ select pg_temp.assert(
   and pg_temp.rechaza_dominio('a@otra.mx')
   and pg_temp.rechaza_dominio(''),
   '(j) el check rechaza dominios con mayúsculas, espacios, @ o vacíos');
+
+\echo ''
+\echo '== T28 — la universidad sale del dominio y la base ata campus y publicaciones a ella =='
+-- 20260924000466, fase 2A. Autocontenida, con su propia universidad, su dominio
+-- `rls-t28.mx` y DOS campus propios (el segundo es el destino "legítimo" de
+-- (d4), para que su control no choque con otra regla). Como universidad y
+-- campus AJENOS usa los de `tec.mx`, que siembra seed.sql.
+--
+--   :Z  — `@rls-t28.mx`: dominio registrado, nace con universidad.
+--   :Z2 — `@no-registrado-t28.mx`: el caso de una cuenta creada por llave
+--         secreta (Studio, admin API), que no pasa por el Auth Hook.
+--
+-- `expect_error` acepta CUALQUIER error, y aquí hay cuatro mecanismos que se
+-- confunden (grant 42501, dos FKs 23503 distintas y un check 23514). Por eso
+-- estas aserciones comparan el SQLSTATE y el NOMBRE del constraint con
+-- `pg_temp.rechazo_de()`: un rechazo por el candado equivocado no pasa.
+--
+-- CONTROLES NEGATIVOS, corridos uno a la vez contra la suite completa:
+-- ver la tabla de CLAUDE.md §3 ("Y a N con las de T28").
+
+\set Z  '''28282828-0000-0000-0000-000000002828'''
+\set Z2 '''28282828-0000-0000-0000-000000002829'''
+
+insert into public.universidades (nombre) values ('RLS T28 Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t28.mx', id from public.universidades where nombre = 'RLS T28 Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, c, 'Ciudad T28'
+from public.universidades, unnest(array['RLS T28 Campus A', 'RLS T28 Campus B']) as c
+where nombre = 'RLS T28 Universidad';
+
+create temp table t28 as
+select
+  (select id from public.universidades where nombre = 'RLS T28 Universidad') as uni,
+  (select id from public.campus where nombre = 'RLS T28 Campus A') as campus_a,
+  (select id from public.campus where nombre = 'RLS T28 Campus B') as campus_b,
+  (select universidad_id from public.universidad_dominios where dominio = 'tec.mx') as uni_ajena,
+  (select min(c.id) from public.campus c
+    join public.universidad_dominios d on d.universidad_id = c.universidad_id
+   where d.dominio = 'tec.mx') as campus_ajeno,
+  (select min(id) from public.categories) as categoria;
+grant select on t28 to authenticated;
+
+-- Precondición de la sección: sin esto, (c)/(d) podrían pasar por la razón
+-- equivocada (campus ajeno null, universidades iguales).
+select pg_temp.assert(
+  (select uni is not null and uni_ajena is not null and uni <> uni_ajena
+          and campus_a is not null and campus_b is not null and campus_ajeno is not null
+          and categoria is not null from t28),
+  'T28: fixtures completos (dos universidades distintas, campus de cada una)');
+
+-- `<sqlstate>:<constraint>` del error que lanza p_sql, u 'ok'. Como
+-- `authenticated` si p_uid no es null; como `postgres` si lo es.
+create or replace function pg_temp.rechazo_de(p_uid uuid, p_sql text)
+returns text language plpgsql as $$
+declare v_con text;
+begin
+  if p_uid is not null then
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+    perform set_config('role', 'authenticated', true);
+  end if;
+  execute p_sql;
+  perform set_config('role', 'postgres', true);
+  return 'ok';
+exception when others then
+  get stacked diagnostics v_con = constraint_name;
+  perform set_config('role', 'postgres', true);
+  return sqlstate || coalesce(':' || nullif(v_con, ''), '');
+end $$;
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:Z::uuid,  '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-z@rls-t28.mx', '', now(), now(), now());
+
+-- El alta de :Z2 va CAPTURADA y no como insert suelto: si el trigger lanzara
+-- ante un dominio sin registrar, un insert suelto tumbaría la suite con el
+-- error crudo antes de llegar a (a2), que es justo la aserción que lo prueba.
+select pg_temp.rechazo_de(null, format(
+  'insert into auth.users (id, instance_id, aud, role, email, encrypted_password, '
+  || 'email_confirmed_at, created_at, updated_at) values (%L, %L, ''authenticated'', '
+  || '''authenticated'', ''rls-z2@no-registrado-t28.mx'', '''', now(), now(), now())',
+  :Z2::uuid, '00000000-0000-0000-0000-000000000000')) as r_alta_z2 \gset
+
+-- (a) El trigger de alta asigna la universidad del dominio.
+select pg_temp.assert(
+  (select universidad_id from public.users where id = :Z::uuid) = (select uni from t28),
+  '(a) un alta de un dominio registrado nace con la universidad de ese dominio');
+
+-- (a2) Sin dominio registrado: la fila EXISTE (el alta no abortó) y nace sin
+-- universidad. Es la mitad "nunca lanza" del trigger.
+select pg_temp.assert(
+  :'r_alta_z2' = 'ok'
+  and exists (select 1 from public.users where id = :Z2::uuid and universidad_id is null),
+  '(a2) un dominio no registrado crea el perfil igual, con universidad null');
+
+-- (a3) El amarre entre las DOS copias de la normalización: el hook deja pasar
+-- un correo ⇔ el trigger le asigna universidad. Cada caso es un borde donde
+-- una copia descuidada divergiría (mayúsculas, espacios, dos '@', subdominio).
+-- Se exige además que haya casos de las dos polaridades, para que no pase
+-- porque todos rechazan o todos permiten.
+create or replace function pg_temp.amarre(p_email text) returns boolean
+language plpgsql as $$
+declare
+  v_id uuid := gen_random_uuid();
+  v_hook_permite boolean;
+  v_trigger_asigna boolean;
+begin
+  v_hook_permite := public.hook_before_user_created(
+    jsonb_build_object('user', jsonb_build_object('email', p_email))) = '{}'::jsonb;
+  insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                          email_confirmed_at, created_at, updated_at)
+  values (v_id, '00000000-0000-0000-0000-000000000000', 'authenticated',
+          'authenticated', p_email, '', now(), now(), now());
+  select universidad_id is not null into v_trigger_asigna
+    from public.users where id = v_id;
+  return v_hook_permite = v_trigger_asigna;
+end $$;
+select pg_temp.assert(
+  pg_temp.amarre('Mayus@RLS-T28.MX')
+  and pg_temp.amarre('  espacios@rls-t28.mx  ')
+  and pg_temp.amarre('x@gmail.com@rls-t28.mx')
+  and pg_temp.amarre('x@rls-t28.mx@gmail.com')
+  and pg_temp.amarre('x@sub.rls-t28.mx')
+  and pg_temp.hook('Mayus@RLS-T28.MX') = '{}'::jsonb
+  and pg_temp.hook('x@sub.rls-t28.mx') = pg_temp.rechazo(),
+  '(a3) el hook permite un correo si y solo si el trigger le asigna universidad');
+
+-- (b) Nadie cambia su universidad desde el cliente: la columna salió del grant.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:Z::uuid, format(
+    'update public.users set universidad_id = %s where id = %L',
+    (select uni_ajena from t28), :Z::uuid)) = '42501',
+  '(b) authenticated no puede cambiar su universidad_id (grant)');
+
+-- (c) Ni elegir un campus de otra universidad: la FK compuesta.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:Z::uuid, format(
+    'update public.users set campus_id = %s where id = %L',
+    (select campus_ajeno from t28), :Z::uuid)) = '23503:users_campus_universidad_fkey',
+  '(c) authenticated no puede fijar un campus de otra universidad');
+
+-- (c2) Control positivo de (c): un campus de SU universidad sí. Sin esta, (c)
+-- pasaría igual si `campus_id` hubiera salido del grant por error.
+--
+-- La acción y la comprobación del estado van en SENTENCIAS DISTINTAS (`\gset`),
+-- y no es estilo: una subconsulta dentro del mismo `select pg_temp.assert(...)`
+-- corre con el snapshot de ESA sentencia y no ve lo que escribió
+-- `rechazo_de()`. Medido: con todo en una sola sentencia, esta aserción caía
+-- aunque el update sí había escrito. Y en (d4)/(d6), que comprueban que algo NO
+-- cambió, el mismo error las habría dejado pasando sin probar nada.
+select pg_temp.rechazo_de(:Z::uuid, format(
+  'update public.users set campus_id = %s where id = %L',
+  (select campus_a from t28), :Z::uuid)) as r_c2 \gset
+select pg_temp.assert(
+  :'r_c2' = 'ok'
+  and (select campus_id from public.users where id = :Z::uuid) = (select campus_a from t28),
+  '(c2) authenticated sí elige un campus de su universidad');
+
+-- (c3) Sin universidad no hay campus. La FK es MATCH SIMPLE y NO se evalúa con
+-- `universidad_id` null: quien lo impide es el check. Como postgres, para que
+-- el grant no se meta.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format(
+    'update public.users set campus_id = %s where id = %L',
+    (select campus_a from t28), :Z2::uuid)) = '23514:users_campus_requiere_universidad',
+  '(c3) un perfil sin universidad no puede tener campus (check)');
+
+-- Publicaciones. Todas nacen `pendiente` (el único estado que el cliente puede
+-- insertar, T25), con estado explícito para que ése no sea el motivo de rechazo.
+create or replace function pg_temp.insert_t28(p_uni bigint, p_campus bigint, p_titulo text)
+returns text language sql as $$
+  select format(
+    'insert into public.listings (user_id, categoria_id, universidad_id, campus_id, '
+    || 'titulo, precio, condicion, estado) values (auth.uid(), %s, %s, %s, %L, 100, '
+    || '''usado'', ''pendiente'')',
+    (select categoria from t28), p_uni, p_campus, p_titulo)
+$$;
+
+-- (d) No se publica en otra universidad: FK publicación ↔ dueño. El campus
+-- ajeno SÍ es de esa universidad ajena, así que el único candado en juego es
+-- `listings_user_universidad_fkey`.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:Z::uuid, pg_temp.insert_t28(
+    (select uni_ajena from t28), (select campus_ajeno from t28), 'T28 d'))
+    = '23503:listings_user_universidad_fkey',
+  '(d) authenticated no puede crear una publicación en otra universidad');
+
+-- (d2) Ni en SU universidad con un campus de otra: FK campus ↔ universidad.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:Z::uuid, pg_temp.insert_t28(
+    (select uni from t28), (select campus_ajeno from t28), 'T28 d2'))
+    = '23503:listings_campus_universidad_fkey',
+  '(d2) authenticated no puede crear una publicación con un campus ajeno a su universidad');
+
+-- (d3) Control positivo: coherente, pasa. Sin ella, (d)/(d2) pasarían igual si
+-- el insert estuviera roto por otra razón.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:Z::uuid, pg_temp.insert_t28(
+    (select uni from t28), (select campus_a from t28), 'T28 d3')) = 'ok',
+  '(d3) authenticated sí publica en su universidad y un campus de ella');
+
+-- (d4) Una publicación no se MUEVE: ni de universidad ni de campus. Sobre una
+-- fila `activa` sembrada como postgres (una `pendiente` la filtra el `using` de
+-- update, T24), y con destino a su OTRO campus propio: con el grant restituido,
+-- el update pasaría limpio y el control caería aquí y no en otra regla.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+select :Z::uuid, categoria, uni, campus_a, 'T28 d4', 100, 'usado', 'activa' from t28;
+select pg_temp.rechazo_de(:Z::uuid, format(
+  'update public.listings set campus_id = %s where titulo = %L',
+  (select campus_b from t28), 'T28 d4')) as r_d4_campus \gset
+select pg_temp.rechazo_de(:Z::uuid, format(
+  'update public.listings set universidad_id = %s where titulo = %L',
+  (select uni_ajena from t28), 'T28 d4')) as r_d4_uni \gset
+select pg_temp.assert(
+  :'r_d4_campus' = '42501' and :'r_d4_uni' = '42501'
+  and (select campus_id from public.listings where titulo = 'T28 d4') = (select campus_a from t28),
+  '(d4) authenticated no puede mover una publicación de campus ni de universidad (grant)');
+
+-- (d5) Un dueño SIN universidad no publica en ninguna: `(id, null)` no machea
+-- ninguna fila de `users(id, universidad_id)`.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:Z2::uuid, pg_temp.insert_t28(
+    (select uni from t28), (select campus_a from t28), 'T28 d5'))
+    = '23503:listings_user_universidad_fkey',
+  '(d5) un usuario sin universidad no puede publicar');
+
+-- (d6) Aplica también a postgres/Studio: mover a un usuario CON publicaciones a
+-- otra universidad aborta. El cascade lleva la universidad nueva a sus
+-- publicaciones, que conservan el campus viejo, y la FK campus ↔ universidad
+-- las rechaza. Falla cerrado, y la universidad del usuario no cambia.
+select pg_temp.rechazo_de(null, format(
+  'update public.users set universidad_id = %s, campus_id = %s where id = %L',
+  (select uni_ajena from t28), (select campus_ajeno from t28), :Z::uuid)) as r_d6 \gset
+select pg_temp.assert(
+  :'r_d6' = '23503:listings_campus_universidad_fkey'
+  and (select universidad_id from public.users where id = :Z::uuid) = (select uni from t28),
+  '(d6) mover de universidad a un usuario con publicaciones aborta (también como postgres)');
 
 \echo ''
 \echo '==========================================='

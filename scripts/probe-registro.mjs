@@ -1,6 +1,7 @@
 // ===========================================================================
 // Relevo — el registro solo admite dominios institucionales (Auth Hook
-// "Before User Created", migración 20260923000465).
+// "Before User Created", migración 20260923000465), y la universidad del perfil
+// la asigna el trigger de alta desde ese mismo dominio (20260924000466, caso 8).
 //
 // Cómo correrlo (local, con el stack arriba y el hook activo en config.toml):
 //     supabase start           # o supabase db reset
@@ -67,6 +68,17 @@ function sql(query) {
 /** ¿Hay fila en auth.users? GoTrue guarda el correo en minúsculas. */
 const filas = (correo) => Number(sql(
   `select count(*) from auth.users where email = '${correo.toLowerCase().replace(/'/g, "''")}'`));
+
+/**
+ * La universidad con la que nació el perfil de `public.users`, o `null`. La
+ * asigna `private.handle_new_user()` desde el dominio (20260924000466). `'∅'`
+ * si ni siquiera existe la fila, para distinguir "sin universidad" de "sin
+ * perfil".
+ */
+const universidadDe = (correo) => sql(
+  `select coalesce((select coalesce(u.universidad_id::text, 'null') from public.users u
+     join auth.users a on a.id = u.id
+    where a.email = '${correo.toLowerCase().replace(/'/g, "''")}'), '∅')`);
 
 /** Mensajes que Mailpit (el buzón local, :54324) tiene para ese destinatario. */
 async function correos(E, correo) {
@@ -159,6 +171,9 @@ async function main() {
     '{{range .Config.Env}}{{println .}}{{end}}'], { encoding: 'utf8' })
     .split('\n').filter((l) => l.startsWith('GOTRUE_HOOK_BEFORE_USER_CREATED_')).join(' ');
   console.log(`  GoTrue: ${hook || '(sin hook configurado)'}`);
+  const uniTec = sql("select universidad_id from public.universidad_dominios where dominio = 'tec.mx'");
+  console.log(`  trigger de alta asigna universidad: ${sql(
+    "select (prosrc like '%universidad_dominios%')::text from pg_proc where proname = 'handle_new_user'")} (tec.mx → ${uniTec || '∅'})`);
 
   const tec = `probe-reg-${RUN}@tec.mx`;
   const mayus = `PROBE-REG-MAYUS-${RUN}@TEC.MX`;
@@ -241,6 +256,22 @@ async function main() {
     const r7 = await crearConAdmin(E, admin, PASS);
 
     ok('POST /admin/users con gmail.com → 200', r7.status === 200, `status ${r7.status}`);
+
+    console.log('\n== 8. El trigger de alta asigna la universidad del dominio ==');
+    // 20260924000466. T28 prueba la función llamando al trigger por un INSERT
+    // como `postgres`; esto prueba lo mismo por el camino REAL de GoTrue: el
+    // alta por OTP del caso 1 y 3, y el alta por admin API del caso 7, que no
+    // pasa por el hook.
+    ok('tec.mx por OTP → nace con la universidad de tec.mx', universidadDe(tec) === uniTec,
+      `universidad_id ${universidadDe(tec)}, esperado ${uniTec}`);
+    ok('TEC.MX en mayúsculas → también', universidadDe(mayus) === uniTec,
+      `universidad_id ${universidadDe(mayus)}`);
+    // La mitad "nunca lanza": el caso 7 ya dio 200 (si el trigger lanzara, GoTrue
+    // respondería 500 y no habría cuenta); aquí se confirma que el perfil EXISTE
+    // y nace sin universidad, que es lo que la app pinta como "sin universidad
+    // asignada".
+    ok('gmail.com por admin API → el perfil existe, con universidad null',
+      universidadDe(admin) === 'null', `universidad_id ${universidadDe(admin)}`);
   } finally {
     // Por patrón y no por la lista de `creados`: bajo un control negativo, los
     // correos que DEBÍAN rechazarse sí crean fila, y también hay que borrarlos.

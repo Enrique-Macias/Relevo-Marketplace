@@ -6,9 +6,10 @@
  *  - la fila de `public.users` (¿el perfil está completo?).
  *
  * El gating necesita ambas: tener sesión no basta para entrar al Feed, porque
- * el trigger `on_auth_user_created` crea la fila solo con `(id, correo)` y deja
- * `nombre`/`universidad_id` en null hasta que el usuario pasa por "Completar
- * perfil" (CLAUDE.md §5).
+ * el trigger `on_auth_user_created` crea la fila con `(id, correo)` y la
+ * universidad del dominio del correo (20260924000466), pero deja `nombre` y
+ * `campus_id` en null hasta que el usuario pasa por "Completar perfil"
+ * (CLAUDE.md §5).
  */
 
 import type { Session } from '@supabase/supabase-js';
@@ -203,9 +204,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       session,
       profile: perfilVigente,
       status: authResuelto && perfilResuelto ? 'ready' : 'loading',
-      // El criterio exacto del gating: sin nombre o sin universidad, el perfil
-      // sigue incompleto y el usuario no puede pasar al Feed.
-      isProfileComplete: Boolean(perfilVigente?.nombre && perfilVigente?.universidad_id),
+      // El criterio exacto del gating: sin nombre o sin campus, el perfil sigue
+      // incompleto y el usuario no puede pasar al Feed. Es `campus_id` y ya no
+      // `universidad_id`: la universidad llega puesta desde el alta
+      // (20260924000466), así que dejó de ser la señal de "completó el perfil".
+      // Y el campus implica universidad: la base no admite campus sin ella
+      // (`users_campus_requiere_universidad`).
+      isProfileComplete: Boolean(perfilVigente?.nombre && perfilVigente?.campus_id),
       refreshProfile,
       signOut,
     }),

@@ -10,9 +10,9 @@ import { supabase } from '@/lib/supabase';
 
 /**
  * Lo mínimo para pintar un `SelectField` y poder escribir en `public.users`: el
- * id que va a la base y el nombre que lee el usuario. Lo comparten los dos
- * borradores de perfil —el de onboarding y el de "Editar perfil"—, que son las
- * dos pantallas donde se elige universidad/campus.
+ * id que va a la base y el nombre que lee el usuario. Lo usan "Completar perfil"
+ * y "Editar perfil", las dos pantallas donde se elige el campus (la universidad
+ * ya no se elige: la asigna el servidor, 20260924000466).
  */
 export type OpcionCatalogo = { id: number; nombre: string };
 
@@ -63,6 +63,23 @@ export async function fetchUniversidades(): Promise<Universidad[]> {
     nombre: u.nombre,
     subtitulo: subtituloUniversidad(u.campus ?? []),
   }));
+}
+
+/**
+ * La universidad del perfil, para PINTARLA (campo fijo de "Completar perfil").
+ * No es una elección: la asigna el trigger de alta desde el dominio del correo
+ * (20260924000466). La sesión solo trae el id (`PROFILE_COLUMNS`), de ahí esta
+ * lectura.
+ */
+export async function fetchUniversidad(id: number): Promise<OpcionCatalogo | null> {
+  const { data, error } = await supabase
+    .from('universidades')
+    .select('id, nombre')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
 }
 
 export async function fetchCampus(universidadId: number): Promise<Campus[]> {

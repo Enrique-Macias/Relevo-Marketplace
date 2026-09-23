@@ -172,6 +172,42 @@ export function SelectField({
   );
 }
 
+type FixedFieldProps = {
+  label: string;
+  /** Sin valor, se muestra el placeholder en `--placeholder`. */
+  value?: string;
+  placeholder: string;
+  containerStyle?: ViewStyle;
+};
+
+/**
+ * Un valor que se MUESTRA y no se elige: `.select-field.disabled` SIN chevron
+ * (frames "Completar perfil" y "Editar perfil", campo Universidad). Hoy es la
+ * universidad, que la asigna el servidor desde el dominio del correo
+ * (20260924000466).
+ *
+ * No es un `SelectField` con `disabled`, aunque se vea parecido: aquél dice
+ * "todavía no puedes elegir" y conserva el chevron y el rol de botón. Éste no
+ * abre nada nunca, así que es un `View`, sin chevron y sin
+ * `accessibilityRole="button"` (el mismo criterio del tile de espera de
+ * `PhotoRow`: si no pasa nada, no se anuncia como botón).
+ *
+ * "Zona de entrega" de Publicar NO usa este componente: su frame sí conserva el
+ * chevron.
+ */
+export function FixedField({ label, value, placeholder, containerStyle }: FixedFieldProps) {
+  return (
+    <View style={[styles.field, containerStyle]}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={[styles.select, styles.disabled]}>
+        <Text style={value ? styles.selectValue : styles.selectPlaceholder}>
+          {value ?? placeholder}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   // .field{width:100%; text-align:left; margin-bottom:16px;}
   field: {
