@@ -90,14 +90,16 @@ export function ListingFormFields({
 
       <Field
         label="Precio"
-        placeholder="$ 0.00"
+        placeholder="$0"
         value={form.precio}
         onChangeText={form.setPrecio}
         editable={!disabled}
-        // `decimal-pad` y no `numeric`: el segundo trae coma y signos en varios
-        // teclados, y el precio no los admite. `parsePrecio` limpia igual, pero
-        // ofrecer teclas que no sirven es invitar al error.
-        keyboardType="decimal-pad"
+        // `number-pad` y no `decimal-pad`: el precio es siempre un entero
+        // (CLAUDE.md §3), así que no hace falta tecla de punto/coma — y en
+        // iOS `number-pad` no la ofrece, cerrando la única vía de escribir un
+        // decimal a mano (pegar texto sigue siendo posible; `parsePrecioInput`
+        // en `listing-form.ts` lo maneja).
+        keyboardType="number-pad"
       />
 
       {/*

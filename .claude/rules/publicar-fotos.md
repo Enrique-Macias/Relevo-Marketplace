@@ -41,6 +41,38 @@ Detalles que no se ven en el diff:
   sea que ya dio su número. `listoParaGuardar` ya existía para exactamente esto
   (los datos del perfil que el formulario necesita pero no controla), así que el
   gate no estrenó mecanismo.
+- **El campo de Precio es un entero de pesos, 0-100000 (RF-05,
+  `20260922000464`), con formateo en vivo y sin un solo mensaje de error —
+  sigue el mismo patrón "sin mensajes por campo" que ya documenta el docblock
+  de `listing-form.ts`.**
+  - `keyboardType` es `"number-pad"`, no `"decimal-pad"`: en iOS ese teclado no
+    ofrece tecla de punto/coma, así que la única vía de meter un decimal pasa
+    a ser PEGAR texto — el `decimal-pad` de antes ya no tiene motivo, porque
+    el precio nunca lleva decimales.
+  - El número (`precioNum`, `NaN` = vacío) es la fuente de verdad;
+    `form.precio` es SIEMPRE derivado de él vía `formatPrecioInput()`
+    (`"$1,250"`), nunca guardado aparte. Un precio de 0 se ve **"$0"** en el
+    campo mientras se edita — nunca "Gratis": ese texto es solo de LECTURA
+    (`formatPrecio()`, `src/lib/format.ts`), y reemplazar el valor que el
+    usuario está tecleando por una palabra sería confuso.
+  - `parsePrecioInput()` decide si un separador (`.`/`,`) es de MILES o
+    DECIMAL por cuántos dígitos le siguen: 3 → miles, se descarta y se
+    conservan los dígitos ("1,250" → 1250); 1 o 2 → decimal, se TRUNCA ahí
+    ("12.50"/"12,50" → 12, nunca 1250 — quitar el separador sin mirar cuántos
+    dígitos trae multiplicaría el precio por 100 sin avisar). Se trunca y no
+    se rechaza: es la misma operación que exige el `check` de la base
+    (`precio = trunc(precio)`), así que cliente y base nunca discrepan sobre
+    qué hacer con un decimal.
+  - Pasar de `PRECIO_MAX` (100000) **ignora el cambio por completo** — no
+    recorta a otro número, el campo simplemente "no acepta" el dígito de más.
+    Es la misma prevención silenciosa que el resto de este formulario: cero
+    mensajes de error nuevos.
+  - **Límite conocido, no resuelto a propósito:** el cursor no se fuerza al
+    final tras reformatear. Si el usuario reposiciona el cursor a media
+    cadena y sigue escribiendo, el resultado puede no ser el esperado — es la
+    limitación estándar de un campo con formateo en vivo sin librería de
+    máscara dedicada, y este proyecto no suma dependencias nuevas para un
+    campo que normalmente se teclea de corrido.
 - **El teléfono no vive en `useListingForm`, y no es organización.** No es un
   campo de la publicación sino del perfil, y se escribe en `public.users`.
   Dentro del form viajaría hasta `aInput()`, que arma la fila de `listings`.

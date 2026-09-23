@@ -192,15 +192,17 @@ configurar. El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto NO están a la par: 27 y 26**, medido con
+**Repo y remoto NO están a la par: 28 y 27**, medido con
 `ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. La única de
-más es `20260919000463` (el `with_check` que obliga a toda publicación de
-cliente a nacer `pendiente`, RF-18 Ola 3), escrita y validada en local y **sin
-pushear** — y no debe pushearse sola: ver §8, pendiente 2, porque llegar a
-remoto antes de que la Edge Function esté desplegada allá rompe publicar.
+más es `20260922000464` (el check de precio entero, RF-05), escrita y validada
+en local y **sin pushear**.
 
-**Y este número acaba de volver a demostrar su propia moraleja, por QUINTA
-vez.** Este párrafo decía "26 y 25", con `20260918000462` marcada como "sin
+**Y este número acaba de volver a demostrar su propia moraleja, por SEXTA
+vez.** Este párrafo decía "27 y 26", con `20260919000463` marcada como "sin
+pushear" — y al remedirlo contra remoto resultó que **ya había viajado**: el
+remoto tiene **27**, no 26, con `20260919000463` incluida
+(`list_migrations` la lista tal cual). Antes decía "26 y 25", con
+`20260918000462` marcada como "sin
 pushear" — y al remedirlo contra remoto resultó que **ya había viajado**: el
 remoto tiene 26, no 25, y `pg_trigger` allá ya tiene
 `objects_notify_moderacion_insert`/`_update`. (Siguen INERTES, eso sí:
@@ -245,7 +247,7 @@ users
 -- Publicaciones
 listings
   id, user_id, categoria_id, universidad_id, campus_id, titulo, descripcion,
-  precio numeric(10,2) >= 0, condicion, estado default 'activa',
+  precio numeric(10,2) entero 0-100000 (check, ver abajo), condicion, estado default 'activa',
   vistas_count (solo vía RPC, ver abajo), created_at, updated_at,
   busqueda tsvector generated always as
     (to_tsvector('spanish', titulo || ' ' || coalesce(descripcion,''))) stored
@@ -303,6 +305,25 @@ listing_moderacion
   es historial, no estado actual. CERO grants y CERO policies — la escribe
   la Edge Function con `supabaseAdmin` y la lee Studio. Ver abajo.
 ```
+
+**`listings.precio` es un ENTERO de pesos, 0-100000 inclusive (RF-05,
+`20260922000464`).** El 0 se permite: regalar un artículo es un caso válido.
+No se cambió el tipo de columna (`numeric(10,2)` se queda) — un
+`check (precio >= 0 and precio <= 100000 and precio = trunc(precio))`
+reemplaza al original (`precio >= 0` a secas, mismo nombre de constraint,
+`listings_precio_check`) y basta: reescribir la tabla no aporta nada que el
+check no dé. `precio = trunc(precio)` es la forma correcta de exigir "sin
+decimales" sobre un `numeric` — puede guardar 100.00 (SÍ es entero) pero no
+100.50. De paso, `private.formato_precio()` perdió su rama de centavos: ya no
+hace falta distinguir, y la aserción de T18 que la vigilaba ("$99.50, no
+redondeado a $100") se quitó porque escribir 99.50 ahora es un error de
+`check`, no un caso de formateo. El amarre entre `formatPrecio` (cliente) y
+`private.formato_precio()` (base) pasó de esa aserción al check mismo: los
+dos asumen "siempre entero" porque la base ya no permite otra cosa. Cubierto
+por T26 (10 aserciones: acepta 0 y 100000, rechaza negativo/sobre-tope/decimal,
+en INSERT y en UPDATE), con control negativo corrido a mano. Detalle del
+campo del formulario (formateo en vivo, heurístico miles-vs-decimal) en
+`publicar-fotos.md`.
 
 **Protección de `correo` (RNF-05):** RLS filtra filas, no columnas — la
 protección real es un `grant select` de columna que excluye `correo`
@@ -1130,6 +1151,25 @@ tiene que ser rechazado igual. Y **(f) vigila justo esa premisa**: que
 "endureciera" esto con un trigger o un `check` de tabla —que sí alcanzan a
 `service_role`, a diferencia de una policy— la suite entera se caería en cascada;
 con (f), cae una sola aserción y lo dice con todas sus letras.
+
+Y a **186** con las 10 de T26 (precio es un entero entre 0 y 100000, RF-05,
+`20260922000464`), autocontenida con su propio `:X`. Nada en T12: la migración
+no crea ninguna función ni toca ningún grant, solo reemplaza un `check` de
+tabla que ya existía. (a)-(e) prueban el INSERT (con `estado` explícito en
+`'pendiente'`, mismo criterio que T25 para que el único motivo de rechazo
+posible sea el precio); (f)-(j) prueban el UPDATE, sobre una fila sembrada
+DIRECTO como `postgres` en `'activa'` —no vía `as_user`, y no en `'pendiente'`—
+porque `listings_update_own` excluye `pendiente`/`bloqueada` de su `using`
+desde T24, así que una fila pendiente no la puede tocar ni su propio dueño (el
+primer intento de esta sección sembró la fila de UPDATE en `'pendiente'` y (f)
+cayó por eso, no por el check — corregido antes de comitear). Control negativo
+corrido a mano: aflojar el check a `precio >= 0` (el original) deja pasar
+100001 y 10.50 tanto en INSERT como en UPDATE, medido fila por fila; `-1` lo
+sigue cazando el check base, que es el resultado esperado y no una falla del
+control. Esta tarea también quitó una aserción de T18 (el bloque "CENTAVOS"
+que probaba `$99.50, antes $2,900`): escribir un precio con decimales ya es un
+error de `check`, no algo que valga la pena probar en el trigger de
+notificaciones — de ahí que el total neto sea +9 (177 - 1 + 10) y no +10.
 
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe

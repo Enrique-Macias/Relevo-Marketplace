@@ -1,10 +1,16 @@
 /** Formato de precio, fecha relativa e iniciales para tarjetas/detalle de publicaciones. */
 
+/**
+ * `listings.precio` es siempre un entero (0-100000, `check` de
+ * `20260922000464`) — sin esa garantía esta función mentiría sobre
+ * cualquier decimal. "Gratis" es solo de LECTURA: el campo del formulario de
+ * Publicar/Editar usa `formatPrecioInput` (`listing-form.ts`), que nunca
+ * pinta "Gratis" mientras se edita.
+ */
 export function formatPrecio(n: number): string {
-  const tieneCentavos = !Number.isInteger(n);
-  const partes = n.toFixed(tieneCentavos ? 2 : 0).split('.');
-  partes[0] = partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `$${partes.join('.')}`;
+  if (n === 0) return 'Gratis';
+  const conComas = n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `$${conComas}`;
 }
 
 /**

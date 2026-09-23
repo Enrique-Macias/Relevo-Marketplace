@@ -204,7 +204,10 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
 
   const form = useListingForm({
     titulo: listing.titulo,
-    precio: String(listing.precio),
+    // `ValoresIniciales.precio` es `number | undefined` (listing-form.ts):
+    // `listing.precio` ya es number, y `useListingForm` lo formatea solo —
+    // no hace falta convertirlo a texto aquí.
+    precio: listing.precio,
     descripcion: listing.descripcion ?? '',
     categoriaId: listing.categoriaId,
     condicion: listing.condicion,

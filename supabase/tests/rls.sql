@@ -1006,31 +1006,26 @@ select pg_temp.assert(
     = (select activa from t_notif),
   'la notificación de precio apunta a la publicación, para el tap');
 
--- CENTAVOS. `to_char(p,'FM999,999,999')` a secas redondea 99.50 a "100": esta es
--- la aserción que impide que alguien "simplifique" el `case` de
--- private.formato_precio y le mienta al usuario sobre el precio.
-select pg_temp.as_user(:E::uuid,
-  format('update public.listings set precio = 99.50 where id = %s',
-         (select activa from t_notif)));
-select pg_temp.assert(
-  (select cuerpo from public.notifications
-    where user_id = :F::uuid order by id desc limit 1)
-    = '"RLS Monitor" ahora cuesta $99.50, antes $2,900.',
-  'un precio con centavos sale como $99.50, no redondeado a $100');
+-- El bloque "CENTAVOS" que vivía aquí (un update a precio = 99.50 y su
+-- aserción de que el cuerpo sale "$99.50, no redondeado a $100") se quitó al
+-- volver el precio un entero (20260922000464): escribir 99.50 ahora es un
+-- error de `check`, no un caso de formateo que valga la pena probar en un
+-- trigger de notificaciones. Ese `check` es hoy el amarre real entre
+-- `formatPrecio` y `private.formato_precio()` — ver T26.
 
 -- Las dos condiciones del `when`, cada una con su aserción.
 select pg_temp.as_user(:E::uuid,
   format('update public.listings set precio = 5000 where id = %s',
          (select activa from t_notif)));
 select pg_temp.assert(
-  (select count(*) from public.notifications where user_id = :F::uuid) = 2,
+  (select count(*) from public.notifications where user_id = :F::uuid) = 1,
   'SUBIR el precio no notifica a nadie');
 
 select pg_temp.as_user(:E::uuid,
   format('update public.listings set precio = 100 where id = %s',
          (select pausada from t_notif)));
 select pg_temp.assert(
-  (select count(*) from public.notifications where user_id = :F::uuid) = 2,
+  (select count(*) from public.notifications where user_id = :F::uuid) = 1,
   'bajar el precio de una PAUSADA no notifica: nadie más puede verla');
 
 -- --- Disparador 2: respuesta a un reporte -----------------------------------
@@ -2470,6 +2465,122 @@ select pg_temp.assert(
                                 where n.nspname = 'public' and c.relname = t.tablename
                                   and c.relrowsecurity)),
   'todas las tablas de public tienen RLS habilitado');
+
+\echo ''
+\echo '== T26 — precio es un entero entre 0 y 100000 (RF-05) =='
+-- Autocontenida, mismo criterio que T14-T25: siembra su propio usuario y no
+-- reutiliza fixtures de secciones anteriores.
+--
+--   :X — un usuario activo. Es quien inserta/actualiza en todas las
+--        aserciones; no hace falta un segundo usuario porque el `check` de
+--        20260922000464 alcanza a cualquier rol por igual, y lo único que
+--        esta sección confirma es que el camino real del cliente (INSERT/
+--        UPDATE con RLS de por medio) también lo respeta.
+--
+-- (a)-(e) prueban el INSERT (`estado` va explícito en 'pendiente', igual que
+-- T25, para que el único motivo de rechazo posible sea el precio y no el
+-- `with_check` de 20260919000463). (f)-(j) prueban el UPDATE, sobre una fila
+-- SEMBRADA APARTE de las de (a)/(b) — mismo criterio que T19/T20/T23: la fila
+-- que se lee no puede ser la misma que se muta.
+
+\set X '''58585858-0000-0000-0000-000000005858'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:X::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-x@tec.mx', '', now(), now(), now());
+update public.users set nombre = 'Ximena' where id = :X::uuid;
+
+-- (a) Acepta 0 en INSERT.
+select pg_temp.as_user(:X::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id,
+                                       campus_id, titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS T26 cero'', 0, ''nuevo'', ''pendiente'')', :X::uuid));
+select pg_temp.assert(
+  exists (select 1 from public.listings
+          where titulo = 'RLS T26 cero' and user_id = :X::uuid and precio = 0),
+  '(a) precio = 0 se acepta en INSERT');
+
+-- (b) Acepta 100000 en INSERT (el tope, inclusive).
+select pg_temp.as_user(:X::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id,
+                                       campus_id, titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS T26 tope'', 100000, ''nuevo'', ''pendiente'')', :X::uuid));
+select pg_temp.assert(
+  exists (select 1 from public.listings
+          where titulo = 'RLS T26 tope' and user_id = :X::uuid and precio = 100000),
+  '(b) precio = 100000 se acepta en INSERT');
+
+-- (c) Rechaza negativo en INSERT.
+select pg_temp.expect_error(:X::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id,
+                                       campus_id, titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS T26 negativo'', -1, ''nuevo'', ''pendiente'')', :X::uuid),
+  '(c) precio = -1 se rechaza en INSERT');
+
+-- (d) Rechaza sobre el tope en INSERT.
+select pg_temp.expect_error(:X::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id,
+                                       campus_id, titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS T26 sobretope'', 100001, ''nuevo'', ''pendiente'')', :X::uuid),
+  '(d) precio = 100001 se rechaza en INSERT');
+
+-- (e) Rechaza decimales en INSERT.
+select pg_temp.expect_error(:X::uuid,
+  format('insert into public.listings (user_id, categoria_id, universidad_id,
+                                       campus_id, titulo, precio, condicion, estado)
+          values (%L, 1, 1, 1, ''RLS T26 decimal'', 10.50, ''nuevo'', ''pendiente'')', :X::uuid),
+  '(e) precio = 10.50 se rechaza en INSERT');
+
+-- Fila propia para (f)-(j), sembrada aparte de (a)/(b): esas dos ya quedaron
+-- en 0 y 100000 respectivamente, y mutarlas otra vez mezclaría lectura y
+-- escritura sobre la misma fila (la lección de T19/T20/T23).
+--
+-- Sembrada DIRECTO como postgres (no vía `as_user`) y en 'activa', no
+-- 'pendiente': `listings_update_own` excluye pendiente/bloqueada del `using`
+-- (T24 — "pendiente/bloqueada no son públicos ni los levanta su dueño"), así
+-- que una fila pendiente no la puede tocar ni su propio dueño. Solo
+-- postgres/service_role pueden sembrar un estado que no sea 'pendiente'
+-- directo (T25 (f)); el cliente real jamás pasa por aquí en 'activa' sin que
+-- la Edge Function de moderación lo decida primero, pero eso no es lo que
+-- esta sección prueba — aquí el punto es el `check` de precio, no el flujo
+-- de moderación.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values (:X::uuid, 1, 1, 1, 'RLS T26 update', 500, 'nuevo', 'activa');
+
+create temp table t_precio on commit drop as
+select id from public.listings where titulo = 'RLS T26 update' and user_id = :X::uuid;
+
+-- (f) Acepta UPDATE a 0.
+select pg_temp.as_user(:X::uuid,
+  format('update public.listings set precio = 0 where id = %s', (select id from t_precio)));
+select pg_temp.assert(
+  (select precio from public.listings where id = (select id from t_precio)) = 0,
+  '(f) precio = 0 se acepta en UPDATE');
+
+-- (g) Acepta UPDATE a 100000.
+select pg_temp.as_user(:X::uuid,
+  format('update public.listings set precio = 100000 where id = %s', (select id from t_precio)));
+select pg_temp.assert(
+  (select precio from public.listings where id = (select id from t_precio)) = 100000,
+  '(g) precio = 100000 se acepta en UPDATE');
+
+-- (h) Rechaza UPDATE a negativo.
+select pg_temp.expect_error(:X::uuid,
+  format('update public.listings set precio = -1 where id = %s', (select id from t_precio)),
+  '(h) precio = -1 se rechaza en UPDATE');
+
+-- (i) Rechaza UPDATE sobre el tope.
+select pg_temp.expect_error(:X::uuid,
+  format('update public.listings set precio = 100001 where id = %s', (select id from t_precio)),
+  '(i) precio = 100001 se rechaza en UPDATE');
+
+-- (j) Rechaza UPDATE con decimales.
+select pg_temp.expect_error(:X::uuid,
+  format('update public.listings set precio = 10.50 where id = %s', (select id from t_precio)),
+  '(j) precio = 10.50 se rechaza en UPDATE');
 
 \echo ''
 \echo '==========================================='

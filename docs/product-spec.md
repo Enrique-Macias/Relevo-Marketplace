@@ -114,6 +114,9 @@ vez validado.
   condición, hasta 5 fotos y zona de entrega. **✅ Implementado** — pantalla
   "Publicar". La app exige al menos 1 foto (decisión de producto; el esquema no
   la obliga). La zona de entrega sale del campus del perfil, no se elige.
+  El precio es un **entero de pesos, $0-$100,000 inclusive** (el 0 permite
+  regalar el artículo) — exigido por un `check` de base, no solo por el
+  formulario (CLAUDE.md §3).
 - **RF-06** Editar y eliminar publicación propia. **✅ Implementado** —
   "Editar publicación", incluidos agregar/quitar fotos dentro del tope de 5 y
   el borrado con confirmación (que borra también los archivos de Storage).
