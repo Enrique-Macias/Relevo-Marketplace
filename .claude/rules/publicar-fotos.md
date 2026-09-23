@@ -501,3 +501,25 @@ cambio de semántica de seguridad disfrazado de refactor (§9).
   vacía**, así que el `if (error)` de `borrarFotos()` ni siquiera imprime su
   `console.warn` y el huérfano se genera **en silencio**. El mecanismo está en
   CLAUDE.md §9; no es específico de este bucket.
+
+**Editar una publicación ya no la mueve de campus (corregido con la fase 2A).**
+Era un bug que ya existía y nadie había visto. `actualizarListing()` mandaba
+`aFila(input)` con `universidad_id`/`campus_id` sacados del perfil ACTUAL
+(`editar/[id].tsx`), así que cada guardado de "Editar publicación" movía la
+publicación en silencio al campus nuevo de su dueño. Además, "Zona de entrega"
+mostraba el campus del perfil y no el de la publicación. Hoy:
+
+- **La ubicación salió de `ListingInput`** y vive en `UbicacionListing`
+  (`src/lib/listings.ts`), que solo recibe `crearListing()` vía
+  `publicarListing({ ubicacion })`. `aInput()` (`listing-form.ts`) ya no toma
+  parámetros, así que Editar no puede mandarla ni por accidente.
+- **"Zona de entrega" en Editar es `listing.campusNombre`**, que ya venía en el
+  embed `campus:campus(...)` del Detalle. En Publicar sigue siendo el campus del
+  perfil, que es donde nace la publicación.
+- **El candado es de base**: `authenticated` no tiene UPDATE sobre
+  `listings.universidad_id`/`campus_id` (`20260924000466`, T28 (d4)), y la FK
+  compuesta `listings(user_id, universidad_id)` → `users(id, universidad_id)`
+  impide crearla en otra universidad (T28 (d)). El cliente se corrigió en un
+  commit propio antes que la migración: solo manda MENOS columnas, así que
+  funcionaba igual contra el esquema anterior.
+

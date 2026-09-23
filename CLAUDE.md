@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 60 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 59 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -182,7 +182,7 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 29 migraciones (`supabase/migrations/`, medido con
+Definido en 30 migraciones (`supabase/migrations/`, medido con
 `ls supabase/migrations | wc -l`), con RLS activo y probado en las 15 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
@@ -195,11 +195,13 @@ más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando y
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto están a la par: 29 y 29** (remedido el 2026-09-23 con
-`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`, después de
-que `20260923000465` —dominios de registro y el Auth Hook— viajara a remoto).
-Es un estado transitorio, como dice la moraleja de abajo: la próxima migración
-lo rompe hasta su `db push`, así que se remide antes de confiar en él.
+**Repo y remoto NO están a la par: 30 y 29** (medido el 2026-09-23 con
+`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`). La que
+falta es `20260924000466` (la universidad sale del dominio del correo, fase
+2A), que espera su runbook: el pendiente 0 de §8, con un paso 0 BLOQUEANTE.
+Antes de eso decía "29 y 29", medido después de que `20260923000465` viajara a
+remoto. Es un estado transitorio, como dice la moraleja de abajo: se remide
+antes de confiar en él.
 
 **Por SÉPTIMA vez:** este párrafo decía "28 y 27", con `20260922000464`
 marcada como "sin pushear", y al remedirlo contra remoto ya había viajado: el
@@ -251,8 +253,12 @@ universidad_dominios (dominio text PK, universidad_id → universidades on delet
 -- Perfil (provisto automáticamente por trigger al verificar correo)
 users
   id uuid (= auth.users.id), correo (NO expuesto al cliente, ver abajo),
-  nombre, foto_url, universidad_id, campus_id, carrera (nullable hasta
-  "Completar perfil"), rating_promedio (solo triggers escriben),
+  universidad_id (la ASIGNA el trigger de alta desde el dominio del correo;
+  el cliente no la escribe; null solo en cuentas creadas por llave secreta
+  con dominio no registrado — ver abajo),
+  nombre, foto_url, campus_id, carrera (nullable hasta
+  "Completar perfil"; campus_id atado a universidad_id por FK compuesta),
+  rating_promedio (solo triggers escriben),
   estado (solo triggers/service_role escriben),
   telefono (E.164 `+52` + 10 dígitos, NO expuesto al cliente — ver abajo),
   tiene_telefono (generada: `telefono is not null`; ESTA sí es legible)
@@ -907,7 +913,7 @@ dominio padre, así que necesita su propia fila.
   entrega como `403` con `msg` = ese código. El copy lo pone el cliente.
 - **Falla CERRADO, medido:** una función que lanza da `500` y cero filas; una que
   tarda de más da `504 request_timeout` a los **10 s** en local (la doc dice 2 s;
-  el corte remoto está sin medir, ver el pendiente 0 de §8) y tampoco crea fila.
+  el corte remoto está sin medir, ver el pendiente 0b de §8) y tampoco crea fila.
   **Con la tabla vacía rechaza TODO**, y por eso en producción los dominios se
   dieron de alta ANTES de activar el hook (§8, "Hecho").
 - **Solo afecta el ALTA.** Login con contraseña, `resetPasswordForEmail`,
@@ -934,7 +940,78 @@ dominio padre, así que necesita su propia fila.
   El probe importa ese módulo y lo compara contra lo que devuelve GoTrue: ese es
   el amarre entre el string de SQL y el de TypeScript.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 196 aserciones, corre dentro de
+**La universidad de un usuario la asigna el SERVIDOR desde el dominio de su
+correo, y la base ata a ella su campus y sus publicaciones** (`20260924000466`,
+fase 2A). Antes la elegía el cliente en "Selector de universidad" y la base no
+ataba nada: `users.campus_id`/`universidad_id` y `listings.universidad_id`/
+`campus_id` eran FKs sueltas. Lo que viene detrás es mostrar la universidad de
+cada publicación en las tarjetas, y esa etiqueta solo da confianza si nadie la
+puede falsificar, así que el candado entero vive aquí. Son cuatro piezas:
+
+- **El trigger de alta** (`private.handle_new_user()`, `create or replace`, así
+  que conserva OID, trigger y revoke) inserta también `universidad_id`, que saca
+  de `universidad_dominios` con la MISMA normalización que el Auth Hook: lo que
+  sigue al último `@`, en minúsculas, sin espacios y con match exacto.
+  `split_part(…, -1)` exige Postgres 16+; remoto corre 17.6 (medido).
+  **Las dos copias de esa normalización no pueden compartir helper**: el hook
+  corre como `supabase_auth_admin`, que no tiene `USAGE` sobre `private`. El
+  amarre es T28 (a3). **Nunca lanza**: sin match da NULL. Pasa con una cuenta
+  creada por llave secreta (Studio, admin API), que no pasa por el hook. Que
+  el alta reventara sería peor, porque esa cuenta ni existiría para corregirla
+  en Studio.
+- **Grants, con `revoke all` y re-grant de las listas MEDIDAS** (no de
+  memoria). `authenticated` pierde UPDATE sobre `users.universidad_id`,
+  `listings.universidad_id` y `listings.campus_id`, y nada más. Lo prueba un
+  diff antes/después con `scripts/grants-users-listings.sql` (mira
+  `table_privileges` **y** `column_privileges`): da exactamente esas 3 filas
+  menos y ninguna más, en local. **Una publicación conserva la universidad y el
+  campus con los que nació.** Antes eso lo decía `explorar.md` y el código lo
+  contradecía: Editar publicación mandaba el campus ACTUAL del perfil y movía la
+  publicación en silencio (corregido en el cliente en su propio commit; este
+  grant es el candado).
+- **FK compuesta campus ↔ universidad**, en `users` y en `listings`, contra
+  `campus(universidad_id, id)` (que ganó ese `unique`). **REEMPLAZA a las FKs
+  sueltas, no se suma**: con dos FKs hacia `campus`, los embeds
+  `campus:campus(...)` sin hint morirían con PGRST201. Medido por HTTP como
+  authenticated después de aplicarla: feed, favoritos, perfil editable, perfil
+  público, contactos y universidades+campus dan 200. En `users` va con
+  **`check (campus_id is null or universidad_id is not null)`**
+  (`users_campus_requiere_universidad`), que es portante: la FK es MATCH
+  SIMPLE y NO se evalúa si una de las dos columnas es NULL. MATCH FULL tampoco
+  sirve, porque rechazaría el estado normal de "universidad asignada, campus
+  todavía no".
+- **FK compuesta publicación ↔ dueño**: `listings(user_id, universidad_id)` →
+  `users(id, universidad_id)`, `on update cascade on delete cascade` (con
+  `unique (id, universidad_id)` en `users`). Se eligió sobre las dos
+  alternativas por razones concretas:
+  - Un trigger que FIJARA la universidad desde el perfil reescribiría en
+    silencio: el cliente manda X y se guarda Y, sin error.
+  - Un `with check` solo alcanza a `authenticated`, y Studio podría dejar una
+    publicación incoherente.
+  - La FK aplica a todos los roles y rechaza con 23503. Un dueño sin
+    universidad no puede publicar, porque `(id, NULL)` nunca machea.
+  - `listings_user_id_fkey` SE QUEDA: es el hint `users!listings_user_id_fkey`.
+    Con esta segunda FK hacia `users`, un embed `users(...)` desde `listings`
+    sin hint sería ambiguo (hoy no hay ninguno).
+
+Tres consecuencias que no se ven en el diff:
+
+- **Mover a un usuario con publicaciones a otra universidad ABORTA, también
+  desde Studio** (T28 (d6)). El cascade lleva la universidad nueva a sus
+  publicaciones, que conservan el campus viejo, y la FK campus ↔ universidad
+  las rechaza. Falla cerrado. Si alguna vez hace falta, primero se resuelven
+  sus publicaciones.
+- **Cuentas sin dominio registrado**: en remoto hay 5 (gmail/hotmail/outlook,
+  anteriores al candado). Conservan la universidad que ya tenían (la 1) y su
+  campus. No la pueden cambiar; sí el campus dentro de ella. Una cuenta NUEVA
+  sin dominio (solo por llave secreta) nace con universidad NULL: no puede
+  fijar campus ni publicar, y la app le pinta la variante "sin universidad
+  asignada" de Completar perfil, con salida "Usar otro correo".
+- **Depende de la fase 1 con dominios reales.** Con `universidad_dominios`
+  vacía, todo alta nacería sin universidad. Por eso el runbook (§8, pendiente
+  0) tiene un paso 0 bloqueante.
+
+**Regresión de RLS:** `supabase/tests/rls.sql`, 212 aserciones, corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -1273,6 +1350,51 @@ La última fila es la sorpresa de la tarea, y por eso se midió aparte con
 `pg_sleep(40)`: GoTrue local corta a los **10 s** con `504` y no crea la fila. O
 sea que el timeout también falla cerrado, pero con un techo de 10 s y no de 2.
 
+Y a **212** con las de la fase 2A (`20260924000466`): 14 de T28, una en T12
+(sin UPDATE sobre `users.universidad_id` ni sobre la universidad/campus de una
+publicación) y una en T0. T28 es autocontenida, con su propia universidad, su
+dominio `rls-t28.mx`, dos campus propios y sus propios `:Z`/`:Z2`. **Estrena
+dos cosas que conviene conocer antes de escribir la siguiente sección:**
+
+- **`pg_temp.rechazo_de()` en vez de `expect_error`**: devuelve
+  `<sqlstate>:<constraint>`, y la aserción compara las dos partes. Aquí hay
+  cuatro candados que se confunden (grant 42501, dos FKs 23503 distintas y un
+  check 23514), y `expect_error` acepta CUALQUIER error, así que un rechazo por
+  el candado equivocado habría pasado.
+- **La acción y la comprobación del estado van en SENTENCIAS DISTINTAS**
+  (`\gset`). Una subconsulta dentro del mismo `select pg_temp.assert(...)` corre
+  con el snapshot de ESA sentencia y no ve lo que la función escribió. Medido:
+  (c2) caía aunque el update sí había escrito. En (d4)/(d6), que comprueban que
+  algo NO cambió, el mismo error las habría dejado pasando sin probar nada.
+
+La de T0 no es relleno: las publicaciones sembradas en T0 exigen que el dueño
+tenga la universidad de su dominio (FK publicación ↔ dueño). Sin esa
+aserción, la variante "trigger sin lookup" tumbaba la suite con un error crudo
+de FK en el insert de fixtures, lejos de su causa. Los diez controles se
+corrieron uno a la vez, contra la suite completa **y** contra T28 aislada,
+imprimiendo antes lo que quedó aplicado:
+
+| Variante rota | Suite | T28 aislada |
+|---|---|---|
+| trigger sin el lookup | T0 (la nueva) | (a) |
+| trigger que lanza sin dominio | (a2) | (a2) |
+| trigger con el PRIMER `@` | (a3) | (a3) |
+| `grant update (universidad_id)` en `users` | T12 | (b) |
+| FK suelta de `users` hacia `campus` | (c) | (c) |
+| sin el check `users_campus_requiere_universidad` | (c3) | (c3) |
+| sin `listings_user_universidad_fkey` | (d) | (d) |
+| FK suelta de `listings` hacia `campus` | (d2) | (d2) |
+| `grant update (universidad_id, campus_id)` en `listings` | T12 | (d4) |
+| `listings_user_universidad_fkey` sin `on update cascade` | (d6) | (d6) |
+
+Dos matices. **(d5) no tiene control propio**: es la misma FK que (d), que cae
+antes; documenta el caso "sin universidad no publica". **La variante "lanza"
+tampoco la caza el caso 8 de `probe-registro.mjs`**: el probe aborta antes, en
+el caso 5, con "no se pudo sembrar la cuenta existente: 500" y salida 1. Se
+detecta, pero la red con nombre es (a2), que da de alta a `:Z2` capturando el
+error en vez de con un insert suelto. Con un insert suelto, esa variante moría
+con el error crudo antes de llegar a (a2).
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -1394,21 +1516,36 @@ los dos secretos de Vault de los triggers (§8, pendiente 2).
 
 ---
 
-## 4. Inventario completo de pantallas (60)
+## 4. Inventario completo de pantallas (59)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
 usa el filtro visual del prototipo. Para el estado de qué grupo ya existe
 como código real (vs. solo diseño), ver §8 y las reglas de `.claude/rules/`.
 
-### Onboarding (16)
+### Onboarding (15)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
 **Verificación (correo no participante)** ·
 Código de verificación · Completar perfil ·
 Completar perfil (estado inicial) · Completar perfil (selector de campus) ·
-Selector de universidad · Permiso de notificaciones ·
+Permiso de notificaciones ·
 Iniciar sesión · Recuperar contraseña · **Código de recuperación** ·
 **Nueva contraseña**
+
+**Eran 16: "Selector de universidad" salió con la fase 2A** (`20260924000466`).
+La universidad ya no se elige: la asigna el servidor desde el dominio del
+correo, y los cuatro frames que la mostraban la pintan fija
+(`.select-field.disabled` **sin chevron**, porque no abre nada). Esos cuatro son
+Completar perfil, su estado inicial, su selector de campus y Editar perfil. No
+se reemplazó por una pantalla de confirmación: sería una pantalla que no decide
+nada. De paso, "Completar perfil (estado inicial)" dejó de tener el campus
+deshabilitado, porque ya no espera a la universidad. Lo único que falta en ese
+estado es lo que el usuario teclea. Y "Completar perfil" ganó una **variante
+etiquetada, "sin universidad asignada"**, que no cuenta aparte: la cuenta
+creada por llave secreta con un dominio no registrado, con un `.notice` y la
+salida "Usar otro correo". Los conteos se midieron sobre el HTML
+(`grep -o 'class="phone-block" data-cat="…"' | sort | uniq -c`): 59 en total, 15
+de onboarding.
 
 Las dos últimas llegaron con RF-04, y son el segundo y tercer paso del reset por
 OTP. "Código de recuperación" es casi gemela de "Código de verificación" —misma
@@ -1558,15 +1695,18 @@ Toast de éxito · Toast de error · Loading / skeleton
 ## 5. Flujos que no son obvios solo viendo las pantallas
 
 - **Verificación → acceso**: correo institucional (OTP passwordless) →
-  código → completar perfil (nombre, universidad, campus, y aquí se fija la
-  contraseña) → permiso de notificaciones → Feed. La sesión ya existe desde
+  código → completar perfil (nombre y campus, y aquí se fija la contraseña;
+  la universidad ya viene puesta, ver abajo) → permiso de notificaciones →
+  Feed. La sesión ya existe desde
   que se verifica el OTP — es el equivalente de
   `supabase.auth.signInWithOtp({ email })` seguido de la verificación del
   código — y no depende de la contraseña. Esa contraseña, fijada después en
   "Completar perfil", no autentica el registro: habilita el login posterior
   por correo/contraseña (RF-02) para cuando el usuario vuelva a abrir la app.
-  La universidad y el campus elegidos aquí determinan qué catálogo ve el
-  usuario de ahí en adelante.
+  La universidad NO se elige: la asigna el servidor al crear la cuenta, a
+  partir del dominio del correo (`20260924000466`, §3), y Completar perfil solo
+  la muestra fija. El campus sí se elige, y solo entre los de esa universidad.
+  Los dos determinan qué catálogo ve el usuario de ahí en adelante.
 - **Marcar como vendida → calificación**: como no hay chat interno, el vendedor
   no sabe automáticamente quién compró. Se resuelve con la tabla
   `listing_contacts`: al tocar "Marcar como vendida", se le muestra al
@@ -1574,11 +1714,17 @@ Toast de éxito · Toast de error · Loading / skeleton
   publicación, para que elija quién se la llevó (o "No fue a través de
   Relevo"). Esa selección dispara la pantalla de Calificar con el nombre real
   de esa persona.
-- **Selector de campus vs. selector de universidad**: son dos entradas
-  distintas al mismo dato. "Selector de universidad" (pantalla completa, con
-  buscador) se usa una sola vez en onboarding. "Selector de campus" (bottom
-  sheet, ligero) vive en el Feed para cambiar de contexto rápido sin salir del
-  catálogo — pensado para cuando una universidad tenga varios campus.
+- **El único selector que queda es el de campus, y tiene dos usos distintos.**
+  "Selector de universidad" ya no existe: salió del flujo y del HTML cuando la
+  universidad pasó a asignarla el servidor desde el dominio del correo
+  (`20260924000466`).
+  - En Completar perfil y Editar perfil, el bottom sheet de campus FIJA el
+    campus del perfil, dentro de su universidad.
+  - En el Feed, "Selector de campus" (bottom sheet, ligero) cambia qué catálogo
+    se MIRA sin tocar el perfil, pensado para cuando una universidad tenga
+    varios campus.
+  - Navegar el catálogo de OTRAS universidades es una tarea aparte, todavía
+    sin diseño.
 - **El buscador de Feed y el de Búsqueda se ven idénticos pero se comportan
   distinto — no es un bug, es la intención.** En Feed es un punto de entrada,
   **no editable**: tocar en cualquier parte navega directo a Búsqueda en su
@@ -1604,7 +1750,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 60 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 59 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -1898,7 +2044,37 @@ de los route groups).
   --include-seed`**: eso también sembraría lo que traiga `seed.sql`.
 
 **Pendiente, en este orden de prioridad:**
-0. **(No bloqueante) Medir en remoto el timeout del hook de registro.** En local
+0. **Llevar la fase 2A a remoto (`20260924000466`) — hecha y probada en local,
+   NO aplicada en remoto.** Runbook, en este orden:
+   0. **BLOQUEANTE, la fase 1 viva en remoto** (se remide, no se copia de aquí):
+      (a) `list_migrations` incluye `20260923000465`; (b)
+      `select dominio, universidad_id from public.universidad_dominios` da ≥1
+      fila; (c) los logs de Auth muestran `run_hook` sobre
+      `hook_before_user_created`. **Si (b) da 0, NO se aplica**: con la tabla
+      vacía el trigger nuevo haría nacer toda cuenta sin universidad, y todas
+      caerían en "sin universidad asignada". Después, remedir que a) usuarios
+      con universidad distinta a la de su dominio, c) usuarios con campus ajeno
+      y d) publicaciones incoherentes den 0 (las FKs nuevas validan las filas
+      existentes al crearse). Medido el 2026-09-23: 29 migraciones con la de
+      fase 1, dominios `exatec.tec.mx→1, tec.mx→1`, `run_hook` a las
+      06:54:02Z, y a/c/d en 0.
+   1. `scripts/grants-users-listings.sql` por `execute_sql` ANTES del push, y se
+      guarda la salida.
+   2. `supabase db push`.
+   3. La misma consulta DESPUÉS: el diff tiene que dar exactamente tres filas
+      menos (UPDATE en `users.universidad_id`, `listings.universidad_id` y
+      `listings.campus_id`) y ninguna más. Además, `prosrc` de
+      `handle_new_user` y los constraints en `pg_constraint`.
+   4. `npm run gen:types` (es `--linked`: hasta el push no ve las FKs nuevas).
+   5. **Instalar el build nuevo en seguida.** Hay una ventana de
+      incompatibilidad en los dos sentidos: un build viejo manda
+      `universidad_id` en Completar/Editar perfil y recibe 42501; el build
+      nuevo contra el esquema viejo dejaría altas sin universidad. Primero la
+      migración y de inmediato el build.
+   6. Una alta real `tec.mx`/`exatec.tec.mx` y comprobar su `universidad_id`
+      (conteo, sin correos).
+   Recién entonces se mueve a "Hecho".
+0b. **(No bloqueante) Medir en remoto el timeout del hook de registro.** En local
    GoTrue corta a los **10 s** con `504`; la doc dice 2 s. Los dos casos fallan
    cerrado, pero con un corte de 2 s una función lenta rechazaría en remoto
    registros que en local pasan. Hoy el hook tarda de 1 a 10 ms en producción,
@@ -1947,7 +2123,8 @@ vive COMPLETA —con su "Revisar cuando" y su "Fix"— en la regla de su feature
 aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 
 - Cambiar el avatar puede dejar el anterior huérfano en Storage → `cuenta-perfil.md`
-- La base no ata `users.campus_id` a `users.universidad_id`, y quien sostiene esa coherencia es el cliente — ahora en DOS lugares → `cuenta-perfil.md`
+- ~~La base no ata `users.campus_id` a `users.universidad_id`~~ **[CERRADA]** por `20260924000466` (FK compuesta + check) → `cuenta-perfil.md`
+- La universidad se fija en el ALTA: cambiar el correo de una cuenta no la re-deriva → `onboarding-auth.md`
 - `ErrorState` promete "Reintentar" aunque no haya nada que reintentar → `componentes-compartidos.md`
 - "Omitir por ahora" en Calificar es DEFINITIVO → `confianza-ventas.md`
 - La reseña del mal asignado sobrevive y queda inmutable → `confianza-ventas.md`
@@ -2000,7 +2177,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" |
 | `EmptyState` | `EmptyState` | Estado vacío, con `.empty-actions` opcional |
 | `ErrorState` | `ErrorState` | Estado de fallo con "Reintentar" (label hardcodeado — ver deuda) |
-| `Field` | `Field`, `PhoneField`, `SelectField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio |
+| `Field` | `Field`, `PhoneField`, `SelectField`, `FixedField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio. `FixedField` = valor que se muestra y no se elige (sin chevron, no es botón) |
 | `ListRow` | `FormHeader`, `SearchField`, `ListRow`, `RadioCircle` | Fila de lista, header de formulario y el radio que reusan 3 pantallas |
 | `ListingFormFields` | `ListingFormFields` | EL formulario de publicación, compartido por Publicar y Editar |
 | `ListingPhoto` | `ListingPhoto` | Punto ÚNICO de contacto con el bucket privado (header `Authorization`) |
@@ -2017,7 +2194,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `Screen` | `Screen`, `useScreenScrollViewRef` | Contenedor de pantalla con su `ScrollView` |
 | `SectionHead` | `SectionHead` | Encabezado de sección con "Ver todo" |
 | `SegmentedControl` | `SegmentedControl` | Control segmentado |
-| `SelectorCatalogo` | `SelectorCatalogo` | Selector de pantalla completa con buscador |
+| `SelectorCatalogo` | `SelectorCatalogo` | Selector de pantalla completa con buscador. **Sin consumidor desde la fase 2A**: sus dos usos eran los selectores de universidad, que desaparecieron. Se conserva para "navegar otras universidades" |
 | `SheetScreen` | `SheetScreen` | Hoja de Stack `transparentModal` **declarada en el Stack raíz** |
 | `Skeleton` | `SkeletonPiece`, `SkeletonGrid`, `SkeletonCatGrid`, `SkeletonRows`, `SkeletonNotifRows`, `SkeletonPerfilForm`, `SkeletonPerfil` | Un esqueleto por FORMA de lo que viene |
 | `StarRating` | `StarRating` | Estrellas de Calificar |

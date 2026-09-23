@@ -107,9 +107,37 @@ producción está en §8, "Hecho"). Del lado de la app:
   carga desde Node y compara `DOMINIO_NO_PARTICIPANTE` contra la respuesta real
   de GoTrue. Si el string cambia en la función SQL sin cambiar aquí, el aviso
   deja de salir y el usuario ve el código crudo. El probe lo caza.
-- **Fuera de alcance, para la fase 2:** el Selector de universidad y Editar
-  perfil siguen sin mirar el dominio del correo (un usuario de `tec.mx` puede
-  elegir otra universidad).
+- **Fase 2 cerrada por la 2A (abajo):** la universidad ya no se elige, la
+  asigna el servidor desde el mismo dominio que admite el hook.
+
+**Fase 2A — la universidad sale del dominio del correo (`20260924000466`).**
+El detalle de base (trigger, grants, FKs compuestas y el check) está en
+CLAUDE.md §3; aquí va lo que toca el flujo:
+
+- **"Selector de universidad" ya no existe** (ni el archivo ni el frame). El
+  trigger de alta (`private.handle_new_user()`) crea el perfil con la
+  universidad del dominio, así que al llegar a "Completar perfil" ya está
+  puesta. La pantalla la muestra con `FixedField` (sin chevron: no abre nada),
+  la lee con `fetchUniversidad()` (`src/lib/catalogos.ts`, porque la sesión solo
+  trae el id) y el UPDATE manda solo `nombre, campus_id`. Mandar
+  `universidad_id` ahora da 42501.
+- **El borrador de `(onboarding)/_layout.tsx` perdió `universidad`**, y con él
+  la línea que limpiaba el campus al cambiarla: la universidad ya no cambia, y
+  la coherencia campus ↔ universidad la garantiza la base.
+- **El gating es `nombre && campus_id`** (`session.tsx`), no `nombre &&
+  universidad_id`. Como la universidad llega desde el alta, había dejado de
+  significar "completó el perfil". El campus implica universidad porque la base
+  no admite campus sin ella.
+- **Variante "sin universidad asignada"** (frame "Completar perfil"). La ve solo
+  una cuenta creada por llave secreta con un dominio no registrado: el admin API
+  no pasa por el hook, así que el trigger la deja en NULL (medido,
+  `probe-registro.mjs` caso 8). Sin universidad no hay campus que elegir ni se
+  puede publicar, y el gating la devolvería aquí para siempre. Por eso lleva un
+  `.notice` y "Usar otro correo", que hace `signOut()` de `useSession` (por el
+  orden del push token) y vuelve a Verificación. `sinUniversidad` mira
+  `profile !== null` para no confundir "todavía no carga" con "no tiene".
+- **Las cuentas que ya existían no cambian**: conservan su universidad (en
+  remoto, las 5 sin dominio registrado tienen la 1) y no pueden cambiarla.
 
 - **Auth gating cableado end-to-end y confirmado con una cuenta real de Tec
   de Monterrey**: `SessionProvider` (`src/lib/session.tsx`) escucha
@@ -148,3 +176,14 @@ producción está en §8, "Hecho"). Del lado de la app:
   haber cambiado su contraseña. **Fix:** persistir la marca de recuperación en el
   mismo storage que la sesión y que `splash.tsx` la lea, o un `signOut()` al montar
   `nueva-password` cuando no se llegó por el flujo.
+
+- **La universidad se fija en el ALTA: cambiar el correo de una cuenta no la
+  re-deriva.** `private.handle_new_user()` es `after insert` sobre `auth.users`,
+  y un cambio de correo es un UPDATE. Hoy la app no ofrece cambiar el correo, así
+  que el caso solo existe desde Studio/admin API. Si pasara, la cuenta quedaría
+  con la universidad de su correo anterior. **Revisar cuando:** la app ofrezca
+  cambiar el correo, o se mueva una cuenta de universidad desde Studio.
+  **Fix:** un trigger `after update of email` que re-derive, sabiendo que mover
+  de universidad a un usuario CON publicaciones aborta por diseño
+  (`listings_campus_universidad_fkey`, T28 (d6)). Habría que decidir antes qué
+  pasa con ellas.

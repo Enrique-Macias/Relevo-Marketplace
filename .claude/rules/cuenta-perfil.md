@@ -278,25 +278,24 @@ Diez cosas que no se ven en el diff:
   (`20260906000438:110` + `20260910000448:62`), así que un solo statement es
   legal — pero sigue prohibido colar `correo`/`estado`/`rating_promedio`, que lo
   rechazarían entero con 42501.
-- **Universidad y campus SÍ son editables**, y eso lo decide el frame: los pinta
-  como `.select-field` normal, no `.select-field.disabled` — variante que el mismo
-  archivo usa a 90 líneas de distancia para "Zona de entrega" de Editar
-  publicación. El backend nunca lo impidió.
-- **El selector de universidad es una ruta NUEVA y no la del onboarding**, y no se
-  llama `selector-universidad.tsx`: dos archivos con ese nombre en dos grupos de
-  primer nivel resolverían los dos a `/selector-universidad` — el gotcha de rutas
-  ambiguas de más abajo. Es `/editar-perfil/universidad`. Tampoco se pudo montar
-  `SelectorCatalogo` dentro de un `Modal` como `CampusBottomSheet`: hace
-  `router.back()` adentro al elegir. De ahí el `_layout.tsx` con su contexto, que
-  guarda SOLO universidad/campus — nombre, carrera y teléfono se quedan en el
-  estado local de la pantalla, que no se desmonta al empujar el selector.
+- **La universidad es FIJA y el campus sí es editable (fase 2A,
+  `20260924000466`).** La universidad la asignó el servidor desde el dominio del
+  correo, y `authenticated` ya no tiene UPDATE sobre `users.universidad_id`. El
+  frame la pinta `.select-field.disabled` **sin chevron** y el código la pinta
+  con `FixedField` (`src/components/Field.tsx`), un `View` que no se anuncia
+  como botón. No es un `SelectField` con `disabled`: aquél conserva el chevron
+  y significa "todavía no". El campus se elige en `CampusBottomSheet` entre los
+  de esa universidad, y que no pueda ser de otra lo garantiza la base (FK
+  compuesta `users_campus_universidad_fkey`), no la pantalla.
+  **Historia, para no reintroducirla:** antes había una ruta hija
+  `/editar-perfil/universidad` (se llamaba así y no `selector-universidad.tsx`
+  por el gotcha de rutas ambiguas de más abajo) con un `_layout.tsx` y su
+  contexto, porque `SelectorCatalogo` hace `router.back()` adentro y no cabía en
+  un `Modal`. Desaparecieron las dos: sin ruta hija el contexto no tenía
+  razón de ser, y el campus volvió al estado local del formulario.
 - **Esta pantalla NO recarga al recuperar el foco**, al revés que
-  `mis-publicaciones.tsx` y `(publicar)/editar/[id].tsx`. Su única ruta hija
-  escribe en el borrador, no en la base: un refetch al volver pisaría la
-  universidad que el usuario acaba de elegir con la que sigue guardada.
-- **Cambiar de universidad limpia el campus**, la misma regla que ya estaba en
-  `(onboarding)/_layout.tsx` — ver la deuda de este archivo sobre por qué esa
-  coherencia vive en el cliente y ahora en dos lugares.
+  `mis-publicaciones.tsx` y `(publicar)/editar/[id].tsx`: no empuja ninguna ruta
+  (el campus se elige en un `Modal`), así que nunca "vuelve" a ella.
 - **El círculo de foto es INERTE a propósito** y se pinta completo, con su
   `.cam-badge`. Es un `View`, no un `Pressable`, y sin
   `accessibilityRole="button"`: si no pasa nada, no debe anunciarse como botón —
@@ -334,10 +333,11 @@ esqueleto anticipa la forma de lo que viene. Y un rol de `Typography`,
 que se confunde por los dos lados.
 
 **`OpcionCatalogo` (`{id, nombre}`) vive en `src/lib/catalogos.ts`**, y no en el
-layout de onboarding donde nació: desde esta pantalla hay **dos** borradores que
-eligen universidad/campus —`(onboarding)/_layout.tsx` y
-`(cuenta)/editar-perfil/_layout.tsx`—, y dos definiciones idénticas con el mismo
-nombre en módulos distintos son una invitación a que se separen. El layout de
+layout de onboarding donde nació: la usan el borrador de onboarding
+(`(onboarding)/_layout.tsx`, para el campus) y el estado local de esta pantalla,
+y dos definiciones idénticas con el mismo nombre en módulos distintos son una
+invitación a que se separen. (Hubo un segundo borrador,
+`(cuenta)/editar-perfil/_layout.tsx`, que se fue con la fase 2A.) El layout de
 onboarding lo **re-exporta** (`export type { OpcionCatalogo }`) para no cambiar su
 superficie pública. Esa sintaxis no es opcional: bajo transpilación archivo por
 archivo (Babel, que es lo que corre Metro), un `export { OpcionCatalogo }` sin
@@ -736,8 +736,19 @@ Lo que no se ve en el diff:
   que cuesta DOS migraciones por el `ALTER TYPE` partido, como
   `20260917000458`/`:459`—; (3) recién ahí el cliente.
 
-- **La base no ata `users.campus_id` a `users.universidad_id`, y quien sostiene
-  esa coherencia es el cliente — ahora en DOS lugares.** No hay FK compuesta ni
+- ~~**La base no ata `users.campus_id` a `users.universidad_id`**~~ **[CERRADA]
+  por `20260924000466` (fase 2A)**, con el fix que esta misma entrada proponía:
+  `unique (universidad_id, id)` en `campus` más una FK compuesta desde `users`,
+  y además desde `listings`. Hizo falta un `check`
+  (`users_campus_requiere_universidad`) que la entrada no preveía: la FK es
+  MATCH SIMPLE y no se evalúa si `universidad_id` es NULL. **Por qué se cerró
+  ahora y no antes:** la regla dejó de poder vivir en el cliente. La universidad
+  pasó a asignarla el servidor, así que ya no hay "cambiar de universidad" que
+  limpie nada. Y lo que viene detrás, la universidad de cada publicación visible
+  en las tarjetas, solo da confianza si NADIE la puede falsificar. Las dos
+  líneas que limpiaban el campus se fueron con los selectores de universidad.
+  Aserciones: T28 (c), (c2), (c3), (d2). Texto original de la deuda, para el
+  historial: No hay FK compuesta ni
   `check` que impida guardar un campus de otra universidad: son dos FKs sueltas
   (`20260906000438_users_profiles.sql:11-12`). Lo que lo evita es la línea que
   limpia el campus al cambiar de universidad, que vivía solo en

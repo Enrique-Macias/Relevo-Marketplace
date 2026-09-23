@@ -118,7 +118,13 @@ Detalles que no se ven en el diff:
   mudarse. Cambiar de UNIVERSIDAD nunca necesitó esto: el campus viejo ya no
   aparece en la lista nueva y cae solo. Lo que NO se toca son las publicaciones
   ya creadas, que conservan su `campus_id` del insert — eso es correcto, no un
-  efecto que haya que compensar.
+  efecto que haya que compensar. **Ojo: durante un tiempo esta frase fue
+  FALSA** y nadie lo vio: "Editar publicación" mandaba en cada guardado el
+  campus ACTUAL del perfil, así que editar movía la publicación en silencio.
+  Desde la fase 2A es cierta y tiene candado: `actualizarListing` ya no manda
+  ubicación (`UbicacionListing`, `src/lib/listings.ts`, solo la recibe el alta),
+  y `authenticated` no tiene UPDATE sobre `listings.universidad_id`/`campus_id`
+  (`20260924000466`, T28 (d4)).
 - **El hero de Detalle es un CARRUSEL, y su visor a pantalla completa es un
   `Modal`, no una ruta.** Las fotos siempre estuvieron completas en
   `fetchListingById()` (`fotos: string[]`, ordenadas por `orden`); lo que
@@ -353,7 +359,8 @@ mismo patrón que `PhotoCarouselHandle`
 (`src/components/PhotoCarousel.tsx:57-60,77-116`): un tipo `SearchFieldHandle
 = { focus: () => void }` exportado, `forwardRef` + `useImperativeHandle`
 sobre un `useRef<TextInput>` interno. Es aditivo: los otros 3 consumidores
-(Selector de universidad, Selector de campus, Categoría) no pasan `ref` y
+(Selector de universidad —que ya no existe, fase 2A—, Selector de campus,
+Categoría) no pasan `ref` y
 siguen funcionando igual — `forwardRef` no rompe una llamada sin `ref`.
 
 **Aplicar filtros desde el Feed aterriza en Búsqueda, no vuelve al Feed.**
