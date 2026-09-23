@@ -195,12 +195,13 @@ más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando y
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto NO están a la par: 29 y 28**, medido con
-`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`. La única de
-más es `20260923000465` (dominios de registro y el Auth Hook), escrita y
-validada en local y **sin pushear**.
+**Repo y remoto están a la par: 29 y 29** (remedido el 2026-09-23 con
+`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`, después de
+que `20260923000465` —dominios de registro y el Auth Hook— viajara a remoto).
+Es un estado transitorio, como dice la moraleja de abajo: la próxima migración
+lo rompe hasta su `db push`, así que se remide antes de confiar en él.
 
-**Y por SÉPTIMA vez:** este párrafo decía "28 y 27", con `20260922000464`
+**Por SÉPTIMA vez:** este párrafo decía "28 y 27", con `20260922000464`
 marcada como "sin pushear", y al remedirlo contra remoto ya había viajado: el
 remoto tiene 28 con ella incluida. La historia de antes, tal como estaba:
 
@@ -893,6 +894,11 @@ catálogos. Todo lo que sigue está **medido** contra GoTrue v2.196.0 local con
 `scripts/probe-registro.mjs`, no leído de la doc: la doc del hook no enumera qué
 flujos lo disparan ni qué pasa si falla.
 
+**EN PRODUCCIÓN desde el 2026-09-23** (ver §8, "Hecho"). Dominios dados de alta
+en remoto: `tec.mx` y `exatec.tec.mx`, los dos de Tec de Monterrey. El segundo
+es un ejemplo real de por qué el match es exacto: un subdominio no hereda del
+dominio padre, así que necesita su propia fila.
+
 - **La regla:** el dominio es lo que sigue al ÚLTIMO `@`, en minúsculas y sin
   espacios, con coincidencia EXACTA. `estudiante.tec.mx` no hereda de `tec.mx`,
   y `eviltec.mx` o `tec.mx.evil.com` tampoco machean. Solo un match explícito
@@ -901,9 +907,9 @@ flujos lo disparan ni qué pasa si falla.
   entrega como `403` con `msg` = ese código. El copy lo pone el cliente.
 - **Falla CERRADO, medido:** una función que lanza da `500` y cero filas; una que
   tarda de más da `504 request_timeout` a los **10 s** en local (la doc dice 2 s;
-  en remoto puede ser ese el corte) y tampoco crea fila. **Con la tabla vacía
-  rechaza TODO**, y por eso el runbook de §8 da de alta los dominios ANTES de
-  activar el hook.
+  el corte remoto está sin medir, ver el pendiente 0 de §8) y tampoco crea fila.
+  **Con la tabla vacía rechaza TODO**, y por eso en producción los dominios se
+  dieron de alta ANTES de activar el hook (§8, "Hecho").
 - **Solo afecta el ALTA.** Login con contraseña, `resetPasswordForEmail`,
   `verifyOtp({type:'recovery'})` y un `signInWithOtp` sobre una cuenta que ya
   existe no pasan por él: las cuentas previas de cualquier dominio (en remoto hay
@@ -1861,29 +1867,43 @@ de los route groups).
     **limitación de falsos negativos** que documenta
     `.claude/rules/moderacion.md` §8b: 3 de 6 (n=6) evadieron el eje de imagen.
 
+- **Registro restringido a dominios institucionales EN PRODUCCIÓN (2026-09-23).**
+  Migración `20260923000465` + Auth Hook "Before User Created". Los cuatro pasos
+  del runbook están dados, en su orden, y se remidieron contra remoto en vez de
+  darse por hechos:
+  - `mcp__supabase__list_migrations` da **29**, igual que
+    `ls supabase/migrations | wc -l` (**29**), incluida `20260923000465`.
+  - Dominios dados de alta (`select … from public.universidad_dominios`):
+    `tec.mx` y `exatec.tec.mx`, los dos de Tec de Monterrey.
+  - Grants como en local: `EXECUTE` de la función solo para `postgres`,
+    `service_role` y `supabase_auth_admin`; una sola policy en la tabla; cero
+    privilegios de tabla para `anon`/`authenticated`.
+  - **Hook activo, medido en los logs de Auth** (`mcp__supabase__query_logs`,
+    `source = 'auth_logs'`): `run_hook` sobre
+    `pg-functions://postgres/public/hook_before_user_created`, con altas
+    permitidas (`Hook ran successfully`) y rechazos `403: dominio_no_participante`
+    en `/otp`, el 2026-09-23 entre las 06:26 y las 06:28 UTC. El hook tardó de 1 a
+    10 ms, lejos de cualquier timeout.
+  - **Los rechazos no dejaron cuenta**: ese día solo se creó una cuenta, de
+    `exatec.tec.mx`; ninguna de un dominio no permitido. Las 5 cuentas previas
+    de gmail/hotmail/outlook siguen existiendo y pueden entrar (el hook solo
+    toca el ALTA).
+  - `src/lib/database.types.ts` ya se regeneró desde remoto e incluye
+    `universidad_dominios`.
+  **Para dar de alta otra universidad**, el orden sigue importando: primero la
+  fila en `universidades`, después sus dominios en `universidad_dominios` (en
+  minúsculas, sin espacios ni `@`, y cada subdominio con su propia fila), y
+  hasta entonces nadie de ahí se puede registrar. El hook ya está activo, así
+  que no hay que tocar nada en el Dashboard. **No se hace con `db push
+  --include-seed`**: eso también sembraría lo que traiga `seed.sql`.
+
 **Pendiente, en este orden de prioridad:**
-0. **Activar en remoto el candado de dominios de registro (`20260923000465`).**
-   Está hecho y probado en local; en remoto no está hecho **nada**. Son cuatro
-   pasos manuales, y **el orden es parte del candado**:
-   1. **Aplicar la migración** (`supabase db push`). No bloquea ningún registro
-      por sí sola: crea la tabla y la función, pero el hook sigue apagado.
-      Después, `npm run gen:types` (el script genera desde remoto, así que antes
-      de este paso la tabla nueva no aparece en los tipos).
-   2. **Dar de alta los dominios reales en Studio** y comprobarlos con
-      `select * from public.universidad_dominios`. Tienen que ir en minúsculas,
-      sin espacios y sin `@` (el `check` rechaza lo demás). Va ANTES del paso 3
-      porque el hook falla cerrado: con la tabla vacía, activarlo bloquea
-      **todos** los registros. Ojo: `db push --include-seed` también sembraría
-      `tec.mx` desde `seed.sql`.
-   3. **Activar el hook**: Dashboard → Authentication → Hooks → Before User
-      Created → tipo Postgres → `public.hook_before_user_created`. NO se hace con
-      `config push` (§9).
-   4. **Prueba real**: un registro con un dominio dado de alta tiene que llegar a
-      "Ingresa el código", y uno con gmail tiene que mostrar el aviso sin dejar
-      fila (`select count(*) from auth.users where email = '…'`).
-   **Medir en remoto el timeout del hook**: en local el corte es de 10 s
-   (`504`); la doc dice 2 s. Los dos casos fallan cerrado, pero una función
-   lenta rechazaría en remoto registros que en local pasan.
+0. **(No bloqueante) Medir en remoto el timeout del hook de registro.** En local
+   GoTrue corta a los **10 s** con `504`; la doc dice 2 s. Los dos casos fallan
+   cerrado, pero con un corte de 2 s una función lenta rechazaría en remoto
+   registros que en local pasan. Hoy el hook tarda de 1 a 10 ms en producción,
+   así que no hay urgencia. **Revisar cuando:** el hook haga algo más que una
+   búsqueda por PK, o los logs de Auth muestren `request_timeout` en `/otp`.
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:

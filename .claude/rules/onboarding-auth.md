@@ -76,10 +76,12 @@ también `OTP_LENGTH`. Y dos constantes que dejaron de estar duplicadas antes de
 poder duplicarse: `CORREO_RE` (de `verificacion.tsx`) y `MIN_PASSWORD` (de
 `completar-perfil.tsx`), esta última ahora emparejada con el servidor — ver §9.
 
-**Registro restringido a dominios institucionales, fase 1 (candado + mensaje).**
-El alta solo admite correos de dominios dados de alta en `universidad_dominios`,
-y el candado es el Auth Hook "Before User Created" de GoTrue (CLAUDE.md §3, el
-bloque del hook, con todo lo medido). Del lado de la app:
+**Registro restringido a dominios institucionales, fase 1 (candado + mensaje) —
+EN PRODUCCIÓN desde el 2026-09-23.** El alta solo admite correos de dominios
+dados de alta en `universidad_dominios` (hoy en remoto: `tec.mx` y
+`exatec.tec.mx`), y el candado es el Auth Hook "Before User Created" de GoTrue
+(CLAUDE.md §3, el bloque del hook, con todo lo medido; la evidencia de
+producción está en §8, "Hecho"). Del lado de la app:
 
 - **Flujo:** `verificacion.tsx` sigue llamando a `signInWithOtp({ shouldCreateUser:
   true })` sin cambios. Si el dominio no está dado de alta, GoTrue responde `403`

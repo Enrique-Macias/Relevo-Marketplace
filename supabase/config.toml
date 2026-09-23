@@ -337,10 +337,10 @@ max_frequency = "5s"
 # This hook runs before a new user is created and allows developers to reject the request based on the incoming user object.
 # Relevo: el registro solo admite dominios de `public.universidad_dominios`
 # (migración 20260923000465). Esto activa el hook SOLO en local: este archivo no
-# se empuja a remoto (CLAUDE.md §9, `config push`), donde se activa desde el
-# Dashboard siguiendo el runbook de §8. Falla CERRADO: con la tabla vacía
-# rechaza todos los registros, y `seed.sql` siembra `tec.mx` para que eso no
-# pase aquí.
+# se empuja a remoto (CLAUDE.md §9, `config push`). En remoto está activo desde
+# el 2026-09-23, configurado en el Dashboard (CLAUDE.md §8). Falla CERRADO: con
+# la tabla vacía rechaza todos los registros, y `seed.sql` siembra `tec.mx` para
+# que eso no pase aquí.
 [auth.hook.before_user_created]
 enabled = true
 uri = "pg-functions://postgres/public/hook_before_user_created"
