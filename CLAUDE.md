@@ -195,12 +195,18 @@ más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando y
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto están a la par: 30 y 30** (remedido el 2026-09-23 con
-`ls supabase/migrations | wc -l` y `mcp__supabase__list_migrations`, tras
-correr el runbook de la fase 2A y aplicar `20260924000466` con `supabase db
-push`). Es un estado transitorio, como dice la moraleja de abajo: la próxima
-migración lo rompe hasta su `db push`, así que se remide antes de confiar en
-él.
+**Repo y remoto YA NO están a la par: 31 y 30.** `20260925000467` (fase 2C,
+`campus.latitud`/`longitud`) se aplicó y se probó en LOCAL en esta sesión —
+`ls supabase/migrations | wc -l` da **31**— pero no se pusheó a remoto a
+propósito: es parte del runbook remoto pendiente de CLAUDE.md §8 (junto con
+capturar coordenadas reales en Studio e instalar el dev build nuevo), no algo
+para correr sin que el usuario lo pida. Remoto se queda en 30 hasta ese paso.
+
+**Por NOVENA vez, y esta vez la discrepancia es del signo contrario:** las
+ocho veces anteriores el párrafo decía "a la par" y dejaba de serlo por un
+`db push` que YA había corrido. Esta vez es al revés — se escribe "no están a
+la par" mientras el estado es real, no obsoleto — precisamente porque
+pushear no era parte de esta tarea. La historia de antes, tal como estaba:
 
 **Por OCTAVA vez:** este párrafo decía "30 y 29", con `20260924000466` marcada
 como "sin pushear" — y en la MISMA sesión que lo escribió, un runbook
@@ -247,13 +253,53 @@ notification_type  : precio_favorito | reporte_resuelto | compra_calificable
 -- Catálogos (solo lectura para authenticated; altas vía Studio/service_role)
 universidades   (id, nombre único)
 campus          (id, universidad_id → universidades, nombre, ciudad,
-                 único por (universidad_id, nombre))
+                 latitud/longitud double precision NULLABLES, único por
+                 (universidad_id, nombre))
 categories      (id, nombre único) — 12 filas sembradas, ver seed.sql
 universidad_dominios (dominio text PK, universidad_id → universidades on delete
                  cascade, created_at) — con qué dominios de correo se puede
                  REGISTRAR una cuenta. Check: minúsculas, sin espacios, sin '@'.
                  NO es legible por el cliente (ni anon ni authenticated): la lee
                  solo el Auth Hook. Ver abajo.
+
+**`campus.latitud`/`longitud` son para "Detectar campus más cercano" (fase
+2C, `20260925000467`).** Nullables a propósito: un campus sin coordenadas
+capturadas todavía simplemente no participa en la detección de cercanía
+(`campusMasCercano()`, `src/lib/ubicacion.ts`, las filtra) — no es un estado
+inválido. Tres checks: `latitud` entre -90 y 90, `longitud` entre -180 y 180,
+y las dos juntas o ninguna (`(latitud is null) = (longitud is null)`).
+
+- **Único consumidor: `campusMasCercano()` vía `src/lib/geolocalizacion.ts` en
+  `src/app/selector-campus.tsx`**, sobre el catálogo COMPLETO que ya trae
+  `fetchCatalogoCampus()` en memoria — nada nuevo del lado de la red, solo dos
+  columnas más en un `select` que ya existía.
+- **Sin `grant`/`revoke`, y medido, no solo argumentado.** `campus` tiene
+  `grant select` a nivel de TABLA (`20260906000437:96`), y en Postgres eso
+  cubre columnas que se agreguen después — mismo caso que `listings.busqueda`.
+  El diff de `scripts/grants-users-listings.sql` adaptado a `campus`
+  (antes/después de la migración) no salió vacío como se esperaba al planear:
+  salieron **2 filas nuevas**, las dos `columna|authenticated|campus.{latitud,longitud}|SELECT`
+  — heredadas del grant de tabla, sin que la migración escribiera ningún
+  `grant` propio, y **sin ningún INSERT/UPDATE/DELETE**. Es la confirmación
+  medida, no la ausencia de diferencia.
+- **Aserciones en `supabase/tests/rls.sql`: T29, autocontenida** (su propia
+  universidad y usuario, no reusa fixtures de T28) — rechaza cada rango, la
+  combinación incompleta, acepta ambas NULL y los bordes exactos ±90/±180,
+  `authenticated` lee pero no escribe. Los 4 controles negativos (quitar cada
+  check, dar un grant de más) corridos uno a la vez, cada uno cayendo en su
+  aserción exacta.
+- **La ubicación del dispositivo nunca llega a estas columnas ni a ningún
+  otro sitio de red** — verificado por grep, no solo por diseño:
+  `src/lib/ubicacion.ts` (donde vive `campusMasCercano()`) tiene CERO imports,
+  así que es estructuralmente incapaz de hacer red o I/O; en
+  `src/lib/geolocalizacion.ts` las coordenadas solo se construyen en las
+  líneas 105 y 122 (`coords: {...}`, tomadas de la respuesta del módulo
+  nativo) y viajan sin tocar nada más hasta `selector-campus.tsx:145`
+  (`campusMasCercano(resultado.coords, …)`), su único consumidor. El único
+  `console.*` de esos tres archivos es el aviso de módulo nativo faltante
+  (`geolocalizacion.ts:40`), que imprime el mensaje del error, no coordenadas.
+  Nunca se llama a `supabase.*` ni a `fetch` con ellas, y no hay ninguna
+  escritura a `AsyncStorage`/`SecureStore` en ninguno de los tres archivos.
 
 -- Perfil (provisto automáticamente por trigger al verificar correo)
 users
@@ -1400,6 +1446,25 @@ detecta, pero la red con nombre es (a2), que da de alta a `:Z2` capturando el
 error en vez de con un insert suelto. Con un insert suelto, esa variante moría
 con el error crudo antes de llegar a (a2).
 
+Y a **223** con las 11 de T29 (`campus.latitud`/`longitud`, fase 2C,
+`20260925000467`): 10 aserciones (los 3 checks + grant de lectura/escritura,
+cada una con su control negativo) más 1 precondición de fixtures. **Nada en
+T12**: la migración no toca ningún grant (el `select` de las columnas nuevas
+se hereda del grant de TABLA que `campus` ya tenía, medido con el diff de
+`scripts/grants-users-listings.sql` — ver el bloque de `campus` más arriba en
+esta sección). T29 es autocontenida (su propia universidad "RLS T29
+Universidad" y su propio usuario `:W`, sin reusar fixtures de T28) y los 4
+controles negativos —quitar cada uno de los 3 checks, dar un `grant update`
+de más— se corrieron uno a la vez, cada uno cayendo exactamente en su
+aserción:
+
+| Variante rota | Cae en |
+|---|---|
+| sin `campus_latitud_check` | (a) |
+| sin `campus_longitud_check` | (b) |
+| sin `campus_coordenadas_completas_check` | (c) |
+| `grant update (latitud, longitud)` a `authenticated` | (g) |
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -1570,8 +1635,15 @@ institucional" (Verificación, Iniciar sesión, Recuperar contraseña) pasó de
 `nombre@estudiante.tec.mx` a `estudiante@institución.mx`: el viejo sugería un
 subdominio que el hook rechaza.
 
-### Explorar (15)
-Feed · **Feed (sin publicaciones)** · Selector de campus · Categoría ·
+### Explorar (21)
+Feed · **Feed (sin publicaciones)** · Selector de campus ·
+**Selector de campus (detectando ubicación)** ·
+**Selector de campus (sin campus cercano)** ·
+**Selector de campus (permiso denegado)** ·
+**Selector de campus (permiso denegado permanentemente)** ·
+**Selector de campus (ubicación desactivada)** ·
+**Selector de campus (error de ubicación)** ·
+Categoría ·
 Categoría sin resultados ·
 Ver todas (categorías) · Búsqueda (recomendados) · Búsqueda ·
 Búsqueda sin resultados · Filtros · Detalle de publicación ·
@@ -1595,13 +1667,13 @@ transitorio, no una pantalla en la que la app se quede**, igual que
 es un `phone-block` propio y el filtro del prototipo lo cuenta.
 
 **"Feed (sin publicaciones)" llegó con la fase 2B** (navegar el catálogo de
-otras universidades), y es el único frame nuevo de esa tarea: 60 en total, 15 de
-Explorar, medido con el mismo `grep | uniq -c`. Antes, un alcance vacío pintaba
-"Recomendado para ti" con el grid en blanco y sin decir nada; con campus de
-otras universidades (y campus recién dados de alta) es un caso del primer día.
-Su copy **no** dice "sé el primero en publicar": si el alcance es de otra
-universidad, ahí no se puede publicar. Todo lo demás de la fase 2B son cambios o
-variantes etiquetadas de frames que ya existían, así que no cuentan aparte:
+otras universidades), y es el único frame nuevo de esa tarea. Antes, un
+alcance vacío pintaba "Recomendado para ti" con el grid en blanco y sin decir
+nada; con campus de otras universidades (y campus recién dados de alta) es un
+caso del primer día. Su copy **no** dice "sé el primero en publicar": si el
+alcance es de otra universidad, ahí no se puede publicar. Todo lo demás de la
+fase 2B son cambios o variantes etiquetadas de frames que ya existían, así que
+no cuentan aparte:
 - el Selector de campus, reescrito y agrupado por universidad, con una variante
   de búsqueda;
 - las cuatro lecturas del chip del Feed, en una variante;
@@ -1610,6 +1682,19 @@ variantes etiquetadas de frames que ya existían, así que no cuentan aparte:
 - la variante vacía de "Búsqueda (recomendados)";
 - el botón de "Categoría sin resultados", que pasó a "Buscar en todas las
   categorías".
+
+**Los seis "Selector de campus (…)" llegaron con la fase 2C** ("Detectar
+campus más cercano"): 66 en total, 21 de Explorar, medido con el mismo
+`grep | uniq -c`. Son seis y no uno porque cada uno es copy PERSISTENTE que el
+usuario puede leer con calma (§0 regla 4) — el único estado del flujo que NO
+tiene frame es "campus encontrado", que va por TOAST (la excepción explícita
+de esa misma regla): el sheet se cierra de inmediato al elegir un campus,
+igual que al tocar una fila a mano, así que un mensaje "leído con calma"
+dentro del sheet no tendría tiempo de leerse. Los seis reusan el cuerpo
+completo de "Selector de campus" (la lista sigue disponible en todos: nunca se
+bloquea al usuario mientras detecta) y componen `.notice`/`.ghost-btn`/
+`.splash-dots`, ya existentes — ningún CSS nuevo. Detalle de qué dice cada uno
+y por qué, en `explorar.md`.
 
 ### Publicar (10)
 Publicar · Publicar (procesando fotos) · Publicar (subiendo imágenes) ·
@@ -1882,9 +1967,17 @@ Toast de éxito · Toast de error · Loading / skeleton
      `supabase stop && supabase start`, porque `db reset` no recarga la config de
      Auth. Imprime al arrancar los dominios, las policies y las variables
      `GOTRUE_HOOK_*` del contenedor, para que se vea contra qué estado corre.
+  8. `node scripts/probe-ubicacion.mjs`: TODO lo puro de "Detectar campus más
+     cercano" (fase 2C) — haversine y `campusMasCercano()`
+     (`src/lib/ubicacion.ts`). Mismo criterio que el paso 4: no necesita el
+     stack local, ni red, ni credenciales, porque el módulo es puro a
+     propósito (sin imports). Lo que NO cubre —permisos, servicios de
+     ubicación, el `require()` protegido— vive en `src/lib/geolocalizacion.ts`
+     y no tiene probe: depende del módulo nativo real, así que se verifica a
+     mano en dispositivo (§6 de este mismo bloque, "para bugs de UI...").
   Los probes 2, 3, 6 y 7 necesitan el stack local arriba y limpian lo suyo en un
   `finally`; si una corrida muere de golpe, `supabase db reset` borra la basura.
-  Los pasos 4 y 5 no necesitan nada: ni stack, ni red, ni credenciales.
+  Los pasos 4, 5 y 8 no necesitan nada: ni stack, ni red, ni credenciales.
 
   **`scripts/probe-moderacion-red.mjs` NO es un séptimo paso rutinario** —
   cubre particionado real (>6 MB), descarga fallida de una foto suelta y el
@@ -2125,6 +2218,30 @@ de los route groups).
    Existen para probar a mano la navegación entre universidades. Los nombres
    exactos, los ids y el SQL de limpieza en orden están en `explorar.md`, sección
    "Datos de prueba en remoto".
+0d. **Fase 2C ("Detectar campus más cercano"): construida y probada en LOCAL,
+   nada de esto en remoto todavía.** Requiere, en este orden:
+   1. `supabase db push` de `20260925000467_campus_coordenadas.sql` — repo va
+      en 31 migraciones, remoto se queda en 30 hasta este paso (§3).
+   2. Capturar las coordenadas REALES de cada campus en Studio (`latitud`/
+      `longitud` de `public.campus`) — el seed solo trae coordenadas de
+      PRUEBA para desarrollo local, y nunca se pushea a un campus que ya
+      tenga fila en remoto (`on conflict do nothing`).
+   3. **Instalar un dev build NUEVO, explícitamente — `expo-location` es un
+      módulo NATIVO y ningún build existente lo tiene compilado.** Mismo
+      gotcha que ya mordió con `expo-notifications` (§9): agregar el módulo a
+      `package.json` no alcanza sin reconstruir. `ubicacionDisponible()`
+      (`src/lib/geolocalizacion.ts`) hace que el botón se OCULTE con gracia
+      contra un build viejo — no crashea, pero tampoco hace nada— así que la
+      ausencia del build nuevo no se nota sola: hay que instalarlo a
+      propósito.
+   4. `npm run gen:types` contra remoto, DESPUÉS del push — hoy
+      `database.types.ts` tiene `campus.latitud`/`longitud` escritas a mano
+      (el CLI local, 2.116.0, genera en un formato distinto al que produjo el
+      resto del archivo, así que regenerar todo ahora habría metido ruido
+      ajeno a esta tarea); la regeneración contra remoto es la que deja el
+      archivo canónico otra vez.
+   Nada de esto es alcanzable sin un teléfono real (§6): el simulador
+   headless no puede probar permisos del sistema ni GPS.
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:

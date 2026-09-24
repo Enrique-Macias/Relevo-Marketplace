@@ -22,7 +22,7 @@ import { Colors, Radii } from '@/constants/theme';
  * 0.4s en los dots 1, 2 y 3. Traducido a los mismos tiempos: de 0.3 a 1 en el
  * 40% del ciclo (480ms), de vuelta a 0.3 en el siguiente 40%, y 20% en reposo.
  */
-function BlinkingDot({ delay }: { delay: number }) {
+function BlinkingDot({ delay, color }: { delay: number; color: string }) {
   // useState con inicializador lazy, no `useRef(...).current`: con React Compiler
   // activado, leer `.current` durante el render es un error de lint (react-hooks/refs).
   const [opacity] = useState(() => new Animated.Value(0.3));
@@ -52,20 +52,25 @@ function BlinkingDot({ delay }: { delay: number }) {
     };
   }, [delay, opacity]);
 
-  return <Animated.View style={[styles.dot, { opacity }]} />;
+  return <Animated.View style={[styles.dot, { opacity, backgroundColor: color }]} />;
 }
 
 /**
  * La fila completa. `style` existe porque `.splash-dots` trae un `margin-top:36`
  * que solo tiene sentido bajo el wordmark del Splash; dentro de un botón se
  * anula (`.primary-btn.is-busy .splash-dots{margin-top:0;}`).
+ *
+ * `dotColor` es opcional y por default es el mismo `--paper` al 50% de
+ * siempre — pensado para el caso nuevo de "Selector de campus (detectando
+ * ubicación)": ahí los puntos van sobre `--paper`, no dentro de un botón
+ * `--brick`, así que necesitan el color opuesto (`--brick`) para leerse.
  */
-export function BlinkingDots({ style }: { style?: ViewStyle }) {
+export function BlinkingDots({ style, dotColor = Colors.paper50 }: { style?: ViewStyle; dotColor?: string }) {
   return (
     <View style={[styles.dots, style]}>
-      <BlinkingDot delay={0} />
-      <BlinkingDot delay={200} />
-      <BlinkingDot delay={400} />
+      <BlinkingDot delay={0} color={dotColor} />
+      <BlinkingDot delay={200} color={dotColor} />
+      <BlinkingDot delay={400} color={dotColor} />
     </View>
   );
 }
@@ -77,11 +82,11 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 36,
   },
-  // .splash-dot{width:6px; height:6px; border-radius:50%; background:rgba(243,240,234,0.5);}
+  // .splash-dot{width:6px; height:6px; border-radius:50%;} — el color va inline
+  // (prop `dotColor` de `BlinkingDots`), no aquí.
   dot: {
     width: 6,
     height: 6,
     borderRadius: Radii.full,
-    backgroundColor: Colors.paper50,
   },
 });

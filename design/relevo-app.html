@@ -1679,6 +1679,747 @@
     </div>
   </div>
 
+  <!-- Fase 2C: los seis estados de "Detectar campus más cercano" (RF sin
+       número propio, geolocalización aproximada). Copy persistente, así que
+       cada uno es su propio frame (§0 regla 4) — el único estado que NO lo es
+       es "campus encontrado", que va por TOAST (excepción explícita de esa
+       misma regla, mismo recurso que "Publicación pausada/reactivada"): el
+       sheet se cierra de inmediato al encontrar un campus, igual que al
+       elegir una fila a mano, así que un mensaje leído "con calma" dentro del
+       sheet no tendría tiempo de leerse.
+
+       Los seis reusan el MISMO cuerpo de "Selector de campus" (la lista
+       completa sigue disponible: el usuario nunca queda bloqueado esperando
+       la detección, siempre puede elegir a mano) y solo cambian la fila
+       ".current-loc-row" de arriba y, en cinco de los seis, agregan el
+       ".notice" que ya usan "Publicar (error de subida)" y "Verificación
+       (correo no participante)" — mismo ícono de exclamación, sin inventar
+       ninguno nuevo. Ningún CSS nuevo: todo es composición de clases que ya
+       existían antes de esta tarea. -->
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Selector de campus (detectando ubicación)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">Elige tu campus</div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+      <div class="screen">
+        <div class="sheet-body">
+          <div class="search-field" style="margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" placeholder="Busca tu universidad o campus">
+          </div>
+
+          <!-- Cuarto estado del mismo componente que "Publicar (subiendo
+               imágenes)"/"Publicar (revisando)": el botón (aquí, la fila) pasa
+               a ocupado y el resto de la pantalla SIGUE usable — a diferencia
+               de aquellas, aquí no hay nada que congelar, así que la lista de
+               abajo queda intacta, tal cual, para que elegir a mano en
+               cualquier momento siga siendo una salida. -->
+          <div class="current-loc-row" style="opacity:0.7;">
+            <span class="splash-dots" style="margin-top:0;">
+              <span class="splash-dot" style="background:var(--brick);"></span>
+              <span class="splash-dot" style="background:var(--brick);"></span>
+              <span class="splash-dot" style="background:var(--brick);"></span>
+            </span>
+            Detectando tu ubicación…
+          </div>
+
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todas las universidades</div>
+              <div class="list-row-sub">Todo el catálogo de Relevo</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">Tec de Monterrey · Tu universidad</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de Tec de Monterrey</div>
+              <div class="list-row-sub">2 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Monterrey</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle selected"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Santa Fe</div>
+              <div class="list-row-sub">Ciudad de México</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UANL</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UANL</div>
+              <div class="list-row-sub">3 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Ciudad Universitaria</div>
+              <div class="list-row-sub">San Nicolás de la Garza, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Mederos</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus Salud</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UDEM</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UDEM</div>
+              <div class="list-row-sub">1 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus San Pedro</div>
+              <div class="list-row-sub">San Pedro Garza García, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Selector de campus (sin campus cercano)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">Elige tu campus</div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+      <div class="screen">
+        <div class="sheet-body">
+          <div class="search-field" style="margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" placeholder="Busca tu universidad o campus">
+          </div>
+
+          <div class="current-loc-row">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2"/></svg>
+            Detectar campus más cercano
+          </div>
+
+          <!-- El más cercano quedó fuera del umbral de lejanía. No es un
+               error: sí se detectó la ubicación, solo no hay ningún campus
+               dado de alta cerca. La lista sigue siendo la salida. -->
+          <div class="notice">
+            <div class="notice-icon">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
+            </div>
+            <div class="notice-text">No encontramos ningún campus cerca de tu ubicación. Elige uno de la lista.</div>
+          </div>
+
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todas las universidades</div>
+              <div class="list-row-sub">Todo el catálogo de Relevo</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">Tec de Monterrey · Tu universidad</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de Tec de Monterrey</div>
+              <div class="list-row-sub">2 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Monterrey</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle selected"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Santa Fe</div>
+              <div class="list-row-sub">Ciudad de México</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UANL</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UANL</div>
+              <div class="list-row-sub">3 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Ciudad Universitaria</div>
+              <div class="list-row-sub">San Nicolás de la Garza, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Mederos</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus Salud</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UDEM</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UDEM</div>
+              <div class="list-row-sub">1 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus San Pedro</div>
+              <div class="list-row-sub">San Pedro Garza García, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Selector de campus (permiso denegado)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">Elige tu campus</div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+      <div class="screen">
+        <div class="sheet-body">
+          <div class="search-field" style="margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" placeholder="Busca tu universidad o campus">
+          </div>
+
+          <div class="current-loc-row">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2"/></svg>
+            Detectar campus más cercano
+          </div>
+
+          <!-- Primera negación: el sistema todavía puede volver a preguntar,
+               así que tocar la fila de arriba otra vez reintenta de verdad. -->
+          <div class="notice">
+            <div class="notice-icon">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
+            </div>
+            <div class="notice-text">No pudimos acceder a tu ubicación. Puedes intentarlo de nuevo o elegir un campus de la lista.</div>
+          </div>
+
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todas las universidades</div>
+              <div class="list-row-sub">Todo el catálogo de Relevo</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">Tec de Monterrey · Tu universidad</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de Tec de Monterrey</div>
+              <div class="list-row-sub">2 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Monterrey</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle selected"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Santa Fe</div>
+              <div class="list-row-sub">Ciudad de México</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UANL</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UANL</div>
+              <div class="list-row-sub">3 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Ciudad Universitaria</div>
+              <div class="list-row-sub">San Nicolás de la Garza, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Mederos</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus Salud</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UDEM</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UDEM</div>
+              <div class="list-row-sub">1 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus San Pedro</div>
+              <div class="list-row-sub">San Pedro Garza García, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Selector de campus (permiso denegado permanentemente)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">Elige tu campus</div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+      <div class="screen">
+        <div class="sheet-body">
+          <div class="search-field" style="margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" placeholder="Busca tu universidad o campus">
+          </div>
+
+          <div class="current-loc-row">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2"/></svg>
+            Detectar campus más cercano
+          </div>
+
+          <!-- El sistema ya no vuelve a preguntar: la única salida real es
+               Ajustes, así que el notice trae su propia acción — mismo
+               recurso que el .ghost-btn de "Confirmar cerrar sesión", aquí
+               solo. -->
+          <div class="notice">
+            <div class="notice-icon">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
+            </div>
+            <div class="notice-text">Desactivaste el acceso a tu ubicación para Relevo. Actívalo desde Ajustes para poder detectar tu campus.</div>
+          </div>
+          <div class="ghost-btn" style="margin-bottom:24px;">Ir a Ajustes</div>
+
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todas las universidades</div>
+              <div class="list-row-sub">Todo el catálogo de Relevo</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">Tec de Monterrey · Tu universidad</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de Tec de Monterrey</div>
+              <div class="list-row-sub">2 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Monterrey</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle selected"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Santa Fe</div>
+              <div class="list-row-sub">Ciudad de México</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UANL</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UANL</div>
+              <div class="list-row-sub">3 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Ciudad Universitaria</div>
+              <div class="list-row-sub">San Nicolás de la Garza, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Mederos</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus Salud</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UDEM</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UDEM</div>
+              <div class="list-row-sub">1 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus San Pedro</div>
+              <div class="list-row-sub">San Pedro Garza García, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Selector de campus (ubicación desactivada)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">Elige tu campus</div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+      <div class="screen">
+        <div class="sheet-body">
+          <div class="search-field" style="margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" placeholder="Busca tu universidad o campus">
+          </div>
+
+          <div class="current-loc-row">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2"/></svg>
+            Detectar campus más cercano
+          </div>
+
+          <!-- No es un permiso de Relevo: es el interruptor de ubicación de
+               TODO el sistema, apagado. No hay "Ir a Ajustes" que resuelva
+               esto desde la app en iOS, así que el notice solo explica — no
+               ofrece una acción que no existe. -->
+          <div class="notice">
+            <div class="notice-icon">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
+            </div>
+            <div class="notice-text">La ubicación de tu teléfono está desactivada. Actívala desde Ajustes para poder detectar tu campus.</div>
+          </div>
+
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todas las universidades</div>
+              <div class="list-row-sub">Todo el catálogo de Relevo</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">Tec de Monterrey · Tu universidad</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de Tec de Monterrey</div>
+              <div class="list-row-sub">2 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Monterrey</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle selected"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Santa Fe</div>
+              <div class="list-row-sub">Ciudad de México</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UANL</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UANL</div>
+              <div class="list-row-sub">3 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Ciudad Universitaria</div>
+              <div class="list-row-sub">San Nicolás de la Garza, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Mederos</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus Salud</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UDEM</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UDEM</div>
+              <div class="list-row-sub">1 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus San Pedro</div>
+              <div class="list-row-sub">San Pedro Garza García, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Selector de campus (error de ubicación)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-title">Elige tu campus</div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </div>
+      <div class="screen">
+        <div class="sheet-body">
+          <div class="search-field" style="margin-bottom:4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" placeholder="Busca tu universidad o campus">
+          </div>
+
+          <div class="current-loc-row">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M22 12h-3M5 12H2"/></svg>
+            Detectar campus más cercano
+          </div>
+
+          <!-- Cubre timeout (los 10s) y cualquier otro fallo de
+               getCurrentPositionAsync que no sea de permiso. Copy neutro a
+               propósito: distinguir la causa exacta no cambia lo que el
+               usuario puede hacer, que es reintentar o elegir a mano. -->
+          <div class="notice">
+            <div class="notice-icon">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
+            </div>
+            <div class="notice-text">No pudimos obtener tu ubicación. Inténtalo de nuevo o elige un campus de la lista.</div>
+          </div>
+
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todas las universidades</div>
+              <div class="list-row-sub">Todo el catálogo de Relevo</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">Tec de Monterrey · Tu universidad</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de Tec de Monterrey</div>
+              <div class="list-row-sub">2 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Monterrey</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle selected"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Santa Fe</div>
+              <div class="list-row-sub">Ciudad de México</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UANL</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UANL</div>
+              <div class="list-row-sub">3 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Ciudad Universitaria</div>
+              <div class="list-row-sub">San Nicolás de la Garza, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Mederos</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus Salud</div>
+              <div class="list-row-sub">Monterrey, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+
+          <div class="list-section-label">UDEM</div>
+          <div class="list-row">
+            <div>
+              <div class="list-row-name">Todos los campus de UDEM</div>
+              <div class="list-row-sub">1 campus</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+          <div class="list-row" style="border-bottom:none;">
+            <div>
+              <div class="list-row-name">Campus San Pedro</div>
+              <div class="list-row-sub">San Pedro Garza García, N.L.</div>
+            </div>
+            <div class="radio-circle"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="phone-block" data-cat="explorar">
     <div class="phone-label">Detalle de publicación</div>
     <div class="device">

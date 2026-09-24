@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.enrique-macias.relevo-marketplace"
+      "bundleIdentifier": "com.enrique-macias.relevo-marketplace",
+      "infoPlist": {
+        "NSLocationDefaultAccuracyReduced": true
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,6 +24,9 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.RECORD_AUDIO"
+      ],
+      "blockedPermissions": [
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "package": "com.enriquemacias.enriquemacias"
     },
@@ -43,6 +49,17 @@
         "expo-image-picker",
         {
           "photosPermission": "Relevo usa tus fotos para que puedas ilustrar las publicaciones que pones en venta."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Relevo usa tu ubicación para sugerirte el campus más cercano.",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false,
+          "motionUsagePermission": false,
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
         }
       ]
     ],

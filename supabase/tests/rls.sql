@@ -2985,6 +2985,120 @@ select pg_temp.assert(
   '(d6) mover de universidad a un usuario con publicaciones aborta (también como postgres)');
 
 \echo ''
+\echo '== T29 — coordenadas de campus (fase 2C, "Detectar campus más cercano") =='
+-- 20260925000467. Autocontenida, con su propia universidad "RLS T29
+-- Universidad" y su propio usuario `:W` — no reusa los fixtures de T28
+-- (la moraleja de siempre: un estado incidental de otra sección puede
+-- volverse load-bearing sin querer). `pg_temp.rechazo_de()` ya está definida
+-- por T28, en la misma sesión/transacción; no hace falta redefinirla.
+--
+-- (a)-(e) corren como postgres (`p_uid = null`): son checks de tabla, no
+-- policies, y validan la fila resultante sin importar el rol que escribe —
+-- no hay nada que el grant pudiera "meterse" a confundir, al revés que (c3)
+-- de T28. (f)/(g) sí necesitan `authenticated`: prueban el grant, no el check.
+
+\set W '''29292929-0000-0000-0000-000000002929'''
+
+insert into public.universidades (nombre) values ('RLS T29 Universidad');
+create temp table t29 as
+select (select id from public.universidades where nombre = 'RLS T29 Universidad') as uni;
+select pg_temp.assert((select uni is not null from t29), 'T29: fixture de universidad presente');
+
+-- (a) Rechaza latitud > 90.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format(
+    'insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud) '
+    || 'values (%s, ''T29 a'', ''Ciudad T29'', 95, 0)', (select uni from t29)))
+    = '23514:campus_latitud_check',
+  '(a) rechaza latitud > 90');
+
+-- (a2) Rechaza latitud < -90.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format(
+    'insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud) '
+    || 'values (%s, ''T29 a2'', ''Ciudad T29'', -95, 0)', (select uni from t29)))
+    = '23514:campus_latitud_check',
+  '(a2) rechaza latitud < -90');
+
+-- (b) Rechaza longitud > 180.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format(
+    'insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud) '
+    || 'values (%s, ''T29 b'', ''Ciudad T29'', 0, 185)', (select uni from t29)))
+    = '23514:campus_longitud_check',
+  '(b) rechaza longitud > 180');
+
+-- (b2) Rechaza longitud < -180.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format(
+    'insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud) '
+    || 'values (%s, ''T29 b2'', ''Ciudad T29'', 0, -185)', (select uni from t29)))
+    = '23514:campus_longitud_check',
+  '(b2) rechaza longitud < -180');
+
+-- (c) Rechaza latitud SIN longitud.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format(
+    'insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud) '
+    || 'values (%s, ''T29 c'', ''Ciudad T29'', 25.6, null)', (select uni from t29)))
+    = '23514:campus_coordenadas_completas_check',
+  '(c) rechaza latitud sin longitud');
+
+-- (c2) Y al revés: longitud SIN latitud.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format(
+    'insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud) '
+    || 'values (%s, ''T29 c2'', ''Ciudad T29'', null, -100.2)', (select uni from t29)))
+    = '23514:campus_coordenadas_completas_check',
+  '(c2) rechaza longitud sin latitud');
+
+-- (d) Acepta ambas NULL: un campus sin coordenadas capturadas todavía no
+-- participa en la detección, pero sigue siendo una fila válida.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format(
+    'insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud) '
+    || 'values (%s, ''T29 d'', ''Ciudad T29'', null, null)', (select uni from t29)))
+    = 'ok',
+  '(d) acepta ambas coordenadas en NULL');
+
+-- (e) Acepta ambas válidas, incluidos los bordes EXACTOS ±90/±180 — los checks
+-- son `>=`/`<=`, no estrictos.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format(
+    'insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud) '
+    || 'values (%s, ''T29 e1'', ''Ciudad T29'', 25.65, -100.29)', (select uni from t29)))
+    = 'ok'
+  and pg_temp.rechazo_de(null, format(
+    'insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud) '
+    || 'values (%s, ''T29 e2'', ''Ciudad T29'', 90, 180)', (select uni from t29)))
+    = 'ok'
+  and pg_temp.rechazo_de(null, format(
+    'insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud) '
+    || 'values (%s, ''T29 e3'', ''Ciudad T29'', -90, -180)', (select uni from t29)))
+    = 'ok',
+  '(e) acepta coordenadas válidas, incluidos los bordes exactos ±90/±180');
+
+-- (f)/(g): grant heredado de tabla (CLAUDE.md §3, mismo caso que
+-- `listings.busqueda`). Sembrada como postgres para no depender de (d)/(e).
+insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud)
+select uni, 'T29 f', 'Ciudad T29', 25.5, -100.3 from t29;
+
+-- (f) authenticated SÍ puede leer latitud/longitud.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:W::uuid,
+    'select latitud, longitud from public.campus where nombre = ''T29 f''')
+    = 'ok',
+  '(f) authenticated puede leer latitud/longitud');
+
+-- (g) authenticated NO puede escribirlas: `revoke all` (20260906000437) nunca
+-- se contradijo con ningún grant de columna para estas dos.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:W::uuid,
+    'update public.campus set latitud = 0, longitud = 0 where nombre = ''T29 f''')
+    = '42501',
+  '(g) authenticated no puede escribir latitud/longitud (grant)');
+
+\echo ''
 \echo '==========================================='
 \echo '   TODAS LAS PRUEBAS PASARON'
 \echo '==========================================='

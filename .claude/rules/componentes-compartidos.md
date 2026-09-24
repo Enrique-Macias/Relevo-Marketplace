@@ -38,6 +38,12 @@ escritos de cero:
   diseño, así que el botón "Subiendo imágenes" los reusa en vez de estrenar un
   spinner. Que funcionen sobre `--brick` no es suerte: `.splash-dot` es
   `--paper` al 50%, el mismo color del texto de `.primary-btn`.
+  **Ganó una prop opcional `dotColor` en la fase 2C** (default: el mismo
+  `--paper` al 50% de siempre, así que los consumidores existentes —Splash,
+  "Publicar (subiendo imágenes)"/"(revisando)"— no cambian). La necesitó
+  "Selector de campus (detectando ubicación)": ahí los puntos van sobre
+  `--paper`, no dentro de un botón `--brick`, y necesitan el color opuesto
+  para leerse.
 
 Y **`PrimaryButton` creció con `busy`**, que NO es `disabled` con otro nombre:
 `disabled` (0.45) dice "todavía no puedes", `busy` dice "está pasando" y va a

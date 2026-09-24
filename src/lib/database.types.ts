@@ -18,18 +18,24 @@ export type Database = {
         Row: {
           ciudad: string
           id: number
+          latitud: number | null
+          longitud: number | null
           nombre: string
           universidad_id: number
         }
         Insert: {
           ciudad: string
           id?: never
+          latitud?: number | null
+          longitud?: number | null
           nombre: string
           universidad_id: number
         }
         Update: {
           ciudad?: string
           id?: never
+          latitud?: number | null
+          longitud?: number | null
           nombre?: string
           universidad_id?: number
         }

@@ -24,8 +24,13 @@ on conflict (nombre) do nothing;
 insert into public.universidades (nombre) values ('Tec de Monterrey')
 on conflict (nombre) do nothing;
 
-insert into public.campus (universidad_id, nombre, ciudad)
-select id, 'Monterrey', 'Monterrey, N.L.' from public.universidades where nombre = 'Tec de Monterrey'
+-- Coordenadas de PRUEBA (fase 2C, "Detectar campus más cercano") — las reales
+-- de producción se capturan a mano en Studio (CLAUDE.md §8), no aquí: este
+-- seed también viaja a remoto con `db push --include-seed`, y el `on conflict
+-- do nothing` no las actualizaría sobre una fila ya existente de todos modos.
+insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud)
+select id, 'Monterrey', 'Monterrey, N.L.', 25.6514, -100.2895
+from public.universidades where nombre = 'Tec de Monterrey'
 on conflict (universidad_id, nombre) do nothing;
 
 -- Dominios de correo con los que se puede REGISTRAR una cuenta (Auth Hook

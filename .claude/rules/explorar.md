@@ -456,8 +456,97 @@ El buscador normaliza acentos y funciona así:
 - una universidad sin campus no se lista.
 
 **No es `CampusBottomSheet`.** Ese FIJA el campus del perfil y sigue acotado a
-la universidad propia (`fetchCampus`), sin cambios. "Detectar campus más
-cercano" sigue inerte: es la fase 2C.
+la universidad propia (`fetchCampus`), sin cambios.
+
+**"Detectar campus más cercano" está cableado (fase 2C).** Al tocarlo, pide
+ubicación aproximada y calcula en el DISPOSITIVO el campus más cercano entre
+TODOS los que trae `catalogo` (de cualquier universidad), y lo fija como
+alcance con el mismo `elegir()` que usa tocar una fila a mano. La ubicación
+nunca sale del teléfono: se usa para el cálculo y se descarta — ver la
+verificación por grep en CLAUDE.md §9 (o el archivo de verificación de esta
+tarea) que lo confirma citando los dos únicos sitios donde vive.
+
+- **Dos módulos nuevos, uno puro y uno impuro — mismo criterio que
+  `registro.ts` (puro, sin imports) vs el resto de `src/lib/`.**
+  `src/lib/ubicacion.ts` (sin imports, testeable desde Node con
+  `scripts/probe-ubicacion.mjs`) tiene `distanciaKm()` (haversine) y
+  `campusMasCercano(origen, campus, umbralKm?)` — filtra campus sin
+  coordenadas, y en empate gana el de menor `id`, sin importar el orden del
+  arreglo. `src/lib/geolocalizacion.ts` es el único punto de contacto con
+  `expo-location`: `ubicacionDisponible()` (¿está el módulo nativo?) y
+  `obtenerUbicacionAproximada()`, que intenta `getLastKnownPositionAsync` (si
+  tiene menos de 5 min) y si no `getCurrentPositionAsync({accuracy:
+  Balanced})` con un timeout propio de 10 s (`Promise.race`, no un parámetro
+  de la librería). Devuelve una unión discriminada de 6 estados; nunca llama
+  a nada de permisos fuera de esta función, así que el permiso se pide SOLO
+  al tocar el botón.
+- **`Accuracy.Balanced`, no `High`/`Best`**: es lo que hace consistente la
+  llamada con lo que el permiso declarado realmente pide — Android solo
+  declara `ACCESS_COARSE_LOCATION` (`app.json`, ver abajo), así que pedir alta
+  precisión en la llamada contradiría esa declaración.
+- **Umbral de lejanía: 50 km** (`UMBRAL_CERCANIA_KM` en `ubicacion.ts`) — cubre
+  una zona metropolitana completa sin aceptar como "cercano" un campus de otra
+  ciudad.
+- **El permiso de Android es SOLO aproximado, y no por opción del plugin de
+  `expo-location` — que no la tiene.** El propio plugin (medido en
+  `node_modules/expo-location/plugin/build/withLocation.js`) agrega
+  `ACCESS_FINE_LOCATION` de forma INCONDICIONAL, junto con
+  `ACCESS_COARSE_LOCATION`, sin ninguna opción para omitirlo — el comentario
+  del propio archivo dice que ya vienen del manifest de la librería. Se retira
+  con `android.blockedPermissions` en `app.json` (`tools:node="remove"` en el
+  manifest final, verificado generando el AndroidManifest real con `expo
+  prebuild --platform android --no-install` en un directorio temporal, sin
+  comitear `android/`). En iOS, `ios.infoPlist.NSLocationDefaultAccuracyReduced:
+  true` cumple el mismo rol — sin él, iOS puede seguir entregando coordenadas
+  de precisión completa a una app con permiso "when in use": el `accuracy` de
+  la llamada JS es una preferencia de la app, no un candado del sistema.
+  Verificado igual, con `expo prebuild --platform ios`: el Info.plist
+  resultante solo trae `NSLocationDefaultAccuracyReduced` y
+  `NSLocationWhenInUseUsageDescription` (con el texto real en español) — nada
+  de `NSLocationAlwaysUsageDescription` ni `NSMotionUsageDescription`, que el
+  plugin agrega con texto genérico en inglés por default si no se les pasa
+  `false` explícito.
+- **PENDIENTE, no verificado:** el comportamiento REAL de
+  `requestForegroundPermissionsAsync()` en Android con únicamente COARSE
+  disponible (si el diálogo del sistema ofrece "aproximada" como única opción,
+  o el selector preciso/aproximado de Android 12+ sin la opción precisa) —
+  este proyecto no tiene ningún build de Android todavía (`android/` no
+  existe fuera de la verificación temporal de arriba). Se confirma cuando
+  exista un dev build de Android real.
+- **Carrera entre el timeout y un resultado tardío, o entre la detección y una
+  elección manual mientras tanto.** `Promise.race` corta la ESPERA en
+  `geolocalizacion.ts`, no la petición nativa subyacente — puede seguir viva y
+  resolver después. `selector-campus.tsx` lleva un `ref` de "intento
+  vigente" que se incrementa al volver a tocar el botón, al elegir un campus a
+  mano (`elegir()`), y al desmontarse; un resultado que llegue con un valor
+  viejo se descarta sin tocar el estado del sheet ni llamar a `elegir()`.
+- **El "campus encontrado" va por TOAST, no por frame** — la excepción
+  explícita de copy efímero (CLAUDE.md §0 regla 4): el sheet se cierra de
+  inmediato al elegir, igual que al tocar una fila a mano, así que un mensaje
+  "leído con calma" dentro del sheet no tendría tiempo de leerse. Los otros
+  seis estados sí tienen frame (design/relevo-app.html, grupo Explorar): 
+  "Selector de campus (detectando ubicación)", "(sin campus cercano)",
+  "(permiso denegado)", "(permiso denegado permanentemente)", "(ubicación
+  desactivada)" y "(error de ubicación)" — este último cubre timeout y
+  cualquier otro fallo con copy neutro, sin distinguir la causa exacta.
+- **Build viejo sin el módulo nativo: el botón se OCULTA, no avisa.**
+  `ubicacionDisponible()` (`geolocalizacion.ts`) hace que
+  `selector-campus.tsx` ni siquiera pinte la fila si `expo-location` no está
+  compilado en el binario — mismo `require()` protegido que `push.ts`, pero
+  con el `console.warn` gateado a `__DEV__` (no incondicional como aquel):
+  el aviso incondicional de `push.ts` no evitó que la exclusión de
+  autolinking de `expo-notifications` pasara desapercibida en la práctica
+  (CLAUDE.md §9), así que aquí el mensaje nombra la causa más probable (un
+  build sin reconstruir) para que sea imposible de ignorar en desarrollo sin
+  volverse ruido en producción.
+- **`BlinkingDots` ganó una prop `dotColor`** (`src/components/BlinkingDots.tsx`),
+  aditiva y con el mismo default de siempre (`--paper` al 50%): la fila de
+  "detectando" va sobre `--paper`, no dentro de un botón `--brick` como los
+  demás usos, así que necesita el color opuesto para leerse. El resto de
+  consumidores (Splash, "Publicar (subiendo imágenes)"/"(revisando)") no
+  cambian.
+- **Requiere un dev build NUEVO** (`expo-location` es un módulo nativo) —
+  ver el runbook remoto y el pendiente en CLAUDE.md §8.
 
 **La universidad como etiqueta de confianza.**
 - `SELECT_CARD` y `SELECT_DETALLE` embeben `universidad:universidades(nombre)`

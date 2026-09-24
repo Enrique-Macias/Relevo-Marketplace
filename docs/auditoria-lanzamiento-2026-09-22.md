@@ -57,6 +57,7 @@ Las definiciones actuales se leyeron de `pg_policy` en **remoto** y en local, y 
 ## 6. Privacidad: NO hay ningún enlace
 - `src/app/(onboarding)/verificacion.tsx:88-90`: "Al continuar aceptas los Términos de uso y el Aviso de privacidad de Relevo." Es texto plano dentro de `<AuthTerms>`, sin `onPress` ni URL. En toda la app, `Linking.openURL` solo se usa para WhatsApp (`detalle/[id].tsx:337`, `perfil-publico/[id].tsx:116`), y no hay ningún `openBrowserAsync`.
 - `app.json` no tiene ninguna URL de privacidad ni de términos. El diseño (`relevo-app.html:2062`) tiene el mismo texto, también sin enlace.
+- **Pendiente de contenido para cuando exista el Aviso de privacidad real (fase 2C, "Detectar campus más cercano"):** debe declarar el uso de ubicación aproximada, obtenida y usada SOLO en el dispositivo (`src/lib/geolocalizacion.ts` + `src/lib/ubicacion.ts`), nunca enviada a Supabase ni a ningún tercero, y nunca guardada — ni en la base ni en almacenamiento local. Verificado por grep en CLAUDE.md §3 (bloque de `campus.latitud`/`longitud`). Esto no crea el documento —sigue sin existir, ver el punto de arriba—, solo anota qué debe decir cuando se escriba.
 
 ## 7. Push en remoto: los secretos NO están
 `select name from vault.secrets where name like 'send_push_%'` en remoto devuelve **0 filas**. Como referencia, `moderar_contenido_function_url` y `moderar_contenido_secret_key` sí están.

@@ -27,6 +27,11 @@ export type Campus = {
   id: number;
   nombre: string;
   ciudad: string;
+  /** Nullable (CLAUDE.md §3): un campus sin coordenadas capturadas todavía
+   * simplemente no participa en "Detectar campus más cercano"
+   * (`campusMasCercano()`, `src/lib/ubicacion.ts`). */
+  latitud: number | null;
+  longitud: number | null;
 };
 
 /**
@@ -110,7 +115,7 @@ export type UniversidadCatalogo = {
 export async function fetchCatalogoCampus(): Promise<UniversidadCatalogo[]> {
   const { data, error } = await supabase
     .from('universidades')
-    .select('id, nombre, campus(id, nombre, ciudad)')
+    .select('id, nombre, campus(id, nombre, ciudad, latitud, longitud)')
     .order('nombre')
     .order('nombre', { referencedTable: 'campus' });
 
@@ -128,7 +133,7 @@ export async function fetchCatalogoCampus(): Promise<UniversidadCatalogo[]> {
 export async function fetchCampus(universidadId: number): Promise<Campus[]> {
   const { data, error } = await supabase
     .from('campus')
-    .select('id, nombre, ciudad')
+    .select('id, nombre, ciudad, latitud, longitud')
     .eq('universidad_id', universidadId)
     .order('nombre');
 

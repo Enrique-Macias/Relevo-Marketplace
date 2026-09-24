@@ -39,15 +39,23 @@ insert into public.universidades (nombre)
 values ('Universidad Autónoma de Prueba del Noreste')
 on conflict (nombre) do nothing;
 
-insert into public.campus (universidad_id, nombre, ciudad)
-select u.id, c.nombre, c.ciudad
+-- Coordenadas de PRUEBA (fase 2C): estos dos campus, más "Campus Vacío" de
+-- abajo, son los que hacen falta para probar "el más cercano entre varios,
+-- de universidades distintas" en local — `campusMasCercano()` no tiene nada
+-- que elegir con un solo campus con coordenadas.
+insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud)
+select u.id, c.nombre, c.ciudad, c.latitud, c.longitud
 from public.universidades u
-cross join (values ('Campus Norte', 'Apodaca, N.L.'), ('Campus Sur', 'Santiago, N.L.')) as c(nombre, ciudad)
+cross join (values
+  ('Campus Norte', 'Apodaca, N.L.',  25.7785, -100.1888),
+  ('Campus Sur',   'Santiago, N.L.', 25.4167, -100.1833)
+) as c(nombre, ciudad, latitud, longitud)
 where u.nombre = 'Universidad Autónoma de Prueba del Noreste'
 on conflict (universidad_id, nombre) do nothing;
 
-insert into public.campus (universidad_id, nombre, ciudad)
-select id, 'Campus Vacío', 'Guadalupe, N.L.' from public.universidades where nombre = 'Tec de Monterrey'
+insert into public.campus (universidad_id, nombre, ciudad, latitud, longitud)
+select id, 'Campus Vacío', 'Guadalupe, N.L.', 25.6767, -100.2503
+from public.universidades where nombre = 'Tec de Monterrey'
 on conflict (universidad_id, nombre) do nothing;
 
 insert into public.universidad_dominios (dominio, universidad_id)
