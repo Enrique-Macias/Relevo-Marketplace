@@ -4748,6 +4748,123 @@
             <div class="notif-desc">Revisamos tu reporte sobre una publicación y tomamos acción.</div>
           </div>
         </div>
+
+        <!-- ===== RF-16, tanda 2: cuatro disparadores nuevos, cinco `tipo`s =====
+             Tinte e ícono salen del `tipo` (NotifRow.tsx); el título y el cuerpo
+             los materializa el trigger, así que el copy de abajo es el EXACTO
+             que escribe la base (con datos de ejemplo). Solo hay cuatro tintes
+             en el sistema (brick/forest/gold/slate): el ícono es lo que
+             distingue filas que comparten tinte.
+
+             `publicacion_aprobada` — una publicación que quedó en revisión sale
+             aprobada DESPUÉS del alta (el veredicto inmediato ya lo vio en
+             "Publicación creada", así que ahí no se notifica). --forest y el
+             check en círculo: el mismo par que "Tu correo fue verificado", que
+             no tiene disparador; entre las dos, el check le pertenece a esta. -->
+        <div class="notif-row">
+          <div class="notif-icon" style="background:var(--forest-tint);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+          </div>
+          <div class="notif-text">
+            <div class="notif-top">
+              <span class="notif-title">Tu publicación ya está publicada</span>
+              <span class="notif-time">hace 2d</span>
+            </div>
+            <div class="notif-desc">"Calculadora TI-84 Plus" pasó la revisión y ya es visible para otros estudiantes.</div>
+          </div>
+        </div>
+
+        <!-- `publicacion_bloqueada`, VARIANTE 1 de 2 — venía de `pendiente` (la
+             revisión la rechazó después del alta). Mismo verbo que el frame
+             "Publicación no aprobada". --brick con el círculo tachado: comparte
+             tinte con "Bajó el precio" y el ícono los separa. El tap lleva al
+             Detalle de la publicación, que al dueño le pinta su `.notice`. -->
+        <div class="notif-row">
+          <div class="notif-icon" style="background:var(--brick-tint);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
+          </div>
+          <div class="notif-text">
+            <div class="notif-top">
+              <span class="notif-title">Tu publicación no fue aprobada</span>
+              <span class="notif-time">hace 2d</span>
+            </div>
+            <div class="notif-desc">"Silla gamer" no cumple con las reglas de la comunidad, así que no se publicó.</div>
+          </div>
+        </div>
+
+        <!-- `publicacion_bloqueada`, VARIANTE 2 de 2 — ya estaba publicada
+             (activa, pausada o vendida) y una foto nueva la escaló. Mismo tipo,
+             mismo ícono; cambia el copy porque "no fue aprobada" sería falso
+             para algo que ya se había aprobado. -->
+        <div class="notif-row">
+          <div class="notif-icon" style="background:var(--brick-tint);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
+          </div>
+          <div class="notif-text">
+            <div class="notif-top">
+              <span class="notif-title">Retiramos tu publicación</span>
+              <span class="notif-time">hace 3d</span>
+            </div>
+            <div class="notif-desc">"Lámpara de escritorio LED" dejó de cumplir con las reglas de la comunidad y ya no es visible.</div>
+          </div>
+        </div>
+
+        <!-- `calificacion_recibida` — al CREARSE una reseña hacia ti, nunca al
+             editarla. Trae las estrellas y el nombre (las reseñas ya son
+             públicas en "Perfil público"), NUNCA el comentario. --gold con la
+             estrella de TRAZO: "Califica tu compra" usa la RELLENA, y así las
+             dos no se confunden. El tap lleva a tu Perfil público, que es donde
+             vive la lista de reseñas (el Perfil propio solo muestra el
+             promedio). Singular "1 estrella". -->
+        <div class="notif-row">
+          <div class="notif-icon" style="background:var(--gold-tint);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+          </div>
+          <div class="notif-text">
+            <div class="notif-top">
+              <span class="notif-title">Recibiste una calificación</span>
+              <span class="notif-time">hace 4d</span>
+            </div>
+            <div class="notif-desc">Jorge te dio 5 estrellas por "Cálculo de Larson, 9a edición".</div>
+          </div>
+        </div>
+
+        <!-- `favorito_vendido` — una publicación que guardaste pasó a vendida.
+             No le llega al comprador registrado (a él le llega "Califica tu
+             compra") ni al dueño. --slate con la etiqueta: es informativo, no
+             una acción pendiente. El tap lleva al Detalle, que ya muestra el
+             `.notice` de "ya se vendió". -->
+        <div class="notif-row">
+          <div class="notif-icon" style="background:var(--slate-tint);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0l-7.2-7.2a2 2 0 01-.6-1.4V4a1 1 0 011-1h8a2 2 0 011.4.6l7.4 7.4a2 2 0 010 2.8z"/><path d="M7.5 7.5h.01"/></svg>
+          </div>
+          <div class="notif-text">
+            <div class="notif-top">
+              <span class="notif-title">Se vendió un favorito</span>
+              <span class="notif-time">hace 5d</span>
+            </div>
+            <div class="notif-desc">"Monitor Dell 24" IPS" ya se vendió y dejó de estar disponible.</div>
+          </div>
+        </div>
+
+        <!-- `avatar_eliminado` — la moderación borró tu foto de perfil (RF-18).
+             Es la versión PERSISTENTE del toast de Perfil, que se conserva: el
+             toast avisa en el momento, esta fila sobrevive a no haberlo visto.
+             Mismo verbo que el toast ("Quitamos tu foto de perfil…"). --brick
+             como la otra fila de moderación negativa; la silueta la separa. El
+             tap lleva a Editar perfil, donde se sube otra. -->
+        <div class="notif-row">
+          <div class="notif-icon" style="background:var(--brick-tint);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          </div>
+          <div class="notif-text">
+            <div class="notif-top">
+              <span class="notif-title">Quitamos tu foto de perfil</span>
+              <span class="notif-time">hace 6d</span>
+            </div>
+            <div class="notif-desc">No pasó la revisión de contenido. Puedes subir otra desde Editar perfil.</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -4788,7 +4905,11 @@
             <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.6" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
           </div>
           <div class="empty-title">Todavía no hay avisos</div>
-          <div class="empty-sub">Te avisamos aquí cuando baje el precio de algo que guardaste o cuando respondamos a un reporte tuyo.</div>
+          <!-- RF-16, tanda 2: el copy nombraba solo los dos primeros
+               disparadores (precio y reporte). Ahora resume los siete por
+               familia en vez de enumerarlos, para no volver a quedar viejo con
+               el siguiente. -->
+          <div class="empty-sub">Aquí te avisamos de tus favoritos, de la revisión de tus publicaciones, de las calificaciones que recibas y de tus reportes.</div>
         </div>
       </div>
     </div>

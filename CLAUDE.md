@@ -183,25 +183,27 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 35 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-09-24; decía "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 16 tablas más
+Definido en 37 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-09-24; decía "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 17 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
-**Ese 16 son 14 con policies más `listing_moderacion` y
-`listing_moderacion_reclamos`, que tienen RLS habilitado y CERO policies a
-propósito** (sus bloques propios, más abajo) — no son tablas a medio
-configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
-`20260928000471`, igual que decía la prosa). **`universidad_dominios` cuenta entre las 14 "con policies", pero
+**Ese 17 son 14 con policies más `listing_moderacion`,
+`listing_moderacion_reclamos` y `avatar_moderacion`, que tienen RLS habilitado
+y CERO policies a propósito** (sus bloques propios, más abajo) — no son tablas
+a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
+`20260928000471`, igual que decía la prosa; 16 con ella, 17 con
+`20260928000473`). **`universidad_dominios` cuenta entre las 14 "con policies", pero
 su única policy es para `supabase_auth_admin`, no para el cliente** (su bloque,
 más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto: 35 y 34 (medido el 2026-09-24).** `ls supabase/migrations |
-wc -l` da **35**; `mcp__supabase__list_migrations` da **34**. La que falta en
-remoto es `20260928000471` (el reclamo de moderación), que no se pushea en su
-propia tarea: es el runbook pendiente 0g de §8.
+**Repo y remoto: 37 y 34 (medido el 2026-09-24).** `ls supabase/migrations |
+wc -l` da **37**; `mcp__supabase__list_migrations` da **34**. Las que faltan
+en remoto son `20260928000471` (el reclamo de moderación), `…472` (el enum de
+los avisos nuevos) y `…473` (sus productores), que no se pushean en su propia
+tarea: es el runbook pendiente 0g de §8, en ese orden.
 
 **Por DECIMOTERCERA vez.** Este párrafo decía "34 y 32, faltan la 469 y la
 470", y al remedirlo el remoto YA las tenía (`list_migrations` lista las dos):
@@ -282,6 +284,8 @@ report_reason      : spam_publicidad | sospecha_fraude | contenido_inapropiado
                       | no_es_estudiante | otro
 report_status      : pendiente | resuelto | descartado
 notification_type  : precio_favorito | reporte_resuelto | compra_calificable
+                      | publicacion_aprobada | publicacion_bloqueada
+                      | calificacion_recibida | favorito_vendido | avatar_eliminado
 
 -- Catálogos (solo lectura para authenticated; altas vía Studio/service_role)
 universidades   (id, nombre único)
@@ -354,6 +358,10 @@ listings
   id, user_id, categoria_id, universidad_id, campus_id, titulo, descripcion,
   precio numeric(10,2) entero 0-100000 (check, ver abajo), condicion, estado default 'activa',
   vistas_count (solo vía RPC, ver abajo), created_at, updated_at,
+  veredicto_en_pantalla boolean (¿el usuario vio en pantalla el veredicto de
+    moderación que la sacó de `pendiente`? Solo la pone en true la Edge
+    Function; una limpieza la baja al entrar a `pendiente`. Ver "Avisos nuevos
+    del inbox", abajo),
   busqueda tsvector generated always as
     (to_tsvector('spanish', titulo || ' ' || coalesce(descripcion,''))) stored
     -- columna generada + índice GIN `listings_busqueda_idx` sobre ELLA. Ver abajo.
@@ -414,6 +422,11 @@ listing_moderacion_reclamos
   nullable. El reclamo del camino CLIENTE: mutex mientras `completada_at` es
   null, marca permanente de "el alta ya se evaluó" cuando no. CERO grants y
   CERO policies, igual que `listing_moderacion`. Ver el bloque de RF-18.
+avatar_moderacion
+  id, user_id → users on delete cascade, storage_path, foto_url_nulificado,
+  created_at. Una fila por avatar BORRADO por moderación (la escribe
+  moderarAvatar()); de ella nace el aviso `avatar_eliminado`. CERO grants y
+  CERO policies. Ver "Avisos nuevos del inbox", abajo.
 ```
 
 **`listings.precio` es un ENTERO de pesos, 0-100000 inclusive (RF-05,
@@ -993,12 +1006,13 @@ va en `private`). **`public.buscar_listings` NO es la cuarta**: también es una
 RPC de `public`, pero es INVOKER a propósito (bloque de la búsqueda de texto,
 más arriba), y volverla definer sería una fuga. `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
 acotado a las TRES que se invocan desde policies — `is_active_user()`,
-`can_rate()` y `listing_id_from_object_name()` — mientras las **12** que solo
+`can_rate()` y `listing_id_from_object_name()` — mientras las **16** que solo
 disparan por trigger siguen revocadas (decía "las otras cinco", un número de la
-Fase 2 que nadie actualizó; medido con `pg_trigger` ⋈ `pg_proc` en local: 13
-funciones de `private` cuelgan de un trigger, y la 13ª, `set_updated_at()`, es
-INVOKER y conserva su `EXECUTE`, porque Postgres lo verifica al crear el
-trigger, no al dispararlo). Ver sección 9 sobre por qué ese `USAGE` existe (no
+Fase 2 que nadie actualizó, y después 12; medido con `pg_trigger` ⋈ `pg_proc`
+en local: **18** funciones de `private` cuelgan de un trigger. Las dos que no
+están revocadas son INVOKER y solo reescriben NEW: `set_updated_at()` y
+`limpia_veredicto_en_pantalla()`, que conservan su `EXECUTE` porque Postgres lo
+verifica al crear el trigger, no al dispararlo. T12 vigila las dos listas). Ver sección 9 sobre por qué ese `USAGE` existe (no
 es lo que originalmente se pensó).
 
 **Una función `SECURITY DEFINER` de `public` llamando a una de `private` no
@@ -1085,6 +1099,64 @@ antes de agregar el siguiente disparador HTTP:
   viable filtrar por `bucket_id` un disparador sobre `storage.objects`.
 - **La autorización es la de §9**, no la del Dashboard: header `apikey` con la
   secret key (no `Bearer`) y `verify_jwt = false` en `config.toml`.
+
+**Avisos nuevos del inbox (RF-16, tanda 2, `20260928000472` +
+`20260928000473`): cuatro disparadores y cinco `tipo`s.** Mismo patrón que los
+tres anteriores: funciones en `private`, SECURITY DEFINER, EXECUTE revocado,
+triggers AFTER y el texto materializado, palabra por palabra el del frame
+"Notificaciones". El enum va en su propio archivo por el motivo de
+`20260917000458`: aquí los `WHEN` y las aserciones SÍ nombran los valores
+nuevos. (`compra_calificable` pudo ir junto a su función solo porque nada lo
+usaba al crearse.)
+
+| `tipo` | Nace cuando | Le llega a | Tap |
+|---|---|---|---|
+| `publicacion_aprobada` | `pendiente → activa` que el usuario NO vio en pantalla | el dueño | Detalle |
+| `publicacion_bloqueada` | `pendiente → bloqueada` no vista ("no fue aprobada"), o cualquier otro estado → `bloqueada` ("Retiramos tu publicación") | el dueño | Detalle |
+| `calificacion_recibida` | se CREA una reseña (AFTER INSERT; editarla no avisa) | el calificado | su Perfil público |
+| `favorito_vendido` | una publicación pasa a `vendida` | quien la tenía en favoritos, menos el dueño y el comprador registrado | Detalle |
+| `avatar_eliminado` | `moderarAvatar()` borra el avatar Y nulifica `foto_url` | el dueño del avatar | Editar perfil |
+
+- **"No visto en pantalla" es la columna `listings.veredicto_en_pantalla`.** El
+  veredicto del ALTA lo ve el usuario en "Publicación creada"/"no aprobada".
+  Medido en remoto: de 23 evaluaciones, 12 sacan la publicación de `pendiente`
+  en el acto, así que notificar siempre duplicaría el aviso en la mitad de las
+  altas. La Edge Function pone la columna en true en el MISMO update con el que
+  su camino CLIENTE sale de `pendiente`. Un trigger BEFORE
+  (`listings_limpia_veredicto_en_pantalla`, INVOKER) la baja a false siempre
+  que la fila esté en `pendiente`. **Esa limpieza es la que garantiza la
+  invariante, no la función.** Medido: con la función escribiendo `true`
+  siempre, la escalada del trigger sigue dejando false. Se descartó un filtro
+  por historial de `listing_moderacion`: fallaba en silencio si la auditoría no
+  se escribía, o si Studio mandaba a `pendiente` a mano.
+- **Consecuencia que sí cambió:** un alta abandonada (nunca llamó a la función)
+  que Studio aprueba **SÍ avisa**. El usuario nunca vio ese veredicto.
+- **Tres ediciones de fotos dan como máximo un aviso.** El trigger de Storage
+  solo escala, ignora `pendiente`, `bloqueada` es terminal y el `WHEN` exige un
+  cambio real de estado. `activa → pendiente` no avisa: avisa su resolución.
+- **`favorito_vendido` excluye al comprador leyendo `listing_sales`**, que ya
+  existe cuando el trigger corre, porque `registrarVenta()` inserta la venta
+  ANTES del estado (orden obligatorio). Corregir al comprador no vuelve a
+  avisar: solo toca `listing_sales`. Efecto aceptado: si el comprador nuevo
+  tenía el favorito, ya recibió "se vendió" y ahora recibe "Califica tu
+  compra".
+- **El aviso de calificación nunca lleva el comentario**, solo nombre y
+  estrellas (las reseñas ya son públicas). Singular con 1 estrella.
+- **`avatar_moderacion` existe porque `foto_url = null` no distingue** "lo quitó
+  la moderación" de "lo quitó el usuario". El cliente nunca escribe null, pero
+  el `grant update (foto_url)` se lo permite por API. La escribe
+  `moderarAvatar()` en cada borrado. El `WHEN (new.foto_url_nulificado)` omite
+  el caso en que el guard de la carrera dejó intacto el avatar vigente.
+  Mantiene "las notificaciones solo nacen de triggers". El toast de Perfil se
+  conserva: aviso inmediato más aviso persistente.
+- **El push no rutea por tipo**: `destino()` (`src/lib/push.ts`) solo recibe
+  `listing_id`, así que los tipos sin publicación abren el inbox. El inbox sí
+  rutea por tipo (`rutaDeNotificacion()`, `src/lib/notificaciones.ts`). Mandar
+  el tipo exige redesplegar `send-push`.
+- **Un build viejo pinta un `tipo` desconocido con un estilo neutro**
+  (`ESTILO_DESCONOCIDO` en `NotifRow`), en vez de reventar el inbox. El enum
+  vive en la base, y un build viejo contra el remoto nuevo lee filas de tipos
+  que no conoce.
 
 **`listing_moderacion` es la PRIMERA tabla del proyecto con RLS habilitado y
 cero policies, y las dos mitades son deliberadas** (`20260918000461`, RF-18).
@@ -1240,8 +1312,8 @@ Tres consecuencias que no se ven en el diff:
   vacía, todo alta nacería sin universidad. Por eso el runbook (§8, pendiente
   0) tiene un paso 0 bloqueante.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 284 aserciones (medido con el
-`grep` de §8 el 2026-09-24; antes decía 282, 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 317 aserciones (medido con el
+`grep` de §8 el 2026-09-24; antes decía 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -1743,6 +1815,48 @@ corrida, con la orden en una variable de zsh, no aplicó NADA: el gotcha de §9,
 reencontrado): `grant delete` a authenticated cae en la primera; una policy
 permisiva, en la segunda.
 
+Y a **317** con las de RF-16 tanda 2 (`20260928000472`/`473`): 29 de T32 más
+4 en T12. Las de T12 son: `avatar_moderacion` sin privilegios y sin policies
+(2); `veredicto_en_pantalla` sin UPDATE para authenticated (1); y la NUEVA de
+las dos funciones de trigger INVOKER, `set_updated_at()` y
+`limpia_veredicto_en_pantalla()` (1). **No existía ninguna aserción sobre
+`set_updated_at()`:** se pidió una "gemela" de la suya y no había original; ésta
+las cubre a las dos por primera vez. La lista de funciones solo-trigger
+revocadas pasó de 12 a **16** sin cambiar la cuenta. T32 es autocontenida, con
+sus propios `:D32`/`:F32a`/`:F32b`/`:F32c` y 15 publicaciones con foto (la
+foto es load-bearing: sin ella, pasar a `activa` lo rechaza
+`listings_enforce_activation_has_photos`). Los 17 controles se corrieron uno a
+la vez con un runner que imprime el estado vivo antes de cada corrida y verifica
+al final que triggers y funciones quedaron IDÉNTICOS a su definición original,
+contra la suite completa **y** contra T32 aislada:
+
+| Variante rota | Suite | T32 aislada |
+|---|---|---|
+| moderación sin `old.estado is distinct from new.estado` | (h) | (h) |
+| moderación, rama 1 sin `old.estado = 'pendiente'` | (f) | (f) |
+| moderación sin `not new.veredicto_en_pantalla` | (a) | (a) |
+| moderación, rama 2 sin `old.estado <> 'pendiente'` | (d) | (d) |
+| sin el trigger de limpieza | (a4) | (a4) |
+| vendido sin `old.estado is distinct from new.estado` | (r) | (r) |
+| vendido también en `pausada` | (q) | (q) |
+| vendido sin excluir al comprador | (m) | (m) |
+| vendido sin excluir al dueño | (n) | (n) |
+| trigger de ratings en `insert or update` | (j) | (j) |
+| el cuerpo de la calificación con el comentario | **(i)** | **(i)** |
+| avatar sin `WHEN (new.foto_url_nulificado)` | (t) | (t) |
+| `grant update (veredicto_en_pantalla)` | T12 | pasa |
+| `grant insert` en `avatar_moderacion` | T12 | pasa |
+| una policy en `avatar_moderacion` | T12 | pasa |
+| `limpia_veredicto_en_pantalla` como DEFINER | T12 | pasa |
+| `grant execute` de `notify_calificacion` | T12 | pasa |
+
+Dos lecturas de esa tabla. **El comentario cae en (i) y no en (k)**, porque
+(i) compara el cuerpo EXACTO y corre antes. (k) queda como red por si alguien
+afloja (i) a un `like`. **Las cinco de T12 "pasan" aisladas**, y es lo
+esperado: esas invariantes viven en T12, que no está en T32. Sin el trigger de
+limpieza también caería (x1), después de (a4). La suite corta en la primera
+caída.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -2127,6 +2241,19 @@ nacen de eventos que todavía no ocurrieron. A diferencia de "Favoritos vacío" 
 "Mis publicaciones vacío" no lleva `.empty-actions`: no hay nada que el usuario
 pueda hacer para llenarlo —depende de terceros— y la única acción posible sería
 volver, que ya es el chevron del header.
+
+**RF-16 tanda 2 no agregó frames: agregó FILAS al frame "Notificaciones"**
+(`20260928000472`/`473`), así que los 67 siguen siendo 67 (medido con el mismo
+`grep | uniq -c`). Son seis filas nuevas para cinco tipos: la de
+`publicacion_bloqueada` tiene dos variantes de copy, "no fue aprobada" y
+"Retiramos tu publicación". Tinte e ícono por tipo, y el copy exacto que
+materializa la base. El `sub` de "Notificaciones vacío" pasó a resumir por
+familia ("de tus favoritos, de la revisión de tus publicaciones, de las
+calificaciones que recibas y de tus reportes") en vez de nombrar solo precio y
+reporte. Los íconos de las filas nuevas reusan los componentes existentes
+(`IconCheckCircle`, `IconStar`, `IconTag`) y suman `IconBan` e `IconUser`: el
+path de la etiqueta y de la estrella del frame se alinearon a los de esos
+componentes, para no tener dos formas del mismo ícono.
 
 ### Sistema (6)
 Confirmar eliminar · Confirmar cerrar sesión · Error de conexión ·
@@ -2663,24 +2790,49 @@ de los route groups).
    **Paso 1 HECHO, fuera de la sesión que escribió este punto:** el
    2026-09-24, `list_migrations` ya listaba la 469 y la 470 (34 en remoto).
    Los pasos 2-5 no se verificaron en esa medición.
-0g. **El reclamo de moderación (`20260928000471`,
-   `listing_moderacion_reclamos`) + la Edge Function que lo usa: construidos y
-   probados en LOCAL, sin pushear.** En este orden, que NO es intercambiable:
-   1. `supabase db push`, y `list_migrations` con `20260928000471` (remoto pasa
-      de 34 a 35; se remide).
-   2. Verificar en remoto que la tabla tiene 0 privilegios para
-      `anon`/`authenticated` (`table_privileges` y `column_privileges`) y 0
-      policies.
+0g. **El reclamo de moderación (`20260928000471`) y los avisos nuevos del inbox
+   (`20260928000472` enum + `20260928000473` productores), más la Edge Function
+   que los usa: construidos y probados en LOCAL, sin pushear.** En este orden,
+   que NO es intercambiable:
+   1. `supabase db push` con las TRES, que el CLI aplica en orden y en
+      transacciones distintas (la 472 tiene que commitear antes de que la 473
+      nombre sus valores, medido en `20260917000458`). `list_migrations` debe
+      listar la 471, la 472 y la 473 (remoto pasa de 34 a 37; se remide, no se
+      suma).
+   2. Verificar en remoto:
+      - `select enum_range(null::public.notification_type)` → 8 valores;
+      - `pg_trigger` con `listings_notify_moderacion`, `listings_notify_vendido`,
+        `listings_limpia_veredicto_en_pantalla`, `ratings_notify_insert` y
+        `avatar_moderacion_notify`, con los `WHEN` de la migración
+        (`pg_get_triggerdef`);
+      - `has_function_privilege('authenticated', …, 'execute')` false para las
+        4 `notify_*` nuevas;
+      - `listing_moderacion_reclamos` y `avatar_moderacion` con 0 privilegios
+        para `anon`/`authenticated` (`table_privileges` y
+        `column_privileges`) y 0 policies.
    3. `supabase functions deploy moderar-contenido` a mano (no hay CI/CD). DEBE
-      ir después del paso 1: la función NUEVA contra una base sin la tabla
-      responde 500 en cada alta. La función VIEJA contra la base nueva sigue
-      funcionando igual que hoy (no conoce la tabla). Después,
-      `list_edge_functions` con la versión nueva, y bajar el fuente desplegado
-      y grepear `listing_moderacion_reclamos` y `descartado_por_carrera`.
-   4. `npm run gen:types` contra remoto (la tabla nueva entra a los tipos).
-   5. Prueba manual: publicar algo limpio desde el dispositivo, confirmar en
-      Studio que el reclamo quedó con `completada_at` y una sola fila en
-      `listing_moderacion`.
+      ir después del paso 1: la función NUEVA contra una base vieja responde
+      500 en cada alta (escribe `veredicto_en_pantalla` y usa las dos tablas
+      nuevas). La función VIEJA contra la base nueva sigue funcionando, con un
+      efecto temporal: no marca la columna, así que el veredicto del alta
+      TAMBIÉN llega al inbox (duplicado con la pantalla) hasta este paso. Por
+      eso va inmediatamente después. Luego `list_edge_functions` con la
+      versión nueva, y bajar el fuente desplegado para grepear
+      `listing_moderacion_reclamos`, `descartado_por_carrera`,
+      `veredicto_en_pantalla` y `avatar_moderacion`.
+   4. `npm run gen:types` contra remoto. Hoy `database.types.ts` tiene el enum
+      escrito a mano y le faltan la columna y las dos tablas, que ningún
+      código del cliente lee.
+   5. Distribuir el build. Un build VIEJO contra el remoto nuevo lee filas de
+      tipos que no conoce: no revienta gracias a `ESTILO_DESCONOCIDO`… pero
+      ese fallback solo lo tiene el build NUEVO. **Los builds viejos ya
+      instalados crashean el inbox al pintar un tipo nuevo**
+      (`ESTILO_POR_TIPO[tipo]` es `undefined`). Distribuir el build nuevo lo
+      antes posible después del push.
+   6. Pruebas manuales en el INBOX (el push no llega hoy): ver
+      `notificaciones-push.md`, "Tanda 2". Y del reclamo: publicar algo limpio
+      y confirmar en Studio que el reclamo quedó con `completada_at` y una
+      sola fila en `listing_moderacion`.
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
@@ -2751,7 +2903,9 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - La cola de `pendiente` mezcla lo marcado por moderación con lo abandonado a media subida → `moderacion.md`
 - La promoción de `moderarListing()` puede reventar con 500 si intenta activar una publicación con 0 fotos → `moderacion.md`
 - El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
-- El aviso del avatar borrado por moderación se pierde si el usuario no abre Perfil o no ve el toast → `cuenta-perfil.md`
+- ~~El aviso del avatar borrado por moderación se pierde si el usuario no abre Perfil o no ve el toast~~ **[CERRADA]** por `20260928000473` (`avatar_moderacion` + aviso `avatar_eliminado` en el inbox) → `cuenta-perfil.md`
+- Los builds viejos ya instalados crashean el inbox al leer un `tipo` de notificación nuevo (el fallback `ESTILO_DESCONOCIDO` solo existe desde RF-16 tanda 2) → CLAUDE.md §8, pendiente 0g paso 5
+- El push no rutea por `tipo`: los avisos sin publicación abren el inbox, no su destino → `notificaciones-push.md`
 - El reintento solo distingue DOS errores deterministas → `publicar-fotos.md`
 - `publicandoRef` (`nueva.tsx`) solo cubre el doble-tap dentro de la misma sesión: un crash/reinicio de la app entre que `crearListing()` resuelve en el servidor y el cliente recibe la confirmación puede seguir creando una publicación duplicada — eso necesita idempotencia del lado del servidor → `publicar-fotos.md`
 - Si falla `guardarFotos()` —no la subida— los objetos quedan sin fila → `publicar-fotos.md`

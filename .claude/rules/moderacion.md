@@ -1805,6 +1805,18 @@ son dos cosas:
   por eso esta pieza no tocó `relevo-app.html` ni el esquema. Lo que sí quedó
   abierto —un aviso que sobreviva a no verlo— sí los exigiría, y está como deuda
   con disparador en `cuenta-perfil.md`.
+- **Y ese aviso persistente YA EXISTE (2026-09-24, RF-16 tanda 2,
+  `20260928000473`).** `moderarAvatar()` inserta en `avatar_moderacion`
+  `{user_id, storage_path, foto_url_nulificado}` en cada BORRADO (no cuando
+  conserva), y el trigger `avatar_moderacion_notify`, con
+  `WHEN (new.foto_url_nulificado)`, crea la fila `avatar_eliminado` del inbox.
+  Si el guard de la carrera dejó intacto el avatar vigente, queda la fila de
+  auditoría y no hay aviso. Un fallo del insert se grita y no tumba la
+  respuesta. Cubierto en `probe-moderacion-avatares.mjs` (21 aserciones, 4
+  nuevas); su control (quitar el insert) cae en las 4. Con esto, la línea de §6.4
+  que decía "los avatares no escriben auditoría, su rastro es el console" ya no
+  es cierta: escriben en SU tabla, no en `listing_moderacion`, y la aserción
+  "cero filas nuevas en listing_moderacion" sigue valiendo.
 
 ---
 

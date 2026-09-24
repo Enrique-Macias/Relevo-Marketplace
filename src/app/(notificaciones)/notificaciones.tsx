@@ -22,7 +22,7 @@ import { Screen } from '@/components/Screen';
 import { SkeletonNotifRows } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 import { Colors } from '@/constants/theme';
-import { useNotificaciones } from '@/lib/notificaciones';
+import { rutaDeNotificacion, useNotificaciones } from '@/lib/notificaciones';
 import { useSession } from '@/lib/session';
 
 export default function NotificacionesScreen() {
@@ -86,7 +86,7 @@ export default function NotificacionesScreen() {
         <EmptyState
           icon={<IconBell size={30} color={Colors.inkSoft} />}
           title="Todavía no hay avisos"
-          sub="Te avisamos aquí cuando baje el precio de algo que guardaste o cuando respondamos a un reporte tuyo."
+          sub="Aquí te avisamos de tus favoritos, de la revisión de tus publicaciones, de las calificaciones que recibas y de tus reportes."
         />
       ) : (
         <View style={styles.lista}>
@@ -94,15 +94,14 @@ export default function NotificacionesScreen() {
             <NotifRow
               key={n.id}
               notificacion={n}
-              // Sin `listing_id` no se pasa `onPress`, y así la fila ni siquiera
-              // se anuncia como botón. Es el caso de las de reporte, que lo
-              // traen null a propósito, y el de una publicación ya borrada
-              // (la FK es `on delete set null`).
-              onPress={
-                n.listingId === null
-                  ? undefined
-                  : () => router.push(`/detalle/${n.listingId}`)
-              }
+              // Sin ruta no se pasa `onPress`, y así la fila ni siquiera se
+              // anuncia como botón: las de reporte, y las que apuntaban a una
+              // publicación ya borrada. El destino sale del `tipo`, ver
+              // `rutaDeNotificacion()`.
+              onPress={(() => {
+                const ruta = rutaDeNotificacion(n, userId);
+                return ruta === null ? undefined : () => router.push(ruta as never);
+              })()}
             />
           ))}
         </View>

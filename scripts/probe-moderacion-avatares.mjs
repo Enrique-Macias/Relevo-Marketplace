@@ -75,6 +75,27 @@ function ok(nombre, cond, detalle) {
 const igual = (nombre, actual, esperado) =>
   ok(nombre, actual === esperado, `esperado ${JSON.stringify(esperado)}, obtuvo ${JSON.stringify(actual)}`);
 
+/** Filas de `avatar_moderacion` de un objeto (RF-16, tanda 2). */
+async function auditoriaAvatar(E, path) {
+  const res = await fetch(
+    `${E.API_URL}/rest/v1/avatar_moderacion?storage_path=eq.${encodeURIComponent(path)}` +
+      `&select=foto_url_nulificado`,
+    { headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` } }
+  );
+  if (!res.ok) throw new Error(`auditoriaAvatar: ${res.status} ${await res.text()}`);
+  return await res.json();
+}
+
+/** Cuántos avisos `avatar_eliminado` tiene un usuario. */
+async function avisosAvatar(E, userId) {
+  const res = await fetch(
+    `${E.API_URL}/rest/v1/notifications?user_id=eq.${userId}&tipo=eq.avatar_eliminado&select=id`,
+    { headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` } }
+  );
+  if (!res.ok) throw new Error(`avisosAvatar: ${res.status} ${await res.text()}`);
+  return (await res.json()).length;
+}
+
 // ---------------------------------------------------------------------------
 // El mock de Vision — devuelve la FORMA real de `RespuestaVision`, con el
 // `adult` que cada escenario necesita. `retrasoMs` es lo que crea la ventana
@@ -235,6 +256,16 @@ async function main() {
     igual('foto_url quedó en null', await fotoUrlDe(E, usuario), null);
     igual('el objeto YA NO está en el bucket', await objetoExiste(E, pathA), false);
 
+    // RF-16 tanda 2 (20260928000473): el borrado deja su fila de auditoría, y
+    // de ella nace el aviso persistente del inbox. Se filtra por `storage_path`
+    // y no se cuenta la tabla entera: el trigger de Storage también puede
+    // moderar estas subidas, según a dónde apunte Vault en local.
+    const audA = await auditoriaAvatar(E, pathA);
+    ok('el borrado deja su fila en avatar_moderacion, con foto_url_nulificado',
+       audA.length === 1 && audA[0].foto_url_nulificado === true, JSON.stringify(audA));
+    igual('…y el usuario tiene UN aviso "Quitamos tu foto de perfil" en el inbox',
+          await avisosAvatar(E, usuario), 1);
+
     // -----------------------------------------------------------------
     console.log('\n== 2. LIKELY → no-op: nada se toca ==');
 
@@ -254,6 +285,8 @@ async function main() {
 
     igual('foto_url SIGUE apuntando al mismo avatar', await fotoUrlDe(E, usuario), pathB);
     igual('el objeto SIGUE en el bucket', await objetoExiste(E, pathB), true);
+    igual('un avatar conservado NO deja fila en avatar_moderacion',
+          (await auditoriaAvatar(E, pathB)).length, 0);
 
     // -----------------------------------------------------------------
     console.log('\n== 3. El guard de la carrera: A tardío no le borra la foto a B ==');
@@ -293,6 +326,14 @@ async function main() {
     // a él) y esta limpieza es inofensiva.
     igual('  …y A SÍ se borró del bucket (limpieza de un objeto ya huérfano)',
           await objetoExiste(E, pathRaceA), false);
+
+    // El guard dejó intacto el avatar vigente: la fila existe (A sí se borró),
+    // pero con foto_url_nulificado en false, y el WHEN del trigger no avisa.
+    const audRaceA = await auditoriaAvatar(E, pathRaceA);
+    ok('A tardío deja su fila con foto_url_nulificado = false',
+       audRaceA.length === 1 && audRaceA[0].foto_url_nulificado === false, JSON.stringify(audRaceA));
+    igual('…y NO agrega un segundo aviso (el usuario no perdió su avatar vigente)',
+          await avisosAvatar(E, usuario), 1);
 
     // -----------------------------------------------------------------
     console.log('\n== 4. Los avatares NUNCA escriben en listing_moderacion ==');

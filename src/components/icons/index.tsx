@@ -32,9 +32,15 @@ export function IconUsers({ size, color }: IconProps) {
 }
 
 // Onboarding 2/3 — "Verificado, cero desconocidos"
-export function IconCheckCircle({ size, color }: IconProps) {
+// `strokeWidth` opcional: la fila "Tu publicación ya está publicada" del frame
+// "Notificaciones" usa el mismo check en círculo a 2 (el `.notif-icon`).
+export function IconCheckCircle({
+  size,
+  color,
+  strokeWidth = 1.4,
+}: IconProps & { strokeWidth?: number }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.4}>
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth}>
       <Path d="M9 12l2 2 4-4" />
       <Circle cx={12} cy={12} r={9} />
     </Svg>
@@ -420,7 +426,9 @@ export function IconPause({ size, color }: IconProps) {
 // Etiqueta de precio — el `.menu-icon` de "Mis publicaciones" en el frame
 // Perfil. El punto del agujero va como `Path` de un solo trazo con
 // strokeLinecap="round", no como `Circle`: es como lo dibuja el HTML.
-export function IconTag({ size, color }: IconProps) {
+// `strokeWidth` opcional: "Se vendió un favorito" del frame "Notificaciones" la
+// usa a 2.
+export function IconTag({ size, color, strokeWidth = 1.8 }: IconProps & { strokeWidth?: number }) {
   return (
     <Svg
       width={size}
@@ -428,7 +436,7 @@ export function IconTag({ size, color }: IconProps) {
       viewBox="0 0 24 24"
       fill="none"
       stroke={color}
-      strokeWidth={1.8}
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -515,7 +523,14 @@ export function IconMail({ size, color }: IconProps) {
  * diseño — el trazo más grueso es lo que hace que la estrella vacía pese lo
  * mismo visualmente que la llena a la misma escala.
  */
-export function IconStar({ size, color, filled }: IconProps & { filled?: boolean }) {
+// `strokeWidth` opcional: "Recibiste una calificación" del frame
+// "Notificaciones" usa la estrella de TRAZO a 2.
+export function IconStar({
+  size,
+  color,
+  filled,
+  strokeWidth,
+}: IconProps & { filled?: boolean; strokeWidth?: number }) {
   return (
     <Svg
       width={size}
@@ -523,7 +538,7 @@ export function IconStar({ size, color, filled }: IconProps & { filled?: boolean
       viewBox="0 0 24 24"
       fill={filled ? color : 'none'}
       stroke={color}
-      strokeWidth={filled ? 1 : 1.3}
+      strokeWidth={strokeWidth ?? (filled ? 1 : 1.3)}
     >
       <Path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" />
     </Svg>
@@ -602,6 +617,44 @@ export function IconXCircle({ size, color }: IconProps) {
       <Circle cx={12} cy={12} r={9} />
       <Path d="M15 9l-6 6" />
       <Path d="M9 9l6 6" />
+    </Svg>
+  );
+}
+
+// Frame "Notificaciones" — "Tu publicación no fue aprobada" / "Retiramos tu
+// publicación" (`publicacion_bloqueada`): círculo tachado.
+export function IconBan({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+    >
+      <Circle cx={12} cy={12} r={9} />
+      <Path d="M5.6 5.6l12.8 12.8" />
+    </Svg>
+  );
+}
+
+// Frame "Notificaciones" — "Quitamos tu foto de perfil" (`avatar_eliminado`):
+// silueta de una persona.
+export function IconUser({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+    >
+      <Circle cx={12} cy={8} r={4} />
+      <Path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
     </Svg>
   );
 }

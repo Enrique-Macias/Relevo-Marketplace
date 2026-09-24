@@ -90,6 +90,52 @@ Detalles que no se ven en el diff:
   "categoría seguida" del frame, que no tiene disparador y está ahí solo como
   documentación.
 
+- **Tanda 2 (2026-09-24, `20260928000472`/`473`): cuatro avisos nuevos, cinco
+  `tipo`s.** Veredicto de moderación de MI publicación (`publicacion_aprobada` /
+  `publicacion_bloqueada`), me calificaron (`calificacion_recibida`), se vendió
+  un favorito (`favorito_vendido`) y la moderación borró mi foto
+  (`avatar_eliminado`). La tabla de qué nace cuándo, y por qué, está en
+  CLAUDE.md §3, "Avisos nuevos del inbox". Lo que es de ESTE grupo:
+  - **El `onPress` del inbox dejó de rutear solo por `listing_id`**: hoy lo
+    decide `rutaDeNotificacion()` (`src/lib/notificaciones.ts`), por `tipo`.
+    `calificacion_recibida` guarda la publicación de la reseña, pero el tap va
+    a TU Perfil público, porque el Perfil propio no lista reseñas, solo el
+    promedio (`perfil.tsx`). `avatar_eliminado` va a Editar perfil. Los demás
+    van a Detalle, y el reporte sigue sin tap.
+  - **`destino()` del push NO cambió**, a propósito: `send-push` manda solo
+    `listing_id` en `data`, así que un push de calificación o de avatar abre el
+    inbox, no su destino. Mandar el `tipo` exige redesplegar `send-push`, y eso
+    dispara su pendiente de pinear `@supabase/server` (`moderacion.md` §2). Como
+    hoy el push no llega (credenciales pendientes), no tiene costo visible.
+    **Revisar cuando:** el push entregue en un aparato real. **Fix:** `tipo` en
+    el `data` de `send-push` y que `destino()` reuse `rutaDeNotificacion()`.
+  - **`NotifRow` tiene un estilo para un `tipo` que no conoce**
+    (`ESTILO_DESCONOCIDO`, campana en --slate). Un build viejo sin ese fallback
+    CRASHEA el inbox al leer un tipo nuevo; ver CLAUDE.md §8, pendiente 0g,
+    paso 5.
+  - **El `sub` de "Notificaciones vacío"** pasó a resumir por familia; va igual
+    en el frame.
+  - **Pruebas manuales que tocan en el INBOX**, no en el push (el push no llega
+    hoy; `expo-notifications` sigue excluido del autolinking):
+    1. Publicar algo que caiga en revisión y resolverlo en Studio a `activa` y,
+       con otra, a `bloqueada` → aparece "Tu publicación ya está publicada" /
+       "no fue aprobada". Publicar algo limpio → llega a "Publicación creada" y
+       el inbox NO gana fila.
+    2. Editar las fotos de una publicación activa hasta que la bloqueen (o
+       bloquearla en Studio desde `activa`) → "Retiramos tu publicación".
+    3. Calificar desde otra cuenta → "Recibiste una calificación" con nombre y
+       estrellas, sin el comentario; el tap abre TU Perfil público con la
+       lista de reseñas.
+    4. Dos cuentas con la publicación en favoritos; marcar la venta a una →
+       solo la otra recibe "Se vendió un favorito", y la compradora recibe
+       "Califica tu compra". Repetir con "No fue a través de Relevo" → les
+       llega a las dos.
+    5. Avatar borrado por moderación (en LOCAL, con el mock de
+       `moderacion.md` §6.4) → la fila "Quitamos tu foto de perfil" persiste,
+       y el tap abre Editar perfil. El toast de Perfil sigue saliendo.
+    6. Cada fila con su tinte, su ícono y su tap; la del reporte sigue sin
+       tap.
+
 Componentes nuevos: `NotifRow`, `SkeletonNotifRows`, `IconMail`, y dos roles de
 `Typography` (`notifTime`, `notifDesc` — ver §2, se confunden fácil con
 `cardBadge` y `activeChip`).

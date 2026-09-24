@@ -2344,8 +2344,34 @@ select pg_temp.assert(
   and not has_function_privilege('authenticated',
         'private.pause_listings_on_suspend()', 'execute')
   and not has_function_privilege('authenticated',
-        'private.notify_moderacion()', 'execute'),
-  'las 12 funciones que solo disparan por trigger siguen revocadas');
+        'private.notify_moderacion()', 'execute')
+  -- RF-16, tanda 2 (20260928000473).
+  and not has_function_privilege('authenticated',
+        'private.notify_moderacion_listing()', 'execute')
+  and not has_function_privilege('authenticated', 'private.notify_calificacion()', 'execute')
+  and not has_function_privilege('authenticated',
+        'private.notify_favorito_vendido()', 'execute')
+  and not has_function_privilege('authenticated',
+        'private.notify_avatar_eliminado()', 'execute'),
+  'las 16 funciones que solo disparan por trigger siguen revocadas');
+
+-- Las DOS funciones de trigger que NO están en la lista de arriba, a
+-- propósito: `set_updated_at()` y `limpia_veredicto_en_pantalla()` son
+-- INVOKER, solo reescriben NEW y no leen ni escriben otras filas, así que no
+-- hay nada que revocar (el criterio de 20260906000439:31). Lo que importa es
+-- que SIGAN siendo invoker: volver definer a una función que corre en cada
+-- update de `listings` sería elevar sin motivo. El EXECUTE abierto es por
+-- consistencia entre las dos, no por necesidad — Postgres lo verifica al crear
+-- el trigger, no al dispararlo. No había ninguna aserción sobre
+-- `set_updated_at()` antes de esta: la cubre por primera vez.
+select pg_temp.assert(
+  not (select prosecdef from pg_proc where oid = 'private.set_updated_at()'::regprocedure)
+  and not (select prosecdef from pg_proc
+            where oid = 'private.limpia_veredicto_en_pantalla()'::regprocedure)
+  and has_function_privilege('authenticated', 'private.set_updated_at()', 'execute')
+  and has_function_privilege('authenticated',
+        'private.limpia_veredicto_en_pantalla()', 'execute'),
+  'set_updated_at() y limpia_veredicto_en_pantalla() son INVOKER y no están revocadas');
 
 -- El webhook no puede quedar como un grant abierto sobre Vault: si
 -- `authenticated` pudiera leer `vault.decrypted_secrets`, la secret key del
@@ -2397,6 +2423,17 @@ select pg_temp.assert(
                 and table_name = 'listings' and column_name = 'vistas_count'
                 and privilege_type = 'UPDATE'),
   'authenticated no puede escribir listings.vistas_count');
+
+-- `veredicto_en_pantalla` (20260928000473) decide si el veredicto de
+-- moderación se avisa. Si el dueño pudiera escribirla, apagaría a mano el
+-- aviso de su propia publicación. El grant de UPDATE de `listings` es por lista
+-- de columnas, y esta no entra.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.column_privileges
+              where grantee = 'authenticated' and table_schema = 'public'
+                and table_name = 'listings' and column_name = 'veredicto_en_pantalla'
+                and privilege_type = 'UPDATE'),
+  'authenticated no puede escribir listings.veredicto_en_pantalla');
 
 -- Fase 2A (20260924000466): la universidad de un usuario la asigna el trigger
 -- de alta, y una publicación conserva la universidad y el campus con los que
@@ -2535,6 +2572,26 @@ select pg_temp.assert(
   not exists (select 1 from pg_policies
               where schemaname = 'public' and tablename = 'listing_moderacion_reclamos'),
   'listing_moderacion_reclamos no tiene ninguna policy (solo service_role la usa)');
+
+-- `avatar_moderacion` (20260928000473): la auditoría de los avatares borrados
+-- por moderación. Mismas dos gemelas: el motivo por el que se le borró la foto
+-- a alguien no es dato del campus, y un INSERT colado dejaría a un cliente
+-- fabricarse avisos "Quitamos tu foto de perfil".
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee in ('authenticated', 'anon')
+                and table_schema = 'public'
+                and table_name = 'avatar_moderacion')
+  and not exists (select 1 from information_schema.column_privileges
+                  where grantee in ('authenticated', 'anon')
+                    and table_schema = 'public'
+                    and table_name = 'avatar_moderacion'),
+  'avatar_moderacion no tiene ni un privilegio para authenticated ni anon');
+
+select pg_temp.assert(
+  not exists (select 1 from pg_policies
+              where schemaname = 'public' and tablename = 'avatar_moderacion'),
+  'avatar_moderacion no tiene ninguna policy (solo service_role la usa)');
 
 -- Todas las tablas de public tienen RLS activo.
 select pg_temp.assert(
@@ -3397,6 +3454,339 @@ select pg_temp.assert(pg_temp.t31_tel('528112345678') = '23514:users_telefono_e1
   '(u) rechaza sin +');
 select pg_temp.assert(pg_temp.t31_tel('+1234567890123456') = '23514:users_telefono_e164',
   '(v) rechaza 16 dígitos (el máximo de E.164 es 15)');
+
+\echo ''
+\echo '== T32 — avisos nuevos del inbox: moderación, calificación, favorito vendido, avatar (RF-16) =='
+-- 20260928000472 (enum) + 20260928000473 (productores). Autocontenida: siembra
+-- sus propios usuarios y publicaciones y no reusa nada de secciones anteriores
+-- (la moraleja de T16). Cada aserción cuenta los avisos de UNA publicación o
+-- UN usuario y UN tipo, para que ningún otro productor la haga pasar.
+--
+-- Las transiciones de moderación corren como `postgres`: en la vida real las
+-- escribe la Edge Function (supabaseAdmin) o Studio, y los dos saltan la RLS.
+-- La acción y la comprobación van en SENTENCIAS DISTINTAS (lección de T28).
+--
+-- CONTROLES NEGATIVOS, uno a la vez contra la suite completa: ver la tabla de
+-- CLAUDE.md §3 ("Y a N con las de T32").
+
+\set D32  '''32323232-0000-0000-0000-0000000032d0'''
+\set F32a '''32323232-0000-0000-0000-0000000032a1'''
+\set F32b '''32323232-0000-0000-0000-0000000032b2'''
+\set F32c '''32323232-0000-0000-0000-0000000032c3'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:D32::uuid,  '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-t32-d@tec.mx', '', now(), now(), now()),
+  (:F32a::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-t32-a@tec.mx', '', now(), now(), now()),
+  (:F32b::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-t32-b@tec.mx', '', now(), now(), now()),
+  (:F32c::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-t32-c@tec.mx', '', now(), now(), now());
+
+update public.users set nombre = 'Jorge' where id = :F32a::uuid;
+update public.users set nombre = 'Diana' where id = :D32::uuid;
+
+-- Una publicación por caso, con su título como llave. Todas llevan foto:
+-- `listings_enforce_activation_has_photos` rechazaría pasar a `activa` sin
+-- ella, y la aserción caería por el motivo equivocado (la foto load-bearing
+-- de T20 (d)).
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id, titulo,
+                             descripcion, precio, condicion, estado, veredicto_en_pantalla)
+select :D32::uuid, 1, 1, 1, t, 'T32', 100, 'nuevo', e::public.listing_status, v
+  from (values ('RLS T32 a', 'pendiente', false), ('RLS T32 b', 'pendiente', false),
+               ('RLS T32 a2', 'activa', true),   ('RLS T32 a3', 'activa', true),
+               ('RLS T32 a4', 'activa', true),   ('RLS T32 c', 'pendiente', false),
+               ('RLS T32 d', 'pendiente', false), ('RLS T32 e', 'activa', false),
+               ('RLS T32 f', 'pausada', false),  ('RLS T32 g', 'activa', false),
+               ('RLS T32 h', 'bloqueada', false), ('RLS T32 Reseña', 'activa', false),
+               ('RLS T32 vendida', 'activa', false), ('RLS T32 sin comprador', 'activa', false),
+               ('RLS T32 pausar', 'activa', false)) as x(t, e, v);
+
+insert into public.listing_photos (listing_id, storage_path, orden)
+select id, id || '/t32.jpg', 0 from public.listings where user_id = :D32::uuid;
+
+create or replace function pg_temp.t32(p_titulo text) returns bigint
+language sql as $$
+  select id from public.listings
+   where user_id = '32323232-0000-0000-0000-0000000032d0' and titulo = p_titulo
+$$;
+
+-- Avisos de un tipo sobre una publicación.
+create or replace function pg_temp.t32_n(p_titulo text, p_tipo text) returns bigint
+language sql as $$
+  select count(*) from public.notifications
+   where listing_id = pg_temp.t32(p_titulo) and tipo::text = p_tipo
+$$;
+
+-- Avisos de un tipo para un usuario.
+create or replace function pg_temp.t32_u(p_user uuid, p_tipo text) returns bigint
+language sql as $$
+  select count(*) from public.notifications where user_id = p_user and tipo::text = p_tipo
+$$;
+
+select pg_temp.assert(
+  (select count(*) from public.listing_photos lp join public.listings l on l.id = lp.listing_id
+    where l.user_id = :D32::uuid) = 15,
+  'precondición: las 15 publicaciones de T32 existen y tienen foto');
+
+-- --- Tipo 1: veredicto de moderación ------------------------------------
+
+-- (a) El veredicto del alta, por el camino CLIENTE: la función pone
+-- `veredicto_en_pantalla` en el MISMO update. El usuario lo está viendo.
+update public.listings set estado = 'activa', veredicto_en_pantalla = true
+ where id = pg_temp.t32('RLS T32 a');
+select pg_temp.assert(pg_temp.t32_n('RLS T32 a', 'publicacion_aprobada') = 0,
+  '(a) pendiente → activa con veredicto_en_pantalla (el alta, visto en pantalla): sin aviso');
+
+-- (b) La resolución de Studio: no toca la columna.
+update public.listings set estado = 'activa' where id = pg_temp.t32('RLS T32 b');
+select pg_temp.assert(
+  pg_temp.t32_n('RLS T32 b', 'publicacion_aprobada') = 1
+  and (select titulo = 'Tu publicación ya está publicada'
+              and cuerpo = '"RLS T32 b" pasó la revisión y ya es visible para otros estudiantes.'
+              and user_id = :D32::uuid
+         from public.notifications where listing_id = pg_temp.t32('RLS T32 b')),
+  '(b) pendiente → activa resuelta en Studio: 1 aviso al dueño, con el copy del frame');
+
+-- (a2) EL ESCENARIO de la revisión del plan: aprobada en el alta (true),
+-- meses después el trigger de Storage la escala (la función escribe false) y
+-- Studio la resuelve.
+update public.listings set estado = 'pendiente', veredicto_en_pantalla = false
+ where id = pg_temp.t32('RLS T32 a2');
+update public.listings set estado = 'activa' where id = pg_temp.t32('RLS T32 a2');
+select pg_temp.assert(pg_temp.t32_n('RLS T32 a2', 'publicacion_aprobada') = 1,
+  '(a2) aprobada en el alta → escalada por una foto → resuelta a activa: SÍ avisa');
+
+-- (a3) Lo mismo, resuelta a bloqueada.
+update public.listings set estado = 'pendiente', veredicto_en_pantalla = false
+ where id = pg_temp.t32('RLS T32 a3');
+update public.listings set estado = 'bloqueada' where id = pg_temp.t32('RLS T32 a3');
+select pg_temp.assert(
+  pg_temp.t32_n('RLS T32 a3', 'publicacion_bloqueada') = 1
+  and (select titulo from public.notifications
+        where listing_id = pg_temp.t32('RLS T32 a3')) = 'Tu publicación no fue aprobada',
+  '(a3) aprobada en el alta → escalada → resuelta a bloqueada: SÍ avisa, "no fue aprobada"');
+
+-- (a4) Studio la manda a pendiente A MANO, sin tocar la columna (sigue true
+-- del alta). La limpieza la baja y la resolución sí avisa.
+update public.listings set estado = 'pendiente' where id = pg_temp.t32('RLS T32 a4');
+select not veredicto_en_pantalla as limpia_a4 from public.listings
+ where id = pg_temp.t32('RLS T32 a4') \gset
+update public.listings set estado = 'activa' where id = pg_temp.t32('RLS T32 a4');
+select pg_temp.assert(:'limpia_a4'::boolean and pg_temp.t32_n('RLS T32 a4', 'publicacion_aprobada') = 1,
+  '(a4) entrar a pendiente sin mandar la columna la limpia, y la resolución avisa');
+
+-- (c) pendiente → bloqueada resuelta en Studio.
+update public.listings set estado = 'bloqueada' where id = pg_temp.t32('RLS T32 c');
+select pg_temp.assert(
+  pg_temp.t32_n('RLS T32 c', 'publicacion_bloqueada') = 1
+  and (select cuerpo from public.notifications where listing_id = pg_temp.t32('RLS T32 c'))
+      = '"RLS T32 c" no cumple con las reglas de la comunidad, así que no se publicó.',
+  '(c) pendiente → bloqueada resuelta en Studio: 1 aviso, "no fue aprobada"');
+
+-- (d) El bloqueo del alta, visto en "Publicación no aprobada".
+update public.listings set estado = 'bloqueada', veredicto_en_pantalla = true
+ where id = pg_temp.t32('RLS T32 d');
+select pg_temp.assert(pg_temp.t32_n('RLS T32 d', 'publicacion_bloqueada') = 0,
+  '(d) pendiente → bloqueada con veredicto_en_pantalla (el alta): sin aviso');
+
+-- (x1) Un cliente no puede nacer con la columna en true: la fila nace
+-- `pendiente` y la limpieza la baja.
+select pg_temp.as_user(:D32::uuid, format(
+  'insert into public.listings (user_id, categoria_id, universidad_id, campus_id, titulo, '
+  || 'precio, condicion, estado, veredicto_en_pantalla) values '
+  || '(%L, 1, 1, 1, ''RLS T32 x1'', 100, ''nuevo'', ''pendiente'', true)', :D32::uuid));
+select pg_temp.assert(
+  (select not veredicto_en_pantalla from public.listings where id = pg_temp.t32('RLS T32 x1')),
+  '(x1) un insert de cliente con veredicto_en_pantalla = true queda en false');
+
+-- (e) Ya publicada y bloqueada por una foto editada: nadie lo está mirando.
+update public.listings set estado = 'bloqueada' where id = pg_temp.t32('RLS T32 e');
+select pg_temp.assert(
+  pg_temp.t32_n('RLS T32 e', 'publicacion_bloqueada') = 1
+  and (select titulo from public.notifications
+        where listing_id = pg_temp.t32('RLS T32 e')) = 'Retiramos tu publicación',
+  '(e) activa → bloqueada: 1 aviso, "Retiramos tu publicación"');
+
+-- (f) El dueño reactiva su pausada: no es un veredicto.
+select pg_temp.as_user(:D32::uuid, format(
+  'update public.listings set estado = ''activa'' where id = %s', pg_temp.t32('RLS T32 f')));
+select pg_temp.assert(
+  (select estado from public.listings where id = pg_temp.t32('RLS T32 f')) = 'activa'
+  and pg_temp.t32_n('RLS T32 f', 'publicacion_aprobada') = 0,
+  '(f) el dueño reactiva su pausada: sin aviso');
+
+-- (g) La escalada a pendiente: se avisa su resolución, no la escalada.
+update public.listings set estado = 'pendiente' where id = pg_temp.t32('RLS T32 g');
+select pg_temp.assert(
+  (select count(*) from public.notifications where listing_id = pg_temp.t32('RLS T32 g')) = 0,
+  '(g) activa → pendiente: sin aviso');
+
+-- (h) Studio re-guarda una bloqueada: el estado no cambió.
+update public.listings set estado = 'bloqueada', titulo = 'RLS T32 h'
+ where id = pg_temp.t32('RLS T32 h');
+select pg_temp.assert(
+  (select count(*) from public.notifications where listing_id = pg_temp.t32('RLS T32 h')) = 0,
+  '(h) un update sin cambio de estado sobre una bloqueada: sin aviso');
+
+-- --- Tipo 2: me calificaron ---------------------------------------------
+
+-- :F32a contactó a la dueña, así que puede calificarla (can_rate()), y ella
+-- a él.
+insert into public.listing_contacts (user_id, listing_id)
+values (:F32a::uuid, pg_temp.t32('RLS T32 Reseña'));
+
+select pg_temp.as_user(:F32a::uuid, format(
+  'insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas, comentario) '
+  || 'values (%L, %L, %s, 4, ''COMENTARIO-PRIVADO-T32'')',
+  :F32a::uuid, :D32::uuid, pg_temp.t32('RLS T32 Reseña')));
+select pg_temp.assert(
+  pg_temp.t32_u(:D32::uuid, 'calificacion_recibida') = 1
+  and (select titulo = 'Recibiste una calificación'
+              and cuerpo = 'Jorge te dio 4 estrellas por "RLS T32 Reseña".'
+         from public.notifications where user_id = :D32::uuid and tipo = 'calificacion_recibida'),
+  '(i) crear una reseña avisa a quien la recibe, con las estrellas y el nombre');
+
+select pg_temp.assert(
+  (select position('COMENTARIO-PRIVADO' in cuerpo) = 0 from public.notifications
+    where user_id = :D32::uuid and tipo = 'calificacion_recibida'),
+  '(k) el aviso NUNCA incluye el comentario de la reseña');
+
+select pg_temp.as_user(:F32a::uuid, format(
+  'update public.ratings set estrellas = 5, comentario = ''otro'' '
+  || 'where from_user_id = %L and listing_id = %s', :F32a::uuid, pg_temp.t32('RLS T32 Reseña')));
+select pg_temp.assert(
+  (select estrellas from public.ratings where from_user_id = :F32a::uuid
+     and listing_id = pg_temp.t32('RLS T32 Reseña')) = 5
+  and pg_temp.t32_u(:D32::uuid, 'calificacion_recibida') = 1,
+  '(j) EDITAR la reseña no produce otro aviso');
+
+select pg_temp.as_user(:D32::uuid, format(
+  'insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas) '
+  || 'values (%L, %L, %s, 1)', :D32::uuid, :F32a::uuid, pg_temp.t32('RLS T32 Reseña')));
+select pg_temp.assert(
+  (select cuerpo from public.notifications
+    where user_id = :F32a::uuid and tipo = 'calificacion_recibida')
+    = 'Diana te dio 1 estrella por "RLS T32 Reseña".',
+  '(i2) con 1 estrella el cuerpo va en singular');
+
+-- --- Tipo 3: se vendió un favorito --------------------------------------
+
+-- Tienen la publicación en favoritos: la dueña (la suya), :F32a, :F32b (que
+-- será la compradora) y :F32c.
+insert into public.favorites (user_id, listing_id)
+select u, pg_temp.t32('RLS T32 vendida')
+  from unnest(array[:D32::uuid, :F32a::uuid, :F32b::uuid, :F32c::uuid]) as u;
+insert into public.listing_contacts (user_id, listing_id)
+values (:F32b::uuid, pg_temp.t32('RLS T32 vendida')),
+       (:F32c::uuid, pg_temp.t32('RLS T32 vendida'));
+
+-- El orden del cliente (registrarVenta()): la venta PRIMERO, el estado después.
+select pg_temp.as_user(:D32::uuid, format(
+  'insert into public.listing_sales (listing_id, comprador_id) values (%s, %L)',
+  pg_temp.t32('RLS T32 vendida'), :F32b::uuid));
+select pg_temp.as_user(:D32::uuid, format(
+  'update public.listings set estado = ''vendida'' where id = %s', pg_temp.t32('RLS T32 vendida')));
+
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where listing_id = pg_temp.t32('RLS T32 vendida') and tipo = 'favorito_vendido'
+      and user_id in (:F32a::uuid, :F32c::uuid)) = 2
+  and (select cuerpo from public.notifications
+        where listing_id = pg_temp.t32('RLS T32 vendida') and tipo = 'favorito_vendido'
+          and user_id = :F32a::uuid)
+      = '"RLS T32 vendida" ya se vendió y dejó de estar disponible.',
+  '(l) marcar vendida avisa a cada uno de los que la tenían en favoritos');
+
+select pg_temp.assert(
+  (select count(*) from public.notifications where user_id = :F32b::uuid
+     and listing_id = pg_temp.t32('RLS T32 vendida') and tipo = 'favorito_vendido') = 0
+  and (select count(*) from public.notifications where user_id = :F32b::uuid
+         and listing_id = pg_temp.t32('RLS T32 vendida') and tipo = 'compra_calificable') = 1,
+  '(m) la compradora registrada NO recibe "se vendió" (recibe "Califica tu compra")');
+
+select pg_temp.assert(
+  (select count(*) from public.notifications where user_id = :D32::uuid
+     and tipo = 'favorito_vendido') = 0,
+  '(n) la dueña, con su propia publicación en favoritos, no se avisa a sí misma');
+
+-- (p) Corregir a la compradora no es una venta nueva.
+update public.listing_sales set comprador_id = :F32c::uuid
+ where listing_id = pg_temp.t32('RLS T32 vendida');
+select pg_temp.assert(pg_temp.t32_n('RLS T32 vendida', 'favorito_vendido') = 2,
+  '(p) corregir a la compradora no vuelve a avisar "se vendió"');
+
+-- (r) Un update sobre una ya vendida.
+update public.listings set estado = 'vendida', precio = 90
+ where id = pg_temp.t32('RLS T32 vendida');
+select pg_temp.assert(pg_temp.t32_n('RLS T32 vendida', 'favorito_vendido') = 2,
+  '(r) un update sin cambio de estado sobre una vendida no vuelve a avisar');
+
+-- (o) "No fue a través de Relevo": sin fila de venta, les llega a todos
+-- menos a la dueña.
+insert into public.favorites (user_id, listing_id)
+select u, pg_temp.t32('RLS T32 sin comprador')
+  from unnest(array[:D32::uuid, :F32a::uuid, :F32b::uuid]) as u;
+select pg_temp.as_user(:D32::uuid, format(
+  'update public.listings set estado = ''vendida'' where id = %s',
+  pg_temp.t32('RLS T32 sin comprador')));
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where listing_id = pg_temp.t32('RLS T32 sin comprador') and tipo = 'favorito_vendido'
+      and user_id in (:F32a::uuid, :F32b::uuid)) = 2
+  and pg_temp.t32_n('RLS T32 sin comprador', 'favorito_vendido') = 2,
+  '(o) sin comprador registrado: avisa a todos los que la tenían, menos a la dueña');
+
+-- (q) Pausar no es vender.
+insert into public.favorites (user_id, listing_id)
+values (:F32a::uuid, pg_temp.t32('RLS T32 pausar'));
+select pg_temp.as_user(:D32::uuid, format(
+  'update public.listings set estado = ''pausada'' where id = %s', pg_temp.t32('RLS T32 pausar')));
+select pg_temp.assert(
+  (select count(*) from public.notifications where listing_id = pg_temp.t32('RLS T32 pausar')) = 0,
+  '(q) pausar una publicación en favoritos: sin aviso');
+
+-- --- Tipo 4: la moderación borró mi foto de perfil ------------------------
+
+-- Las filas las escribe moderarAvatar() con supabaseAdmin; aquí, postgres.
+insert into public.avatar_moderacion (user_id, storage_path, foto_url_nulificado)
+values (:F32a::uuid, 'rls-t32/a.jpg', true);
+select pg_temp.assert(
+  pg_temp.t32_u(:F32a::uuid, 'avatar_eliminado') = 1
+  and (select listing_id is null and titulo = 'Quitamos tu foto de perfil'
+         from public.notifications where user_id = :F32a::uuid and tipo = 'avatar_eliminado'),
+  '(s) un avatar borrado con foto_url nulificado avisa, sin publicación');
+
+insert into public.avatar_moderacion (user_id, storage_path, foto_url_nulificado)
+values (:F32b::uuid, 'rls-t32/b.jpg', false);
+select pg_temp.assert(pg_temp.t32_u(:F32b::uuid, 'avatar_eliminado') = 0,
+  '(t) si el guard de la carrera dejó el avatar vigente (no nulificado): sin aviso');
+
+-- (u) El usuario quita su propia foto por API: no es moderación.
+update public.users set foto_url = 'rls-t32/c.jpg' where id = :F32c::uuid;
+select pg_temp.as_user(:F32c::uuid, format(
+  'update public.users set foto_url = null where id = %L', :F32c::uuid));
+select pg_temp.assert(
+  (select foto_url is null from public.users where id = :F32c::uuid)
+  and pg_temp.t32_u(:F32c::uuid, 'avatar_eliminado') = 0,
+  '(u) poner la propia foto_url en null por API no produce el aviso');
+
+-- --- El cliente sigue sin escribir notificaciones -------------------------
+
+select pg_temp.assert(
+  pg_temp.rechazo_de(:F32a::uuid, format(
+    'insert into public.notifications (user_id, tipo, titulo, cuerpo) '
+    || 'values (%L, ''avatar_eliminado'', ''x'', ''y'')', :F32a::uuid)) = '42501',
+  '(v) authenticated NO puede insertar notificaciones, ni de los tipos nuevos');
+
+select pg_temp.assert(
+  pg_temp.rechazo_de(:F32a::uuid, format(
+    'delete from public.notifications where user_id = %L', :F32a::uuid)) = '42501'
+  and pg_temp.t32_u(:F32a::uuid, 'avatar_eliminado') = 1,
+  '(w) authenticated NO puede borrar sus notificaciones');
 
 \echo ''
 \echo '==========================================='

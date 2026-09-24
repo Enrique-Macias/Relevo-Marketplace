@@ -16,7 +16,52 @@ export type TipoNotificacion =
   | 'precio_favorito'
   | 'reporte_resuelto'
   /** Te acreditaron una compra al marcar la venta (RF-07/RF-12). */
-  | 'compra_calificable';
+  | 'compra_calificable'
+  // RF-16, tanda 2 (20260928000472/473).
+  /** Una publicación tuya salió de revisión aprobada, sin que lo vieras en pantalla. */
+  | 'publicacion_aprobada'
+  /** No fue aprobada, o una ya publicada se retiró por una foto editada. */
+  | 'publicacion_bloqueada'
+  /** Alguien te calificó (solo al CREAR la reseña). */
+  | 'calificacion_recibida'
+  /** Algo que guardaste se vendió (no le llega al comprador ni al dueño). */
+  | 'favorito_vendido'
+  /** La moderación borró tu foto de perfil (RF-18). */
+  | 'avatar_eliminado';
+
+/**
+ * A dónde lleva el tap de una fila del inbox, o `null` si no lleva a ningún
+ * lado (y entonces la fila ni siquiera se anuncia como botón).
+ *
+ * POR `tipo` Y NO SOLO POR `listing_id`, que era el criterio mientras todos los
+ * tipos tocables llevaban al Detalle:
+ *  · `calificacion_recibida` sí guarda la publicación de la reseña, pero el
+ *    tap va a TU Perfil público, que es donde vive la lista de reseñas (el
+ *    Perfil propio solo muestra el promedio). Por eso necesita `userId`.
+ *  · `avatar_eliminado` no tiene publicación y lleva a Editar perfil, donde se
+ *    sube otra foto.
+ *  · `reporte_resuelto` sigue sin tap, a propósito (el tap devolvería al
+ *    reportante al contenido que denunció).
+ *  · El resto va al Detalle mientras la publicación exista (la FK es `on
+ *    delete set null`).
+ *
+ * El push NO usa esto: `destino()` (src/lib/push.ts) solo recibe `listing_id`
+ * en el `data`, así que los tipos sin publicación caen en el inbox, y desde ahí
+ * esta función hace el resto. Mandar el `tipo` exigiría redesplegar
+ * `send-push`.
+ */
+export function rutaDeNotificacion(n: Notificacion, userId: string | null): string | null {
+  switch (n.tipo) {
+    case 'reporte_resuelto':
+      return null;
+    case 'calificacion_recibida':
+      return userId ? `/perfil-publico/${userId}` : null;
+    case 'avatar_eliminado':
+      return '/editar-perfil';
+    default:
+      return n.listingId === null ? null : `/detalle/${n.listingId}`;
+  }
+}
 
 export type Notificacion = {
   id: number;

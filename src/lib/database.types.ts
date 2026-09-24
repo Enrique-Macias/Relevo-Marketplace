@@ -670,6 +670,11 @@ export type Database = {
         | "precio_favorito"
         | "reporte_resuelto"
         | "compra_calificable"
+        | "publicacion_aprobada"
+        | "publicacion_bloqueada"
+        | "calificacion_recibida"
+        | "favorito_vendido"
+        | "avatar_eliminado"
       report_reason:
         | "spam_publicidad"
         | "sospecha_fraude"
@@ -817,6 +822,11 @@ export const Constants = {
         "precio_favorito",
         "reporte_resuelto",
         "compra_calificable",
+        "publicacion_aprobada",
+        "publicacion_bloqueada",
+        "calificacion_recibida",
+        "favorito_vendido",
+        "avatar_eliminado",
       ],
       report_reason: [
         "spam_publicidad",

@@ -203,6 +203,20 @@ vez validado.
   "Respuesta a un reporte" NO necesitó un campo de texto nuevo: el copy del
   diseño es genérico y se deriva de `reports.estado`, y un campo libre no
   tendría quién lo escribiera (RF-17 pone la moderación en Studio).
+  **✅ Tanda 2 (2026-09-24): SIETE disparadores en total**, cuatro nuevos que
+  van al inbox:
+  - el veredicto de moderación de tu publicación (RF-18), cuando no lo viste en
+    pantalla: aprobada tras revisión, no aprobada, o retirada por una foto
+    editada;
+  - alguien te calificó (solo al crear la reseña, nunca al editarla, y sin el
+    comentario);
+  - se vendió algo que tenías en favoritos (no le llega al comprador ni al
+    dueño);
+  - la moderación borró tu foto de perfil.
+
+  Quedan fuera, a propósito: "reporte enviado con éxito" (el toast al
+  enviarlo basta) y el opcional de categoría seguida (abajo). Detalle en
+  `CLAUDE.md` §3, "Avisos nuevos del inbox".
   **⏳ Fuera de alcance:** el tercer disparador, marcado opcional aquí — no
   existe modelo de "seguir una categoría", y es el único fan-out 1→N de todo el
   campus, o sea el único con riesgo real de volverse spam.

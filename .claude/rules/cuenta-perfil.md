@@ -748,6 +748,16 @@ Lo que no se ve en el diff:
     regla 4, igual que el aviso de "Completar perfil" de más arriba. Copy:
     *"Quitamos tu foto de perfil porque no pasó la revisión de contenido"*.
 
+- **[CERRADA, 2026-09-24, RF-16 tanda 2 — `20260928000473`]** Hoy
+  `moderarAvatar()` escribe una fila en `avatar_moderacion` en cada borrado, y un
+  trigger sobre esa tabla crea el aviso `avatar_eliminado` en el inbox ("Quitamos
+  tu foto de perfil", frame "Notificaciones"). Eso cierra los TRES caminos
+  descritos abajo, el tercero incluido: el aviso ya no depende de que Perfil
+  detecte la transición, sino de la fila que deja el borrado. Además es la señal
+  durable que esta entrada echaba en falta (`select * from
+  public.avatar_moderacion`). Lo que se decidió de su "Fix": un valor nuevo de
+  `notification_type`, no una columna en `users`. El toast se conserva como aviso
+  inmediato. El texto original se deja tal cual, como registro:
 - **El aviso del avatar borrado se pierde si el usuario no abre Perfil, o si no
   ve el toast.** Es el límite consciente de la pieza de arriba: un toast se va a
   los 4s y no deja rastro, y la detección solo corre cuando esa pantalla carga.

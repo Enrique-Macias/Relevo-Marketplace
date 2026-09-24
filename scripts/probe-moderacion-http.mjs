@@ -269,6 +269,24 @@ async function auditoriasDe(E, id) {
   return res.ok ? await res.json() : [];
 }
 
+/** `estado` y `veredicto_en_pantalla` de una publicación (RF-16, tanda 2). */
+async function filaListing(E, id) {
+  const res = await fetch(
+    `${E.API_URL}/rest/v1/listings?id=eq.${id}&select=estado,veredicto_en_pantalla`,
+    { headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` } }
+  );
+  return (await res.json())[0];
+}
+
+/** Los avisos del inbox que apuntan a una publicación. */
+async function avisosDe(E, id) {
+  const res = await fetch(
+    `${E.API_URL}/rest/v1/notifications?listing_id=eq.${id}&select=tipo,titulo&order=id`,
+    { headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` } }
+  );
+  return res.ok ? await res.json() : [];
+}
+
 /** El reclamo del camino cliente de una publicación, o `undefined` si no hay. */
 async function reclamoDe(E, id) {
   const res = await fetch(
@@ -610,6 +628,15 @@ async function main() {
          (await estadoDe(E, enPendiente)) === 'activa',
        `HTTP ${porElDueno.status}, respuesta=${JSON.stringify(porElDueno.json)}`);
 
+    // RF-16 tanda 2: ese veredicto lo está viendo el usuario en "Publicación
+    // creada", así que la función marca `veredicto_en_pantalla` en el MISMO
+    // update y el trigger NO lo duplica en el inbox.
+    const filaEnPendiente = await filaListing(E, enPendiente);
+    ok('el camino CLIENTE que saca de pendiente marca veredicto_en_pantalla',
+       filaEnPendiente?.veredicto_en_pantalla === true, JSON.stringify(filaEnPendiente));
+    igual('…y no produce aviso en el inbox (lo vio en pantalla)',
+          (await avisosDe(E, enPendiente)).length, 0);
+
 
     // -----------------------------------------------------------------
     console.log('\n== 6. El TRIGGER de storage.objects escala de verdad ==');
@@ -657,6 +684,13 @@ async function main() {
     ok('el overwrite del objeto se acepta', resOverwrite.ok, `HTTP ${resOverwrite.status}`);
 
     const escalo = await esperarA(async () => (await estadoDe(E, escalable)) === 'bloqueada');
+    // RF-16 tanda 2: una publicación YA publicada que el trigger bloquea no la
+    // está mirando nadie, así que sí va al inbox, con el copy de "retirada".
+    const avisosEscalable = await avisosDe(E, escalable);
+    ok('el bloqueo por el TRIGGER de una publicación activa SÍ avisa al dueño ("Retiramos…")',
+       avisosEscalable.length === 1 && avisosEscalable[0].tipo === 'publicacion_bloqueada' &&
+         avisosEscalable[0].titulo === 'Retiramos tu publicación',
+       JSON.stringify(avisosEscalable));
     ok('sobrescribir la foto de una publicación ACTIVA la escala a bloqueada',
       escalo, `estado final: ${await estadoDe(E, escalable)}`);
 
@@ -721,6 +755,18 @@ async function main() {
     );
     ok('la foto SIN fila escala la publicación de activa a pendiente',
       escaloPorOcr, `estado final: ${await estadoDe(E, nuevaFotoListing)}`);
+    // RF-16 tanda 2: tras la escalada del TRIGGER, veredicto_en_pantalla vale
+    // false, para que la resolución posterior en Studio sí avise. OJO con qué
+    // prueba esto, medido con su control: con la función escribiendo `true`
+    // siempre, esta aserción SIGUE en verde, porque la limpieza de la base
+    // (`listings_limpia_veredicto_en_pantalla`, BEFORE) baja la columna al
+    // entrar a `pendiente` diga lo que diga quien escribe. O sea que prueba la
+    // INVARIANTE de la base, no el cableado de la función; el cableado lo
+    // prueba la aserción del camino CLIENTE de la sección 5, cuyo control
+    // (escribir `false` siempre) sí cae.
+    const filaNueva = await filaListing(E, nuevaFotoListing);
+    ok('la escalada por el TRIGGER deja veredicto_en_pantalla en false',
+       filaNueva?.veredicto_en_pantalla === false, JSON.stringify(filaNueva));
 
     // La auditoría tiene que nombrar ESA foto específica, no una vieja —
     // `detalle.fotos` es la lista completa de lo que se evaluó, y sin la

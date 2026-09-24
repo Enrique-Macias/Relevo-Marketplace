@@ -436,9 +436,21 @@ async function moderarListing(
   let descartadoPorCarrera = false;
 
   if (nuevoEstado !== estadoActual) {
+    // `veredicto_en_pantalla` (RF-16, 20260928000473): true SOLO cuando el
+    // camino CLIENTE saca la publicación de `pendiente`, porque ese veredicto
+    // el usuario lo está viendo en "Publicación creada"/"no aprobada", y el
+    // trigger `listings_notify_moderacion` no lo duplica en el inbox. En el
+    // camino del trigger va false: nadie está mirando. Va en el MISMO update
+    // que el estado, porque el trigger de la notificación lo lee en NEW.
     const { error: errUpdate, count } = await db
       .from('listings')
-      .update({ estado: nuevoEstado }, { count: 'exact' })
+      .update(
+        {
+          estado: nuevoEstado,
+          veredicto_en_pantalla: puedePromover && estadoActual === 'pendiente',
+        },
+        { count: 'exact' }
+      )
       .eq('id', listingId)
       .eq('estado', estadoActual);
 
@@ -1028,10 +1040,11 @@ function ejeQueManda(ejes: Ejes): keyof Ejes {
  * piezas: no hace falta cablear ningún caso especial para fotos que no se
  * pudieron bajar o evaluar, la asimetría ya vive en `decision.ts`.
  *
- * SIN AUDITORÍA: `listing_moderacion` no tiene `listing_id` que ponerle a un
- * avatar, y el enforcement es inmediato —borrar o no hacer nada, sin cola que
- * revisar—. El rastro es el `console.error`/`console.warn`, no una fila
- * (`.claude/rules/moderacion.md` §7).
+ * AUDITORÍA PROPIA, NO `listing_moderacion`: esa tabla no tiene `listing_id`
+ * que ponerle a un avatar. Desde RF-16 tanda 2 (20260928000473) cada BORRADO
+ * deja una fila en `avatar_moderacion`, y de ahí nace el aviso persistente del
+ * inbox. Un avatar que se CONSERVA no deja fila: no hay nada que revisar ni
+ * que avisar, y el enforcement sigue siendo inmediato, sin cola.
  */
 async function moderarAvatar(
   // deno-lint-ignore no-explicit-any
@@ -1113,6 +1126,20 @@ async function moderarAvatar(
       `[moderar-contenido] avatar bloqueado (${name}) pero foto_url de ${entityId} ya apuntaba a otro — el guard de la carrera lo dejó intacto`
     );
   }
+
+  // LA AUDITORÍA, y con ella el aviso persistente (RF-16,
+  // 20260928000473). El trigger `avatar_moderacion_notify` crea la fila del
+  // inbox SOLO si `foto_url_nulificado`: si el guard de arriba dejó intacto el
+  // avatar vigente, el usuario no perdió nada que avisarle. Un fallo aquí NO
+  // tumba la respuesta —el borrado ya ocurrió—, mismo criterio que la
+  // auditoría de publicaciones; lo que se pierde es el aviso, y el toast de
+  // Perfil sigue siendo la otra vía.
+  const { error: errAudit } = await db.from('avatar_moderacion').insert({
+    user_id: entityId,
+    storage_path: name,
+    foto_url_nulificado: fotoUrlNulificado,
+  });
+  if (errAudit) console.error('[moderar-contenido] auditoría de avatar', errAudit.message);
 
   return Response.json({ ok: true, accion, foto_url_nulificado: fotoUrlNulificado });
 }
