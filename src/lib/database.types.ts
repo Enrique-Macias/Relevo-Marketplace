@@ -622,6 +622,31 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      buscar_listings: {
+        Args: { q: string }
+        Returns: {
+          busqueda: unknown
+          campus_id: number
+          categoria_id: number
+          condicion: Database["public"]["Enums"]["listing_condition"]
+          created_at: string
+          descripcion: string | null
+          estado: Database["public"]["Enums"]["listing_status"]
+          id: number
+          precio: number
+          titulo: string
+          universidad_id: number
+          updated_at: string
+          user_id: string
+          vistas_count: number
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "listings"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       hook_before_user_created: { Args: { event: Json }; Returns: Json }
       increment_listing_view: {
         Args: { p_listing_id: number }

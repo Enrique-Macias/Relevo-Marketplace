@@ -182,8 +182,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 30 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l`), con RLS activo y probado en las 15 tablas más
+Definido en 32 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-09-24; decía "30" con 31 en el repo), con RLS activo y probado en las 15 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
@@ -195,12 +195,21 @@ más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando y
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto YA NO están a la par: 31 y 30.** `20260925000467` (fase 2C,
-`campus.latitud`/`longitud`) se aplicó y se probó en LOCAL en esta sesión —
-`ls supabase/migrations | wc -l` da **31**— pero no se pusheó a remoto a
-propósito: es parte del runbook remoto pendiente de CLAUDE.md §8 (junto con
-capturar coordenadas reales en Studio e instalar el dev build nuevo), no algo
-para correr sin que el usuario lo pida. Remoto se queda en 30 hasta ese paso.
+**Repo y remoto: 32 y 31 (medido el 2026-09-24).** `ls supabase/migrations |
+wc -l` da **32**; `mcp__supabase__list_migrations` da **31**. La que falta en
+remoto es `20260926000468` (búsqueda por prefijo), que no se pushea en su
+propia tarea: es el runbook pendiente de §8.
+
+**Por UNDÉCIMA vez, y el párrafo anterior mentía en el sentido contrario al
+que él mismo advertía.** Decía "31 y 30, la 467 no se pusheó a propósito", y al
+remedirlo con `list_migrations` antes de esta tarea el remoto YA tenía **31**,
+`20260925000467` incluida, con `campus.latitud`/`longitud` presentes en
+`information_schema.columns`. O sea que alguien corrió el `db push` fuera de la
+sesión que escribió el párrafo, y el paso 1 del pendiente 0d de §8 ya estaba
+hecho. (La décima fue el plan de esta misma tarea: escribió "32 en el repo, 30
+en remoto" SUMANDO a partir de ese párrafo, sin correr ningún comando; lo cazó
+la revisión del plan antes de que llegara a este archivo.) La historia de
+antes, tal como estaba:
 
 **Por NOVENA vez, y esta vez la discrepancia es del signo contrario:** las
 ocho veces anteriores el párrafo decía "a la par" y dejaba de serlo por un
@@ -731,11 +740,52 @@ planner solo usa un índice de expresión cuando la consulta la REPITE, y
 PostgREST no sabe emitirla (`titulo=fts(spanish).x` produce
 `to_tsvector('spanish', titulo)`, que no machea). O sea: se pagaba en cada
 escritura y no lo usaba nadie. Materializando la misma expresión en la columna
-`busqueda`, el cliente filtra con `.textSearch('busqueda', q, {type:'websearch',
-config:'spanish'})` y el índice por fin sirve. **De paso arregla los acentos**:
-el diccionario snowball reduce `Cálculo` y `calculo` al mismo lexema `calcul`
-— con `ilike`, buscar "calculo" devolvía 0 sobre "Cálculo de Larson". No se
-usa la extensión `unaccent`; el diccionario ya lo hace.
+`busqueda`, el índice pasó a ser USABLE por el planner. **De paso arregla los
+acentos**: el diccionario snowball reduce `Cálculo` y `calculo` al mismo lexema
+`calcul` — con `ilike`, buscar "calculo" devolvía 0 sobre "Cálculo de Larson".
+No se usa la extensión `unaccent`; el diccionario ya lo hace.
+
+**Pero como `authenticated` el índice GIN NO SE USA, y este archivo afirmó lo
+contrario durante meses.** Aquí y en `explorar.md` se leía "el índice GIN por fin
+se usa (medido con `explain analyze` a 80 000 filas: Bitmap Index Scan, 0.9 ms)".
+Se creía medido con RLS aplicado; **era bypassrls**. Medido de nuevo el
+2026-09-24, con 80 000 filas y 35 coincidencias, imprimiendo el rol antes de
+cada corrida: como `postgres` (bypassrls) sale Bitmap Index Scan en 1.1 ms, y
+como `authenticated` sale **Seq Scan en 8.4 ms**, con el mismo SQL. La causa es
+general y está en §9: el `@@` no es LEAKPROOF, así que la RLS obliga a evaluarlo
+después de la qual de `listings_select`. **El rol de la medición original no se
+puede rastrear**: la cifra entró como prosa en `0fb744f` (2026-09-08) y ningún
+script con esas 80 000 filas llegó nunca al historial (`git log --all -S "80000"`
+no devuelve nada). A 80 000 filas el seq scan sigue muy dentro de RNF-01; la
+deuda, con su disparador, está en `explorar.md`.
+
+**El texto pasa por `public.buscar_listings(q text) returns setof listings`**
+(`20260926000468`, búsqueda por PREFIJO en el último término: "calc" encuentra
+"Cálculo"). El cliente hace `.rpc('buscar_listings', {q}, {get:true}).select(…)`
+y encadena encima sus filtros, alcance, orden, cursor y embeds, medido por HTTP
+en los 4 órdenes × 3 alcances. Sin texto, la consulta es la de siempre. Las
+decisiones de la función, cada una vigilada por T30:
+
+- **Es `SECURITY INVOKER`, y esto es lo que la separa de las otras tres RPC de
+  `public`, que sí son definer.** Devuelve filas de `listings`, así que como
+  definer saltaría `listings_select` y entregaría las pausadas, pendientes y
+  bloqueadas ajenas que casen con el texto. Como invoker, la RLS aplica igual que
+  en un `from('listings')`. Si la vuelves definer, cae T30 (h).
+- **No lleva `set search_path`, y es la ÚNICA función del repo sin él, a
+  propósito.** Una cláusula SET impide que Postgres inlinee una función SQL que
+  devuelve un set. Inlineada, el filtro de texto y los filtros del cliente se
+  planean como una sola consulta; sin inlinear, sería un Function Scan que
+  materializa todas las coincidencias antes de filtrar. Para compensar, todo va
+  calificado por esquema. Lo vigila T30 (i2) con `proconfig is null`.
+- **Nunca lanza, por construcción.** El texto del usuario nunca se concatena a
+  sintaxis de tsquery: lo crudo pasa por `websearch_to_tsquery`/`to_tsvector`, y
+  `to_tsquery` solo recibe un lexema que pasó `^[[:alnum:]]+$`. T30 (j)/(j2) lo
+  fuzzean. (j2), con un término pegado a sintaxis (`calc)`), es la que caza la
+  concatenación cruda. La basura sola de (j) no llega a ese camino.
+- **Grant:** `revoke all` y después `execute` solo a `authenticated`. Anon no
+  gana nada.
+- `busqueda` sigue sin grant propio y T13 sigue valiendo: una función invoker lee
+  la columna con los privilegios de quien la llama.
 
 `busqueda` **no lleva grant propio y no es un olvido**: a diferencia de
 `update`, que en esta tabla sí está acotado por columna, `select` se otorgó a
@@ -817,7 +867,9 @@ cliente: `increment_listing_view`, `listing_favorites_count` y
 `seller_whatsapp` (eran una sola hasta que Detalle necesitó el conteo de
 favoritos, y dos hasta que el botón de WhatsApp necesitó el número real; si
 algún día hay una cuarta, revisa primero si de verdad la invoca el cliente o si
-va en `private`). `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
+va en `private`). **`public.buscar_listings` NO es la cuarta**: también es una
+RPC de `public`, pero es INVOKER a propósito (bloque de la búsqueda de texto,
+más arriba), y volverla definer sería una fuga. `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
 acotado a las TRES que se invocan desde policies — `is_active_user()`,
 `can_rate()` y `listing_id_from_object_name()` — mientras las otras cinco, que
 solo disparan por trigger, siguen revocadas. Ver sección 9 sobre por qué ese
@@ -1062,7 +1114,9 @@ Tres consecuencias que no se ven en el diff:
   vacía, todo alta nacería sin universidad. Por eso el runbook (§8, pendiente
   0) tiene un paso 0 bloqueante.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 212 aserciones, corre dentro de
+**Regresión de RLS:** `supabase/tests/rls.sql`, 259 aserciones (medido con el
+`grep` de §8 el 2026-09-24; esta línea decía "212", que ya era viejo: la
+cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
 Cómo llegó a 53, porque el número se movió en dos rondas y conviene saber por
@@ -1464,6 +1518,37 @@ aserción:
 | sin `campus_longitud_check` | (b) |
 | sin `campus_coordenadas_completas_check` | (c) |
 | `grant update (latitud, longitud)` a `authenticated` | (g) |
+
+Y a **259** con las 36 de T30 (`public.buscar_listings`, búsqueda por prefijo,
+`20260926000468`): 1 precondición de fixtures, 13 de comportamiento
+((a)-(h2), incluidas las invariantes (i1)-(i3) de la función) y 22 de fuzz
+((j) y (j2), una por entrada). **Nada en T12**: las invariantes de la función
+(invoker, STABLE, sin SET, EXECUTE solo para authenticated) viven en T30 junto a
+la lógica que protegen. T30 siembra sus propios `:V30`/`:C30` y sus publicaciones
+con el prefijo "RLS T30", y cada aserción cuenta SOLO filas con el título
+esperado, porque T0 sembró otro "RLS Cálculo de Larson" que también casa con
+`calc`. Las acciones corren como `authenticated`: como postgres (bypassrls), la
+aserción de RLS pasaría por la razón equivocada. Los seis controles se corrieron
+uno a la vez contra la suite completa. Antes de cada uno se imprimía el estado
+vivo de la función (`prosecdef`, `proconfig`, EXECUTE de anon y marcas en
+`prosrc`), y al final se restauró y se verificó:
+
+| Variante rota | Cae en |
+|---|---|
+| `security definer` | (h) — un tercero ve la pausada ajena |
+| la rama de prefijo concatena el tail crudo (`to_tsquery(tail \|\| ':*')`) | (j2) `calc)`, con `syntax error in tsquery: "calc):*"` |
+| stopword como ausente (sin la rama `simple`) | (e) |
+| mínimo de 1 letra en vez de 3 | (g) |
+| `set search_path = ''` | (i2) |
+| `grant execute … to anon` | (i3) |
+
+**(j2) nació de un hueco del plan, no de prolijidad.** El fuzz original solo
+tenía basura suelta (`'`, `&`, `:*`, emojis…), que no produce lexemas y por lo
+tanto nunca llega a la rama que arma `to_tsquery`. Contra la variante de la
+concatenación cruda, ese fuzz habría dado verde. La entrada que la caza es un
+término REAL pegado a sintaxis. Ojo al leer la tabla: `calc'` NO revienta la
+variante rota y `calc)` sí, así que el orden de (j2) no es intercambiable por
+uno más corto.
 
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
@@ -1878,6 +1963,15 @@ Toast de éxito · Toast de error · Loading / skeleton
   vez. El esquema actual pasó por 5 rondas de revisión de plan antes de
   ejecutarse — cada ronda encontró un hueco de seguridad real. Ninguno era
   visible con solo "que compile" — se necesitó revisión deliberada.
+- **Los nombres de migración (`YYYYMMDDNNNNNN_…`) NO son timestamps reales de
+  generación.** Son un CONSECUTIVO con formato de fecha: la fecha más un número
+  de seis dígitos que sube de uno en uno (`…000466`, `…000467`, `…000468`).
+  `000467` leído como hora serían 00:04 con 67 segundos, que no existe. Por eso
+  un archivo nuevo se crea con `supabase migration new <nombre>` y **se renombra
+  al siguiente consecutivo**, con una fecha mayor o igual que la última. El
+  nombre que da el comando (la hora real) puede ordenar ANTES de una migración ya
+  aplicada en remoto. Pasó el 2026-09-24: generó `20260924065508_…`, que
+  quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
   `postgres`/superusuario. Son SIETE pasos, no uno:
@@ -2218,10 +2312,14 @@ de los route groups).
    Existen para probar a mano la navegación entre universidades. Los nombres
    exactos, los ids y el SQL de limpieza en orden están en `explorar.md`, sección
    "Datos de prueba en remoto".
-0d. **Fase 2C ("Detectar campus más cercano"): construida y probada en LOCAL,
-   nada de esto en remoto todavía.** Requiere, en este orden:
-   1. `supabase db push` de `20260925000467_campus_coordenadas.sql` — repo va
-      en 31 migraciones, remoto se queda en 30 hasta este paso (§3).
+0d. **Fase 2C ("Detectar campus más cercano"): la migración YA está en
+   remoto; faltan los pasos 2-4.** Requiere, en este orden:
+   1. ~~`supabase db push` de `20260925000467_campus_coordenadas.sql`~~
+      **HECHO, fuera de la sesión que escribió este punto.** Este paso decía
+      "remoto se queda en 30 hasta este paso", y el 2026-09-24
+      `mcp__supabase__list_migrations` ya listaba `20260925000467`, con
+      `campus.latitud`/`longitud` presentes en `information_schema.columns` de
+      remoto. Es la undécima vez del patrón prosa-contra-comando de §3.
    2. Capturar las coordenadas REALES de cada campus en Studio (`latitud`/
       `longitud` de `public.campus`) — el seed solo trae coordenadas de
       PRUEBA para desarrollo local, y nunca se pushea a un campus que ya
@@ -2242,6 +2340,27 @@ de los route groups).
       archivo canónico otra vez.
    Nada de esto es alcanzable sin un teléfono real (§6): el simulador
    headless no puede probar permisos del sistema ni GPS.
+0e. **Búsqueda por prefijo (`20260926000468`, `public.buscar_listings`):
+   construida y probada en LOCAL, sin pushear.** El cliente YA llama a la RPC,
+   así que **un build con este código contra un remoto sin la función rompe
+   Búsqueda y Categoría con texto** (PGRST202). Por eso el push va ANTES de
+   distribuir un build con este cambio. En este orden:
+   1. `supabase db push`, y confirmar con `list_migrations` que
+      `20260926000468` aparece (remoto pasa de 31 a 32).
+   2. Verificar en remoto, con `execute_sql`:
+      - `select prosecdef, provolatile, proconfig from pg_proc where oid =
+        'public.buscar_listings(text)'::regprocedure` → debe dar `f | s | null`;
+      - `has_function_privilege('authenticated', …, 'execute')` → true;
+      - `has_function_privilege('anon', …, 'execute')` → false.
+   3. `explain analyze` en remoto COMO `authenticated`, con `set local role` y
+      `request.jwt.claims`, dentro de un `begin … rollback`, sobre
+      `buscar_listings('calc')` con los filtros del feed. Hay que confirmar que
+      se inlinea (sin `Function Scan`) y anotar el tiempo. Se espera Seq Scan
+      (deuda en `explorar.md`), así que la cifra se imprime con el rol.
+   4. `npm run gen:types` contra remoto. Hoy la entrada `buscar_listings` de
+      `database.types.ts` está escrita a mano, con `SetofOptions`, por el
+      mismo motivo que `campus.latitud` en el pendiente 0d.
+   5. Prueba manual en dispositivo: ver `explorar.md`, "Búsqueda por prefijo".
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
@@ -2318,7 +2437,11 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - El tope de 5 fotos SIGUE sin aplicar en Storage → `publicar-fotos.md`
 - Borrar una publicación no borra sus fotos de Storage **[CERRADA]** → `publicar-fotos.md`
 - Ningún índice cubre los alcances "toda una universidad" y "todas las universidades" (seq scan + sort, medido) → `explorar.md`
-- La búsqueda de texto es por palabra completa (websearch/tsvector), no por prefijo → `explorar.md`
+- ~~La búsqueda de texto es por palabra completa, no por prefijo~~ **[CERRADA]** por `20260926000468` → `explorar.md`
+- El índice GIN de `busqueda` no se usa como `authenticated` (el `@@` no es leakproof): toda búsqueda es seq scan → `explorar.md`
+- El prefijo no casa cuando lo tecleado rebasa la raíz del stemmer (`universi`, `diferencia`) → `explorar.md`
+- Un `/` pega dos palabras en un solo token (`depa/dorm`) y ninguna de las dos lo encuentra → `explorar.md`
+- El mínimo de 3 letras del prefijo se midió con 76 publicaciones: la amplitud crece con el catálogo → `explorar.md`
 - Scroll infinito sin virtualización → `explorar.md`
 - El log de contactos que falla se pierde → `confianza-ventas.md`
 
@@ -2441,6 +2564,33 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   cualquier cliente. Antes de dar un índice por bueno, confírmalo con
   `explain (analyze)` **y con suficientes filas**: con pocos datos el planner
   elige seq scan por costo y el plan no prueba nada en ninguna dirección.
+  **Y con el ROL real, no como `postgres`** (el punto siguiente).
+- **Bajo RLS, un operador que no es LEAKPROOF no puede usar su índice, así que
+  un `explain` corrido como `postgres` MIENTE sobre el plan de la app.** Postgres
+  evalúa las quals de una policy ANTES que cualquier condición del usuario que
+  no sea leakproof. Así impide que una función filtre, por sus errores o efectos
+  secundarios, datos de filas que la policy iba a esconder. Una condición
+  obligada a ir después de la policy no puede ser condición de índice, porque el
+  índice va primero. `@@` (`ts_match_vq`) tiene `proleakproof = f` (medido en
+  `pg_proc`). Por eso, con 80 000 filas, la misma búsqueda sale **Bitmap Index
+  Scan, 1.1 ms** como `postgres` (que es `bypassrls`) y **Seq Scan, 8.4 ms**
+  como `authenticated`. Declarar un operador `LEAKPROOF` exige superusuario, y
+  `postgres` no lo es en Supabase (medido en `pg_roles`: `rolsuper = f`), así que
+  no hay salida por ahí. Tres consecuencias:
+  - Mide los planes COMO `authenticated`, con `set local role authenticated` y
+    `request.jwt.claims` dentro de un `begin … rollback`, e **imprime
+    `current_user` y `rolbypassrls` antes de cada corrida**. Si no, no se sabe
+    qué rol midió: es exactamente lo que dejó en este archivo durante meses un
+    "0.9 ms con Bitmap Index Scan" que nadie puede rastrear (§3, búsqueda de
+    texto).
+  - No es exclusivo de `@@`. Pasa con cualquier operador o función no
+    leakproof: `ilike`/`~~*` y los de arreglos o jsonb suelen no serlo. Antes de
+    prometer un índice sobre una tabla con RLS, revisa
+    `select proleakproof from pg_proc` de la función del operador.
+  - La salida que queda es un `SECURITY DEFINER` que haga el match sin RLS y
+    devuelva solo ids, con la RLS aplicada después. Es exactamente el tipo de
+    fuga que `buscar_listings` evita siendo invoker, así que no se toma sin
+    decisión explícita (deuda con disparador en `explorar.md`).
 - **`order`/`limit` por `referencedTable` SÍ soportan una ruta punteada a DOS
   niveles de embed, no solo al nivel que ya usaba `fetchListings` (`fotos`
   directo sobre `listings`).** Hacía falta para `fetchFavoritos()` (`cuenta-perfil.md`,

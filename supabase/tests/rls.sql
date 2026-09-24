@@ -3099,6 +3099,148 @@ select pg_temp.assert(
   '(g) authenticated no puede escribir latitud/longitud (grant)');
 
 \echo ''
+\echo '== T30 — búsqueda por prefijo en el último término (public.buscar_listings) =='
+-- 20260926000468. Autocontenida: sus propios `:V30` (vendedor) y `:C30`
+-- (comprador), y sus propias publicaciones con el prefijo "RLS T30" en el
+-- título. Cada aserción cuenta SOLO filas cuyo título es el esperado, porque
+-- T0 sembró otro "RLS Cálculo de Larson" que también casa con `calc`.
+--
+-- La acción corre como `authenticated` (as_user_int): la RLS de listings es
+-- parte de lo que se prueba, y como postgres (bypassrls) la aserción (h)
+-- pasaría por la razón equivocada.
+
+\set V30 '''30303030-0000-0000-0000-000000003030'''
+\set C30 '''30303030-0000-0000-0000-000000003031'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:V30::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-t30-v@tec.mx', '', now(), now(), now()),
+  (:C30::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-t30-c@tec.mx', '', now(), now(), now());
+
+-- Como postgres: la policy de insert obliga a `pendiente` y aquí hace falta
+-- sembrar `activa`/`pausada` directo (mismo criterio que T0).
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, descripcion, precio, condicion, estado)
+select :V30::uuid, 1, u.universidad_id, 1, v.titulo, v.descripcion, 100, 'usado', v.estado::public.listing_status
+from public.users u,
+     (values ('RLS T30 Cálculo de Larson', 'Novena edición', 'activa'),
+             ('RLS T30 Libro de cálculo',  'Diferencial',    'activa'),
+             ('RLS T30 Estetoscopio',      'Littmann',       'activa'),
+             ('RLS T30 Cálculo pausado',   'No visible',     'pausada')) as v(titulo, descripcion, estado)
+where u.id = :V30::uuid;
+
+select pg_temp.assert(
+  (select count(*) from public.listings where titulo like 'RLS T30 %') = 4,
+  'T30: fixtures sembrados (4 publicaciones, una pausada)');
+
+-- Cuántas filas con ESE título devuelve la función para `p_q`, como `p_uid`.
+create or replace function pg_temp.t30(p_uid uuid, p_q text, p_titulo text)
+returns bigint language sql as $$
+  select pg_temp.as_user_int(p_uid, format(
+    'select count(*) from public.buscar_listings(%L) where titulo like %L', p_q, p_titulo))
+$$;
+
+-- (a)-(c) El prefijo, y los acentos siguen resueltos por el stemmer.
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'calc', 'RLS T30 Cálculo de Larson') = 1,
+  '(a) "calc" encuentra "Cálculo de Larson"');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'calculo', 'RLS T30 Cálculo de Larson') = 1,
+  '(b) "calculo" (sin acento) encuentra "Cálculo de Larson"');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'cálculo', 'RLS T30 Cálculo de Larson') = 1,
+  '(c) "cálculo" encuentra "Cálculo de Larson"');
+
+-- (d) Varios términos: los anteriores al último se exigen como hoy.
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'libro calc', 'RLS T30 Libro de cálculo') = 1,
+  '(d1) "libro calc" encuentra "Libro de cálculo"');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'libro calc', 'RLS T30 Cálculo de Larson') = 0,
+  '(d2) "libro calc" NO encuentra "Cálculo de Larson" (exige los dos términos)');
+
+-- (e) Una stopword de 3+ letras como último término va como prefijo sin
+-- stemming: "este" es stopword y también el inicio de "estetoscopio".
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'este', 'RLS T30 Estetoscopio') = 1,
+  '(e) "este" (stopword de 4 letras) encuentra "Estetoscopio"');
+
+-- (f) Una stopword corta cuenta como ausente: tsquery vacía, 0 filas — nunca
+-- el catálogo entero.
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'de', 'RLS T30 %') = 0,
+  '(f) "de" (stopword) no devuelve nada');
+
+-- (g) Menos de 3 letras: palabra completa, no prefijo.
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'ca', 'RLS T30 Cálculo de Larson') = 0,
+  '(g) "ca" (2 letras) no casa por prefijo con "Cálculo"');
+
+-- (h) La RLS aplica DENTRO de la función (SECURITY INVOKER). (h2) es el
+-- control de la MISMA fila: su dueño sí la encuentra, así que el motivo de
+-- (h) es la RLS y no el texto.
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'calc', 'RLS T30 Cálculo pausado') = 0,
+  '(h) un tercero NO encuentra la publicación pausada ajena');
+select pg_temp.assert(pg_temp.t30(:V30::uuid, 'calc', 'RLS T30 Cálculo pausado') = 1,
+  '(h2) su dueño SÍ la encuentra (control: el filtro es la RLS)');
+
+-- (i) Invariantes de la función. `proconfig is null` no es cosmético: una
+-- cláusula SET (p. ej. `set search_path`) impide que Postgres inlinee la
+-- función, y sin inlining los filtros del cliente se aplican DESPUÉS de
+-- materializar todas las coincidencias.
+select pg_temp.assert(
+  (select not prosecdef from pg_proc where oid = 'public.buscar_listings(text)'::regprocedure),
+  '(i1) buscar_listings es SECURITY INVOKER');
+select pg_temp.assert(
+  (select provolatile = 's' and proconfig is null
+     from pg_proc where oid = 'public.buscar_listings(text)'::regprocedure),
+  '(i2) buscar_listings es STABLE y sin cláusulas SET (inlineable)');
+select pg_temp.assert(
+  has_function_privilege('authenticated', 'public.buscar_listings(text)', 'execute')
+  and not has_function_privilege('anon', 'public.buscar_listings(text)', 'execute'),
+  '(i3) authenticated puede ejecutarla y anon no');
+
+-- (j) Fuzz: ninguna entrada lanza (un error aborta la suite aquí mismo, con
+-- ON_ERROR_STOP) y ninguna devuelve publicaciones de T30.
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '', 'RLS T30 %') = 0, '(j) fuzz: cadena vacía');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '   ', 'RLS T30 %') = 0, '(j) fuzz: solo espacios');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '''', 'RLS T30 %') = 0, '(j) fuzz: comilla simple');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '&', 'RLS T30 %') = 0, '(j) fuzz: &');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '|', 'RLS T30 %') = 0, '(j) fuzz: |');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '!', 'RLS T30 %') = 0, '(j) fuzz: !');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '(', 'RLS T30 %') = 0, '(j) fuzz: (');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, ':*', 'RLS T30 %') = 0, '(j) fuzz: :*');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '\', 'RLS T30 %') = 0, '(j) fuzz: backslash');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'a:*b', 'RLS T30 %') = 0, '(j) fuzz: a:*b');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '😀🔥', 'RLS T30 %') = 0, '(j) fuzz: emojis');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, repeat('calc', 125), 'RLS T30 %') = 0,
+  '(j) fuzz: 500 caracteres');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, repeat('x', 3000), 'RLS T30 %') = 0,
+  '(j) fuzz: un token de 3000 caracteres (más largo de lo que tsvector indexa)');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'de la', 'RLS T30 %') = 0,
+  '(j) fuzz: solo stopwords');
+-- (j2) Un término REAL pegado a sintaxis de tsquery. Son las entradas que
+-- revientan una concatenación cruda (`to_tsquery(tail || ':*')` da error de
+-- sintaxis con `calc'` o `calc)`): la basura de (j) no llega a ese camino
+-- porque no produce lexemas. Aquí sí hay un lexema, así que se busca con
+-- prefijo y la puntuación pegada se ignora.
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'calc''', 'RLS T30 Cálculo de Larson') = 1,
+  '(j2) fuzz: calc'' (comilla pegada) no lanza y encuentra');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'calc)', 'RLS T30 Cálculo de Larson') = 1,
+  '(j2) fuzz: calc) no lanza y encuentra');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '(calc', 'RLS T30 Cálculo de Larson') = 1,
+  '(j2) fuzz: (calc no lanza y encuentra');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'calc&', 'RLS T30 Cálculo de Larson') = 1,
+  '(j2) fuzz: calc& no lanza y encuentra');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, '!calc', 'RLS T30 Cálculo de Larson') = 1,
+  '(j2) fuzz: !calc no lanza y encuentra');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'calc:*', 'RLS T30 Cálculo de Larson') = 1,
+  '(j2) fuzz: calc:* no lanza y encuentra');
+select pg_temp.assert(pg_temp.t30(:C30::uuid, 'calc\', 'RLS T30 Cálculo de Larson') = 1,
+  '(j2) fuzz: calc\ no lanza y encuentra');
+
+-- La mezcla, con un término real al final: la basura del head no lanza ni
+-- estorba, y el último término sigue yendo con prefijo.
+select pg_temp.assert(
+  pg_temp.t30(:C30::uuid, '''&|!():*\ 😀 de la calc', 'RLS T30 Cálculo de Larson') = 1,
+  '(j) fuzz: la mezcla de todo, con "calc" al final, encuentra "Cálculo de Larson"');
+
+\echo ''
 \echo '==========================================='
 \echo '   TODAS LAS PRUEBAS PASARON'
 \echo '==========================================='

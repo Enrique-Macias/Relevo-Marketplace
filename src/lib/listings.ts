@@ -247,10 +247,35 @@ export async function fetchListings(p: FetchListingsParams): Promise<ListingsPag
   const limit = p.limit ?? PAGE_SIZE;
   const q = p.q?.trim();
 
-  let query = supabase
-    .from('listings')
-    .select(SELECT_CARD, p.withCount ? { count: 'exact' } : undefined)
-    .eq('estado', 'activa');
+  const conteo = p.withCount ? ('exact' as const) : undefined;
+
+  /**
+   * RF-10. Con texto, la base es la RPC `buscar_listings` (migración
+   * 20260926000468), que resuelve SOLO el texto: arma la tsquery con prefijo
+   * (`:*`) en el último término, así que "calc" ya encuentra "Cálculo". Todo lo
+   * que sigue —estado, alcance, fotos, filtros, orden, cursor— se encadena
+   * igual sobre las dos bases: PostgREST aplica filtros, embeds (incluido el
+   * `!inner` de `VENDEDOR` y el orden por `vendedor(rating_promedio)`) y
+   * `range` sobre el resultado de una función que devuelve `setof listings`.
+   * Medido por HTTP como authenticated, los 4 órdenes × 3 alcances, con y sin
+   * filtros, páginas 1 y 2.
+   *
+   * NO HAY QUE ESCAPAR NADA AQUÍ, y no es descuido: el texto viaja como
+   * argumento de la función, nunca como sintaxis de tsquery. La función lo
+   * normaliza con `to_tsvector`/`websearch_to_tsquery` y nunca lanza con
+   * ninguna entrada (T30 la fuzzea). Si vuelves a ver un `replace` sobre el
+   * término, es una regresión.
+   *
+   * La función es SECURITY INVOKER: la RLS de `listings` aplica igual que en
+   * `from('listings')`. `get: true` porque es STABLE y de solo lectura.
+   *
+   * Sin texto, la consulta es EXACTAMENTE la de antes (medido comparando la
+   * URL generada, los 4 órdenes).
+   */
+  let query = q
+    ? supabase.rpc('buscar_listings', { q }, { get: true, count: conteo }).select(SELECT_CARD)
+    : supabase.from('listings').select(SELECT_CARD, conteo ? { count: conteo } : undefined);
+  query = query.eq('estado', 'activa');
 
   // "Todas las universidades" no filtra nada. Ojo con el índice: solo "un
   // campus" camina sobre `listings_feed_idx`; los otros dos alcances hacen scan
@@ -279,31 +304,6 @@ export async function fetchListings(p: FetchListingsParams): Promise<ListingsPag
   if (p.condicion) query = query.eq('condicion', p.condicion);
   if (p.precioMin !== undefined && !Number.isNaN(p.precioMin)) query = query.gte('precio', p.precioMin);
   if (p.precioMax !== undefined && !Number.isNaN(p.precioMax)) query = query.lte('precio', p.precioMax);
-
-  if (q) {
-    /**
-     * RF-10, contra la columna generada `busqueda` (migración 20260908000444),
-     * que materializa `to_tsvector('spanish', titulo || ' ' || descripcion)` y
-     * está respaldada por el índice GIN `listings_busqueda_idx`.
-     *
-     * NO HACE FALTA ESCAPAR NADA AQUÍ, y esto sí es deliberado — antes vivía
-     * un `escapaBusqueda()` de dos capas más un corto circuito para el `*`,
-     * y ambos se borraron con la migración. Medido contra Postgres real:
-     *   · `websearch_to_tsquery` NUNCA lanza error de sintaxis: está hecho para
-     *     input crudo de usuario, a diferencia de `to_tsquery`.
-     *   · `*` produce una tsquery VACÍA, que no casa con nada → 0 resultados
-     *     solos, sin corto circuito. (Con `ilike` era el bug de "buscar * te
-     *     devuelve el catálogo entero": ver el historial de este archivo antes
-     *     de reintroducir un `replace` creyendo que hace falta.)
-     *   · Una coma ya no delimita nada: `textSearch` manda un filtro suelto
-     *     (`busqueda=wfts(spanish).…`), no un `or=(...)`.
-     *
-     * A cambio, la coincidencia es por PALABRA COMPLETA (raíz), no por
-     * subcadena: teclear `calc` no encuentra "Cálculo", `calcul` sí. Es una
-     * deuda conocida y medida, anotada en CLAUDE.md §8 con su disparador.
-     */
-    query = query.textSearch('busqueda', q, { type: 'websearch', config: 'spanish' });
-  }
 
   if (p.orden === 'recientes') {
     // Keyset: el cursor es la última fila vista, no un desplazamiento. Con el

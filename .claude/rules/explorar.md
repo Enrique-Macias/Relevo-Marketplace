@@ -180,14 +180,15 @@ Detalles que no se ven en el diff:
     (línea 81), así que el visor las lee de disco sin volver a bajarlas de la
     red. Ojo: `"disk"` no es `"memory-disk"`, así que sí re-decodifica — si el
     visor se siente lento al abrir, ese es el ajuste.
-- **La búsqueda NO escapa el término, y es deliberado.** Va por
-  `.textSearch('busqueda', q, {type:'websearch', config:'spanish'})` contra la
-  columna generada: `websearch_to_tsquery` está hecho para input crudo (nunca
-  lanza error de sintaxis), la coma ya no delimita nada porque es un filtro
-  suelto y no un `or=(...)`, y `*` se vuelve una tsquery vacía. Aquí vivió un
-  `escapaBusqueda()` de dos capas más un corto circuito para el asterisco;
-  ambos se borraron al migrar a tsvector. Si vuelves a ver un `replace` sobre
-  el término de búsqueda, es una regresión.
+- **La búsqueda NO escapa el término, y es deliberado.** Desde
+  `20260926000468` el texto viaja como ARGUMENTO de `public.buscar_listings(q)`
+  (`.rpc('buscar_listings', {q}, {get:true}).select(SELECT_CARD)`), nunca como
+  sintaxis: la función lo normaliza con `to_tsvector`/`websearch_to_tsquery` y
+  nunca lanza (T30 la fuzzea). Antes iba por `.textSearch(…, {type:'websearch'})`,
+  y antes de eso vivió un `escapaBusqueda()` de dos capas más un corto circuito
+  para el asterisco, borrados al migrar a tsvector. Si vuelves a ver un `replace`
+  sobre el término de búsqueda, o un `textSearch` con `type:'raw'`, es una
+  regresión.
 
 **El `.sticky-cta` del dueño tiene un CUARTO reparto desde RF-18**, y se llega a
 él con un tap desde "Mis publicaciones", no solo por deep link: sobre una
@@ -263,25 +264,25 @@ registro: si el insert revienta, WhatsApp se abre igual y el usuario ve un toast
     vez de guard: sigue marcando; con el guard: no marca) — no se asumió por
     analogía con el gotcha ya escrito.
 
-- **Búsqueda de texto por tsvector** (migración `20260908000444`). Resolvió de
-  una sola vez las dos cosas: el índice GIN por fin se usa (medido con
-  `explain analyze` a 80 000 filas: Bitmap Index Scan, 0.9 ms, contra Seq Scan
-  de 67 ms con el `ilike` anterior) y desapareció el bug de acentos —
+- **Búsqueda de texto por tsvector** (migración `20260908000444`). **La mitad del
+  índice de este párrafo era falsa.** Decía que "el índice GIN por fin se usa
+  (medido con `explain analyze` a 80 000 filas: Bitmap Index Scan, 0.9 ms,
+  contra Seq Scan de 67 ms con el `ilike` anterior)". Se creía medido con RLS
+  aplicado; **era bypassrls**. Remedido el 2026-09-24, imprimiendo el rol: como
+  `postgres` sale Bitmap Index Scan (1.1 ms) y como `authenticated`, que es el
+  rol de la app, **Seq Scan (8.4 ms)**. El rol original no se puede rastrear
+  (CLAUDE.md §3, búsqueda de texto) y la causa general está en §9 (`@@` no es
+  leakproof). Lo que sí resolvió: el índice pasó a ser USABLE (sin RLS se usa),
+  y desapareció el bug de acentos —
   buscar "calculo" sobre "Cálculo de Larson" devolvía **0** resultados y ahora
   devuelve los 3 esperados. De regalo, `websearch_to_tsquery` convierte `*` en
   una tsquery vacía, así que el bug de "buscar `*` te devuelve el catálogo
   entero" quedó cerrado por el motor y se pudieron borrar del cliente el
   `escapaBusqueda()` de dos capas y su corto circuito.
 
-- **La búsqueda de texto es por palabra completa (websearch/tsvector), no por
-  prefijo** — teclear parcialmente puede mostrar "No encontramos" brevemente
-  antes de completar la palabra (medido: `calc` no encuentra "Cálculo";
-  `calcul` sí). Resolver con RPC dedicada (evaluada: una función que arme la
-  tsquery con `:*` en el último término, ya que `websearch_to_tsquery` no
-  soporta prefijos y `to_tsquery` crudo revienta con input arbitrario) **si se
-  vuelve un problema real de UX medido, no solo teórico**. **Disparador:** que
-  en pruebas con usuarios reales alguien se queje de esto, o abandone una
-  búsqueda a medio escribir.
+- ~~**La búsqueda de texto es por palabra completa, no por prefijo**~~
+  **[CERRADA]** por `20260926000468`. Ver "Búsqueda por prefijo en el último
+  término", más abajo.
 - **Scroll infinito sin virtualización.** Búsqueda y Categoría paginan dentro
   del `ScrollView` de `Screen` (prop `onEndReached`), con el grid armado por
   `chunkRows()`: todas las filas cargadas quedan montadas, sin el reciclaje de
@@ -599,6 +600,125 @@ en el Tec, 10 publicaciones y dos cuentas con contraseña `prueba-1234`. Va FUER
 de `sql_paths` porque `seed.sql` viaja a remoto con `--include-seed`. Se corre
 DESPUÉS de la suite de RLS, porque T0 cuenta todos los perfiles; su cabecera
 dice cómo.
+
+## Búsqueda por prefijo en el último término (`20260926000468`)
+
+**Qué cambió.** Con texto, `fetchListings()` ya no filtra con `.textSearch`. Pide
+`supabase.rpc('buscar_listings', { q }, { get: true, count }).select(SELECT_CARD)`
+y encadena encima exactamente lo mismo que antes. Sin texto, la consulta es
+**idéntica**: medido comparando la URL que genera supabase-js en los 4 órdenes.
+La función es SQL, STABLE, INVOKER y sin `set search_path`. El porqué de cada
+cosa está en CLAUDE.md §3 (búsqueda de texto), y las pruebas en T30.
+
+**Reglas del último término.** El `tail` es lo que sigue al último espacio.
+- **Se busca como antes, sin prefijo** (`websearch_to_tsquery` sobre todo el
+  texto) si hay comillas, si el tail es una negación (`-x`) o un `or`, si el
+  head termina en `or`/`-`, o si el tail da más de un lexema (`wi-fi`). Son
+  sintaxis de websearch que el prefijo no debe reinterpretar.
+- **Con prefijo:** un lexema alfanumérico de **3+ letras**. Con menos, va como
+  palabra completa.
+- **Stopword de 3+ letras** (`con`, `este`, `como`): va como prefijo SIN stemming
+  (config `simple`, sin acentos), porque también es el inicio de palabras reales
+  (consola, estetoscopio, cómoda). Decisión del usuario sobre el spec original,
+  que la trataba como ausente.
+- **Nada usable** (stopword corta, emoji, puntuación): el término cuenta como
+  ausente. Si no queda nada, la tsquery es vacía y da 0 resultados, nunca el
+  catálogo.
+- **Límite:** en "calc 😀" el último token (el emoji) no da lexemas, así que
+  "calc" va exacto y no con prefijo.
+
+**Por qué 3 letras, medido contra el catálogo real de remoto** (76
+publicaciones, prefijos distintos de sus palabras, 2026-09-24):
+
+| Largo | Prefijos | Stopwords | Casan con >8 publicaciones (>10 %) | Mediana / p90 / máx. |
+|---|---|---|---|---|
+| 2 | 110 | 16 | 10 (`de` 29, `ca` 15, `ba` 14…) | 2 / 7.1 / 29 |
+| 3 | 196 | 3 (`con, del, son`) | 1 (`ven` 11: vendo/vende, legítimo) | 1 / 3 / 11 |
+
+Ojo con el criterio: el de "ruido" (la publicación no tiene ninguna palabra que
+empiece con lo tecleado) da 0 en 2 y en 3 letras, porque con prefijos cortos se
+cumple casi por definición. Lo que separa los dos largos es la AMPLITUD.
+
+**Medido por HTTP como authenticated** (probe con el mismo supabase-js 2.115.0,
+`multiuniversidad.sql` más 30 publicaciones "Cálculo" y una pausada ajena):
+- 3 alcances × 4 órdenes × con y sin filtros: página 1 y página 2 (keyset y
+  offset) sin duplicados, orden correcto y la pausada ajena nunca aparece.
+- El filtro de categoría con texto también.
+- `count=exact` con página parcial da **206**, igual que la consulta de antes
+  (no es un error: es el `Content-Range` de PostgREST).
+- Comparación contra la búsqueda de antes:
+
+  | q | antes | ahora |
+  |---|---|---|
+  | `cal`, `calc` | 0 | 32 |
+  | `calcul`, `cálculo` | 32 | 32 |
+  | `libro calc` | 0 | 30 |
+  | `de`, `*`, `'&|` | 0 | 0 |
+
+**Pruebas manuales pendientes** (dispositivo, CLAUDE.md §6). Requieren la
+migración en remoto (§8, pendiente 0e):
+1. Teclear "c", "ca", "cal", "calc" en Búsqueda: desde la 3.ª letra deja de
+   salir "No encontramos" (si hay algo de "Cálculo" en el alcance).
+2. "libro calc" exige los dos términos.
+3. "este" encuentra algo que empiece por "este" (estetoscopio, estéreo…).
+4. Un emoji solo, y "calc 😀": ninguno truena ni muestra el catálogo entero.
+5. Scroll infinito con texto: sin tarjetas duplicadas.
+6. Los 4 órdenes con texto, y los chips de filtro (precio, condición,
+   categoría) con texto.
+7. Cambiar de alcance con texto puesto: la lista se reinicia sin mezclar.
+
+**Deudas nuevas, cada una con disparador:**
+
+- **El índice GIN de `busqueda` no se usa como `authenticated`.** Toda búsqueda
+  es seq scan: el `@@` no es leakproof y la RLS lo obliga a ir detrás de
+  `listings_select` (CLAUDE.md §9). Medido con 80 000 filas: la búsqueda de
+  antes da 8.4 ms y la función 8.2 ms, las dos con Seq Scan; como `postgres`,
+  1.1 y 1.2 ms con Bitmap Index Scan.
+  **Revisar cuando:** haya ~10 000 publicaciones activas, o un `explain analyze`
+  COMO authenticated pase de ~50 ms.
+  **Fix posible, que exige decisión explícita:** un `SECURITY DEFINER` privado
+  que devuelva solo los ids que casan (ahí el GIN sí se usa), y la función
+  pública, invoker, filtrando `id = any(...)` con la RLS aplicada. Esa función
+  privada sabría qué publicaciones ocultas casan con un texto, que es el tipo de
+  fuga que la función invoker evita. Declarar el operador LEAKPROOF no es opción:
+  exige superusuario.
+- **El prefijo no casa cuando lo tecleado rebasa la raíz que guardó el
+  stemmer.** El stemmer no recorta un sufijo a medias: `universi` da
+  `'universi'` y lo guardado es `'univers'`; `diferencia` da `'diferent'` y lo
+  guardado es `'diferencial'`; `resistenc` da `'resistenc'` y lo guardado es
+  `'resistent'`. Contra el catálogo real fallan **24 de 1197** prefijos, y el
+  resultado se "recupera" al completar la palabra.
+  **Se evaluó y se descartó** compensar agregando como lexemas exactos la raíz
+  tecleada recortada 1-4 letras. Medido contra el catálogo real, cada nivel mete
+  más ruido que lo que rescata:
+
+  | Recortes | Fallan | Rescatadas | Ruido |
+  |---|---|---|---|
+  | 0 | 24 | — | — |
+  | 1 | 12 | 12 | 15 (`bici`→"Plumas Bic", `tecl`→"Sudadera Tec") |
+  | 2 | 8 | 4 | 30 (`plumon`→"Plumas", `libreta`→"Libro") |
+  | 3 | 4 | 4 | 10 |
+  | 4 | 4 | 0 | 7 (solo ruido) |
+
+  Un primer cálculo sobre una muestra de 60 palabras decía "ruido cero"; era
+  falso.
+  **Revisar cuando:** un usuario real reporte que "a medio escribir no
+  encuentra" algo con una palabra larga.
+- **Un `/` pega dos palabras en un solo token.** "depa/dorm" se guarda como el
+  lexema `'depa/dorm'` (el parser lo lee como ruta de archivo, token `file`), así
+  que ni "depa" ni "dorm" encuentran esa publicación. Medido en remoto: "Set de
+  vasos y platos", descripción "para depa/dorm". No se arregla aquí.
+  **Revisar cuando:** un usuario no encuentre una publicación cuyo título o
+  descripción tenga `/`, o cuando un `ts_debug('spanish', …)` sobre remoto
+  muestre tokens `file` en títulos.
+  **Fix probable:** cambiar la expresión de la columna generada para reemplazar
+  `/` por espacio antes de `to_tsvector`. Es una migración que reescribe la
+  columna, y hay que cuidar la simetría con cómo se arma la tsquery.
+- **El mínimo de 3 letras se midió con 76 publicaciones.** La amplitud de un
+  prefijo crece con el catálogo.
+  **Revisar cuando:** el catálogo pase de ~1 000 publicaciones activas.
+  **Cómo:** re-correr la medición de la tabla de arriba y ver si algún prefijo
+  de 3 letras que no sea de una familia legítima casa con más del 10 %.
 
 ## Datos de prueba en remoto — BORRAR antes de usuarios reales
 
