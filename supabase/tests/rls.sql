@@ -3241,6 +3241,87 @@ select pg_temp.assert(
   '(j) fuzz: la mezcla de todo, con "calc" al final, encuentra "Cálculo de Larson"');
 
 \echo ''
+\echo '== T31 — validaciones del perfil: nombre (users_nombre_valido) =='
+-- 20260927000469. Autocontenida: su propio `:N31`, con un correo de `tec.mx`
+-- para que el trigger de alta le asigne universidad (no hace falta aquí, pero
+-- es la fila que la app de verdad produce). Cada caso es un UPDATE del propio
+-- `nombre` COMO `authenticated`, que es el camino real de "Completar perfil" y
+-- "Editar perfil" — y `rechazo_de()` compara SQLSTATE y NOMBRE del constraint,
+-- así que un rechazo por grant (42501) o por otro check no pasa por éste.
+--
+-- `pg_temp.rechazo_de()` ya la definió T28 en esta misma transacción.
+--
+-- Los mismos casos corren en `scripts/probe-perfil.mjs` contra
+-- `src/lib/validacion-perfil.ts`: ese es el amarre cliente ↔ base.
+--
+-- CONTROLES NEGATIVOS, uno a la vez contra la suite completa: ver la tabla de
+-- CLAUDE.md §3 ("Y a N con las de T31").
+
+\set N31 '''31313131-0000-0000-0000-000000003131'''
+
+-- El alta va CAPTURADA y no como insert suelto, mismo recurso que :Z2 en T28:
+-- el trigger de alta crea la fila de `users` con `nombre` NULL, así que un check
+-- que rechazara NULL haría reventar este insert con el error crudo, lejos de la
+-- aserción que lo explica. Capturado, cae en (e) con su nombre.
+select pg_temp.rechazo_de(null, format(
+  'insert into auth.users (id, instance_id, aud, role, email, encrypted_password, '
+  || 'email_confirmed_at, created_at, updated_at) values (%L, %L, ''authenticated'', '
+  || '''authenticated'', ''rls-t31@tec.mx'', '''', now(), now(), now())',
+  :N31::uuid, '00000000-0000-0000-0000-000000000000')) as r_alta_n31 \gset
+
+-- (e) NULL, en el camino real: la fila nace sin nombre (lo recibe en
+-- "Completar perfil"), así que el check tiene que dejarla nacer.
+select pg_temp.assert(
+  :'r_alta_n31' = 'ok'
+  and (select nombre is null from public.users where id = :N31::uuid),
+  '(e) acepta NULL: el alta crea la fila de users sin nombre');
+
+-- El UPDATE del propio nombre, como :N31. Devuelve 'ok' o '<sqlstate>:<constraint>'.
+create or replace function pg_temp.t31_nombre(p_nombre text)
+returns text language sql as $$
+  select pg_temp.rechazo_de('31313131-0000-0000-0000-000000003131'::uuid, format(
+    'update public.users set nombre = %L where id = %L',
+    p_nombre, '31313131-0000-0000-0000-000000003131'))
+$$;
+
+-- (a)-(d) Acepta nombres de persona: acentos, ñ, ü, guion, apóstrofe.
+select pg_temp.assert(pg_temp.t31_nombre('José Ñúñez') = 'ok',
+  '(a) acepta "José Ñúñez" (acentos y ñ, mayúsculas incluidas)');
+select pg_temp.assert(pg_temp.t31_nombre('María-José') = 'ok',
+  '(b) acepta "María-José" (guion entre letras)');
+select pg_temp.assert(pg_temp.t31_nombre('O''Connor') = 'ok',
+  '(c) acepta "O''Connor" (apóstrofe recto entre letras)');
+select pg_temp.assert(pg_temp.t31_nombre('Müller') = 'ok',
+  '(d) acepta "Müller" (diéresis)');
+
+-- (e2) Y volver a NULL por UPDATE también pasa: el check no puede exigir
+-- nombre, o la fila de (e) no habría podido nacer.
+select pg_temp.assert(pg_temp.t31_nombre(null) = 'ok',
+  '(e2) acepta NULL también por UPDATE');
+
+-- (f)-(l) Rechaza, cada uno por el MISMO constraint.
+select pg_temp.assert(pg_temp.t31_nombre('Juan123') = '23514:users_nombre_valido',
+  '(f) rechaza "Juan123" (dígitos)');
+select pg_temp.assert(pg_temp.t31_nombre('Juan_') = '23514:users_nombre_valido',
+  '(g) rechaza "Juan_" (símbolo fuera de la regla)');
+select pg_temp.assert(pg_temp.t31_nombre('  Juan') = '23514:users_nombre_valido',
+  '(h) rechaza "  Juan" (espacio al inicio: la base no normaliza)');
+select pg_temp.assert(pg_temp.t31_nombre('Juan  Pérez') = '23514:users_nombre_valido',
+  '(i) rechaza "Juan  Pérez" (espacio doble)');
+select pg_temp.assert(pg_temp.t31_nombre('J') = '23514:users_nombre_valido',
+  '(j) rechaza "J" (1 carácter; el mínimo es 2)');
+select pg_temp.assert(pg_temp.t31_nombre(repeat('a', 51)) = '23514:users_nombre_valido',
+  '(k) rechaza 51 caracteres (el máximo es 50)');
+select pg_temp.assert(pg_temp.t31_nombre('Juan ' || chr(128512)) = '23514:users_nombre_valido',
+  '(l) rechaza un emoji');
+
+-- (m) Rechaza la forma NFD de "José" (e + acento combinante). No lo pidió la
+-- regla por nombre: documenta que la base NO normaliza y por qué
+-- `normalizarNombre()` pasa a NFC antes de guardar.
+select pg_temp.assert(pg_temp.t31_nombre(normalize('José', nfd)) = '23514:users_nombre_valido',
+  '(m) rechaza "José" en NFD (la base no normaliza; el cliente pasa a NFC)');
+
+\echo ''
 \echo '==========================================='
 \echo '   TODAS LAS PRUEBAS PASARON'
 \echo '==========================================='

@@ -25,6 +25,7 @@ import { fetchUniversidad, type OpcionCatalogo } from '@/lib/catalogos';
 import { useFotoPerfil } from '@/lib/perfil';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
+import { COPY_NOMBRE_INVALIDO, nombreValido, normalizarNombre } from '@/lib/validacion-perfil';
 
 import { usePerfilDraft } from './_layout';
 
@@ -122,7 +123,16 @@ export default function CompletarPerfilScreen() {
 
   const passwordOk = password.length >= MIN_PASSWORD && password === passwordConfirm;
   const puedeGuardar =
-    nombre.trim().length > 0 && universidadId !== null && campus !== null && passwordOk;
+    nombreValido(nombre) && universidadId !== null && campus !== null && passwordOk;
+
+  /**
+   * La variante "nombre no válido" del frame. Solo con algo escrito: el campo
+   * vacío es el estado inicial, no un error. Se evalúa sobre el normalizado (lo
+   * hace `nombreValido`), así que un espacio final al teclear no la dispara. El
+   * candado es `users_nombre_valido`; esto solo adelanta su veredicto.
+   */
+  const nombreError =
+    normalizarNombre(nombre) !== '' && !nombreValido(nombre) ? COPY_NOMBRE_INVALIDO : null;
 
   const guardar = async () => {
     if (!session?.user) return;
@@ -149,7 +159,7 @@ export default function CompletarPerfilScreen() {
     const { error: ePerfil } = await supabase
       .from('users')
       .update({
-        nombre: nombre.trim(),
+        nombre: normalizarNombre(nombre),
         campus_id: campus!.id,
       })
       .eq('id', session.user.id);
@@ -225,6 +235,7 @@ export default function CompletarPerfilScreen() {
           value={nombre}
           onChangeText={setNombre}
           editable={!guardando}
+          error={nombreError}
         />
         {/* Fija, sin chevron: la asigna el servidor, no se elige (ver arriba). */}
         <FixedField

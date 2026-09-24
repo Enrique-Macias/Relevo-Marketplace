@@ -27,6 +27,13 @@ dentro de `(explorar)/`, ver el gotcha de sección 9) — es distinto de
 perfil en Onboarding); no unificar ambos, sirven casos de uso distintos ya
 documentados en sección 5.
 
+**`Field` tiene `error` (nombre válido, `20260927000469`).** Pinta
+`.field-error` bajo el campo y el borde en `--brick` (`.text-field.is-invalid`),
+con el rol `Typography.fieldError`. Ese rol tiene los MISMOS valores que
+`terms` a propósito, y es otro rol: aquel es letra chica gris de ayuda, este es
+un error. El texto es copy PERSISTENTE, así que cualquier uso nuevo necesita su
+frame antes (§0 regla 4). Hoy lo usa solo el nombre del perfil.
+
 Al migrar al modelo atómico se sumaron dos más, ambos por EXTRACCIÓN y no
 escritos de cero:
 - **`Notice`** (`.notice`) — el aviso persistente, sacado tal cual de

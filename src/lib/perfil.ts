@@ -28,6 +28,7 @@ import {
   type FotoLocal,
 } from '@/lib/storage';
 import { supabase } from '@/lib/supabase';
+import { normalizarNombre } from '@/lib/validacion-perfil';
 
 /** Lada fija de México — ver la deuda consciente de CLAUDE.md §8. */
 export const LADA = '+52';
@@ -273,7 +274,9 @@ export async function guardarPerfil(userId: string, cambios: CambiosPerfil): Pro
   const { error } = await supabase
     .from('users')
     .update({
-      nombre: cambios.nombre.trim(),
+      // Normalizado (NFC, sin espacios al borde ni dobles): la base no
+      // normaliza, rechaza (`users_nombre_valido`).
+      nombre: normalizarNombre(cambios.nombre),
       carrera: cambios.carrera.trim() || null,
       campus_id: cambios.campusId,
       ...(cambios.telefono !== undefined ? { telefono: aE164(cambios.telefono) } : {}),

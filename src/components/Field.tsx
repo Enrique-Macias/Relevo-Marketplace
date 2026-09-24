@@ -20,6 +20,12 @@ import { scrollToFocusedInput } from '@/lib/scroll-to-input';
 type FieldProps = TextInputProps & {
   label: string;
   containerStyle?: ViewStyle;
+  /**
+   * `.field-error` bajo el campo, y el borde en `--brick` (`.text-field.is-invalid`).
+   * Copy PERSISTENTE: el texto tiene que existir antes en `relevo-app.html`
+   * (§0 regla 4). Hoy lo usa el nombre del perfil (`COPY_NOMBRE_INVALIDO`).
+   */
+  error?: string | null;
 };
 
 /**
@@ -40,7 +46,14 @@ type FieldProps = TextInputProps & {
  * La implementación manual es puro JS: cero dependencias nuevas, funciona en
  * Expo Go tal como está, y es el patrón documentado de RN para esto mismo.
  */
-export function Field({ label, containerStyle, style, onFocus, ...inputProps }: FieldProps) {
+export function Field({
+  label,
+  containerStyle,
+  style,
+  onFocus,
+  error,
+  ...inputProps
+}: FieldProps) {
   const inputRef = useRef<TextInput>(null);
   const scrollViewRef = useScreenScrollViewRef();
 
@@ -58,11 +71,12 @@ export function Field({ label, containerStyle, style, onFocus, ...inputProps }: 
       <Text style={styles.label}>{label}</Text>
       <TextInput
         ref={inputRef}
-        style={[styles.input, style]}
+        style={[styles.input, error ? styles.inputInvalid : null, style]}
         placeholderTextColor={Colors.placeholder}
         onFocus={handleFocus}
         {...inputProps}
       />
+      {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   );
 }
@@ -231,6 +245,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     ...Typography.input,
     color: Colors.ink,
+  },
+  // .text-field.is-invalid{border-color:var(--brick);}
+  inputInvalid: {
+    borderColor: Colors.brick,
+  },
+  // .field-error{font-size:11px; line-height:1.5; color:var(--brick); margin-top:6px;}
+  error: {
+    ...Typography.fieldError,
+    color: Colors.brick,
+    marginTop: 6,
   },
   // .select-field{display:flex; align-items:center; justify-content:space-between;
   //   background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px;}

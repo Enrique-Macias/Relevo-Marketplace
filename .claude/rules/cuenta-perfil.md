@@ -324,6 +324,18 @@ Diez cosas que no se ven en el diff:
   se resolvió de paso. **Revisar cuando:** un suspendido reporte que "perdió" su
   número al entrar a Editar perfil.
 
+**Nombre válido también aquí (`20260927000469`).** Mismo criterio que
+"Completar perfil" (`onboarding-auth.md`): `puedeGuardar` pide
+`nombreValido(nombre)`, el `Field` recibe `error` con la variante "nombre no
+válido" del frame, y `guardarPerfil()` (`src/lib/perfil.ts`) guarda
+`normalizarNombre()` en vez de `.trim()`. El candado es el check; el cliente solo
+adelanta su veredicto. **Una cuenta cuyo nombre guardado ya no cumpla** (en
+remoto había 1 al planear, que se corrige a mano antes del push, CLAUDE.md §8
+pendiente 0f) abriría esta pantalla con el error pintado y "Guardar" apagado
+hasta corregirlo, que es el comportamiento correcto: guardarlo tal cual lo
+rechazaría la base. **Prueba manual:** abrir Editar perfil con un nombre válido
+no pinta error; cambiarlo a "Ana_2" lo pinta y apaga "Guardar".
+
 Componentes nuevos: ninguno de UI — reusa `Field`, `PhoneField`, `SelectField`,
 `FormHeader`, `CampusBottomSheet`, `SelectorCatalogo` (hoy borrado, fase 2B) y `ErrorState` tal cual. Lo
 único nuevo es `SkeletonPerfilForm` (círculo de 84 + 5 cajas de campo), tercer

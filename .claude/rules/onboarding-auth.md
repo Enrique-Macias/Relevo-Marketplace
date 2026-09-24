@@ -139,6 +139,23 @@ CLAUDE.md §3; aquí va lo que toca el flujo:
 - **Las cuentas que ya existían no cambian**: conservan su universidad (en
   remoto, las 5 sin dominio registrado tienen la 1) y no pueden cambiarla.
 
+**Nombre válido en "Completar perfil" (`20260927000469`, check
+`users_nombre_valido`).** El mecanismo y el porqué de la clase de letras
+explícita viven en CLAUDE.md §3. Lo de esta pantalla:
+
+- `puedeGuardar` pide `nombreValido(nombre)` en vez de `trim().length > 0`, y el
+  UPDATE manda `normalizarNombre(nombre)` (NFC, trim, espacios colapsados), no
+  `nombre.trim()`. Los dos salen de `src/lib/validacion-perfil.ts`.
+- La variante "nombre no válido" del frame es el `error` de `Field`: solo con
+  algo escrito, y sobre el valor normalizado, así que un espacio final al
+  teclear no la dispara. Copy: `COPY_NOMBRE_INVALIDO`, espejo del frame.
+- **Efecto conocido y aceptado:** al teclear la PRIMERA letra el error aparece
+  (1 carácter < 2) y se va con la segunda. Es lo que dice el frame aprobado
+  ("con el campo no vacío"); si molesta en dispositivo, el cambio es de frame.
+- **Pruebas manuales que tocan a mano:** "José Ñúñez" guarda; "Juan123" pinta el
+  error y deja "Continuar" apagado; "  Ana   Luz  " guarda como "Ana Luz"
+  (verificar en Studio).
+
 - **Auth gating cableado end-to-end y confirmado con una cuenta real de Tec
   de Monterrey**: `SessionProvider` (`src/lib/session.tsx`) escucha
   `onAuthStateChange` y lee el perfil de `public.users`; el splash decide

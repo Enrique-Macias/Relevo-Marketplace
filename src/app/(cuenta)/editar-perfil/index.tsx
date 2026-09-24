@@ -45,6 +45,7 @@ import {
 } from '@/lib/perfil';
 import { type OpcionCatalogo } from '@/lib/catalogos';
 import { useSession } from '@/lib/session';
+import { COPY_NOMBRE_INVALIDO, nombreValido, normalizarNombre } from '@/lib/validacion-perfil';
 
 type Datos = { perfil: PerfilEditable; telefono: string | null };
 
@@ -180,7 +181,12 @@ function Formulario({
       : telefono.trim() === '' || telefonoValido(telefono);
 
   const puedeGuardar =
-    nombre.trim().length > 0 && universidad !== null && campus !== null && telefonoOk;
+    nombreValido(nombre) && universidad !== null && campus !== null && telefonoOk;
+
+  // Mismo criterio que "Completar perfil": solo con algo escrito, sobre el
+  // valor normalizado. El candado es `users_nombre_valido`.
+  const nombreError =
+    normalizarNombre(nombre) !== '' && !nombreValido(nombre) ? COPY_NOMBRE_INVALIDO : null;
 
   const guardar = async () => {
     if (!puedeGuardar || guardando) return;
@@ -309,6 +315,7 @@ function Formulario({
               value={nombre}
               onChangeText={setNombre}
               editable={!guardando}
+              error={nombreError}
             />
             <Field
               label="Carrera"

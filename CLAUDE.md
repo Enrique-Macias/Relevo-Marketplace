@@ -145,9 +145,10 @@ Tipografía — dos familias, uso deliberado y separado:
 Ya implementado en `src/constants/theme.ts`: `Colors`, `Fonts`, `FontWeights`
 (400/500/600, todos sí se usan — no asumas que la UI evita el regular),
 `Radii` (8/12/14/16/20/9999, más el 10px de `.menu-icon`/`.status-row-icon`
-que quedó fuera del token original), `Typography` (47 roles por nombre
+que quedó fuera del token original), `Typography` (49 roles por nombre
 semántico — medido con `awk` sobre el objeto en `theme.ts`, no de memoria: si
-este número discrepa del archivo, gana el archivo — cada uno citando la clase
+este número discrepa del archivo, gana el archivo, y ganó: decía "47" cuando
+el archivo ya tenía 48, antes de que `fieldError` lo llevara a 49 — cada uno citando la clase
 CSS exacta de origen — incluye `.avatar`/`.seller-avatar` en weight 600, ojo si
 agregas un rol parecido, es fácil confundirlo con 500), y `ScreenPadding = 20`.
 
@@ -182,8 +183,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 32 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-09-24; decía "30" con 31 en el repo), con RLS activo y probado en las 15 tablas más
+Definido en 33 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-09-24; decía "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 15 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
@@ -194,6 +195,16 @@ su única policy es para `supabase_auth_admin`, no para el cliente** (su bloque,
 más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 33 y 32 (medido el 2026-09-24).** `ls supabase/migrations |
+wc -l` da **33**; `mcp__supabase__list_migrations` da **32**. La que falta en
+remoto es `20260927000469` (nombre válido), que no se pushea en su propia
+tarea: es el runbook pendiente 0f de §8, con un paso 0 bloqueante.
+
+**Por DUODÉCIMA vez.** Este párrafo decía "32 y 31, falta
+`20260926000468`", y al remedirlo el remoto YA la tenía (`list_migrations` la
+lista). O sea que el paso 1 del pendiente 0e de §8 corrió fuera de la sesión que
+lo escribió, como la 467 antes que ella. La historia de antes, tal como estaba:
 
 **Repo y remoto: 32 y 31 (medido el 2026-09-24).** `ls supabase/migrations |
 wc -l` da **32**; `mcp__supabase__list_migrations` da **31**. La que falta en
@@ -317,7 +328,8 @@ users
   el cliente no la escribe; null solo en cuentas creadas por llave secreta
   con dominio no registrado — ver abajo),
   nombre, foto_url, campus_id, carrera (nullable hasta
-  "Completar perfil"; campus_id atado a universidad_id por FK compuesta),
+  "Completar perfil"; campus_id atado a universidad_id por FK compuesta;
+  nombre con check `users_nombre_valido` — nombre de persona, 2-50, ver abajo),
   rating_promedio (solo triggers escriben),
   estado (solo triggers/service_role escriben),
   telefono (E.164 `+52` + 10 dígitos, NO expuesto al cliente — ver abajo),
@@ -421,6 +433,39 @@ veces es posible; son N requests observables contra 1 invisible. Junto a él viv
 materializar para poder referenciarla por nombre desde PostgREST) que responde
 "¿es contactable?" sin revelar el número — la usa el gate de Publicar para
 decidir en el render si mostrar el campo, sin round trip ni parpadeo.
+
+**`users.nombre` es un nombre de persona, no un username
+(`20260927000469`, check `users_nombre_valido`).** Letras y un separador
+(espacio, `'`, `’`, `-`) solo ENTRE letras, de 2 a 50 caracteres
+(`char_length`, no bytes), NULL permitido (la fila nace sin nombre). La forma
+`^L+([ '’-]L+)*$` cubre de una vez "sin espacios al borde ni dobles, sin
+separadores sueltos". Antes era `text` a secas y el cliente solo exigía "no
+vacío tras el trim".
+
+- **"Letra" es un conjunto EXPLÍCITO de rangos, no `[[:alpha:]]`, y NO porque
+  falle hoy.** Medido en remoto y en local: la base es `en_US.UTF-8` con
+  provider ICU, y ahí `[[:alpha:]]` SÍ reconoce José/Nuñez/Müller (la sospecha
+  de "ctype C" no se sostuvo). Los motivos son otros dos. Su significado
+  depende del ctype, así que cambiaría con la configuración sin que la
+  migración cambiara. Y no equivale al `\p{L}` de JS, así que cliente y base no
+  podrían compartir la definición. Los rangos: ASCII, Latin-1 (salta `×` y `÷`)
+  y Latin Extended-A entero (polaco, checo, turco… estudiantes de intercambio).
+  Fuera quedan Extended-B (`ș`), griego, cirílico y CJK: se escriben
+  romanizados.
+- **Va escrito con escapes `\uXXXX`, y eso es lo que hace posible el amarre
+  TEXTUAL.** El ARE de Postgres los entiende y `pg_get_constraintdef` los
+  devuelve tal cual (medido), así que `scripts/probe-perfil.mjs` busca el string
+  `CLASE_LETRA` de `src/lib/validacion-perfil.ts` literal dentro de la
+  definición viva. Del lado JS ese string es `String.raw`, y no es estilo: un
+  literal normal decodifica los escapes al parsear, el valor en runtime sería
+  `À-Ö…` y el amarre caería siempre (lo cazó el primer smoke test).
+- **La base no normaliza: rechaza.** El cliente manda `normalizarNombre()` (NFC,
+  trim, colapsar espacios). El NFC no es cosmético: una "é" en NFD (e + acento
+  combinante) la rechaza el check, porque la marca combinante no es letra del
+  conjunto. T31 (m) lo documenta.
+- **El `.field-error` de las dos pantallas no es autorización duplicada**: el
+  candado es el check. `nombreValido()` solo adelanta su veredicto para pintar
+  el error del frame en vez de un rechazo crudo al guardar.
 
 **Usuario suspendido — tabla de decisión (no implícita):** puede leer catálogo,
 perfiles y reseñas; puede editar su propio perfil (**incluido su teléfono**) y
@@ -1114,8 +1159,8 @@ Tres consecuencias que no se ven en el diff:
   vacía, todo alta nacería sin universidad. Por eso el runbook (§8, pendiente
   0) tiene un paso 0 bloqueante.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 259 aserciones (medido con el
-`grep` de §8 el 2026-09-24; esta línea decía "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 273 aserciones (medido con el
+`grep` de §8 el 2026-09-24; antes decía 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -1550,6 +1595,35 @@ término REAL pegado a sintaxis. Ojo al leer la tabla: `calc'` NO revienta la
 variante rota y `calc)` sí, así que el orden de (j2) no es intercambiable por
 uno más corto.
 
+Y a **273** con las 14 de T31 (nombre válido, `20260927000469`): 4 que
+aceptan, 2 de NULL, 7 que rechazan y la de NFD. Nada en T12: la migración no
+toca ningún grant, solo agrega un check. T31 es autocontenida con su propio
+`:N31` y cada caso es un UPDATE del propio nombre COMO `authenticated`, con
+`rechazo_de()` comparando `23514:users_nombre_valido`. Los diez controles se
+corrieron uno a la vez contra la suite completa, imprimiendo antes
+`pg_get_constraintdef`:
+
+| Variante rota | Cae en |
+|---|---|
+| sin la cota inferior | (j) "J" |
+| sin la cota superior | (k) 51 caracteres |
+| clase + `0-9` | (f) "Juan123" |
+| clase + `_` | (g) "Juan_" |
+| `^ *` (espacio inicial permitido) | (h) "  Juan" |
+| separador `( +\|['’-])` | (i) "Juan  Pérez" |
+| clase + rango de emoji | (l) |
+| clase sin Latin-1 | (a) "José Ñúñez" |
+| clase + marcas combinantes (U+0300-036F) | (m) NFD |
+| `nombre is not null and …` (rechaza NULL) | **(e)** aislada; en la suite, el error CRUDO al crear los fixtures globales |
+
+**La última fila es estructural, no un hueco de la sección.** Un check que
+rechace NULL rompe TODA alta de cuenta (el trigger crea la fila sin nombre), así
+que en la suite completa muere al sembrar `:A`/`:B`/`:C`, antes de T0. Por eso
+el alta de `:N31` va CAPTURADA con `rechazo_de()` —el recurso de `:Z2` en T28—
+y es la propia aserción (e): contra T31 aislada (helpers sin fixtures globales +
+T31), esa variante cae ahí con su nombre. La primera versión sembraba `:N31` con
+un insert suelto y moría con el error crudo también aislada.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -1974,7 +2048,8 @@ Toast de éxito · Toast de error · Loading / skeleton
   quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son SIETE pasos, no uno:
+  `postgres`/superusuario. Son NUEVE pasos, no uno (decía "SIETE" con ocho en la
+  lista):
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
      **`psql` puede no estar instalado en la máquina** (no lo está en la de
      desarrollo actual, aunque este comando lo dé por supuesto). El contenedor
@@ -2069,8 +2144,19 @@ Toast de éxito · Toast de error · Loading / skeleton
      ubicación, el `require()` protegido— vive en `src/lib/geolocalizacion.ts`
      y no tiene probe: depende del módulo nativo real, así que se verifica a
      mano en dispositivo (§6 de este mismo bloque, "para bugs de UI...").
-  Los probes 2, 3, 6 y 7 necesitan el stack local arriba y limpian lo suyo en un
-  `finally`; si una corrida muere de golpe, `supabase db reset` borra la basura.
+  9. `node scripts/probe-perfil.mjs`: el amarre entre `src/lib/validacion-perfil.ts`
+     y el check `users_nombre_valido`. La regla está escrita dos veces (SQL y
+     TS), y desincronizada no falla nada: el usuario ve un botón habilitado y
+     un rechazo crudo, o un error sobre un nombre que la base aceptaba. Corre los
+     casos de T31 y más contra el check real, compara el veredicto del cliente
+     con el de la base sobre lo que el cliente MANDARÍA (el normalizado), y
+     busca `CLASE_LETRA` y las cotas literales en la definición viva. Importa la
+     implementación REAL (el módulo no tiene imports). Todo en un
+     `begin … rollback`, así que no deja estado. Sus controles —desincronizar la
+     clase, la cota, quitar el NFC o el colapso de espacios— caen cada uno en
+     su caso.
+  Los probes 2, 3, 6, 7 y 9 necesitan el stack local arriba y limpian lo suyo (el
+  9, con un rollback); si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4, 5 y 8 no necesitan nada: ni stack, ni red, ni credenciales.
 
   **`scripts/probe-moderacion-red.mjs` NO es un séptimo paso rutinario** —
@@ -2340,8 +2426,12 @@ de los route groups).
       archivo canónico otra vez.
    Nada de esto es alcanzable sin un teléfono real (§6): el simulador
    headless no puede probar permisos del sistema ni GPS.
-0e. **Búsqueda por prefijo (`20260926000468`, `public.buscar_listings`):
-   construida y probada en LOCAL, sin pushear.** El cliente YA llama a la RPC,
+0e. **Búsqueda por prefijo (`20260926000468`, `public.buscar_listings`): la
+   migración YA está en remoto; faltan los pasos 2-5.** Al remedir el
+   2026-09-24, `list_migrations` ya listaba `20260926000468`: el paso 1 corrió
+   fuera de la sesión que escribió este punto. Los pasos 2-5 no se
+   verificaron en esa medición. Texto original:
+   **Construida y probada en LOCAL, sin pushear.** El cliente YA llama a la RPC,
    así que **un build con este código contra un remoto sin la función rompe
    Búsqueda y Categoría con texto** (PGRST202). Por eso el push va ANTES de
    distribuir un build con este cambio. En este orden:
@@ -2361,6 +2451,26 @@ de los route groups).
       `database.types.ts` está escrita a mano, con `SetofOptions`, por el
       mismo motivo que `campus.latitud` en el pendiente 0d.
    5. Prueba manual en dispositivo: ver `explorar.md`, "Búsqueda por prefijo".
+0f. **Nombre válido (`20260927000469`, check `users_nombre_valido`):
+   construida y probada en LOCAL, sin pushear.** En este orden:
+   0. **Bloqueante: el dato.** Al planear había **1** nombre en remoto que la
+      regla rechaza (motivo, medido solo por conteo: un dígito). Se corrige a
+      mano en Studio, y ANTES del push se remide que dé **0**:
+      `select count(*) from public.users where nombre is not null and not
+      (char_length(nombre) between 2 and 50 and nombre ~ '<el regex de la
+      migración>')`. El check entra VALIDADO (sin `NOT VALID`): si este paso se
+      salta, el push falla con 23514 en vez de dejar la fila incoherente.
+   1. `supabase db push`, y `list_migrations` con `20260927000469`.
+   2. `pg_get_constraintdef` de `users_nombre_valido` en remoto, con los
+      escapes `\uXXXX` iguales a `CLASE_LETRA`.
+   3. `npm run gen:types` contra remoto: un check no cambia tipos, así que el
+      diff debe salir vacío.
+   4. Distribuir el build con la validación. El orden es flexible en los dos
+      sentidos: un build viejo manda `nombre.trim()`, que con un nombre válido
+      pasa, y con uno inválido recibe el rechazo crudo (el toast genérico de
+      error de Editar perfil, o el `setError` de Completar perfil).
+   5. Pruebas manuales en dispositivo: ver `cuenta-perfil.md` y
+      `onboarding-auth.md` ("Nombre válido").
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
@@ -2463,7 +2573,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" |
 | `EmptyState` | `EmptyState` | Estado vacío, con `.empty-actions` opcional |
 | `ErrorState` | `ErrorState` | Estado de fallo con "Reintentar" (label hardcodeado — ver deuda) |
-| `Field` | `Field`, `PhoneField`, `SelectField`, `FixedField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio. `FixedField` = valor que se muestra y no se elige (sin chevron, no es botón) |
+| `Field` | `Field`, `PhoneField`, `SelectField`, `FixedField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio. `FixedField` = valor que se muestra y no se elige (sin chevron, no es botón). `Field` tiene `error` (`.field-error` + borde `--brick`), copy persistente: frame primero |
 | `ListRow` | `FormHeader`, `SearchField`, `ListRow`, `RadioCircle` | Fila de lista, header de formulario y el radio que reusan 3 pantallas |
 | `ListingFormFields` | `ListingFormFields` | EL formulario de publicación, compartido por Publicar y Editar |
 | `ListingPhoto` | `ListingPhoto` | Punto ÚNICO de contacto con el bucket privado (header `Authorization`) |

@@ -173,6 +173,11 @@ export const Typography = {
     fontSize: 11,
     lineHeight: 16.5, // 11 × 1.5
   }, // .auth-terms
+  fieldError: {
+    fontFamily: face(Fonts.body, FontWeights.regular),
+    fontSize: 11,
+    lineHeight: 16.5, // 11 × 1.5
+  }, // .field-error — MISMOS valores que `terms`, rol distinto: aquel es letra chica gris de ayuda, este es el error de un campo en --brick. Si uno cambia de escala, el otro no tiene por qué.
   tabLabel: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 10 }, // .tab
   statLabel: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 10 }, // .stat-label — distinto de `tabLabel`, que es 10/medium
 } as const;

@@ -579,6 +579,18 @@
   .auth-link b{color:var(--brick); font-weight:600;}
   .auth-terms{font-size:11px; color:#A8A29A; margin-top:18px; line-height:1.5; max-width:250px;}
 
+  /* Error PERSISTENTE de un campo: el valor no cumple la regla que la base
+     hace cumplir (un `check` de tabla). Es copy que se lee con calma mientras se
+     corrige, así que va bajo el campo y no en un toast (§0 regla 4). Solo
+     tokens existentes: la letra de `.auth-terms` (11px, line-height 1.5) y el
+     `--brick` que el sistema ya usa como color de error (`.toast-icon.is-error`,
+     `.error-icon`). El borde del campo pasa al mismo color para que el error se
+     lea sin tener que encontrar el texto. Sin margen propio arriba: se pega al
+     campo al que se refiere; el `margin-bottom` del `.field` sigue separando
+     del siguiente. */
+  .text-field.is-invalid{border-color:var(--brick);}
+  .field-error{font-size:11px; line-height:1.5; color:var(--brick); margin-top:6px;}
+
   /* Estado deshabilitado — patrón reutilizable para cualquier control de
      formulario, no solo el de Completar perfil. Un solo valor de opacidad para
      que todo control inerte se lea igual; Publicar y Editar publicación lo
@@ -5123,6 +5135,25 @@
             <label class="field-label">Nombre completo</label>
             <input class="text-field" type="text" placeholder="Ej. Enrique Macías">
           </div>
+
+          <!-- Variante de ESTE campo, no una pantalla aparte: el nombre no
+               cumple la regla de `users_nombre_valido` (letras, incluidas las
+               acentuadas, ñ y ü; espacios, apóstrofe y guion solo entre letras;
+               de 2 a 50 caracteres). Se evalúa sobre el valor NORMALIZADO
+               (sin espacios al borde ni dobles), así que un espacio final
+               mientras se teclea no la dispara. Mientras se vea, "Continuar"
+               sigue deshabilitado. Mismo campo y mismo copy en "Editar perfil". -->
+          <div style="margin:-2px 0 22px; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): nombre no válido
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label class="field-label">Nombre completo</label>
+              <input class="text-field is-invalid" type="text" value="Enrique_M 2">
+              <div class="field-error">Usa solo letras, espacios, apóstrofes y guiones, de 2 a 50 caracteres.</div>
+            </div>
+          </div>
+
           <!-- Universidad FIJA, no una elección: la asigna el servidor desde el
                dominio del correo (universidad_dominios) al crear la cuenta. Se
                pinta con el estado deshabilitado compartido, el mismo recurso que
@@ -5463,6 +5494,20 @@
             <div class="field">
               <label class="field-label">Nombre completo</label>
               <input class="text-field" type="text" value="Enrique Macías">
+            </div>
+
+            <!-- Variante de ESTE campo: el mismo error que "Completar perfil",
+                 con el mismo copy. Mientras se vea, "Guardar" del header sigue
+                 deshabilitado. -->
+            <div style="margin:-2px 0 22px; padding-top:14px; border-top:1.5px dashed var(--line);">
+              <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+                Variante (doc, no es parte del flujo): nombre no válido
+              </div>
+              <div class="field" style="margin-bottom:0;">
+                <label class="field-label">Nombre completo</label>
+                <input class="text-field is-invalid" type="text" value="Enrique Macías 2">
+                <div class="field-error">Usa solo letras, espacios, apóstrofes y guiones, de 2 a 50 caracteres.</div>
+              </div>
             </div>
             <div class="field">
               <label class="field-label">Carrera</label>
