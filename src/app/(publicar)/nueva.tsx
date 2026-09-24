@@ -28,6 +28,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PrimaryButton } from '@/components/Buttons';
 import { ListingFormFields } from '@/components/ListingFormFields';
+import { PaisBottomSheet } from '@/components/PaisBottomSheet';
 import { FormHeader } from '@/components/ListRow';
 import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
@@ -36,7 +37,14 @@ import { Colors, ScreenPadding } from '@/constants/theme';
 import { useExplorarState } from '@/lib/explorar-state';
 import { elegirFotos, PermisoDenegadoError } from '@/lib/foto-picker';
 import { useListingForm } from '@/lib/listing-form';
-import { guardarTelefono, telefonoValido } from '@/lib/perfil';
+import { paisPorIso, type Pais } from '@/lib/paises';
+import { guardarTelefono } from '@/lib/perfil';
+import {
+  copyTelefonoInvalido,
+  paisDePegado,
+  PAIS_DEFAULT,
+  telefonoValido,
+} from '@/lib/validacion-perfil';
 import {
   componerAviso,
   esDeterminista,
@@ -94,6 +102,9 @@ export default function PublicarScreen() {
    * hasta `aInput()`, que arma la fila de `listings`.
    */
   const [telefono, setTelefono] = useState('');
+  // México por default (20260927000470): el país se elige en el mismo campo.
+  const [pais, setPais] = useState<Pais>(() => paisPorIso(PAIS_DEFAULT));
+  const [paisSheetVisible, setPaisSheetVisible] = useState(false);
 
   const userId = session?.user.id ?? null;
   // La zona de entrega es el campus DEL PERFIL, no el alcance que el usuario
@@ -128,7 +139,14 @@ export default function PublicarScreen() {
     userId !== null &&
     profile?.universidad_id != null &&
     campus != null &&
-    (!faltaTelefono || telefonoValido(telefono));
+    (!faltaTelefono || telefonoValido(pais.iso, telefono));
+
+  // La variante "número no válido" del frame, mismo criterio que Editar perfil:
+  // solo con algo escrito. El candado es `users_telefono_e164`.
+  const telefonoError =
+    telefono.trim() !== '' && !telefonoValido(pais.iso, telefono)
+      ? copyTelefonoInvalido(pais.nombre)
+      : null;
 
   const subiendo = fase.t === 'subiendo';
   const moderando = fase.t === 'moderando';
@@ -260,7 +278,7 @@ export default function PublicarScreen() {
        */
       if (faltaTelefono) {
         try {
-          await guardarTelefono(userId!, telefono);
+          await guardarTelefono(userId!, pais.iso, telefono);
           // Para que `tiene_telefono` pase a true y el campo desaparezca. Si esto
           // fallara, lo peor que pasa es que el campo siga a la vista con el
           // número ya guardado; el siguiente arranque lo corrige.
@@ -368,7 +386,23 @@ export default function PublicarScreen() {
           eligiendoFotos={eligiendoFotos}
           telefono={
             faltaTelefono
-              ? { value: telefono, onChangeText: setTelefono, disabled: textoCongelado }
+              ? {
+                  value: telefono,
+                  onChangeText: (v) => {
+                    // Un número internacional pegado trae su país.
+                    const pegado = paisDePegado(v);
+                    if (pegado) {
+                      setPais(paisPorIso(pegado.pais));
+                      setTelefono(pegado.nacional);
+                    } else {
+                      setTelefono(v);
+                    }
+                  },
+                  pais,
+                  onPaisPress: () => setPaisSheetVisible(true),
+                  error: telefonoError,
+                  disabled: textoCongelado,
+                }
               : undefined
           }
         />
@@ -408,6 +442,13 @@ export default function PublicarScreen() {
           style={styles.cta}
         />
       </View>
+
+      <PaisBottomSheet
+        visible={paisSheetVisible}
+        selectedIso={pais.iso}
+        onSelect={setPais}
+        onClose={() => setPaisSheetVisible(false)}
+      />
     </>
   );
 }

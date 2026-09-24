@@ -15,6 +15,7 @@
  * de las columnas editables.
  */
 
+import { type CountryCode } from 'libphonenumber-js/min';
 import { useCallback, useRef, useState } from 'react';
 
 import { type OpcionCatalogo } from '@/lib/catalogos';
@@ -28,59 +29,14 @@ import {
   type FotoLocal,
 } from '@/lib/storage';
 import { supabase } from '@/lib/supabase';
-import { normalizarNombre } from '@/lib/validacion-perfil';
+import { aE164, normalizarNombre } from '@/lib/validacion-perfil';
 
-/** Lada fija de México — ver la deuda consciente de CLAUDE.md §8. */
-export const LADA = '+52';
-
-/** Dígitos nacionales que espera el `check` de la base. */
-const DIGITOS_NACIONALES = 10;
-
-/**
- * Los dígitos que el usuario tecleó, sin nada más.
- *
- * El campo acepta que se escriba "81 1234 5678" o "81-1234-5678" porque es como
- * la gente dicta un número; lo que se guarda es E.164 sin separadores. Se quita
- * también un `+52` pegado al inicio: alguien que copia su número de WhatsApp lo
- * trae incluido, y sin esto quedarían 12 dígitos y el check lo rechazaría con un
- * mensaje que no explica nada.
+/*
+ * Captura del número (país + nacional → E.164): `src/lib/validacion-perfil.ts`
+ * (`telefonoValido`, `aE164`, `separarE164`). Vive allá y no aquí porque este
+ * archivo importa Supabase y Expo, y el probe que amarra esas reglas con el
+ * check `users_telefono_e164` necesita cargarlas desde Node.
  */
-export function soloDigitos(texto: string): string {
-  const limpio = texto.replace(/\D/g, '');
-  return limpio.startsWith('52') && limpio.length > DIGITOS_NACIONALES
-    ? limpio.slice(2)
-    : limpio;
-}
-
-export function telefonoValido(texto: string): boolean {
-  return soloDigitos(texto).length === DIGITOS_NACIONALES;
-}
-
-/**
- * A E.164, la forma en que vive en la base: `+52` + 10 dígitos.
- *
- * Se guarda CON el `+` aunque `wa.me` lo pida sin él (ver `urlWhatsapp`).
- * `+528111234567` es un número sin ambigüedad; `528111234567` es una cadena que
- * hay que saber interpretar.
- */
-export function aE164(texto: string): string {
-  return `${LADA}${soloDigitos(texto)}`;
-}
-
-/**
- * De E.164 al agrupado que el usuario reconoce como su número: `+528112345678`
- * → `81 1234 5678`, tal como lo pinta el frame "Editar perfil".
- *
- * Es la inversa de `soloDigitos()` y solo sirve para PINTAR: lo que se guarda
- * sigue siendo E.164. Si el valor no trae los 10 dígitos nacionales (una fila
- * vieja rara, o algo dado de alta desde Studio antes del `check`), se devuelven
- * los dígitos tal cual en vez de inventar una agrupación falsa.
- */
-export function formatTelefonoNacional(e164: string): string {
-  const d = soloDigitos(e164);
-  if (d.length !== DIGITOS_NACIONALES) return d;
-  return `${d.slice(0, 2)} ${d.slice(2, 6)} ${d.slice(6)}`;
-}
 
 /**
  * El deep link de RF-13. `wa.me` quiere el internacional SIN `+`, sin espacios
@@ -98,10 +54,14 @@ export function urlWhatsapp(e164: string, mensaje: string): string {
  * statement completo con 42501. Misma trampa que ya documenta
  * `(onboarding)/completar-perfil.tsx`.
  */
-export async function guardarTelefono(userId: string, texto: string): Promise<void> {
+export async function guardarTelefono(
+  userId: string,
+  pais: CountryCode,
+  texto: string
+): Promise<void> {
   const { error } = await supabase
     .from('users')
-    .update({ telefono: aE164(texto) })
+    .update({ telefono: aE164(pais, texto) })
     .eq('id', userId);
 
   if (error) throw error;
@@ -244,8 +204,11 @@ export type CambiosPerfil = {
    * no existe forma de BORRAR un teléfono —el frame no dibuja esa afordancia— y
    * así ni siquiera es expresable. Quien decide mandarlo es la pantalla, y solo
    * cuando el usuario TOCÓ el campo; ver el comentario de `guardarPerfil`.
+   *
+   * País + lo tecleado, no el E.164: la base no guarda el país, así que es
+   * `aE164()` quien los junta (20260927000470).
    */
-  telefono?: string;
+  telefono?: { pais: CountryCode; nacional: string };
 };
 
 /**
@@ -279,7 +242,9 @@ export async function guardarPerfil(userId: string, cambios: CambiosPerfil): Pro
       nombre: normalizarNombre(cambios.nombre),
       carrera: cambios.carrera.trim() || null,
       campus_id: cambios.campusId,
-      ...(cambios.telefono !== undefined ? { telefono: aE164(cambios.telefono) } : {}),
+      ...(cambios.telefono !== undefined
+        ? { telefono: aE164(cambios.telefono.pais, cambios.telefono.nacional) }
+        : {}),
     })
     .eq('id', userId);
 

@@ -15,6 +15,7 @@ import {
 import { IconChevronDown } from '@/components/icons';
 import { useScreenScrollViewRef } from '@/components/Screen';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { type Pais } from '@/lib/paises';
 import { scrollToFocusedInput } from '@/lib/scroll-to-input';
 
 type FieldProps = TextInputProps & {
@@ -85,32 +86,47 @@ type PhoneFieldProps = {
   label: string;
   value: string;
   onChangeText: (v: string) => void;
+  /** El país elegido: su ISO y su lada se pintan en `.phone-country`. */
+  pais: Pais;
+  /** Abre el "Selector de país" (`PaisBottomSheet`). */
+  onPaisPress: () => void;
   /** Letra chica bajo el campo (`.auth-terms`). Publicar la usa, Editar perfil no. */
   hint?: string;
+  /**
+   * `.field-error` + borde `--brick` (`.phone-field.is-invalid`): la variante
+   * "número no válido" del frame. Copy persistente: `copyTelefonoInvalido()`.
+   */
+  error?: string | null;
   editable?: boolean;
   containerStyle?: ViewStyle;
 };
 
 /**
- * `.phone-field` — el campo de WhatsApp, con la lada fija fuera del input.
+ * `.phone-field` — el campo de WhatsApp, con el país como BOTÓN fuera del input.
  *
- * El `+52` es parte del control y no un placeholder ni texto tecleable: hoy el
- * catálogo es mexicano (la deuda consciente de CLAUDE.md §8 tiene el disparador
- * para el día que deje de serlo), así que no hay nada que elegir, y sacándolo
- * del input se vuelve imposible borrarlo por accidente. Lo que el usuario
- * teclea son los 10 dígitos nacionales; `aE164()` (`src/lib/perfil.ts`) arma el
- * valor que va a la base.
+ * Hasta 20260927000470 la lada era un `+52` inerte; ahora `.phone-country` abre
+ * el selector de país (México por default). Sigue fuera del input a propósito:
+ * no se puede borrar por accidente, y lo que el usuario teclea es solo el número
+ * nacional — `aE164()` (`src/lib/validacion-perfil.ts`) arma el valor que va a
+ * la base.
  *
- * No filtra las teclas al escribir: `soloDigitos()` acepta "81 1234 5678" y
- * "81-1234-5678" porque es como la gente dicta un número, y pelearle al usuario
- * a media escritura es peor que limpiar al guardar — el mismo criterio que ya
- * usa `precio` en `listing-form.ts`.
+ * SIN bandera emoji: el ISO en texto ("MX +52"), porque el emoji de bandera no
+ * se renderiza de forma confiable en Android (CLAUDE.md §3, bloque del
+ * teléfono).
+ *
+ * No filtra las teclas al escribir: libphonenumber acepta "81 1234 5678",
+ * "81-1234-5678" o "(202) 555-0123", y pelearle al usuario a media escritura es
+ * peor que limpiar al guardar — el mismo criterio que ya usa `precio` en
+ * `listing-form.ts`.
  */
 export function PhoneField({
   label,
   value,
   onChangeText,
+  pais,
+  onPaisPress,
   hint,
+  error,
   editable = true,
   containerStyle,
 }: PhoneFieldProps) {
@@ -126,8 +142,21 @@ export function PhoneField({
   return (
     <View style={[styles.field, containerStyle]}>
       <Text style={styles.label}>{label}</Text>
-      <View style={[styles.phone, !editable && styles.disabled]}>
-        <Text style={styles.phonePrefix}>+52</Text>
+      <View style={[styles.phone, error ? styles.inputInvalid : null, !editable && styles.disabled]}>
+        {/* .phone-country: ISO en --ink 600, lada y chevron en --ink-soft, y el
+            separador --line a la derecha. */}
+        <Pressable
+          style={styles.phoneCountry}
+          onPress={onPaisPress}
+          disabled={!editable}
+          accessibilityRole="button"
+          accessibilityLabel={`País: ${pais.nombre}, ${pais.lada}. Cambiar país`}
+          hitSlop={8}
+        >
+          <Text style={styles.phoneIso}>{pais.iso}</Text>
+          <Text style={styles.phonePrefix}>{pais.lada}</Text>
+          <IconChevronDown size={12} color={Colors.inkSoft} />
+        </Pressable>
         <TextInput
           ref={inputRef}
           style={styles.phoneInput}
@@ -135,15 +164,17 @@ export function PhoneField({
           onChangeText={onChangeText}
           onFocus={handleFocus}
           editable={editable}
-          placeholder="81 1234 5678"
+          // El ejemplo del frame es de México; para otro país no se inventa uno
+          // (sería copy sin frame), así que el campo queda sin placeholder.
+          placeholder={pais.iso === 'MX' ? '81 1234 5678' : undefined}
           placeholderTextColor={Colors.placeholder}
           keyboardType="phone-pad"
-          // 16 y no 10: `soloDigitos()` tolera separadores y un +52 pegado al
-          // inicio (quien copia su número de WhatsApp lo trae incluido), así que
-          // el tope cuenta caracteres tecleados, no dígitos útiles.
-          maxLength={16}
+          // Cuenta caracteres tecleados, no dígitos útiles: separadores,
+          // paréntesis y un número internacional pegado ("+44 7911 123456") caben.
+          maxLength={20}
         />
       </View>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );
@@ -278,7 +309,7 @@ const styles = StyleSheet.create({
     ...Typography.input,
     color: Colors.placeholder,
   },
-  // .phone-field{display:flex; align-items:center; gap:8px; background:var(--card);
+  // .phone-field{display:flex; align-items:center; gap:10px; background:var(--card);
   //   border:1px solid var(--line); border-radius:14px; padding:13px 14px;}
   // Son exactamente los valores de `.text-field`; lo único propio es el reparto
   // en dos partes.
@@ -286,7 +317,7 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     backgroundColor: Colors.card,
     borderWidth: 1,
     borderColor: Colors.line,
@@ -294,7 +325,25 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     paddingHorizontal: 14,
   },
-  // .phone-prefix{font-size:14px; color:var(--ink-soft);}
+  // .phone-country{display:flex; align-items:center; gap:5px; padding-right:10px;
+  //   border-right:1px solid var(--line);}
+  phoneCountry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingRight: 10,
+    borderRightWidth: 1,
+    borderRightColor: Colors.line,
+  },
+  // .phone-country b{font-weight:600; color:var(--ink);} — `emphasis` es 13.5,
+  // así que se toma `input` (14) con el peso de `label`: mismo tamaño que la
+  // lada de al lado, solo cambia el peso.
+  phoneIso: {
+    ...Typography.input,
+    fontFamily: Typography.label.fontFamily,
+    color: Colors.ink,
+  },
+  // .phone-country{font-size:14px; color:var(--ink-soft);}
   phonePrefix: {
     ...Typography.input,
     color: Colors.inkSoft,

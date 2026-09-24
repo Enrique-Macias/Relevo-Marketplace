@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 60 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 67 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -183,8 +183,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 33 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-09-24; decía "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 15 tablas más
+Definido en 34 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-09-24; decía "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 15 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
@@ -196,10 +196,11 @@ más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando y
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
-**Repo y remoto: 33 y 32 (medido el 2026-09-24).** `ls supabase/migrations |
-wc -l` da **33**; `mcp__supabase__list_migrations` da **32**. La que falta en
-remoto es `20260927000469` (nombre válido), que no se pushea en su propia
-tarea: es el runbook pendiente 0f de §8, con un paso 0 bloqueante.
+**Repo y remoto: 34 y 32 (medido el 2026-09-24).** `ls supabase/migrations |
+wc -l` da **34**; `mcp__supabase__list_migrations` da **32**. Las que faltan en
+remoto son `20260927000469` (nombre válido) y `20260927000470` (teléfono de
+cualquier país), que no se pushean en su propia tarea: es el runbook pendiente
+0f de §8, con un paso 0 bloqueante.
 
 **Por DUODÉCIMA vez.** Este párrafo decía "32 y 31, falta
 `20260926000468`", y al remedirlo el remoto YA la tenía (`list_migrations` la
@@ -332,7 +333,8 @@ users
   nombre con check `users_nombre_valido` — nombre de persona, 2-50, ver abajo),
   rating_promedio (solo triggers escriben),
   estado (solo triggers/service_role escriben),
-  telefono (E.164 `+52` + 10 dígitos, NO expuesto al cliente — ver abajo),
+  telefono (E.164 de cualquier país; +52 exige 10 dígitos; check
+    `users_telefono_e164`; NO expuesto al cliente — ver abajo),
   tiene_telefono (generada: `telefono is not null`; ESTA sí es legible)
 
 -- Publicaciones
@@ -433,6 +435,64 @@ veces es posible; son N requests observables contra 1 invisible. Junto a él viv
 materializar para poder referenciarla por nombre desde PostgREST) que responde
 "¿es contactable?" sin revelar el número — la usa el gate de Publicar para
 decidir en el render si mostrar el campo, sin round trip ni parpadeo.
+
+**El teléfono admite cualquier país (`20260927000470`, check
+`users_telefono_e164`), sin perder la regla estricta de México.** E.164
+genérico (`+`, lada que no empieza con 0, de 8 a 15 dígitos EN TOTAL) y, si la
+lada es `+52`, exactamente 10 después. Los códigos de país son prefix-free, así
+que `^\+52` es México y nada más. Cierra la deuda "la lada está fija en +52".
+
+- **Se renombró** de `users_telefono_e164_mx` a `users_telefono_e164`: con el
+  sufijo `_mx` el nombre mentiría. Ningún código dependía de él (grep sobre
+  `src`, `scripts` y `supabase/functions`); drop + add en la misma migración,
+  así que no hay ventana sin check.
+- **La validación POR PAÍS no es de la base**: son cientos de reglas que
+  cambian. La hace el cliente con **libphonenumber-js, metadata `min`**
+  (`src/lib/validacion-perfil.ts`, versión fijada 1.13.14). Medido sobre esa
+  versión:
+  - Cero dependencias, JS puro, sin módulo nativo (no hace falta rebuild).
+  - Metadata: `min` 84 KB crudo / 19.6 KB gz; `mobile` 99 / 24; `max` 157 / 40.
+  - El bundle prebuilt `min` completo pesa 179 KB minificado (~44 KB gz).
+  - `min` **sí valida por país, no solo longitud**: `+520012345678` y
+    `+5215512345678` dan false.
+  - `mobile` se descartó porque rechaza fijos (`+34912345678`): con metadata
+    atrasada, bloquearía a un usuario real. `max` casi duplica el peso sin
+    ganancia para WhatsApp.
+- **Lo que acepta el cliente es SUBCONJUNTO de lo que acepta la base**, y lo
+  garantiza `formaE164Valida()`, gemelo del check que `telefonoValido()` exige
+  además de libphonenumber. **No es teórico:** el probe corre el número de
+  ejemplo de los 245 países de la metadata, y **TA y TK** (Tristan da Cunha
+  `+290`, Tokelau `+690`) tienen números VÁLIDOS de 7 dígitos en total, que el
+  mínimo de 8 de la base rechaza. Sin el gemelo, el cliente los aceptaría y
+  el guardado fallaría crudo. **Consecuencia aceptada, a decisión del
+  usuario:** un número de esos dos territorios no se puede guardar, y el
+  cliente dice "no es válido para Tokelau", que es técnicamente falso. Bajar
+  el mínimo a 7 lo resolvería; es una decisión de la regla, no del código.
+- **Ladas COMPARTIDAS (+1, +44, +7…):** al reabrir "Editar perfil" el país que
+  se pinta es el que la metadata le asigna al número (`separarE164()`), que
+  puede no ser el que el usuario eligió: `07911 123456` guardado con Reino
+  Unido vuelve como Guernsey. No se pierde nada, porque el E.164 es el mismo y
+  la base no guarda el país.
+- **`urlWhatsapp()` y `seller_whatsapp` no cambiaron**: ya eran agnósticos al
+  país (`slice(1)` del E.164 y la columna tal cual).
+- **SIN bandera emoji: el país es el código ISO en texto** ("MX +52 ⌄", filas
+  "México" / "MX · +52"). Medido en el emulador Android del proyecto
+  (`Medium_Phone_API_36.1`: Android 16, imagen Google `sdk_gphone64_arm64`,
+  que trae `NotoColorEmojiFlags.ttf` aparte): las cinco banderas probadas
+  (🇲🇽 🇪🇸 🇺🇸 🇩🇪 🇧🇷) **sí se renderizan**, en una notificación, o sea
+  en un `TextView` del sistema. **Alcance honesto de esa medición**, mismo
+  formato que el permiso de ubicación en `explorar.md`: **el proyecto no tiene
+  build de Android** (`android/` no existe), así que es un proxy de la fuente
+  del sistema, no la app. Sobre todo, **una sola imagen Google no representa a
+  los fabricantes** (Samsung, Xiaomi, versiones viejas), que es justo donde
+  fallan: ahí se ven las dos letras sueltas o un cuadro vacío. Por eso la
+  decisión no dependió del resultado. Y "junto al emoji" tampoco, porque su
+  propio modo de falla es "MX MX +52". **Revisar cuando:** exista un dev
+  build de Android, o alguien proponga volver al emoji. En ese caso, medir en
+  al menos un dispositivo físico de otro fabricante antes.
+- **La lista de países es estática** (`src/lib/paises.ts`, 245, GENERADA por
+  `scripts/generate-paises.mjs` desde la misma metadata + `Intl.DisplayNames`
+  de Node) para no depender del soporte de `Intl.DisplayNames` en Hermes.
 
 **`users.nombre` es un nombre de persona, no un username
 (`20260927000469`, check `users_nombre_valido`).** Letras y un separador
@@ -1159,8 +1219,8 @@ Tres consecuencias que no se ven en el diff:
   vacía, todo alta nacería sin universidad. Por eso el runbook (§8, pendiente
   0) tiene un paso 0 bloqueante.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 273 aserciones (medido con el
-`grep` de §8 el 2026-09-24; antes decía 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 282 aserciones (medido con el
+`grep` de §8 el 2026-09-24; antes decía 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -1624,6 +1684,36 @@ y es la propia aserción (e): contra T31 aislada (helpers sin fixtures globales 
 T31), esa variante cae ahí con su nombre. La primera versión sembraba `:N31` con
 un insert suelto y moría con el error crudo también aislada.
 
+Y a **282** con las 9 de T31 para el teléfono (`20260927000470`): 3 que
+aceptan (`+52`/10, `+1`/10, `+34`/9) y 6 que rechazan (México con 8 y con 11,
+lada con 0, letras, sin `+`, 16 dígitos). Dos cosas cambiaron fuera de T31:
+
+- **T16 tenía dos aserciones del check viejo y se REESCRIBIERON, no se
+  borraron.** Las dos siguen siendo rechazos (`8111234567`, `+521234`), pero el
+  mensaje "un número sin +52 lo rechaza el check" dejó de describir la causa:
+  hoy falla por no llevar `+`. Pasaron de `expect_error` a `rechazo_de()` con
+  el nombre nuevo del constraint, así que el conteo no cambió.
+- **`pg_temp.rechazo_de()` subió de T28 a los helpers del principio del
+  archivo**, para que T16 (que corre antes) la pueda usar.
+
+Controles, uno a la vez contra la suite completa **y** contra T31 aislada:
+
+| Variante rota | Suite | T31 aislada |
+|---|---|---|
+| sin la regla de México | (q) | (q) |
+| México `{10,11}` | (r) | (r) |
+| `[0-9]` en vez de `[1-9]` en la lada | (s) | (s) |
+| `{7,15}` | (v) | (v) |
+| `+` opcional | **T16** "sin + (sin lada)" | (u) |
+| letras permitidas | (t) | (t) |
+| el check VIEJO (solo +52) | (o) | (o) |
+
+**La fila de `{10,11}` es la lección de la sección.** La primera versión de (r)
+usaba `+52811234567890`, que tiene **12** dígitos después del 52 y no 11, y esa
+variante daba la suite ENTERA en verde. La aserción rechazaba por la razón
+equivocada; lo destapó su propio control (la moraleja de siempre: si no cae,
+no prueba). Ahora es `+5281123456789`.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -1745,7 +1835,7 @@ los dos secretos de Vault de los triggers (§8, pendiente 2).
 
 ---
 
-## 4. Inventario completo de pantallas (60)
+## 4. Inventario completo de pantallas (67)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -1904,9 +1994,20 @@ contrario —reintentar es la salida—, así que `esDeterminista()` **no cambi�
 el motivo nuevo vive en `falloGeneral`. Son **tres motivos y dos baldes**; el
 párrafo viejo hacía leer que eran tres baldes.
 
-### Cuenta (8)
-Perfil · Editar perfil · Perfil público · Favoritos · Favoritos vacío ·
-Mis publicaciones · Mis publicaciones vacío · Mis publicaciones (acciones)
+### Cuenta (9)
+Perfil · Editar perfil · **Selector de país** · Perfil público · Favoritos ·
+Favoritos vacío · Mis publicaciones · Mis publicaciones vacío ·
+Mis publicaciones (acciones)
+
+**"Selector de país" llegó con `20260927000470`** (WhatsApp de cualquier país):
+67 en total, 9 de Cuenta, medido con el mismo `grep | uniq -c`. Es el bottom
+sheet que abre `.phone-country` desde "Editar perfil" y desde "Publicar (falta
+teléfono)"; vive en Cuenta porque el teléfono es dato del perfil. Mismo
+esqueleto que "Completar perfil (selector de campus)", sin CSS nuevo. El campo
+cambió en los dos frames que lo tienen (el `+52` inerte pasó a botón "MX +52 ⌄",
+sin bandera emoji; ver §3), y ganó la variante etiquetada "número no válido",
+que no cuenta aparte. La variante "nombre no válido" de "Completar perfil" y
+"Editar perfil" (`20260927000469`) tampoco cuenta.
 
 **RF-18 no agregó ninguna aquí, y el avatar rechazado es el caso que parece que
 debería.** No lleva frame porque su estado resultante YA existe: el enforcement
@@ -2019,7 +2120,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 60 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 67 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -2145,12 +2246,17 @@ Toast de éxito · Toast de error · Loading / skeleton
      y no tiene probe: depende del módulo nativo real, así que se verifica a
      mano en dispositivo (§6 de este mismo bloque, "para bugs de UI...").
   9. `node scripts/probe-perfil.mjs`: el amarre entre `src/lib/validacion-perfil.ts`
-     y el check `users_nombre_valido`. La regla está escrita dos veces (SQL y
+     y los checks `users_nombre_valido` y `users_telefono_e164` (y, del
+     teléfono, la inclusión cliente ⊆ base con el ejemplo de los 245 países y
+     que `src/lib/paises.ts` coincida con la metadata). La regla está escrita dos veces (SQL y
      TS), y desincronizada no falla nada: el usuario ve un botón habilitado y
      un rechazo crudo, o un error sobre un nombre que la base aceptaba. Corre los
      casos de T31 y más contra el check real, compara el veredicto del cliente
      con el de la base sobre lo que el cliente MANDARÍA (el normalizado), y
-     busca `CLASE_LETRA` y las cotas literales en la definición viva. Importa la
+     busca `CLASE_LETRA` y las cotas literales en la definición viva. Del
+     teléfono, sus controles —quitar la regla de México del gemelo TS, quitarle
+     el gemelo a `telefonoValido()`, cambiar una lada de `paises.ts`— caen cada
+     uno en su check. Importa la
      implementación REAL (el módulo no tiene imports). Todo en un
      `begin … rollback`, así que no deja estado. Sus controles —desincronizar la
      clase, la cota, quitar el NFC o el colapso de espacios— caen cada uno en
@@ -2451,8 +2557,9 @@ de los route groups).
       `database.types.ts` está escrita a mano, con `SetofOptions`, por el
       mismo motivo que `campus.latitud` en el pendiente 0d.
    5. Prueba manual en dispositivo: ver `explorar.md`, "Búsqueda por prefijo".
-0f. **Nombre válido (`20260927000469`, check `users_nombre_valido`):
-   construida y probada en LOCAL, sin pushear.** En este orden:
+0f. **Nombre válido (`20260927000469`, check `users_nombre_valido`) y
+   teléfono de cualquier país (`20260927000470`, check `users_telefono_e164`):
+   construidas y probadas en LOCAL, sin pushear.** En este orden:
    0. **Bloqueante: el dato.** Al planear había **1** nombre en remoto que la
       regla rechaza (motivo, medido solo por conteo: un dígito). Se corrige a
       mano en Studio, y ANTES del push se remide que dé **0**:
@@ -2460,17 +2567,25 @@ de los route groups).
       (char_length(nombre) between 2 and 50 and nombre ~ '<el regex de la
       migración>')`. El check entra VALIDADO (sin `NOT VALID`): si este paso se
       salta, el push falla con 23514 en vez de dejar la fila incoherente.
-   1. `supabase db push`, y `list_migrations` con `20260927000469`.
-   2. `pg_get_constraintdef` de `users_nombre_valido` en remoto, con los
-      escapes `\uXXXX` iguales a `CLASE_LETRA`.
+   1. `supabase db push`, y `list_migrations` con `20260927000469` y
+      `20260927000470` (remoto pasa de 32 a 34). No hace falta volver a medir
+      los teléfonos: al planear eran 4, todos `+52` con 10 dígitos, y para
+      `+52` el check nuevo es idéntico al viejo.
+   2. `pg_get_constraintdef` en remoto:
+      - `users_nombre_valido`, con los escapes `\uXXXX` iguales a `CLASE_LETRA`;
+      - `users_telefono_e164`, igual al de la migración;
+      - y que `users_telefono_e164_mx` YA NO exista.
    3. `npm run gen:types` contra remoto: un check no cambia tipos, así que el
       diff debe salir vacío.
-   4. Distribuir el build con la validación. El orden es flexible en los dos
-      sentidos: un build viejo manda `nombre.trim()`, que con un nombre válido
-      pasa, y con uno inválido recibe el rechazo crudo (el toast genérico de
-      error de Editar perfil, o el `setError` de Completar perfil).
-   5. Pruebas manuales en dispositivo: ver `cuenta-perfil.md` y
-      `onboarding-auth.md` ("Nombre válido").
+   4. Distribuir el build DESPUÉS del push. Del nombre, el orden sería
+      flexible: un build viejo manda `nombre.trim()`, que con un nombre válido
+      pasa. Del teléfono NO: un build nuevo contra un remoto sin la 470 manda
+      `+34…`, que el check viejo rechaza crudo ("No pudimos guardar"). Un
+      build viejo contra el remoto nuevo no tiene problema, porque solo manda
+      `+52` con 10.
+      `libphonenumber-js` es JS puro: no hace falta dev build nativo nuevo.
+   5. Pruebas manuales en dispositivo: ver `cuenta-perfil.md`,
+      `onboarding-auth.md` ("Nombre válido") y `publicar-fotos.md` (teléfono).
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
@@ -2530,7 +2645,8 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - El inbox no pagina → `notificaciones-push.md`
 - Sin "categoría seguida" → `notificaciones-push.md`
 - El token de push es no-enumerable, pero robable si se conoce → `notificaciones-push.md`
-- La lada del teléfono está fija en `+52` → `cuenta-perfil.md`
+- ~~La lada del teléfono está fija en `+52`~~ **[CERRADA]** por `20260927000470` (selector de país) → `cuenta-perfil.md`
+- Un número válido de 7 dígitos en total (Tokelau, Tristan da Cunha) no se puede guardar: el mínimo del check es 8 → CLAUDE.md §3 (bloque del teléfono)
 - El teléfono es no-enumerable-en-bloque, no inaccesible → `cuenta-perfil.md`
 - Un insert directo con `estado='activa'` y 0 fotos sigue siendo posible → `publicar-fotos.md`
 - ~~`listings_insert_own` no restringe `estado`~~ **[CERRADA]** por `20260919000463` → `publicar-fotos.md`
@@ -2573,7 +2689,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" |
 | `EmptyState` | `EmptyState` | Estado vacío, con `.empty-actions` opcional |
 | `ErrorState` | `ErrorState` | Estado de fallo con "Reintentar" (label hardcodeado — ver deuda) |
-| `Field` | `Field`, `PhoneField`, `SelectField`, `FixedField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio. `FixedField` = valor que se muestra y no se elige (sin chevron, no es botón). `Field` tiene `error` (`.field-error` + borde `--brick`), copy persistente: frame primero |
+| `Field` | `Field`, `PhoneField`, `SelectField`, `FixedField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio. `FixedField` = valor que se muestra y no se elige (sin chevron, no es botón). `PhoneField` recibe `pais`/`onPaisPress`/`error` (el país es un botón). `Field` tiene `error` (`.field-error` + borde `--brick`), copy persistente: frame primero |
 | `ListRow` | `FormHeader`, `SearchField`, `ListRow`, `RadioCircle` | Fila de lista, header de formulario y el radio que reusan 3 pantallas |
 | `ListingFormFields` | `ListingFormFields` | EL formulario de publicación, compartido por Publicar y Editar |
 | `ListingPhoto` | `ListingPhoto` | Punto ÚNICO de contacto con el bucket privado (header `Authorization`) |
@@ -2581,6 +2697,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `NotifRow` | `NotifRow` | Fila del inbox de notificaciones |
 | `OtpInput` | `OtpInput`, `OTP_LENGTH` | Los 6 dígitos; puramente presentacional |
 | `PageHeader` | `PageHeader` | Header con chevron — **no** para pantallas raíz de tab |
+| `PaisBottomSheet` | `PaisBottomSheet` | "Selector de país" del WhatsApp: `Modal` de RN con `FlatList` (245 filas estáticas). Hermano de `CampusBottomSheet`, no una variante |
 | `PhotoCarousel` | `PhotoCarousel`, `PhotoDots` | Carrusel del hero y sus puntos; no guarda índice propio |
 | `PhotoRow` | `PhotoRow`, `idFoto` | Fila de fotos con sus 4 estados y el contador `N/5` |
 | `PhotoViewer` | `PhotoViewer` | Visor a pantalla completa (`Modal`, montado condicionalmente) |

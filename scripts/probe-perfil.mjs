@@ -1,7 +1,8 @@
 // ===========================================================================
 // Relevo — el amarre entre las validaciones del perfil del CLIENTE
 // (`src/lib/validacion-perfil.ts`) y los `check` de la BASE que las hacen
-// cumplir (`users_nombre_valido`, migración 20260927000469).
+// cumplir (`users_nombre_valido`, 20260927000469; `users_telefono_e164`,
+// 20260927000470).
 //
 // Cómo correrlo (local, con el stack arriba):
 //     supabase start           # o supabase db reset
@@ -25,19 +26,40 @@
 //   (iii) la definición de "letra" es literalmente la misma: `CLASE_LETRA`
 //        aparece tal cual (con sus escapes `\uXXXX`) en la definición viva del
 //        constraint, y las cotas de longitud también.
+//   (iv)-(viii) el teléfono: los casos de T31 contra el check; el contrato por
+//        país del cliente; la INCLUSIÓN cliente ⊆ base con el número de ejemplo
+//        de cada país de la metadata (lo que libphonenumber da por bueno, la base
+//        también lo acepta — si no, sería un rechazo crudo al guardar); que la
+//        lista del selector (`src/lib/paises.ts`) coincida con esa metadata; y
+//        que los +52 guardados se separen igual que antes.
 //
 // No deja estado: todo corre dentro de un `begin … rollback`.
 // ===========================================================================
 
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 import {
+  getCountries,
+  getCountryCallingCode,
+  isSupportedCountry,
+} from 'libphonenumber-js/min';
+
+import { PAISES } from '../src/lib/paises.ts';
+
+import {
+  aE164,
   CLASE_LETRA,
+  formaE164Valida,
   NOMBRE_MAX,
   NOMBRE_MIN,
   nombreValido,
   normalizarNombre,
+  separarE164,
+  telefonoValido,
 } from '../src/lib/validacion-perfil.ts';
+
+const EJEMPLOS = createRequire(import.meta.url)('libphonenumber-js/examples.mobile.json');
 
 const DB = 'supabase_db_relevo-marketplace';
 const PROBE_UID = '31313131-0000-0000-0000-00000000ffff';
@@ -65,11 +87,11 @@ const lit = (s) => (s === null ? 'null' : `'${s.replace(/'/g, "''")}'`);
 
 /**
  * El veredicto del check REAL para cada valor: 'ok' o '<sqlstate>:<constraint>'.
- * Un UPDATE de `nombre` sobre una cuenta del propio probe, dentro de una
+ * Un UPDATE de `columna` sobre una cuenta del propio probe, dentro de una
  * transacción que se deshace. Como `postgres`: lo que se amarra es el CHECK;
  * que `authenticated` llegue a él por su grant ya lo prueba T31.
  */
-function veredictosBase(valores) {
+function veredictosBase(columna, valores) {
   const filas = valores.map((v, i) => `(${i}, ${lit(v)})`).join(',\n');
   const out = psql(`
 begin;
@@ -80,7 +102,7 @@ values ('${PROBE_UID}', '00000000-0000-0000-0000-000000000000', 'authenticated',
 create function pg_temp.v(p text) returns text language plpgsql as $$
 declare c text;
 begin
-  update public.users set nombre = p where id = '${PROBE_UID}';
+  update public.users set ${columna} = p where id = '${PROBE_UID}';
   return 'ok';
 exception when others then
   get stacked diagnostics c = constraint_name;
@@ -98,6 +120,37 @@ rollback;
 }
 
 const RECHAZO = '23514:users_nombre_valido';
+const RECHAZO_TEL = '23514:users_telefono_e164';
+
+// T31 (n)-(v), mismo veredicto crudo esperado.
+const CASOS_TEL = [
+  { v: '+528112345678', base: 'ok' },
+  { v: '+12025550123', base: 'ok' },
+  { v: '+34612345678', base: 'ok' },
+  { v: '+5281123456', base: RECHAZO_TEL },
+  { v: '+5281123456789', base: RECHAZO_TEL },
+  { v: '+0123456789', base: RECHAZO_TEL },
+  { v: '+52811234abcd', base: RECHAZO_TEL },
+  { v: '528112345678', base: RECHAZO_TEL },
+  { v: '+1234567890123456', base: RECHAZO_TEL },
+];
+
+// El contrato por país del cliente: lo que la pantalla deja guardar.
+const CAPTURAS = [
+  { pais: 'MX', t: '81 1234 5678', ok: true, e164: '+528112345678' },
+  { pais: 'MX', t: '81-1234-5678', ok: true, e164: '+528112345678' },
+  { pais: 'MX', t: '528112345678', ok: true, e164: '+528112345678' }, // lada pegada sin +
+  { pais: 'MX', t: '81 1234', ok: false },
+  { pais: 'MX', t: '0012345678', ok: false }, // 10 dígitos, prefijo imposible
+  { pais: 'MX', t: '5215512345678', ok: false }, // el "1" viejo de móvil
+  { pais: 'US', t: '(202) 555-0123', ok: true, e164: '+12025550123' },
+  { pais: 'CA', t: '202 555 0123', ok: true, e164: '+12025550123' }, // misma lada +1
+  { pais: 'US', t: '123 555 0123', ok: false }, // área que no existe
+  { pais: 'ES', t: '612 34 56 78', ok: true, e164: '+34612345678' },
+  { pais: 'ES', t: '612 34', ok: false },
+  { pais: 'GB', t: '07911 123456', ok: true, e164: '+447911123456' }, // prefijo troncal 0
+  { pais: 'DE', t: '0151 12345678', ok: true, e164: '+4915112345678' },
+];
 const texto = (s) => (s === null ? 'NULL' : JSON.stringify(s));
 
 // Los casos de T31 (mismo veredicto crudo esperado), más los que solo tienen
@@ -150,7 +203,7 @@ function main() {
   // Una sola llamada a la base con los crudos y los normalizados.
   const crudos = CASOS.map((c) => c.v);
   const normalizados = CASOS.map((c) => (c.v === null ? null : normalizarNombre(c.v)));
-  const base = veredictosBase([...crudos, ...normalizados]);
+  const base = veredictosBase('nombre', [...crudos, ...normalizados]);
   const baseCrudo = base.slice(0, CASOS.length);
   const baseNorm = base.slice(CASOS.length);
 
@@ -167,6 +220,63 @@ function main() {
     ok(`${texto(c.v)} → cliente ${cliente}, base(normalizado ${texto(normalizados[i])}) ${baseNorm[i]}`,
       cliente === c.cliente && cliente === baseAcepta);
   });
+
+  console.log('\n== (iv) teléfono: el check real, con el valor CRUDO');
+  const defTel = psql(
+    "select pg_get_constraintdef(oid) from pg_constraint where conname = 'users_telefono_e164'");
+  console.log(`  vivo: ${defTel || '(NO EXISTE)'}`);
+  const telCrudo = veredictosBase('telefono', CASOS_TEL.map((c) => c.v));
+  CASOS_TEL.forEach((c, i) => {
+    ok(`${c.v} → ${c.base}`, telCrudo[i] === c.base, `base dijo ${telCrudo[i]}`);
+    // El gemelo del check en TS dice lo mismo que el check.
+    ok(`  formaE164Valida(${c.v}) coincide con la base`,
+      formaE164Valida(c.v) === (telCrudo[i] === 'ok'));
+  });
+
+  console.log('\n== (v) teléfono: el contrato por país del cliente, y lo que manda la base lo acepta');
+  const capturasOk = CAPTURAS.filter((c) => c.ok);
+  const telCapt = veredictosBase('telefono', capturasOk.map((c) => aE164(c.pais, c.t)));
+  CAPTURAS.forEach((c) => {
+    const valido = telefonoValido(c.pais, c.t);
+    if (!c.ok) {
+      ok(`${c.pais} ${JSON.stringify(c.t)} → no válido`, valido === false);
+      return;
+    }
+    const e164 = aE164(c.pais, c.t);
+    const base = telCapt[capturasOk.indexOf(c)];
+    ok(`${c.pais} ${JSON.stringify(c.t)} → ${e164}, base ${base}`,
+      valido && e164 === c.e164 && base === 'ok');
+  });
+
+  console.log('\n== (vi) inclusión cliente ⊆ base, con el ejemplo de CADA país de la metadata');
+  const muestras = getCountries()
+    .filter((iso) => EJEMPLOS[iso])
+    .map((iso) => ({ iso, t: EJEMPLOS[iso] }));
+  const aceptadas = muestras.filter((m) => telefonoValido(m.iso, m.t));
+  const telEj = veredictosBase('telefono', aceptadas.map((m) => aE164(m.iso, m.t)));
+  const rechazadasPorBase = aceptadas.filter((m, i) => telEj[i] !== 'ok');
+  ok(`de ${muestras.length} ejemplos, el cliente acepta ${aceptadas.length} y la base TODOS esos`,
+    rechazadasPorBase.length === 0,
+    rechazadasPorBase.length
+      ? `la base rechaza: ${rechazadasPorBase.map((m) => `${m.iso} ${aE164(m.iso, m.t)}`).join(', ')}`
+      : undefined);
+  const noAceptadas = muestras.filter((m) => !telefonoValido(m.iso, m.t)).map((m) => m.iso);
+  console.log(`  (ejemplos que el cliente NO acepta: ${noAceptadas.join(', ') || 'ninguno'})`);
+
+  console.log('\n== (vii) la lista del selector coincide con la metadata');
+  const malos = PAISES.filter(
+    (p) => !isSupportedCountry(p.iso) || p.lada !== `+${getCountryCallingCode(p.iso)}`);
+  ok(`los ${PAISES.length} países de paises.ts existen en la metadata, con su lada`,
+    malos.length === 0, malos.map((p) => p.iso).join(', ') || undefined);
+  ok('México va primero (el default)', PAISES[0].iso === 'MX');
+
+  console.log('\n== (viii) los +52 guardados se separan igual que antes');
+  const sep = separarE164('+528112345678');
+  ok('+528112345678 → MX, "81 1234 5678"', sep.pais === 'MX' && sep.nacional === '81 1234 5678',
+    JSON.stringify(sep));
+  const sepEs = separarE164('+34612345678');
+  ok('+34612345678 → ES, y vuelve al mismo E.164',
+    sepEs.pais === 'ES' && aE164(sepEs.pais, sepEs.nacional) === '+34612345678', JSON.stringify(sepEs));
 
   console.log(`\n${'='.repeat(43)}`);
   if (fallos.length) {

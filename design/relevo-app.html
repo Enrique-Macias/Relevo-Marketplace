@@ -670,17 +670,23 @@
   .segment.active{background:var(--ink); color:var(--paper); border-color:var(--ink);}
   .select-field{display:flex; align-items:center; justify-content:space-between; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px; font-size:14px; color:var(--ink);}
 
-  /* Campo de teléfono con lada FIJA. El país no se elige: hoy el catálogo es
-     mexicano (ver la deuda consciente de CLAUDE.md §8, con su disparador para
-     el día que deje de serlo). El "+52" es parte del control y no un
-     placeholder a propósito — comunica que los 10 dígitos que se escriben se
-     guardan como +52XXXXXXXXXX, y no se puede borrar por accidente.
-     No trae ningún valor nuevo: el contenedor son exactamente los de
-     .text-field (mismo fondo, borde, radio y padding), y lo único propio es el
-     reparto en dos partes. El input de adentro se despoja de esos mismos
-     valores para no dibujar una caja dentro de otra. */
-  .phone-field{display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px;}
-  .phone-prefix{font-size:14px; color:var(--ink-soft); flex-shrink:0;}
+  /* Campo de teléfono con SELECTOR DE PAÍS. Hasta aquí la lada era fija en +52;
+     ahora el país se elige (estudiantes de intercambio), con México por
+     default. El país sigue siendo parte del control y no un placeholder —el
+     nacional que se escribe se guarda como +<lada><nacional>—, pero ya no es
+     texto inerte: `.phone-country` es un botón que abre "Selector de país".
+     SIN BANDERA EMOJI, a propósito: un emoji de bandera no se renderiza de
+     forma confiable en Android (según el fabricante y la versión se ven las
+     dos letras sueltas o un cuadro), y "junto al emoji" fallaría como
+     "MX MX +52". El código ISO en texto se lee igual en todas partes (medición
+     y decisión en CLAUDE.md §3, bloque del teléfono).
+     No trae ningún valor nuevo: el contenedor son los de .text-field, el ISO
+     usa el 600 del sistema y la lada/chevron el --ink-soft que ya tenía el
+     prefijo. El separador vertical es --line, el mismo borde del campo. */
+  .phone-field{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px;}
+  .phone-field.is-invalid{border-color:var(--brick);}
+  .phone-country{display:flex; align-items:center; gap:5px; font-size:14px; color:var(--ink-soft); flex-shrink:0; padding-right:10px; border-right:1px solid var(--line);}
+  .phone-country b{font-weight:600; color:var(--ink);}
   .phone-field .text-field{flex:1; width:auto; background:none; border:none; border-radius:0; padding:0;}
 
   /* Profile */
@@ -3832,7 +3838,7 @@
           <div class="field" style="margin-bottom:0;">
             <label class="field-label">Tu WhatsApp</label>
             <div class="phone-field">
-              <span class="phone-prefix">+52</span>
+              <span class="phone-country"><b>MX</b> +52 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
               <input class="text-field" type="text" placeholder="81 1234 5678">
             </div>
             <div class="auth-terms" style="margin-top:7px; max-width:none;">Solo se comparte cuando alguien toca “Contactar por WhatsApp” en una de tus publicaciones. No aparece en tu perfil.</div>
@@ -5522,8 +5528,28 @@
             <div class="field">
               <label class="field-label">Tu WhatsApp</label>
               <div class="phone-field">
-                <span class="phone-prefix">+52</span>
+                <span class="phone-country"><b>MX</b> +52 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
                 <input class="text-field" type="text" value="81 1234 5678">
+              </div>
+            </div>
+
+            <!-- Variante de ESTE campo: el número no es válido para el país
+                 elegido. El nombre del país va en el texto porque el error
+                 depende de él (8 dígitos pueden ser válidos en otro país). Mismo
+                 campo, mismo copy y mismo criterio en "Publicar (falta
+                 teléfono)": solo con algo escrito, y mientras se vea, el botón
+                 que guarda sigue deshabilitado. -->
+            <div style="margin:-2px 0 22px; padding-top:14px; border-top:1.5px dashed var(--line);">
+              <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+                Variante (doc, no es parte del flujo): número no válido
+              </div>
+              <div class="field" style="margin-bottom:0;">
+                <label class="field-label">Tu WhatsApp</label>
+                <div class="phone-field is-invalid">
+                  <span class="phone-country"><b>MX</b> +52 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+                  <input class="text-field" type="text" value="81 1234">
+                </div>
+                <div class="field-error">Ese número no es válido para México.</div>
               </div>
             </div>
             <!-- Universidad FIJA: la asignó el servidor desde el dominio del
@@ -5537,6 +5563,127 @@
             <div class="field" style="margin-bottom:0;">
               <label class="field-label">Campus</label>
               <div class="select-field"><span>Monterrey</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Selector de país</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="form-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="form-title">Editar perfil</div>
+        <span style="font-size:13px; font-weight:600; color:var(--brick);">Guardar</span>
+      </div>
+      <div class="screen" style="position:relative;">
+        <div class="form-body">
+          <div class="field">
+            <label class="field-label">Nombre completo</label>
+            <input class="text-field" type="text" value="Enrique Macías">
+          </div>
+          <div class="field">
+            <label class="field-label">Tu WhatsApp</label>
+            <div class="phone-field">
+              <span class="phone-country"><b>MX</b> +52 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+              <input class="text-field" type="text" value="81 1234 5678">
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom sheet que abre `.phone-country`, desde "Editar perfil" y desde
+             "Publicar (falta teléfono)": mismo patrón que "Completar perfil
+             (selector de campus)" — .modal-backdrop anclado abajo + .sheet-card
+             con buscador y .list-row con .radio-circle. Ningún CSS nuevo.
+             México va PRIMERO (es el default y el caso común) y el resto en
+             orden alfabético en español. Cada fila: nombre del país y, en el
+             sub, el código ISO y la lada — SIN bandera emoji (ver el comentario
+             de .phone-field). El buscador casa por nombre sin acentos
+             ("espana" → España) y por lada ("34" → España).
+             Elegir una fila cierra la hoja y cambia el país del campo; el
+             número tecleado se conserva, y se vuelve a validar contra el país
+             nuevo. -->
+        <div class="modal-backdrop" style="align-items:flex-end; padding:0;">
+          <div class="sheet-card">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+              <div class="sheet-title">País de tu WhatsApp</div>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </div>
+            <div class="sheet-body" style="overflow-y:auto;">
+              <div class="search-field" style="margin-bottom:6px;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A8A29A" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input type="text" placeholder="Busca un país o lada">
+              </div>
+
+              <div class="list-row">
+                <div>
+                  <div class="list-row-name">México</div>
+                  <div class="list-row-sub">MX · +52</div>
+                </div>
+                <div class="radio-circle selected"></div>
+              </div>
+              <div class="list-row">
+                <div>
+                  <div class="list-row-name">Alemania</div>
+                  <div class="list-row-sub">DE · +49</div>
+                </div>
+                <div class="radio-circle"></div>
+              </div>
+              <div class="list-row">
+                <div>
+                  <div class="list-row-name">Argentina</div>
+                  <div class="list-row-sub">AR · +54</div>
+                </div>
+                <div class="radio-circle"></div>
+              </div>
+              <div class="list-row">
+                <div>
+                  <div class="list-row-name">Brasil</div>
+                  <div class="list-row-sub">BR · +55</div>
+                </div>
+                <div class="radio-circle"></div>
+              </div>
+              <div class="list-row">
+                <div>
+                  <div class="list-row-name">Canadá</div>
+                  <div class="list-row-sub">CA · +1</div>
+                </div>
+                <div class="radio-circle"></div>
+              </div>
+              <div class="list-row">
+                <div>
+                  <div class="list-row-name">Chile</div>
+                  <div class="list-row-sub">CL · +56</div>
+                </div>
+                <div class="radio-circle"></div>
+              </div>
+              <div class="list-row">
+                <div>
+                  <div class="list-row-name">Colombia</div>
+                  <div class="list-row-sub">CO · +57</div>
+                </div>
+                <div class="radio-circle"></div>
+              </div>
+              <div class="list-row" style="border-bottom:none;">
+                <div>
+                  <div class="list-row-name">España</div>
+                  <div class="list-row-sub">ES · +34</div>
+                </div>
+                <div class="radio-circle"></div>
+              </div>
+              <div style="font-size:12.5px; color:var(--ink-soft); text-align:center; padding:20px 0 0;">Sin coincidencias se lee: No encontramos ese país.</div>
             </div>
           </div>
         </div>

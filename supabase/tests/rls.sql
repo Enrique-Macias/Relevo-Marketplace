@@ -126,6 +126,29 @@ begin
   perform set_config('role', 'postgres', true);
 end $$;
 
+-- Nació con T28 y se subió aquí para que T16 (el check del teléfono) la use:
+-- `expect_error` acepta CUALQUIER error, así que un rechazo por el candado
+-- equivocado pasaría; ésta compara SQLSTATE y NOMBRE del constraint.
+-- `<sqlstate>:<constraint>` del error que lanza p_sql, u 'ok'. Como
+-- `authenticated` si p_uid no es null; como `postgres` si lo es.
+create or replace function pg_temp.rechazo_de(p_uid uuid, p_sql text)
+returns text language plpgsql as $$
+declare v_con text;
+begin
+  if p_uid is not null then
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+    perform set_config('role', 'authenticated', true);
+  end if;
+  execute p_sql;
+  perform set_config('role', 'postgres', true);
+  return 'ok';
+exception when others then
+  get stacked diagnostics v_con = constraint_name;
+  perform set_config('role', 'postgres', true);
+  return sqlstate || coalesce(':' || nullif(v_con, ''), '');
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- Fixtures. Se crean dentro de la transacción y desaparecen con el rollback
 -- final, así que la suite es idempotente y puede correrse cuantas veces sea.
@@ -769,11 +792,22 @@ select pg_temp.assert(
 
 -- El check de formato. Los dos casos que un usuario real produce: escribir los
 -- 10 dígitos sin lada, y quedarse a medias.
-select pg_temp.expect_error(:A::uuid,
-  format('update public.users set telefono = ''8111234567'' where id = %L', :A::uuid),
-  'un número sin +52 lo rechaza el check');
-select pg_temp.expect_error(:A::uuid,
-  format('update public.users set telefono = ''+521234'' where id = %L', :A::uuid),
+--
+-- CAMBIARON con 20260927000470 (ladas de cualquier país), y no se borraron:
+-- los dos siguen siendo rechazos, pero la CAUSA de la primera ya no es "le
+-- falta el +52" —hoy +1, +34… son válidos— sino "le falta el `+`", y el check
+-- se renombró de `users_telefono_e164_mx` a `users_telefono_e164`. Pasaron de
+-- `expect_error` (acepta cualquier error) a `rechazo_de()`, que fija el
+-- SQLSTATE y el nombre del constraint. La cobertura por país vive en T31.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:A::uuid,
+    format('update public.users set telefono = ''8111234567'' where id = %L', :A::uuid))
+    = '23514:users_telefono_e164',
+  'un número sin + (sin lada) lo rechaza el check');
+select pg_temp.assert(
+  pg_temp.rechazo_de(:A::uuid,
+    format('update public.users set telefono = ''+521234'' where id = %L', :A::uuid))
+    = '23514:users_telefono_e164',
   'un número incompleto lo rechaza el check');
 
 -- El dueño escribe el suyo.
@@ -2793,25 +2827,8 @@ select pg_temp.assert(
           and categoria is not null from t28),
   'T28: fixtures completos (dos universidades distintas, campus de cada una)');
 
--- `<sqlstate>:<constraint>` del error que lanza p_sql, u 'ok'. Como
--- `authenticated` si p_uid no es null; como `postgres` si lo es.
-create or replace function pg_temp.rechazo_de(p_uid uuid, p_sql text)
-returns text language plpgsql as $$
-declare v_con text;
-begin
-  if p_uid is not null then
-    perform set_config('request.jwt.claims',
-      json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
-    perform set_config('role', 'authenticated', true);
-  end if;
-  execute p_sql;
-  perform set_config('role', 'postgres', true);
-  return 'ok';
-exception when others then
-  get stacked diagnostics v_con = constraint_name;
-  perform set_config('role', 'postgres', true);
-  return sqlstate || coalesce(':' || nullif(v_con, ''), '');
-end $$;
+-- `pg_temp.rechazo_de()` vive con los helpers del principio del archivo
+-- (se subió ahí para que T16 la use; nació aquí, con T28).
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
                         email_confirmed_at, created_at, updated_at)
@@ -2989,8 +3006,8 @@ select pg_temp.assert(
 -- 20260925000467. Autocontenida, con su propia universidad "RLS T29
 -- Universidad" y su propio usuario `:W` — no reusa los fixtures de T28
 -- (la moraleja de siempre: un estado incidental de otra sección puede
--- volverse load-bearing sin querer). `pg_temp.rechazo_de()` ya está definida
--- por T28, en la misma sesión/transacción; no hace falta redefinirla.
+-- volverse load-bearing sin querer). `pg_temp.rechazo_de()` está definida con
+-- los helpers del principio del archivo; no hace falta redefinirla.
 --
 -- (a)-(e) corren como postgres (`p_uid = null`): son checks de tabla, no
 -- policies, y validan la fila resultante sin importar el rol que escribe —
@@ -3249,7 +3266,7 @@ select pg_temp.assert(
 -- "Editar perfil" — y `rechazo_de()` compara SQLSTATE y NOMBRE del constraint,
 -- así que un rechazo por grant (42501) o por otro check no pasa por éste.
 --
--- `pg_temp.rechazo_de()` ya la definió T28 en esta misma transacción.
+-- `pg_temp.rechazo_de()` está definida con los helpers del principio del archivo.
 --
 -- Los mismos casos corren en `scripts/probe-perfil.mjs` contra
 -- `src/lib/validacion-perfil.ts`: ese es el amarre cliente ↔ base.
@@ -3320,6 +3337,45 @@ select pg_temp.assert(pg_temp.t31_nombre('Juan ' || chr(128512)) = '23514:users_
 -- `normalizarNombre()` pasa a NFC antes de guardar.
 select pg_temp.assert(pg_temp.t31_nombre(normalize('José', nfd)) = '23514:users_nombre_valido',
   '(m) rechaza "José" en NFD (la base no normaliza; el cliente pasa a NFC)');
+
+\echo ''
+\echo '== T31 (cont.) — teléfono de cualquier país (users_telefono_e164) =='
+-- 20260927000470. Mismo `:N31` y mismo camino: UPDATE del propio `telefono`
+-- COMO `authenticated`. E.164 genérico (lada sin 0, 8-15 dígitos en total) y,
+-- si la lada es +52, exactamente 10 después. La validación POR PAÍS no es de
+-- la base (libphonenumber, en el cliente); el amarre es `scripts/probe-perfil.mjs`.
+
+create or replace function pg_temp.t31_tel(p_tel text)
+returns text language sql as $$
+  select pg_temp.rechazo_de('31313131-0000-0000-0000-000000003131'::uuid, format(
+    'update public.users set telefono = %L where id = %L',
+    p_tel, '31313131-0000-0000-0000-000000003131'))
+$$;
+
+-- (n)-(p) Acepta: México como siempre, y dos ladas que antes se rechazaban.
+select pg_temp.assert(pg_temp.t31_tel('+528112345678') = 'ok',
+  '(n) acepta +52 con 10 dígitos');
+select pg_temp.assert(pg_temp.t31_tel('+12025550123') = 'ok',
+  '(o) acepta +1 con 10 dígitos (antes: rechazado por la lada)');
+select pg_temp.assert(pg_temp.t31_tel('+34612345678') = 'ok',
+  '(p) acepta +34 con 9 dígitos (antes: rechazado por la lada)');
+
+-- (q)-(v) Rechaza, cada uno por el MISMO constraint.
+select pg_temp.assert(pg_temp.t31_tel('+5281123456') = '23514:users_telefono_e164',
+  '(q) rechaza +52 con 8 dígitos (México sigue estricto)');
+-- 11 dígitos EXACTOS después del 52: la primera versión usaba
+-- '+52811234567890', que tiene 12, y pasaba contra la variante "México acepta
+-- 10 u 11" — o sea que no probaba lo que decía. Lo destapó su control negativo.
+select pg_temp.assert(pg_temp.t31_tel('+5281123456789') = '23514:users_telefono_e164',
+  '(r) rechaza +52 con 11 dígitos');
+select pg_temp.assert(pg_temp.t31_tel('+0123456789') = '23514:users_telefono_e164',
+  '(s) rechaza una lada que empieza con 0');
+select pg_temp.assert(pg_temp.t31_tel('+52811234abcd') = '23514:users_telefono_e164',
+  '(t) rechaza letras');
+select pg_temp.assert(pg_temp.t31_tel('528112345678') = '23514:users_telefono_e164',
+  '(u) rechaza sin +');
+select pg_temp.assert(pg_temp.t31_tel('+1234567890123456') = '23514:users_telefono_e164',
+  '(v) rechaza 16 dígitos (el máximo de E.164 es 15)');
 
 \echo ''
 \echo '==========================================='

@@ -30,7 +30,9 @@ número se mide contra `data-cat="publicar"` en el HTML, no se recuerda.) La cap
 proyecto, así que ojo: `BUCKET` es el privado y `BUCKET_AVATARS` el público),
 `src/lib/publicar.ts` (la orquestación y su orden de
 llamadas), `src/lib/listing-form.ts` (estado + validación compartida),
-`src/lib/perfil.ts` (el teléfono: normalización, escritura y la RPC de lectura) y
+`src/lib/perfil.ts` (el teléfono: escritura y la RPC de lectura),
+`src/lib/validacion-perfil.ts` (su captura por país: `telefonoValido`, `aE164`,
+desde `20260927000470`) y
 `src/lib/foto-picker.ts`.
 
 Detalles que no se ven en el diff:
@@ -83,6 +85,18 @@ Detalles que no se ven en el diff:
   a propósito.** Mientras el perfil no ha cargado, `tiene_telefono` llega
   `undefined`; con un `!profile?.tiene_telefono` el campo parpadearía en la
   pantalla de todo el mundo durante el primer render.
+- **El campo de "Publicar (falta teléfono)" elige país (`20260927000470`).**
+  El estado `pais` vive en `nueva.tsx` junto a `telefono` (México por
+  default), y `ListingFormFields` solo reenvía `pais`/`onPaisPress`/`error` al
+  `PhoneField`. `PaisBottomSheet` se monta en `nueva.tsx`, hermano del
+  `.sticky-cta`. El gate de `listoParaGuardar` pasa a
+  `telefonoValido(pais.iso, telefono)`. Ese validador es por país
+  (libphonenumber) y además exige la forma del check, así que lo que deja pasar
+  la base lo acepta; el candado sigue siendo `users_telefono_e164`. Pegar un
+  número internacional cambia el país solo, igual que en Editar perfil.
+  **Pruebas manuales:** con una cuenta sin número, elegir `ES`, capturar
+  `612 34 56 78` y publicar; otro usuario abre WhatsApp desde Detalle y el
+  enlace es `wa.me/34612345678`.
 - **El teléfono se guarda ANTES de crear la publicación**, mismo criterio que
   "Completar perfil" con la contraseña: si falla, todavía no se creó nada y no
   hay qué recuperar. Al revés dejaría una publicación `pausada` cuyo dueño sigue

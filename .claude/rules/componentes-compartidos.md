@@ -34,6 +34,16 @@ con el rol `Typography.fieldError`. Ese rol tiene los MISMOS valores que
 un error. El texto es copy PERSISTENTE, así que cualquier uso nuevo necesita su
 frame antes (§0 regla 4). Hoy lo usa solo el nombre del perfil.
 
+**`PhoneField` ya no pinta un `+52` inerte (`20260927000470`)**: recibe `pais`
+(el `Pais` de `src/lib/paises.ts`), `onPaisPress` y `error`, y el país es un
+`Pressable` (`.phone-country`: ISO en 600, lada y chevron en `--ink-soft`,
+separador `--line`). **Sin bandera emoji**, ver CLAUDE.md §3. El placeholder
+"81 1234 5678" solo se pinta con México: para otro país no hay ejemplo en el
+frame y no se inventa. **`PaisBottomSheet` es hermano de `CampusBottomSheet`,
+no una variante, y no se unifican**: su lista es estática (245 filas, sin
+carga ni error) y va en `FlatList`; el de campus carga por red y son pocas
+filas.
+
 Al migrar al modelo atómico se sumaron dos más, ambos por EXTRACCIÓN y no
 escritos de cero:
 - **`Notice`** (`.notice`) — el aviso persistente, sacado tal cual de

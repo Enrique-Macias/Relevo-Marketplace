@@ -28,6 +28,7 @@ import { BlinkingDots } from '@/components/BlinkingDots';
 import { CampusBottomSheet } from '@/components/CampusBottomSheet';
 import { ErrorState } from '@/components/ErrorState';
 import { Field, FixedField, PhoneField, SelectField } from '@/components/Field';
+import { PaisBottomSheet } from '@/components/PaisBottomSheet';
 import { IconCamera } from '@/components/icons';
 import { FormHeader } from '@/components/ListRow';
 import { Screen } from '@/components/Screen';
@@ -37,15 +38,23 @@ import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
 import {
   fetchPerfilEditable,
   fetchTelefonoVendedor,
-  formatTelefonoNacional,
   guardarPerfil,
-  telefonoValido,
   useFotoPerfil,
   type PerfilEditable,
 } from '@/lib/perfil';
 import { type OpcionCatalogo } from '@/lib/catalogos';
 import { useSession } from '@/lib/session';
-import { COPY_NOMBRE_INVALIDO, nombreValido, normalizarNombre } from '@/lib/validacion-perfil';
+import { paisPorIso, type Pais } from '@/lib/paises';
+import {
+  COPY_NOMBRE_INVALIDO,
+  copyTelefonoInvalido,
+  nombreValido,
+  normalizarNombre,
+  paisDePegado,
+  PAIS_DEFAULT,
+  separarE164,
+  telefonoValido,
+} from '@/lib/validacion-perfil';
 
 type Datos = { perfil: PerfilEditable; telefono: string | null };
 
@@ -134,11 +143,22 @@ function Formulario({
 
   const [nombre, setNombre] = useState(perfil.nombre);
   const [carrera, setCarrera] = useState(perfil.carrera);
-  const [telefono, setTelefono] = useState(
-    telefonoGuardado ? formatTelefonoNacional(telefonoGuardado) : ''
+  /**
+   * El número guardado se SEPARA en país + nacional (20260927000470): la base
+   * solo guarda el E.164, y `separarE164()` lo parte con la misma metadata que
+   * valida, incluidos los +52 que ya existían (→ MX, "81 1234 5678", igual que
+   * antes). Sin número, México por default.
+   */
+  const [telefonoInicial] = useState(() =>
+    telefonoGuardado ? separarE164(telefonoGuardado) : null
   );
+  const [pais, setPais] = useState<Pais>(() =>
+    paisPorIso(telefonoInicial?.pais ?? PAIS_DEFAULT)
+  );
+  const [telefono, setTelefono] = useState(telefonoInicial?.nacional ?? '');
   const [guardando, setGuardando] = useState(false);
   const [campusSheetVisible, setCampusSheetVisible] = useState(false);
+  const [paisSheetVisible, setPaisSheetVisible] = useState(false);
 
   // La foto se persiste al elegirla, NO al tocar "Guardar" — ver
   // `guardarFotoPerfil()`. Por eso no pasa por `puedeGuardar` ni por el UPDATE
@@ -177,8 +197,16 @@ function Formulario({
   // estado de quien nunca lo dio, y también el del suspendido de arriba.
   const telefonoOk =
     telefonoGuardado !== null
-      ? telefonoValido(telefono)
-      : telefono.trim() === '' || telefonoValido(telefono);
+      ? telefonoValido(pais.iso, telefono)
+      : telefono.trim() === '' || telefonoValido(pais.iso, telefono);
+
+  // La variante "número no válido" del frame: solo con algo escrito, igual que
+  // el nombre. El candado es `users_telefono_e164`; esto adelanta su veredicto,
+  // y además valida por país, que la base no hace.
+  const telefonoError =
+    telefono.trim() !== '' && !telefonoValido(pais.iso, telefono)
+      ? copyTelefonoInvalido(pais.nombre)
+      : null;
 
   const puedeGuardar =
     nombreValido(nombre) && universidad !== null && campus !== null && telefonoOk;
@@ -195,14 +223,14 @@ function Formulario({
     // "El número se escribió en ESTE guardado", que NO es lo mismo que "tocó el
     // campo": sin número previo, tocarlo y dejarlo vacío es válido y no escribe
     // nada. Se calcula una vez y lo usan el UPDATE y el toast de abajo.
-    const mandaTelefono = telefonoTocado.current && telefonoValido(telefono);
+    const mandaTelefono = telefonoTocado.current && telefonoValido(pais.iso, telefono);
 
     try {
       await guardarPerfil(userId, {
         nombre,
         carrera,
         campusId: campus!.id,
-        ...(mandaTelefono ? { telefono } : {}),
+        ...(mandaTelefono ? { telefono: { pais: pais.iso, nacional: telefono } } : {}),
       });
 
       // Antes de salir: es lo que actualiza `tiene_telefono` (el gate de
@@ -335,8 +363,19 @@ function Formulario({
               value={telefono}
               onChangeText={(v) => {
                 telefonoTocado.current = true;
-                setTelefono(v);
+                // Un número internacional PEGADO ("+34 612…") trae su país:
+                // se cambia el selector y se queda solo el nacional.
+                const pegado = paisDePegado(v);
+                if (pegado) {
+                  setPais(paisPorIso(pegado.pais));
+                  setTelefono(pegado.nacional);
+                } else {
+                  setTelefono(v);
+                }
               }}
+              pais={pais}
+              onPaisPress={() => setPaisSheetVisible(true)}
+              error={telefonoError}
               editable={!guardando}
             />
             {/* Fija, sin chevron: la asigna el servidor, no se elige. */}
@@ -364,6 +403,18 @@ function Formulario({
         selectedId={campus?.id ?? null}
         onSelect={setCampus}
         onClose={() => setCampusSheetVisible(false)}
+      />
+      <PaisBottomSheet
+        visible={paisSheetVisible}
+        selectedIso={pais.iso}
+        onSelect={(p) => {
+          // Cambiar de país TAMBIÉN es tocar el teléfono: el mismo nacional con
+          // otra lada es otro número, y tiene que viajar en el UPDATE. El número
+          // tecleado se conserva y se vuelve a validar contra el país nuevo.
+          telefonoTocado.current = true;
+          setPais(p);
+        }}
+        onClose={() => setPaisSheetVisible(false)}
       />
     </>
   );

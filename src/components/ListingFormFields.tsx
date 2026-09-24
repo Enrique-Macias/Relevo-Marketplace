@@ -16,6 +16,7 @@ import { SegmentedControl } from '@/components/SegmentedControl';
 import { ScreenPadding } from '@/constants/theme';
 import type { Categoria } from '@/lib/categorias';
 import { CONDICIONES, type ListingForm } from '@/lib/listing-form';
+import type { Pais } from '@/lib/paises';
 
 type ListingFormFieldsProps = {
   form: ListingForm;
@@ -71,7 +72,16 @@ type ListingFormFieldsProps = {
    * `useListingForm` lo haría viajar hasta `aInput()`, que arma la fila de la
    * publicación.
    */
-  telefono?: { value: string; onChangeText: (v: string) => void; disabled?: boolean };
+  telefono?: {
+    value: string;
+    onChangeText: (v: string) => void;
+    /** El país elegido y cómo abrir su selector (20260927000470). */
+    pais: Pais;
+    onPaisPress: () => void;
+    /** La variante "número no válido" del frame, o null. */
+    error: string | null;
+    disabled?: boolean;
+  };
 };
 
 export function ListingFormFields({
@@ -188,6 +198,9 @@ export function ListingFormFields({
           label="Tu WhatsApp"
           value={telefono.value}
           onChangeText={telefono.onChangeText}
+          pais={telefono.pais}
+          onPaisPress={telefono.onPaisPress}
+          error={telefono.error}
           editable={!telefono.disabled}
           hint="Solo se comparte cuando alguien toca “Contactar por WhatsApp” en una de tus publicaciones. No aparece en tu perfil."
           containerStyle={styles.ultimoCampo}

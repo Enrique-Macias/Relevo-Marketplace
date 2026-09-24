@@ -373,7 +373,8 @@ users
   -- HUECO CERRADO (antes: "falta el teléfono"). RF-13 pedía un botón que
   --   abriera WhatsApp "con el vendedor" y ninguna entidad guardaba un número,
   --   así que el deep link usaba un placeholder. Resuelto con las tres cosas a
-  --   la vez: la columna `telefono` (E.164, +52 y 10 dígitos), el frame de
+  --   la vez: la columna `telefono` (E.164; desde 20260927000470 de cualquier
+  --   país, con +52 exigiendo 10 dígitos, y selector de país), el frame de
   --   captura en el diseño, y el campo en la app.
   --
   --   DÓNDE SE CAPTURA, y por qué no es el onboarding: exigirlo en "Completar

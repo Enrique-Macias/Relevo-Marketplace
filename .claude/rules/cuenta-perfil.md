@@ -244,7 +244,9 @@ mismo motivo raíz (sin universal links/App Links) y el mismo fix futuro.
 **"Editar perfil" construida y conectada.** Vive en
 `src/app/(cuenta)/editar-perfil/` (tres archivos: `_layout.tsx`, `index.tsx` y
 `universidad.tsx`), con `src/lib/perfil.ts` como capa de datos —creció con
-`fetchPerfilEditable`, `guardarPerfil` y `formatTelefonoNacional`—. Se entra por
+`fetchPerfilEditable`, `guardarPerfil` y `formatTelefonoNacional`; esta última
+se fue con `20260927000470`, reemplazada por `separarE164()` de
+`src/lib/validacion-perfil.ts`—. Se entra por
 un `.menu-row` nuevo en Perfil. **Sin migración**: las cinco columnas ya estaban
 en el grant de update y `users_update_own` ya acota a `auth.uid()`.
 
@@ -323,6 +325,32 @@ Diez cosas que no se ven en el diff:
   copy que el usuario lee con calma, así que exige frame primero (§0 regla 4) y no
   se resolvió de paso. **Revisar cuando:** un suspendido reporte que "perdió" su
   número al entrar a Editar perfil.
+
+**El WhatsApp de cualquier país (`20260927000470`).** El `PhoneField` de esta
+pantalla ganó el selector de país (`PaisBottomSheet`). Cuatro cosas que no se
+ven en el diff:
+
+- **El número guardado se SEPARA en país + nacional** con `separarE164()`,
+  incluidos los `+52` que ya existían, que se precargan exactamente como antes:
+  MX y "81 1234 5678" (lo vigila `probe-perfil.mjs` (viii)). Sin número, el
+  default es México.
+- **Cambiar de país TAMBIÉN cuenta como tocar el campo** (`telefonoTocado`):
+  el mismo nacional con otra lada es otro número, y tiene que viajar en el
+  UPDATE. El criterio de "tocó" sigue protegiendo al suspendido, que precarga
+  vacío.
+- **Pegar un número internacional** ("+34 612 34 56 78") cambia el país solo y
+  deja el nacional (`paisDePegado()`).
+- **Con ladas compartidas (+1, +44…)** el país que se pinta al reabrir es el
+  que la metadata le asigna al número, que puede no ser el que se eligió (§3).
+
+**Pruebas manuales que tocan en dispositivo:**
+- un `+52` existente se precarga como `MX +52` / `81 1234 5678`;
+- cambiar a `ES`, capturar `612 34 56 78` y guardar deja `+34612345678` en la
+  base (Studio), y al reabrir se ve `ES +34`;
+- pegar "+1 202 555 0123" cambia el país a Estados Unidos;
+- "81 1234" pinta "Ese número no es válido para México." y apaga "Guardar";
+- en el buscador, "espana" y "34" encuentran España;
+- con el teclado abierto, la hoja no tapa la lista.
 
 **Nombre válido también aquí (`20260927000469`).** Mismo criterio que
 "Completar perfil" (`onboarding-auth.md`): `puedeGuardar` pide
@@ -775,7 +803,13 @@ Lo que no se ve en el diff:
   —un `check` con subconsulta no es legal en Postgres—, con su aserción en la
   suite; de paso vuelve imposible el caso en vez de improbable.
 
-- **La lada del teléfono está fija en `+52`**, en el `check` de la base
+- ~~**La lada del teléfono está fija en `+52`**~~ **[CERRADA] por
+  `20260927000470`**, con el fix que esta entrada proponía: check genérico
+  (`users_telefono_e164`) y selector de país en los dos frames. El disparador
+  no fue una universidad fuera de México sino los estudiantes de intercambio.
+  El `slice(1)` del `wa.me` no hubo que tocarlo: ya era agnóstico. Mecanismo y
+  decisiones en CLAUDE.md §3 (bloque del teléfono). Texto original, para el
+  historial: La lada estaba fija en `+52`, en el `check` de la base
   (`users_telefono_e164_mx`), en el prefijo inerte del campo y en el
   `slice(1)` que arma el `wa.me`. Hoy el catálogo es mexicano y nadie pidió
   otra cosa, así que un selector de país sería UI que nadie usa. El dato ya se
