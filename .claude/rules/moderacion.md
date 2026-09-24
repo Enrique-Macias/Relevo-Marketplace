@@ -1032,15 +1032,24 @@ algo que va a dar lo mismo. Se acepta porque la app no reintenta sola un 200
 (navega a "Publicación en revisión"), y distinguir "caído" de "inevaluable"
 dependería de los strings de motivo.
 
-**Pruebas, en `probe-moderacion-http.mjs` §8** (36 aserciones en total,
-medidas): (a) dos llamadas concurrentes dan una sola evaluación; (b) una llamada
-después del alta no evalúa; (c) un reclamo huérfano se libera; (d) uno
-completado y viejo no; (e) uno en vuelo bloquea; (f) un 500 libera; (g) el CAS
-con un bloqueo a mitad de evaluación. Hay una aserción de CONTROL de tiempo: si
-la evaluación terminara antes del bloqueo, lo dice en vez de pasar en falso.
-Pasó una vez con una espera de 1.5 s, y por eso la espera es de 0.5 s.
+**Pruebas, en `probe-moderacion-http.mjs` §8** (13 aserciones de esta sección,
+sobre **40 en el archivo completo** — medido con `grep`, contando solo las
+llamadas reales a `ok()`/`igual()` y descartando la definición del helper;
+36 fue el conteo correcto un momento antes, sin las 4 aserciones que RF-16
+agregó después en las secciones 5/6/7 sobre `veredicto_en_pantalla`, y quedó
+sin actualizar aquí — la cifra vigente es 40, no 36): (a) dos llamadas
+concurrentes dan una sola evaluación; (b) una llamada después del alta no
+evalúa; (c) un reclamo huérfano se libera; (d) uno completado y viejo no; (e)
+uno en vuelo bloquea; (f) un 500 libera; (g) el CAS con un bloqueo a mitad de
+evaluación. Hay una aserción de CONTROL de tiempo: si la evaluación terminara
+antes del bloqueo, lo dice en vez de pasar en falso. Pasó una vez con una
+espera de 1.5 s, y por eso la espera es de 0.5 s.
 Controles negativos corridos uno a la vez, restaurando desde un respaldo y
-verificando con `diff`:
+verificando con `diff` — los 4 son del reclamo/CAS; no cuentan aquí los 2 que
+se corrieron después, en la ronda de RF-16, sobre el marcado de
+`veredicto_en_pantalla` (uno de ellos no cae por diseño — la invariante la
+garantiza el trigger de limpieza, no la función — y el otro sí, ver el bloque
+de RF-16 en CLAUDE.md §3):
 
 | Variante rota | Cae en |
 |---|---|
@@ -1158,7 +1167,7 @@ ve.
 | Script | Qué prueba | ¿Cuesta dinero? | ¿Necesita servidor? |
 |---|---|---|---|
 | `probe-moderacion.mjs` | DECISIONES puras (**166** al 2026-09-24; decía 162; se mide, no se recuerda) | No | No |
-| `probe-moderacion-http.mjs` | AUTORIZACIÓN/CABLEADO + reclamo y CAS (**36** al 2026-09-24; decía 16, y ya iba en 23 antes del §8 — medido: 33 con las 10 primeras del §8) | **Sí, desde la Ola 1.5** | Sí |
+| `probe-moderacion-http.mjs` | AUTORIZACIÓN/CABLEADO + reclamo, CAS y `veredicto_en_pantalla` (**40** al 2026-09-24, medido con `grep`; decía 16, luego 23 antes del §8, luego 36 con las 13 del §8 — sin las 4 que RF-16 sumó después en 5/6/7, un desfase de esta misma tarea) | **Sí, desde la Ola 1.5** | Sí |
 | `probe-moderacion-red.mjs` | Particionado, descarga fallida, no-op (10) | Sí | Sí |
 
 **`probe-moderacion-http.mjs` dejó de ser gratis, y no por elección.** Antes
