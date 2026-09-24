@@ -269,6 +269,28 @@ async function auditoriasDe(E, id) {
   return res.ok ? await res.json() : [];
 }
 
+/** El reclamo del camino cliente de una publicación, o `undefined` si no hay. */
+async function reclamoDe(E, id) {
+  const res = await fetch(
+    `${E.API_URL}/rest/v1/listing_moderacion_reclamos?listing_id=eq.${id}&select=reclamada_at,completada_at`,
+    { headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` } }
+  );
+  if (!res.ok) throw new Error(`reclamoDe ${id}: ${res.status} ${await res.text()}`);
+  return (await res.json())[0];
+}
+
+async function sembrarReclamo(E, id, reclamadaAt, completadaAt) {
+  const res = await fetch(`${E.API_URL}/rest/v1/listing_moderacion_reclamos`, {
+    method: 'POST',
+    headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}`,
+               'Content-Type': 'application/json' },
+    body: JSON.stringify({ listing_id: id, reclamada_at: reclamadaAt, completada_at: completadaAt }),
+  });
+  if (!res.ok) throw new Error(`sembrarReclamo ${id}: ${res.status} ${await res.text()}`);
+}
+
+const hace = (ms) => new Date(Date.now() - ms).toISOString();
+
 /**
  * Las TRES formas de credencial que la función puede recibir, cada una en el
  * header que le corresponde de verdad:
@@ -427,6 +449,9 @@ async function main() {
   let escalable, fotoEscalable, previosVault;
   // Fixtures propios de la sección 7 (la foto SIN fila que dispara el trigger).
   let nuevaFotoListing, fotoNueva;
+  // Fixtures propios de la sección 8 (el reclamo del camino cliente).
+  let rConcurrente, fotoRConcurrente, rHuerfano, fotoRHuerfano, rCompletado,
+      rEnVuelo, rSinFotos, rCarrera, fotoRCarrera;
 
   try {
     dueno = await crearUsuario(E, correoDueno);
@@ -720,6 +745,113 @@ async function main() {
     // auditoría nueva con esta foto. Restaurado y reverificado en verde.
     // Resultado: 2026-09-19.
 
+    // -----------------------------------------------------------------
+    console.log('\n== 8. El reclamo: el camino cliente evalúa UNA vez, nunca dos a la vez ==');
+    // `listing_moderacion_reclamos` (20260928000471). Cada fixture es PROPIA:
+    // el reclamo es estado que avanza, y compartirlo entre casos haría que uno
+    // pasara por el reclamo que dejó el anterior (la lección de T11b).
+
+    // (a) DOS llamadas concurrentes del dueño sobre una pendiente limpia → UNA
+    // sola evaluación. Las dos salen a la vez; la primera toma el reclamo en
+    // milisegundos y la evaluación tarda segundos (1.6-5.0 s medidos), así que
+    // la segunda encuentra el reclamo tomado.
+    rConcurrente = await crearListing(E, dueno, `${TITULO_LIMPIO} reclamo`, 'pendiente', DESCRIPCION_LIMPIA);
+    fotoRConcurrente = await subirFotoLimpia(E, rConcurrente);
+    const [c1, c2] = await Promise.all([
+      llamar(E, 'user', { listing_id: rConcurrente }, tDueno),
+      llamar(E, 'user', { listing_id: rConcurrente }, tDueno),
+    ]);
+    const tomadas = [c1, c2].filter((c) => c.json?.sin_evaluar === 'reclamo_tomado').length;
+    ok('dos llamadas concurrentes: las dos 200, UNA encontró el reclamo tomado',
+      c1.status === 200 && c2.status === 200 && tomadas === 1,
+      `HTTP ${c1.status}/${c2.status}, ${JSON.stringify(c1.json)} / ${JSON.stringify(c2.json)}`);
+    igual('dos llamadas concurrentes → UNA sola fila de auditoría (se pagó una vez)',
+      (await auditoriasDe(E, rConcurrente)).length, 1);
+    const reclamoC = await reclamoDe(E, rConcurrente);
+    ok('el reclamo de una evaluación COMPLETA queda con completada_at',
+      reclamoC?.completada_at != null, JSON.stringify(reclamoC));
+
+    // (b) Una TERCERA llamada, ya completada el alta → no evalúa. Es H2: un
+    // dueño no puede re-tirar GPT por API sobre su propia publicación.
+    const c3 = await llamar(E, 'user', { listing_id: rConcurrente }, tDueno);
+    ok('una llamada posterior al alta completada NO evalúa',
+      c3.status === 200 && c3.json?.sin_evaluar === 'reclamo_tomado',
+      `HTTP ${c3.status} ${JSON.stringify(c3.json)}`);
+    igual('…y no deja fila de auditoría nueva', (await auditoriasDe(E, rConcurrente)).length, 1);
+
+    // (c) Reclamo HUÉRFANO (worker muerto): sin completar y de hace 2 min → el
+    // TTL lo libera y se evalúa.
+    rHuerfano = await crearListing(E, dueno, `${TITULO_LIMPIO} huerfano`, 'pendiente', DESCRIPCION_LIMPIA);
+    fotoRHuerfano = await subirFotoLimpia(E, rHuerfano);
+    await sembrarReclamo(E, rHuerfano, hace(120_000), null);
+    const ch = await llamar(E, 'user', { listing_id: rHuerfano }, tDueno);
+    ok('un reclamo huérfano (sin completar, > 60 s) se libera y SÍ se evalúa',
+      ch.status === 200 && ch.json?.sin_evaluar === undefined &&
+        (await auditoriasDe(E, rHuerfano)).length === 1,
+      `HTTP ${ch.status} ${JSON.stringify(ch.json)}`);
+
+    // (d) EL CONTROL DEL BUG que se cazó al diseñar: un reclamo COMPLETADO y
+    // viejo NO lo toca el TTL. Sin `completada_at is null` en el delete, a los
+    // 60 s cualquier llamada borraría la marca permanente y re-evaluaría.
+    rCompletado = await crearListing(E, dueno, `${TITULO_LIMPIO} completado`, 'pendiente', DESCRIPCION_LIMPIA);
+    await sembrarReclamo(E, rCompletado, hace(120_000), hace(110_000));
+    const cc = await llamar(E, 'user', { listing_id: rCompletado }, tDueno);
+    ok('un reclamo COMPLETADO y viejo NO se libera: no se evalúa',
+      cc.status === 200 && cc.json?.sin_evaluar === 'reclamo_tomado' &&
+        (await auditoriasDe(E, rCompletado)).length === 0,
+      `HTTP ${cc.status} ${JSON.stringify(cc.json)}`);
+    ok('…y el reclamo sigue ahí', (await reclamoDe(E, rCompletado))?.completada_at != null);
+
+    // (e) Un reclamo EN VUELO (sin completar, recién tomado) → la llamada no
+    // evalúa. Es el caso concurrente de (a), pero determinista.
+    rEnVuelo = await crearListing(E, dueno, `${TITULO_LIMPIO} en vuelo`, 'pendiente', DESCRIPCION_LIMPIA);
+    await sembrarReclamo(E, rEnVuelo, hace(0), null);
+    const cv = await llamar(E, 'user', { listing_id: rEnVuelo }, tDueno);
+    ok('un reclamo en vuelo (< 60 s) bloquea la segunda evaluación',
+      cv.status === 200 && cv.json?.sin_evaluar === 'reclamo_tomado' &&
+        (await auditoriasDe(E, rEnVuelo)).length === 0,
+      `HTTP ${cv.status} ${JSON.stringify(cv.json)}`);
+
+    // (f) FALLO MANEJADO → el reclamo se libera. Una pendiente limpia SIN FOTOS
+    // intenta promoverse y choca con `listings_enforce_activation_has_photos`:
+    // es el 500 conocido de `.claude/rules/moderacion.md` §9, usado aquí como
+    // fallo determinista. Solo cuesta la llamada a OpenAI (no hay fotos).
+    rSinFotos = await crearListing(E, dueno, `${TITULO_LIMPIO} sin fotos`, 'pendiente', DESCRIPCION_LIMPIA);
+    const cf = await llamar(E, 'user', { listing_id: rSinFotos }, tDueno);
+    ok('un fallo manejado (500) LIBERA el reclamo para el reintento',
+      cf.status === 500 && (await reclamoDe(E, rSinFotos)) === undefined,
+      `HTTP ${cf.status} ${JSON.stringify(cf.json)}, reclamo=${JSON.stringify(await reclamoDe(E, rSinFotos))}`);
+
+    // (g) EL COMPARE-AND-SET. Mientras la evaluación corre (4-5 s en local),
+    // "Studio" bloquea la publicación. Sin el CAS, el update de la función
+    // pisaría esa `bloqueada` con `activa` — la transición que CLAUDE.md §3
+    // dice que no ocurre por ningún camino. Con el CAS, el update afecta 0
+    // filas, gana lo que ya estaba escrito y la auditoría lo anota.
+    // Depende de TIEMPO: si la evaluación terminara antes de 0.5 s, la
+    // aserción de control de abajo lo dice en vez de pasar en falso.
+    rCarrera = await crearListing(E, dueno, `${TITULO_LIMPIO} carrera`, 'pendiente', DESCRIPCION_LIMPIA);
+    fotoRCarrera = await subirFotoLimpia(E, rCarrera);
+    const enCurso = llamar(E, 'user', { listing_id: rCarrera }, tDueno);
+    await dormir(500);
+    const antesDelBloqueo = await auditoriasDe(E, rCarrera);
+    await fetch(`${E.API_URL}/rest/v1/listings?id=eq.${rCarrera}`, {
+      method: 'PATCH',
+      headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}`,
+                 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'bloqueada' }),
+    });
+    const cr = await enCurso;
+    ok('control: el bloqueo llegó ANTES de que la evaluación escribiera',
+      antesDelBloqueo.length === 0, `${antesDelBloqueo.length} fila(s) de auditoría antes del bloqueo`);
+    igual('una bloqueada escrita durante la evaluación NO la pisa la promoción (CAS)',
+      await estadoDe(E, rCarrera), 'bloqueada');
+    const audCarrera = (await auditoriasConDetalle(E, rCarrera)).at(-1);
+    ok('…la respuesta y la auditoría dicen el estado vigente y anotan la carrera',
+      cr.json?.estado === 'bloqueada' && audCarrera?.estado_resultante === 'bloqueada' &&
+        audCarrera?.detalle?.descartado_por_carrera === true &&
+        audCarrera?.detalle?.estado_propuesto === 'activa',
+      `respuesta=${JSON.stringify(cr.json)}, auditoría=${JSON.stringify({ r: audCarrera?.estado_resultante, c: audCarrera?.detalle?.descartado_por_carrera, p: audCarrera?.detalle?.estado_propuesto })}`);
+
   } finally {
     // Vault primero: un secreto repuntado que sobreviva a la corrida deja el
     // trigger llamando a un `functions serve` que ya no está.
@@ -739,7 +871,7 @@ async function main() {
     // `pg_constraint`), pero `storage.objects` es un sistema aparte sin FK a
     // `listings`. Sin este borrado explícito, cada corrida deja un JPEG
     // huérfano en el bucket — mismo gotcha que CLAUDE.md §9 ya documenta.
-    for (const ruta of [fotoEnPendiente, fotoEscalable, fotoNueva]) {
+    for (const ruta of [fotoEnPendiente, fotoEscalable, fotoNueva, fotoRConcurrente, fotoRHuerfano, fotoRCarrera]) {
       if (!ruta) continue;
       await fetch(`${E.API_URL}/storage/v1/object/listing-photos/${ruta}`, {
         method: 'DELETE',
@@ -748,7 +880,8 @@ async function main() {
     }
 
     for (const id of [propia, ajena, enPendiente, escalable, nuevaFotoListing,
-                       credencialSecret, credencialUser]) {
+                       credencialSecret, credencialUser, rConcurrente, rHuerfano,
+                       rCompletado, rEnVuelo, rSinFotos, rCarrera]) {
       if (id) await del('listings', `id=eq.${id}`);
     }
     for (const id of [dueno, ajeno]) {

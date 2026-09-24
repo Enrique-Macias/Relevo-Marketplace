@@ -62,6 +62,7 @@ import {
   nivelDeLista,
   peor,
   esPromocion,
+  evaluacionIncompleta,
   nivelDeRekognition,
   etiquetasParaAuditoria,
   CATEGORIAS_REKOGNITION,
@@ -442,6 +443,20 @@ igual('pendiente → activa SÍ es promoción', esPromocion('pendiente', 'activa
 igual('activa → pendiente NO lo es', esPromocion('activa', 'pendiente'), false);
 igual('activa → activa (no-op) NO lo es', esPromocion('activa', 'activa'), false);
 igual('bloqueada → activa NO lo es', esPromocion('bloqueada', 'activa'), false);
+
+console.log('\n== `evaluacionIncompleta()`: si el reclamo del camino cliente se cierra ==');
+// Decide si el reclamo de `listing_moderacion_reclamos` se marca PERMANENTE
+// (completa) o se LIBERA para que un reintento vuelva a evaluar (incompleta).
+// Cada eje por separado: una implementación que solo mirara uno de los tres
+// dejaría cerrado para siempre un alta que ni siquiera se pudo evaluar.
+const COMPLETA = { fotosNoEvaluables: 0, rekognitionNoEvaluables: 0, textoSinVeredicto: false };
+igual('todo evaluado → completa', evaluacionIncompleta(COMPLETA), false);
+igual('una foto sin evaluar en Vision → incompleta',
+  evaluacionIncompleta({ ...COMPLETA, fotosNoEvaluables: 1 }), true);
+igual('una foto sin evaluar en Rekognition → incompleta',
+  evaluacionIncompleta({ ...COMPLETA, rekognitionNoEvaluables: 1 }), true);
+igual('texto sin veredicto (OpenAI caído o refusal) → incompleta',
+  evaluacionIncompleta({ ...COMPLETA, textoSinVeredicto: true }), true);
 
 // LA ASERCIÓN QUE DE VERDAD IMPORTA, y es exhaustiva a propósito: recorre TODO
 // el producto cartesiano de ejes × estados y confirma que el único cambio de

@@ -2515,6 +2515,27 @@ select pg_temp.assert(
               where schemaname = 'public' and tablename = 'listing_moderacion'),
   'listing_moderacion no tiene ninguna policy (solo service_role la lee)');
 
+-- `listing_moderacion_reclamos` (20260928000471): el reclamo del camino
+-- cliente de `moderar-contenido`. Mismas dos aserciones gemelas, y aquí un
+-- privilegio colado sería peor que una lectura: un DELETE sobre su propio
+-- reclamo COMPLETADO le devolvería a un dueño la posibilidad de volver a
+-- evaluarse por API, que es exactamente lo que la tabla existe para impedir.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee in ('authenticated', 'anon')
+                and table_schema = 'public'
+                and table_name = 'listing_moderacion_reclamos')
+  and not exists (select 1 from information_schema.column_privileges
+                  where grantee in ('authenticated', 'anon')
+                    and table_schema = 'public'
+                    and table_name = 'listing_moderacion_reclamos'),
+  'listing_moderacion_reclamos no tiene ni un privilegio para authenticated ni anon');
+
+select pg_temp.assert(
+  not exists (select 1 from pg_policies
+              where schemaname = 'public' and tablename = 'listing_moderacion_reclamos'),
+  'listing_moderacion_reclamos no tiene ninguna policy (solo service_role la usa)');
+
 -- Todas las tablas de public tienen RLS activo.
 select pg_temp.assert(
   not exists (select 1 from pg_tables t

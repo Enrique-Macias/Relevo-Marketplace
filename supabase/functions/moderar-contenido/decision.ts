@@ -389,6 +389,36 @@ export function esPromocion(
   return anterior === 'pendiente' && siguiente === 'activa';
 }
 
+/**
+ * ¿La evaluación quedó INCOMPLETA porque algún eje no se pudo evaluar?
+ *
+ * Decide qué pasa con el reclamo del camino CLIENTE
+ * (`listing_moderacion_reclamos`, migración 20260928000471):
+ *  · completa   → el reclamo se marca `completada_at` y el alta queda cerrada
+ *    para siempre; lo que siga en `pendiente` lo resuelve Studio.
+ *  · incompleta → el reclamo se LIBERA, y un reintento vuelve a evaluar. Es el
+ *    "fallo transitorio legítimo": Vision o OpenAI caídos, una foto que no se
+ *    pudo bajar.
+ *
+ * Cuenta como incompleta CUALQUIER foto `no_evaluable` (en Vision o en
+ * Rekognition) y CUALQUIER texto sin veredicto, refusal incluido. Eso también
+ * incluye causas deterministas, como una foto sobre el tope o una webp que
+ * Rekognition no lee: re-evaluarlas da lo mismo. Se acepta porque la app no
+ * reintenta sola una respuesta 200 (navega a "Publicación en revisión"), así
+ * que ese reintento solo lo dispara una llamada nueva, y no hay forma pura de
+ * distinguir "caído" de "inevaluable" que no dependa de los strings de motivo.
+ *
+ * La falla segura NO cambia: un eje sin evaluar sigue siendo `'revisar'` en
+ * `Ejes`. Esto solo decide si ese `'revisar'` es definitivo.
+ */
+export function evaluacionIncompleta(e: {
+  fotosNoEvaluables: number;
+  rekognitionNoEvaluables: number;
+  textoSinVeredicto: boolean;
+}): boolean {
+  return e.fotosNoEvaluables > 0 || e.rekognitionNoEvaluables > 0 || e.textoSinVeredicto;
+}
+
 // ---------------------------------------------------------------------------
 // Avatares
 // ---------------------------------------------------------------------------

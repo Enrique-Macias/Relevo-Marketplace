@@ -49,6 +49,7 @@ import {
   decidirAvatar,
   decidirListing,
   esPromocion,
+  evaluacionIncompleta,
   nivelDeLista,
   nivelDeTexto,
   nivelDeRekognition,
@@ -176,10 +177,11 @@ export default {
           // `.claude/rules/moderacion.md` §1: sin él, `evaluarListing()` solo
           // vería el set que `listing_photos` YA tenía, y la foto que acaba
           // de subir —cuya fila todavía no existe— no la evaluaría nadie.
-          return await moderarListing(db, Number(entity_id), config, {
+          const { respuesta } = await moderarListing(db, Number(entity_id), config, {
             puedePromover: false,
             nombreDisparador: name,
           });
+          return respuesta;
         }
 
         // El `WHEN` del trigger ya filtra por bucket, así que llegar aquí
@@ -224,10 +226,137 @@ export default {
       // filtrar la existencia de filas ajenas.
       if (duenio.user_id !== uid) return error('no existe', 404);
 
-      return await moderarListing(db, listing_id, config, { puedePromover: true });
+      // EL RECLAMO (migración 20260928000471). El camino cliente evalúa UNA vez
+      // en la vida de la publicación y nunca dos a la vez: sin esto, un
+      // "Reintentar" mientras la primera llamada sigue viva en el servidor
+      // (1.6-5.0 s medidos) pagaba la evaluación dos veces, y un dueño podía
+      // re-tirar GPT por API sobre una publicación que el trigger ya había
+      // mandado a `pendiente`. El camino del TRIGGER no pasa por aquí: las
+      // fotos editadas se siguen evaluando siempre.
+      const reclamo = await reclamar(db, listing_id);
+      if (reclamo.tipo === 'error') return error(reclamo.mensaje, 500);
+
+      if (reclamo.tipo === 'ocupado') {
+        // Otra llamada está evaluando, o el alta ya se evaluó. No se evalúa ni
+        // se paga nada: se responde el estado vigente, que es lo que el
+        // cliente necesita para saber a qué pantalla ir.
+        const { data: vigente, error: errVigente } = await db
+          .from('listings')
+          .select('estado')
+          .eq('id', listing_id)
+          .maybeSingle();
+        if (errVigente) return error(errVigente.message, 500);
+        if (!vigente) return error('no existe', 404);
+        return Response.json({ ok: true, estado: vigente.estado, sin_evaluar: 'reclamo_tomado' });
+      }
+
+      let resultado: ResultadoModeracion;
+      try {
+        resultado = await moderarListing(db, listing_id, config, { puedePromover: true });
+      } catch (e) {
+        await liberarReclamo(db, listing_id, reclamo.reclamadaAt);
+        throw e;
+      }
+
+      // Completa → marca permanente. Cualquier otra cosa (500 manejado, eje
+      // sin evaluar) → se libera el reclamo PROPIO, para que el reintento pueda
+      // evaluar de inmediato en vez de esperar el TTL.
+      if (resultado.completa) {
+        await completarReclamo(db, listing_id, reclamo.reclamadaAt);
+      } else {
+        await liberarReclamo(db, listing_id, reclamo.reclamadaAt);
+      }
+      return resultado.respuesta;
     }
   ),
 };
+
+// ---------------------------------------------------------------------------
+// El reclamo del camino cliente (`listing_moderacion_reclamos`)
+// ---------------------------------------------------------------------------
+
+/**
+ * Más de 60 s sin completarse = el worker murió y el reclamo quedó huérfano.
+ * Es 12 veces el máximo medido en producción (5,044 ms, function_edge_logs del
+ * 2026-09-22, n=13). Si una evaluación legítima tardara más, una segunda podría
+ * correr en paralelo, y la red de ese caso es el compare-and-set de
+ * `moderarListing()`.
+ *
+ * El corte se calcula con el reloj de la función y se compara contra
+ * `reclamada_at`, que pone la base: dos relojes de servidor sincronizados,
+ * con una deriva despreciable frente a 60 s.
+ */
+const TTL_RECLAMO_MS = 60_000;
+
+type Reclamo =
+  | { tipo: 'propio'; reclamadaAt: string }
+  | { tipo: 'ocupado' }
+  | { tipo: 'error'; mensaje: string };
+
+async function reclamar(
+  // deno-lint-ignore no-explicit-any
+  db: any,
+  listingId: number
+): Promise<Reclamo> {
+  // 1. El TTL. `completada_at is null` es lo que impide que libere un reclamo
+  //    EXITOSO: sin esa condición, pasados 60 s cualquier llamada borraría la
+  //    marca permanente y el alta se volvería a evaluar.
+  const limite = new Date(Date.now() - TTL_RECLAMO_MS).toISOString();
+  const { error: errTtl } = await db
+    .from('listing_moderacion_reclamos')
+    .delete()
+    .eq('listing_id', listingId)
+    .is('completada_at', null)
+    .lt('reclamada_at', limite);
+  if (errTtl) return { tipo: 'error', mensaje: errTtl.message };
+
+  // 2. El reclamo. `ignoreDuplicates` es `on conflict do nothing`, y con
+  //    `.select()` devuelve SOLO la fila insertada: 1 fila = es nuestro, 0 =
+  //    lo tiene otra llamada (o el alta ya se evaluó). La atomicidad es la de
+  //    la PK: dos inserts concurrentes no pueden ganar los dos.
+  const { data, error: errIns } = await db
+    .from('listing_moderacion_reclamos')
+    .upsert({ listing_id: listingId }, { onConflict: 'listing_id', ignoreDuplicates: true })
+    .select('reclamada_at');
+  if (errIns) return { tipo: 'error', mensaje: errIns.message };
+
+  if (!data || data.length === 0) return { tipo: 'ocupado' };
+  return { tipo: 'propio', reclamadaAt: data[0].reclamada_at };
+}
+
+/**
+ * `eq('reclamada_at', …)` en las dos: si el TTL ya nos quitó el reclamo y otra
+ * llamada tomó uno nuevo, no se toca el suyo. Ninguna de las dos lanza: un
+ * fallo aquí se grita y no tumba la respuesta, porque el veredicto ya se aplicó.
+ */
+async function completarReclamo(
+  // deno-lint-ignore no-explicit-any
+  db: any,
+  listingId: number,
+  reclamadaAt: string
+): Promise<void> {
+  const { error: err } = await db
+    .from('listing_moderacion_reclamos')
+    .update({ completada_at: new Date().toISOString() })
+    .eq('listing_id', listingId)
+    .eq('reclamada_at', reclamadaAt);
+  if (err) console.error('[moderar-contenido] no se pudo completar el reclamo', err.message);
+}
+
+async function liberarReclamo(
+  // deno-lint-ignore no-explicit-any
+  db: any,
+  listingId: number,
+  reclamadaAt: string
+): Promise<void> {
+  const { error: err } = await db
+    .from('listing_moderacion_reclamos')
+    .delete()
+    .eq('listing_id', listingId)
+    .is('completada_at', null)
+    .eq('reclamada_at', reclamadaAt);
+  if (err) console.error('[moderar-contenido] no se pudo liberar el reclamo', err.message);
+}
 
 // ---------------------------------------------------------------------------
 // Publicaciones
@@ -252,19 +381,27 @@ async function moderarListing(
      */
     nombreDisparador?: string;
   }
-): Promise<Response> {
+): Promise<ResultadoModeracion> {
+  const fallo = (respuesta: Response): ResultadoModeracion => ({ respuesta, completa: false });
+
   const { data: fila, error: errFila } = await db
     .from('listings')
     .select('id, user_id, titulo, descripcion, estado')
     .eq('id', listingId)
     .maybeSingle();
 
-  if (errFila) return error(errFila.message, 500);
-  if (!fila) return error('no existe', 404);
+  if (errFila) return fallo(error(errFila.message, 500));
+  if (!fila) return fallo(error('no existe', 404));
 
   const estadoActual = fila.estado as EstadoListing;
 
-  const { ejes, detalle } = await evaluarListing(db, listingId, fila, config, nombreDisparador);
+  const { ejes, detalle, incompleta } = await evaluarListing(
+    db,
+    listingId,
+    fila,
+    config,
+    nombreDisparador
+  );
 
   const propuesto = decidirListing(ejes, estadoActual);
 
@@ -287,24 +424,57 @@ async function moderarListing(
   // `set_updated_at`, y el vendedor vería "modificada hoy" algo que nadie
   // modificó — es la lección de T23 (b), y `decidirListing` lo pide explícito
   // en su docblock.
-  if (nuevoEstado !== estadoActual) {
-    const { error: errUpdate } = await db
-      .from('listings')
-      .update({ estado: nuevoEstado })
-      .eq('id', listingId);
+  //
+  // COMPARE-AND-SET: `.eq('estado', estadoActual)`. La evaluación tarda
+  // segundos (1.6-5.0 s medidos) entre leer `estadoActual` y escribir, y dos
+  // evaluaciones que se cruzan (un reintento, dos eventos del trigger)
+  // escribían sin condición: ganaba la última, y como GPT no es determinista,
+  // una `bloqueada` podía quedar pisada por `activa`. Con el CAS, si alguien
+  // movió el estado mientras tanto, este update afecta 0 filas y manda la
+  // decisión que ya se escribió.
+  let estadoFinal: EstadoListing = nuevoEstado;
+  let descartadoPorCarrera = false;
 
-    if (errUpdate) return error(errUpdate.message, 500);
+  if (nuevoEstado !== estadoActual) {
+    const { error: errUpdate, count } = await db
+      .from('listings')
+      .update({ estado: nuevoEstado }, { count: 'exact' })
+      .eq('id', listingId)
+      .eq('estado', estadoActual);
+
+    if (errUpdate) return fallo(error(errUpdate.message, 500));
+
+    if ((count ?? 0) === 0) {
+      descartadoPorCarrera = true;
+      const { data: vigente } = await db
+        .from('listings')
+        .select('estado')
+        .eq('id', listingId)
+        .maybeSingle();
+      estadoFinal = (vigente?.estado as EstadoListing | undefined) ?? estadoActual;
+      console.warn(
+        `[moderar-contenido] ${listingId}: el estado cambió durante la evaluación ` +
+          `(${estadoActual} → ${estadoFinal}); se descarta ${nuevoEstado}`
+      );
+    }
   }
 
   // La fila de auditoría se escribe SIEMPRE, incluso cuando el estado no se
   // movió: `listing_moderacion` es historial de EVALUACIONES, no de cambios
   // (migración 20260918000461). "Se revisó y salió limpia" es justo lo que un
-  // revisor necesita saber de una publicación reincidente.
+  // revisor necesita saber de una publicación reincidente. Una evaluación
+  // descartada por la carrera también se registra: se pagó, y su veredicto es
+  // información para el revisor aunque no se haya aplicado.
   const { error: errAudit } = await db.from('listing_moderacion').insert({
     listing_id: listingId,
     veredicto: veredicto(ejes),
-    estado_resultante: nuevoEstado,
-    detalle: { ...detalle, ejes, estado_anterior: estadoActual },
+    estado_resultante: estadoFinal,
+    detalle: {
+      ...detalle,
+      ejes,
+      estado_anterior: estadoActual,
+      ...(descartadoPorCarrera ? { descartado_por_carrera: true, estado_propuesto: nuevoEstado } : {}),
+    },
   });
 
   // Un fallo de auditoría NO tumba la moderación: el veredicto ya se aplicó y
@@ -313,8 +483,19 @@ async function moderarListing(
   // (CLAUDE.md §3) — pero aquí sí se grita, porque nadie más lo va a notar.
   if (errAudit) console.error('[moderar-contenido] auditoría', errAudit.message);
 
-  return Response.json({ ok: true, estado: nuevoEstado });
+  return {
+    respuesta: Response.json({ ok: true, estado: estadoFinal }),
+    completa: !incompleta,
+  };
 }
+
+/**
+ * Lo que devuelve `moderarListing()`: la respuesta HTTP y si la evaluación
+ * quedó COMPLETA. Esto último solo lo usa el camino CLIENTE para decidir si su
+ * reclamo se marca como permanente o se libera (ver `evaluacionIncompleta()`
+ * en `decision.ts`). El camino del trigger lo ignora.
+ */
+type ResultadoModeracion = { respuesta: Response; completa: boolean };
 
 const BUCKET_LISTING_PHOTOS: Bucket = 'listing-photos';
 const BUCKET_AVATARS: Bucket = 'avatars';
@@ -361,7 +542,7 @@ async function evaluarListing(
   config: ConfigModeracion,
   /** Ver el docblock de `moderarListing()` y de `unirFotoDisparadora()`. */
   nombreDisparador?: string
-): Promise<{ ejes: Ejes; detalle: Detalle }> {
+): Promise<{ ejes: Ejes; detalle: Detalle; incompleta: boolean }> {
   const { data: fotos, error: errFotos } = await db
     .from('listing_photos')
     .select('storage_path')
@@ -466,7 +647,18 @@ async function evaluarListing(
     lotes_vision: lotesVision,
   };
 
-  return { ejes, detalle };
+  // Si algún eje se quedó sin evaluar, el `'revisar'` que ya dejó en `ejes` es
+  // la falla segura de siempre; esto solo le dice al camino cliente que el
+  // reclamo NO se cierra (ver `evaluacionIncompleta()` en `decision.ts`).
+  const incompleta = evaluacionIncompleta({
+    fotosNoEvaluables: resultadosFotos.filter((r) => r.estado === 'no_evaluable').length,
+    rekognitionNoEvaluables: rekognitionResultado.resultados.filter(
+      (r) => r.estado === 'no_evaluable'
+    ).length,
+    textoSinVeredicto: !resultadoTexto.ok,
+  });
+
+  return { ejes, detalle, incompleta };
 }
 
 /**

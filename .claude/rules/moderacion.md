@@ -980,6 +980,78 @@ ya no es `'pendiente'`, sin invocar nada. Tres cosas que conviene no "simplifica
 - **Hace idempotente el reintento del CLIENTE, no la función.** El camino del
   trigger sigue pudiendo re-evaluar, y ese hueco queda como deuda (§9).
 
+### 5.1c. El reclamo y el CAS — el guard de §5.1b no alcanzaba (2026-09-24)
+
+**§5.1b decía "la carrera es benigna: lo peor es invocar de más", y no lo era.**
+El guard lee el estado y, si sigue en `pendiente`, invoca. Pero
+`functions.invoke` va sin timeout (`functions-js` 2.115.0 solo aborta con
+`timeout` explícito), así que un "Reintentar" tras un fallo EN EL CLIENTE puede
+llegar mientras la primera evaluación sigue viva en el servidor, y las dos leen
+`pendiente`. Medido en producción (`query_logs`, `function_edge_logs`,
+2026-09-22, n=13, status 200): **mín 1,594 ms, p50 2,814 ms, máx 5,044 ms**.
+Con esa ventana:
+
+1. se pagaba la evaluación dos veces;
+2. `moderarListing()` escribía sin condición y ganaba la última, así que **una
+   `bloqueada` podía quedar pisada por `activa`**. Medido con el control
+   negativo de (g): sin el CAS, sale `activa`;
+3. **H2:** un dueño podía llamar al camino cliente por API sobre una
+   publicación que el trigger había escalado a `pendiente` y auto-aprobarse
+   sin Studio.
+
+**Los dos arreglos, y qué cierra cada uno:**
+
+- **CAS** (`index.ts`, `moderarListing()`): `.eq('estado', estadoActual)` con
+  `count`. Con 0 filas gana lo ya escrito, se relee, se responde el estado
+  vigente y la auditoría lleva `descartado_por_carrera: true` y
+  `estado_propuesto`. Aplica a los dos caminos, así que también cubre eventos
+  concurrentes del trigger. Cierra (2).
+- **El reclamo** (`listing_moderacion_reclamos`, `20260928000471`), solo en el
+  camino cliente. Cierra (1) y (3).
+
+**Ciclo de vida de la fila del reclamo: una fila, dos estados.**
+
+| Momento | Qué pasa con la fila | ¿Se evalúa después? |
+|---|---|---|
+| Primera llamada | `insert` con `ignoreDuplicates` + `.select()`; 1 fila = el reclamo es nuestro | — |
+| Llamada concurrente | 0 filas → responde el estado vigente con `sin_evaluar: 'reclamo_tomado'` | no |
+| Evaluación completa (`evaluacionIncompleta()` false) | `completada_at = now()` | **nunca más**; solo el `on delete cascade` la borra |
+| Fallo manejado (500, o algún eje sin evaluar) | la función borra SU fila (`completada_at is null` y su `reclamada_at`) | sí, de inmediato |
+| El worker muere | la fila queda sin completar | sí, pasados 60 s (el TTL solo toca `completada_at is null`) |
+
+**Consecuencia operativa:** una publicación que vuelve a `pendiente` por una
+foto editada **solo la resuelve Studio**, y un alta que sale `revisar` por su
+contenido también: el reintento ya no re-tira GPT. Las fotos nuevas se siguen
+evaluando por el camino del TRIGGER, que no usa el reclamo. Con esto, la deuda
+de §9 "toda re-evaluación vuelve a tirar el dado de GPT" queda acotada al camino
+del trigger, que es como ya estaba escrita.
+
+**`evaluacionIncompleta()` cuenta también causas deterministas** (una foto
+sobre el tope, una webp que Rekognition no lee): liberarlas permite re-evaluar
+algo que va a dar lo mismo. Se acepta porque la app no reintenta sola un 200
+(navega a "Publicación en revisión"), y distinguir "caído" de "inevaluable"
+dependería de los strings de motivo.
+
+**Pruebas, en `probe-moderacion-http.mjs` §8** (36 aserciones en total,
+medidas): (a) dos llamadas concurrentes dan una sola evaluación; (b) una llamada
+después del alta no evalúa; (c) un reclamo huérfano se libera; (d) uno
+completado y viejo no; (e) uno en vuelo bloquea; (f) un 500 libera; (g) el CAS
+con un bloqueo a mitad de evaluación. Hay una aserción de CONTROL de tiempo: si
+la evaluación terminara antes del bloqueo, lo dice en vez de pasar en falso.
+Pasó una vez con una espera de 1.5 s, y por eso la espera es de 0.5 s.
+Controles negativos corridos uno a la vez, restaurando desde un respaldo y
+verificando con `diff`:
+
+| Variante rota | Cae en |
+|---|---|
+| TTL sin `completada_at is null` | (d), las dos aserciones |
+| el reclamo nunca bloquea | (a), (b), (d), (e) |
+| nunca liberar tras un fallo manejado | solo (f) |
+| sin el CAS | (g), `bloqueada` pisada por `activa` |
+
+Y `evaluacionIncompleta()` es pura: 4 aserciones en `probe-moderacion.mjs` (166
+en total). Su control, ignorar el eje de Rekognition, cae en la suya.
+
 ### 5.2. El `with_check` de `listings_insert_own`
 
 `listings_insert_own` no restringe hoy qué valor de `estado` trae un INSERT
@@ -1085,8 +1157,8 @@ ve.
 
 | Script | Qué prueba | ¿Cuesta dinero? | ¿Necesita servidor? |
 |---|---|---|---|
-| `probe-moderacion.mjs` | DECISIONES puras (**162** al 2026-09-21; se mide, no se recuerda) | No | No |
-| `probe-moderacion-http.mjs` | AUTORIZACIÓN/CABLEADO (16) | **Sí, desde la Ola 1.5** | Sí |
+| `probe-moderacion.mjs` | DECISIONES puras (**166** al 2026-09-24; decía 162; se mide, no se recuerda) | No | No |
+| `probe-moderacion-http.mjs` | AUTORIZACIÓN/CABLEADO + reclamo y CAS (**36** al 2026-09-24; decía 16, y ya iba en 23 antes del §8 — medido: 33 con las 10 primeras del §8) | **Sí, desde la Ola 1.5** | Sí |
 | `probe-moderacion-red.mjs` | Particionado, descarga fallida, no-op (10) | Sí | Sí |
 
 **`probe-moderacion-http.mjs` dejó de ser gratis, y no por elección.** Antes

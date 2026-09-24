@@ -183,18 +183,30 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 34 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-09-24; decía "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 15 tablas más
+Definido en 35 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-09-24; decía "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 16 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
-**Ese 15 son 14 con policies más `listing_moderacion`, que tiene RLS habilitado
-y CERO policies a propósito** (su bloque propio, más abajo) — no es una tabla a medio
-configurar. **`universidad_dominios` cuenta entre las 14 "con policies", pero
+**Ese 16 son 14 con policies más `listing_moderacion` y
+`listing_moderacion_reclamos`, que tienen RLS habilitado y CERO policies a
+propósito** (sus bloques propios, más abajo) — no son tablas a medio
+configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
+`20260928000471`, igual que decía la prosa). **`universidad_dominios` cuenta entre las 14 "con policies", pero
 su única policy es para `supabase_auth_admin`, no para el cliente** (su bloque,
 más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 35 y 34 (medido el 2026-09-24).** `ls supabase/migrations |
+wc -l` da **35**; `mcp__supabase__list_migrations` da **34**. La que falta en
+remoto es `20260928000471` (el reclamo de moderación), que no se pushea en su
+propia tarea: es el runbook pendiente 0g de §8.
+
+**Por DECIMOTERCERA vez.** Este párrafo decía "34 y 32, faltan la 469 y la
+470", y al remedirlo el remoto YA las tenía (`list_migrations` lista las dos):
+el paso 1 del pendiente 0f corrió fuera de la sesión que lo escribió. La
+historia de antes, tal como estaba:
 
 **Repo y remoto: 34 y 32 (medido el 2026-09-24).** `ls supabase/migrations |
 wc -l` da **34**; `mcp__supabase__list_migrations` da **32**. Las que faltan en
@@ -397,6 +409,11 @@ listing_moderacion
   detalle jsonb, created_at. Una fila por EVALUACIÓN, no por publicación:
   es historial, no estado actual. CERO grants y CERO policies — la escribe
   la Edge Function con `supabaseAdmin` y la lee Studio. Ver abajo.
+listing_moderacion_reclamos
+  listing_id PK → listings on delete cascade, reclamada_at, completada_at
+  nullable. El reclamo del camino CLIENTE: mutex mientras `completada_at` es
+  null, marca permanente de "el alta ya se evaluó" cuando no. CERO grants y
+  CERO policies, igual que `listing_moderacion`. Ver el bloque de RF-18.
 ```
 
 **`listings.precio` es un ENTERO de pesos, 0-100000 inclusive (RF-05,
@@ -976,9 +993,13 @@ va en `private`). **`public.buscar_listings` NO es la cuarta**: también es una
 RPC de `public`, pero es INVOKER a propósito (bloque de la búsqueda de texto,
 más arriba), y volverla definer sería una fuga. `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
 acotado a las TRES que se invocan desde policies — `is_active_user()`,
-`can_rate()` y `listing_id_from_object_name()` — mientras las otras cinco, que
-solo disparan por trigger, siguen revocadas. Ver sección 9 sobre por qué ese
-`USAGE` existe (no es lo que originalmente se pensó).
+`can_rate()` y `listing_id_from_object_name()` — mientras las **12** que solo
+disparan por trigger siguen revocadas (decía "las otras cinco", un número de la
+Fase 2 que nadie actualizó; medido con `pg_trigger` ⋈ `pg_proc` en local: 13
+funciones de `private` cuelgan de un trigger, y la 13ª, `set_updated_at()`, es
+INVOKER y conserva su `EXECUTE`, porque Postgres lo verifica al crear el
+trigger, no al dispararlo). Ver sección 9 sobre por qué ese `USAGE` existe (no
+es lo que originalmente se pensó).
 
 **Una función `SECURITY DEFINER` de `public` llamando a una de `private` no
 necesita ningún grant extra** — patrón estrenado por `seller_whatsapp`, que
@@ -1219,8 +1240,8 @@ Tres consecuencias que no se ven en el diff:
   vacía, todo alta nacería sin universidad. Por eso el runbook (§8, pendiente
   0) tiene un paso 0 bloqueante.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 282 aserciones (medido con el
-`grep` de §8 el 2026-09-24; antes decía 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 284 aserciones (medido con el
+`grep` de §8 el 2026-09-24; antes decía 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -1714,6 +1735,14 @@ variante daba la suite ENTERA en verde. La aserción rechazaba por la razón
 equivocada; lo destapó su propio control (la moraleja de siempre: si no cae,
 no prueba). Ahora es `+5281123456789`.
 
+Y a **284** con las 2 de T12 para `listing_moderacion_reclamos`
+(`20260928000471`): sin privilegios (tabla y columna) y sin policies, gemelas de
+las de `listing_moderacion`. Sus dos controles, corridos uno a la vez con un
+script de bash que imprime el estado vivo antes de la suite (la primera
+corrida, con la orden en una variable de zsh, no aplicó NADA: el gotcha de §9,
+reencontrado): `grant delete` a authenticated cae en la primera; una policy
+permisiva, en la segunda.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -1830,8 +1859,53 @@ código", y dejó de ser cierto.** Hoy existen la Edge Function
 (`moderar-contenido`, que llama de verdad a Vision y OpenAI), los dos triggers de
 Storage, y —desde la Ola 3— el alta pasa por `pendiente`: `publicar.ts` crea con
 ese estado (obligado por el `with_check` de `20260919000463`) y el veredicto lo
-escribe la función, no el cliente. Lo único que sigue apagado en PRODUCCIÓN son
-los dos secretos de Vault de los triggers (§8, pendiente 2).
+escribe la función, no el cliente. (Este párrafo terminaba diciendo que "lo
+único que sigue apagado en PRODUCCIÓN son los dos secretos de Vault de los
+triggers": falso desde el 2026-09-19, cuando se crearon — §8, "Hecho".)
+
+**El camino CLIENTE de `moderar-contenido` evalúa UNA vez en la vida de cada
+publicación, y nunca dos a la vez** (`20260928000471`,
+`listing_moderacion_reclamos`, fix preexistente). El hueco era real, no
+teórico: `functions.invoke` va sin timeout, así que un "Reintentar" después de
+un fallo EN EL CLIENTE podía correr mientras la primera evaluación seguía viva
+en el servidor. Medido en producción (`function_edge_logs`, 2026-09-22, n=13):
+cada evaluación tarda de **1.6 a 5.0 s** (p50 2.8 s). En esa ventana pasaban
+tres cosas: se pagaba Vision + GPT + Rekognition dos veces, las dos escrituras
+competían sin condición (**una `bloqueada` podía quedar pisada por `activa`**,
+medido en local con el control negativo del CAS), y un dueño podía llamar la
+función por API para re-tirar GPT sobre una publicación que el trigger había
+mandado a `pendiente` al editar fotos, auto-aprobándose sin Studio.
+
+- **Compare-and-set en la escritura, en los DOS caminos:** el update de
+  `moderarListing()` lleva `.eq('estado', estadoActual)`. Si afecta 0 filas,
+  alguien movió el estado durante la evaluación: gana lo ya escrito, y la
+  auditoría lo anota (`detalle.descartado_por_carrera`, `estado_propuesto`).
+- **El reclamo es UNA fila con DOS estados, y los separa `completada_at`:**
+  - `completada_at is null` es un **mutex**. Si la evaluación falla de forma
+    manejada (un 500, o algún eje sin evaluar por infraestructura —
+    `evaluacionIncompleta()` en `decision.ts`), la función **borra su propio
+    reclamo** y el reintento evalúa de inmediato. Si el worker muere sin
+    borrarlo, la siguiente llamada lo libera pasados **60 s** (12 veces el
+    máximo medido).
+  - `completada_at is not null` es la **marca permanente** de que el alta ya se
+    evaluó. **Nadie la borra**: el TTL exige `completada_at is null` (sin esa
+    condición, a los 60 s se re-evaluaría cualquier alta; es el control
+    negativo (d) del probe) y la función no la toca. Solo muere con la
+    publicación.
+- **Consecuencia operativa:** una publicación que vuelve a `pendiente` por una
+  edición de fotos **solo la resuelve Studio**. Ninguna re-evaluación por el
+  camino cliente vuelve a estar disponible para ella. Las fotos nuevas SÍ se
+  siguen evaluando, por el camino del TRIGGER, que no pasa por el reclamo. Y un
+  alta que sale `revisar` por su CONTENIDO también se queda para Studio: un
+  reintento ya no re-tira GPT.
+- **Por qué no un advisory lock:** la función habla por PostgREST, una
+  transacción por request; el lock se soltaría antes de la evaluación. **Por qué
+  no un unique en `listing_moderacion`:** es historial por evaluación.
+- Cubierto en `probe-moderacion-http.mjs` §8 (concurrencia, marca permanente,
+  huérfano, en vuelo, fallo manejado y la carrera del CAS), con cuatro controles
+  negativos: sin `completada_at is null` en el TTL → (d); el reclamo que nunca
+  bloquea → (a)(b)(d)(e); nunca liberar → (f); sin el CAS → (g). Detalle en
+  `.claude/rules/moderacion.md` §5.1c.
 
 ---
 
@@ -2586,6 +2660,27 @@ de los route groups).
       `libphonenumber-js` es JS puro: no hace falta dev build nativo nuevo.
    5. Pruebas manuales en dispositivo: ver `cuenta-perfil.md`,
       `onboarding-auth.md` ("Nombre válido") y `publicar-fotos.md` (teléfono).
+   **Paso 1 HECHO, fuera de la sesión que escribió este punto:** el
+   2026-09-24, `list_migrations` ya listaba la 469 y la 470 (34 en remoto).
+   Los pasos 2-5 no se verificaron en esa medición.
+0g. **El reclamo de moderación (`20260928000471`,
+   `listing_moderacion_reclamos`) + la Edge Function que lo usa: construidos y
+   probados en LOCAL, sin pushear.** En este orden, que NO es intercambiable:
+   1. `supabase db push`, y `list_migrations` con `20260928000471` (remoto pasa
+      de 34 a 35; se remide).
+   2. Verificar en remoto que la tabla tiene 0 privilegios para
+      `anon`/`authenticated` (`table_privileges` y `column_privileges`) y 0
+      policies.
+   3. `supabase functions deploy moderar-contenido` a mano (no hay CI/CD). DEBE
+      ir después del paso 1: la función NUEVA contra una base sin la tabla
+      responde 500 en cada alta. La función VIEJA contra la base nueva sigue
+      funcionando igual que hoy (no conoce la tabla). Después,
+      `list_edge_functions` con la versión nueva, y bajar el fuente desplegado
+      y grepear `listing_moderacion_reclamos` y `descartado_por_carrera`.
+   4. `npm run gen:types` contra remoto (la tabla nueva entra a los tipos).
+   5. Prueba manual: publicar algo limpio desde el dispositivo, confirmar en
+      Studio que el reclamo quedó con `completada_at` y una sola fila en
+      `listing_moderacion`.
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
