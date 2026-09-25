@@ -1,6 +1,6 @@
 import { Redirect, usePathname } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import { View, StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { PublicarFab } from '@/components/PublicarFab';
 import { Colors } from '@/constants/theme';
