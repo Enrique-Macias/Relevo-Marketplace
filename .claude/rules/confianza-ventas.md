@@ -377,11 +377,11 @@ publicación como en Mis publicaciones.
     `scripts/probe-calificacion-pendiente.mjs` — mismo convenio que
     `src/lib/ubicacion.ts` / `scripts/probe-ubicacion.mjs`.
   - **Los cuatro pathnames de `TAB_ROOTS`** (`confianza.ts`) — dónde es seguro
-    auto-navegar sin interrumpir otra pantalla — solo tienen `'/perfil'`
-    confirmado textualmente en el repo; `/`, `/buscar`, `/favoritos` se
-    infieren de la convención de Expo Router y quedan **pendientes de medir en
-    dispositivo** (un `console.log(pathname)` temporal visitando los cuatro
-    tabs) antes de confiar en esto en producción.
+    auto-navegar sin interrumpir otra pantalla — MEDIDOS en dispositivo real,
+    no solo inferidos: `'/perfil'` ya estaba confirmado textualmente en el
+    repo, y `/`, `/buscar`, `/favoritos` (inferidos de la convención de Expo
+    Router) se probaron uno por uno parado en cada tab antes de cerrar la
+    tarea — los cuatro valores inferidos resultaron correctos.
 
 - **La reseña del mal asignado sobrevive y queda inmutable.** Si el vendedor
   acredita por error a C y C lo califica, esa fila se queda: tras la corrección

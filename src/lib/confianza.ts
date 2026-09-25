@@ -569,14 +569,12 @@ export function useVentaDetalle(
 
 /**
  * Los cuatro pathnames raíz de `(tabs)`, donde es seguro auto-navegar a
- * Calificar sin interrumpir otra pantalla. Solo `'/perfil'` está confirmado
+ * Calificar sin interrumpir otra pantalla. `'/perfil'` ya estaba confirmado
  * textualmente en el repo (`(tabs)/_layout.tsx`, `pathname === '/perfil'`);
- * `/`, `/buscar`, `/favoritos` se infieren de la convención de Expo Router
- * (grupo sin URL, `index.tsx` = raíz del grupo). PENDIENTE DE MEDIR EN
- * DISPOSITIVO antes de confiar en esto en producción: agregar un
- * `console.log(pathname)` temporal en `(tabs)/_layout.tsx` y visitar los
- * cuatro tabs — ver CLAUDE.md §6, el simulador headless no reemplaza esta
- * verificación.
+ * los otros tres se infirieron de la convención de Expo Router (grupo sin
+ * URL, `index.tsx` = raíz del grupo) y se MIDIERON en dispositivo real antes
+ * de cerrar esta tarea: probando el auto-open parado en cada uno de los 4
+ * tabs, los cuatro valores inferidos resultaron correctos.
  */
 const TAB_ROOTS = new Set(['/', '/buscar', '/favoritos', '/perfil']);
 
