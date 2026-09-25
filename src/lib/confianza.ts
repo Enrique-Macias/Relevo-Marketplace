@@ -18,6 +18,7 @@ import { AppState } from 'react-native';
 
 import { elegirPendiente, type CompraPendiente } from '@/lib/calificacion-pendiente';
 import { getListingsOmitidos } from '@/lib/calificar-omitidas';
+import { deduplicarContactos } from '@/lib/contactos';
 import { cambiarEstadoListing, type EstadoListing } from '@/lib/listings';
 import { navegacionPorNotificacion } from '@/lib/push';
 import { useSession } from '@/lib/session';
@@ -57,6 +58,15 @@ export type Venta = {
  * La RLS de `listing_contacts` ya limita el resultado a quien puede verlo: el
  * dueño de la publicación ve quién lo contactó. No hace falta filtrar por
  * vendedor aquí.
+ *
+ * `listing_contacts` es append-only (CLAUDE.md §3): un mismo comprador puede
+ * tener varias filas si tocó "Contactar por WhatsApp" más de una vez. Eso es
+ * correcto para el log, pero "¿A quién le vendiste?" lista PERSONAS, no
+ * eventos — `deduplicarContactos()` (`src/lib/contactos.ts`) colapsa las
+ * repetidas a una sola, con el contacto más reciente. Este es el ÚNICO
+ * consumidor de `fetchContactos()` en el repo, así que el dedup no afecta a
+ * nadie más — en particular no a `fetchStatsPropias()` (`src/lib/listings.ts`),
+ * que sigue contando cada tap para el stat de Detalle.
  */
 export async function fetchContactos(listingId: number): Promise<Contacto[]> {
   const { data, error } = await supabase
@@ -67,12 +77,14 @@ export async function fetchContactos(listingId: number): Promise<Contacto[]> {
 
   if (error) throw error;
 
-  return (data ?? []).map((c: any) => ({
+  const contactos = (data ?? []).map((c: any) => ({
     userId: c.user_id,
     nombre: c.usuario?.nombre ?? null,
     fotoUrl: c.usuario?.foto_url ?? null,
     createdAt: c.created_at,
   }));
+
+  return deduplicarContactos(contactos);
 }
 
 /**
