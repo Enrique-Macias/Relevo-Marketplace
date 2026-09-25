@@ -26,6 +26,7 @@ import { Screen } from '@/components/Screen';
 import { StarRating } from '@/components/StarRating';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { marcarListingOmitido } from '@/lib/calificar-omitidas';
 import { crearRating } from '@/lib/confianza';
 import { useSession } from '@/lib/session';
 
@@ -87,6 +88,22 @@ export default function CalificarScreen() {
     }
   }
 
+  /**
+   * "Omitir por ahora": esta compra puntual no vuelve a ABRIRSE SOLA (RF-12),
+   * pero el botón manual de Detalle la sigue ofreciendo siempre — esta
+   * pantalla no distingue si se llegó por ahí o por el auto-open, así que
+   * "omitir" tiene el mismo efecto sin importar el origen.
+   *
+   * Sin `await`: es una escritura local que ya se traga sus propios errores
+   * (`calificar-omitidas.ts`), así que no hay nada que esperar antes de volver
+   * atrás.
+   */
+  function omitir() {
+    const userId = session?.user.id;
+    if (userId) void marcarListingOmitido(userId, Number(listingId));
+    router.back();
+  }
+
   return (
     <Screen>
       <StatusBar style="dark" />
@@ -136,7 +153,7 @@ export default function CalificarScreen() {
         />
 
         <AuthLink>
-          <AuthLinkStrong onPress={() => router.back()}>Omitir por ahora</AuthLinkStrong>
+          <AuthLinkStrong onPress={omitir}>Omitir por ahora</AuthLinkStrong>
         </AuthLink>
       </AuthBody>
     </Screen>

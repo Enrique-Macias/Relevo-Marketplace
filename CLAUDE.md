@@ -2291,7 +2291,11 @@ Toast de éxito · Toast de error · Loading / skeleton
   vendedor la lista de usuarios que tocaron "Contactar por WhatsApp" en esa
   publicación, para que elija quién se la llevó (o "No fue a través de
   Relevo"). Esa selección dispara la pantalla de Calificar con el nombre real
-  de esa persona.
+  de esa persona. **El COMPRADOR ya no depende de llegar ahí por su cuenta: la
+  próxima vez que abre o retoma la app, si tiene una compra pendiente de
+  calificar, "Calificar" se le abre sola — una sola vez por sesión, y solo la
+  más reciente si hay varias (detalle completo y la regla exacta de
+  "pendiente" en `confianza-ventas.md`).**
 - **El único selector que queda es el de campus, y tiene dos usos distintos.**
   "Selector de universidad" ya no existe: salió del flujo y del HTML cuando la
   universidad pasó a asignarla el servidor desde el dominio del correo

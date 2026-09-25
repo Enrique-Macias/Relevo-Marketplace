@@ -165,6 +165,22 @@ export async function borrarPushToken(): Promise<void> {
   }
 }
 
+/**
+ * Se pone en `true` justo antes de navegar por un tap de notificación (las DOS
+ * ramas de `useRespuestaANotificacion`). La lee — nunca la espera — cualquier
+ * otro efecto que compita por la navegación al abrir la app. No es un timer:
+ * mismo criterio que `vigente`/`intentoRef` en `listings.ts`/
+ * `selector-campus.tsx` — comprobar el estado real en el momento de actuar, no
+ * adivinar cuánto tardaría el otro lado.
+ *
+ * OJO: quien la consume (`useAutoAbrirCalificarPendiente`, en confianza.ts) es
+ * también quien la REINICIA a `false` al empezar cada uno de sus propios
+ * ciclos de revisión (mount, y cada regreso a primer plano) — esta bandera
+ * arbitra la carrera de CADA ciclo, no "si alguna vez pasó en esta sesión".
+ * Este archivo (`push.ts`) solo la enciende; nunca la apaga.
+ */
+export const navegacionPorNotificacion = { current: false };
+
 /** A dónde lleva el tap, leído del `data` que manda la Edge Function. */
 function destino(respuesta: NotificationsType.NotificationResponse): string {
   const data = respuesta.notification.request.content.data as
@@ -193,6 +209,12 @@ function destino(respuesta: NotificationsType.NotificationResponse): string {
  * Se monta en el layout raíz, no en una pantalla: tiene que estar escuchando
  * pase lo que pase, y navegar desde una pantalla que puede estar desmontada no
  * tiene sentido.
+ *
+ * Las dos ramas marcan `navegacionPorNotificacion.current = true` justo antes
+ * de navegar: además de navegar, esta función avisa que YA navegó, para que
+ * otro efecto que compita por la pantalla al abrir la app
+ * (`useAutoAbrirCalificarPendiente`, en `confianza.ts`) pueda comprobarlo
+ * antes de actuar.
  */
 export function useRespuestaANotificacion() {
   useEffect(() => {
@@ -201,10 +223,12 @@ export function useRespuestaANotificacion() {
 
     void Notifications.getLastNotificationResponseAsync().then((respuesta) => {
       if (!activo || !respuesta) return;
+      navegacionPorNotificacion.current = true;
       router.push(destino(respuesta) as never);
     });
 
     const sub = Notifications.addNotificationResponseReceivedListener((respuesta) => {
+      navegacionPorNotificacion.current = true;
       router.push(destino(respuesta) as never);
     });
 

@@ -304,6 +304,85 @@ publicación como en Mis publicaciones.
   ocurre. **Revisar cuando:** alguien reporte que omitió sin querer. **Fix:** un
   botón "Calificar al comprador" en "Detalle (vista vendedor)" — exige frame
   primero (§0 regla 4).
+
+- **El COMPRADOR ya no depende de encontrar el botón: "Calificar" se le abre
+  sola al volver a la app, si tiene una compra pendiente.** Es un tercer
+  camino además del push (RF-16, sin llegar todavía) y del botón manual de
+  Detalle — no reemplaza a ninguno de los dos. Es la deuda OPUESTA a la de
+  arriba (esa es del vendedor calificando al comprador, y sigue sin resolver).
+  - **"Pendiente" es la MISMA regla que ya usa `useVentaDetalle`
+    (`soyComprador && !yaCalifique`), aplicada en bloque**: existe una fila de
+    `listing_sales` con `comprador_id = yo` y todavía no hay una fila de
+    `ratings` mía hacia ese vendedor por ese `listing_id`. No es una copia
+    nueva de autorización — es la misma pregunta que ya se le hace a la base
+    por publicación, hecha ahora sobre todas las compras de una vez
+    (`fetchComprasPendientesDeCalificar()`).
+  - **Una sola vez por SESIÓN, no por compra.** Si aparecen dos compras
+    pendientes en la misma sesión, solo se ofrece la más reciente y solo una
+    vez; la segunda queda para el próximo arranque (o para el botón manual).
+    El candado es un `useRef(false)` (`abierto`, en
+    `useAutoAbrirCalificarPendiente()`) fijado en el instante de navegar — a
+    propósito NO es el mismo patrón que el bug del guard del avatar de
+    moderación (arriba en este mismo archivo, `cuenta-perfil.md`), que
+    necesitaba distinguir eventos DISTINTOS; aquí el requisito es justo "una
+    vez, punto", así que el mismo booleano simple que allá era un bug, aquí es
+    la implementación correcta. Y se resetea SOLO al cambiar de cuenta en el
+    mismo dispositivo sin cerrar la app del todo: cerrar sesión desmonta
+    `(tabs)/_layout.tsx` de verdad (el `REPLACE` de `<Redirect>` quita esa
+    ruta del árbol de navegación, no la deja "congelada" detrás), así que el
+    candado de la cuenta anterior no sobrevive para la siguiente.
+  - **Reasignar al comprador lo saca de la lista sin ningún código
+    especial**: la query filtra por `comprador_id` actual, así que un
+    comprador reemplazado deja de aparecer en su propio chequeo la próxima
+    vez que se evalúe, por la misma razón por la que dejó de tener el botón en
+    Detalle.
+  - **"Omitir por ahora" en esta ruta es local al dispositivo, por cuenta, y
+    NO es lo mismo que la deuda de arriba** (esa es del vendedor calificando
+    al comprador). Se persiste en AsyncStorage (`src/lib/calificar-omitidas.ts`,
+    clave por `userId` — un dispositivo puede tener varias cuentas) y su
+    efecto es: esa compra puntual nunca vuelve a auto-abrirse, pero el botón
+    manual de Detalle la sigue ofreciendo siempre — la pantalla de Calificar
+    no distingue de dónde vino el tap, así que "omitir" tiene el mismo efecto
+    sin importar el origen.
+  - **Suspensión**: guardado del lado cliente con `profile.estado !== 'activo'`
+    antes de siquiera consultar candidatas — defensa en profundidad, el
+    candado real sigue siendo `ratings_insert_own` (§3 de `CLAUDE.md`).
+  - **Fallo silencioso end-to-end**: cualquier error de red en el chequeo (la
+    query de `listing_sales`, la de `ratings`, o el AsyncStorage de omitidas)
+    hace que el hook no haga nada visible ese ciclo — nunca un toast, nunca un
+    error, nunca un loop de reintento. Vuelve a intentarlo en el siguiente
+    regreso a primer plano.
+  - **La coordinación con el tap de una notificación (`useRespuestaANotificacion`,
+    `src/lib/push.ts`) es una bandera comprobada en el momento de actuar
+    (`navegacionPorNotificacion`), NUNCA una espera arbitraria.** Este repo no
+    tiene ningún precedente de un `setTimeout` usado como heurística de
+    carrera —el único caso parecido, un timer fijo en `splash.tsx`, se
+    documentó como retirado a propósito— así que el criterio es el mismo que
+    `vigente`/`intentoRef` en `listings.ts`/`selector-campus.tsx`: comprobar el
+    estado real, no adivinar cuánto tardaría el otro lado. La bandera se
+    reinicia a `false` al EMPEZAR cada ciclo de revisión (mount, o cada
+    regreso a primer plano) y se comprueba en DOS momentos —antes de ese
+    reinicio y después del fetch— porque `AppState` y el listener de
+    notificaciones son dos streams de eventos nativos sin orden garantizado
+    entre sí. Cubre dos de las tres variantes de la carrera; la tercera (el
+    push de Calificar ya ocurrió y la notificación aterriza después) queda
+    como hueco residual explícito, porque cerrarla exigiría esa misma espera
+    arbitraria que este diseño evita — hoy es igualmente inalcanzable, porque
+    el push no entrega en ningún aparato todavía (pendiente 1 de CLAUDE.md
+    §8).
+  - Sin migración, sin frame nuevo, sin cambio a `can_rate()`: reutiliza
+    exactamente la pantalla y el copy existentes de "Calificar".
+  - El módulo puro que decide "cuál compra, si alguna" vive en
+    `src/lib/calificacion-pendiente.ts` (cero imports) y su probe en
+    `scripts/probe-calificacion-pendiente.mjs` — mismo convenio que
+    `src/lib/ubicacion.ts` / `scripts/probe-ubicacion.mjs`.
+  - **Los cuatro pathnames de `TAB_ROOTS`** (`confianza.ts`) — dónde es seguro
+    auto-navegar sin interrumpir otra pantalla — solo tienen `'/perfil'`
+    confirmado textualmente en el repo; `/`, `/buscar`, `/favoritos` se
+    infieren de la convención de Expo Router y quedan **pendientes de medir en
+    dispositivo** (un `console.log(pathname)` temporal visitando los cuatro
+    tabs) antes de confiar en esto en producción.
+
 - **La reseña del mal asignado sobrevive y queda inmutable.** Si el vendedor
   acredita por error a C y C lo califica, esa fila se queda: tras la corrección
   `can_rate()` ya no la autorizaría, así que **C tampoco puede editarla**

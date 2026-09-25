@@ -6,11 +6,21 @@
  * tocaron "Contactar por WhatsApp", y su elección se registra en
  * `listing_sales`. Esa fila es lo que después autoriza la calificación entre
  * las dos partes — ver `private.can_rate()` en la migración 20260912000453.
+ *
+ * Y desde el auto-open de Calificar (RF-12), también decide CUÁNDO se le
+ * ofrece solo, al volver a la app: `fetchComprasPendientesDeCalificar()` +
+ * `useAutoAbrirCalificarPendiente()`, al final de este archivo.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { router, usePathname } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
+import { elegirPendiente, type CompraPendiente } from '@/lib/calificacion-pendiente';
+import { getListingsOmitidos } from '@/lib/calificar-omitidas';
 import { cambiarEstadoListing, type EstadoListing } from '@/lib/listings';
+import { navegacionPorNotificacion } from '@/lib/push';
+import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 
 export type Contacto = {
@@ -222,6 +232,67 @@ export async function yaCalifico(
 
   if (error) throw error;
   return (count ?? 0) > 0;
+}
+
+/**
+ * Todas las compras de `userId` que todavía puede calificar — la misma regla
+ * de `useVentaDetalle` (`soyComprador && !yaCalifique`), aplicada en bloque en
+ * vez de a un listing a la vez. No es una copia nueva de autorización: es la
+ * misma pregunta que ya se le hace a la base por publicación.
+ *
+ * Fallo suave A PROPÓSITO — `[]` en cualquier error, nunca lanza. A diferencia
+ * de `fetchVenta` (cuyo llamante decide qué hacer con el error), el único
+ * consumidor de esta función es `useAutoAbrirCalificarPendiente()`, que nunca
+ * debe mostrar un error visible ni reintentar en loop: "si algo falla, nada
+ * visible pasa" es el requisito, así que el `catch` vive AQUÍ DENTRO.
+ */
+export async function fetchComprasPendientesDeCalificar(
+  userId: string
+): Promise<CompraPendiente[]> {
+  try {
+    const [ventas, calificadas] = await Promise.all([
+      supabase
+        .from('listing_sales')
+        .select(
+          'listing_id, created_at, listing:listings(vendedor:users!listings_user_id_fkey(id, nombre, foto_url))'
+        )
+        .eq('comprador_id', userId),
+      supabase.from('ratings').select('listing_id').eq('from_user_id', userId),
+    ]);
+
+    if (ventas.error) throw ventas.error;
+    if (calificadas.error) throw calificadas.error;
+
+    // Basta filtrar por `listing_id`, sin `to_user_id`: en cada fila de
+    // `listing_sales` donde `userId` es `comprador_id`, su rol en ESE
+    // `listing_id` es comprador y solo comprador, así que cualquier fila de
+    // `ratings` con `from_user_id = userId` y ese mismo `listing_id` solo
+    // puede ser "yo, comprador, calificando a ese vendedor" — no hay otra
+    // combinación posible dado el `unique(from_user_id, to_user_id,
+    // listing_id)` y `private.can_rate()` (20260912000453_listing_sales.sql).
+    const yaCalificados = new Set((calificadas.data ?? []).map((r) => r.listing_id));
+
+    const pendientes: CompraPendiente[] = [];
+    for (const v of ventas.data ?? []) {
+      if (yaCalificados.has(v.listing_id)) continue;
+
+      const vendedor = (v.listing as any)?.vendedor;
+      if (!vendedor) continue; // defensivo: fila inconsistente o vacía por RLS
+
+      pendientes.push({
+        listingId: v.listing_id,
+        sellerId: vendedor.id,
+        sellerName: vendedor.nombre,
+        sellerFotoUrl: vendedor.foto_url,
+        createdAt: v.created_at,
+      });
+    }
+
+    return pendientes;
+  } catch (e: any) {
+    console.warn('[confianza] no se pudieron leer las compras pendientes:', e?.message ?? e);
+    return [];
+  }
 }
 
 /** RF-12. El `unique (from_user_id, to_user_id, listing_id)` impide el duplicado. */
@@ -494,4 +565,146 @@ export function useVentaDetalle(
   }, [listingId, userId, vendedorId, recargas]);
 
   return { venta, yaCalifique };
+}
+
+/**
+ * Los cuatro pathnames raíz de `(tabs)`, donde es seguro auto-navegar a
+ * Calificar sin interrumpir otra pantalla. Solo `'/perfil'` está confirmado
+ * textualmente en el repo (`(tabs)/_layout.tsx`, `pathname === '/perfil'`);
+ * `/`, `/buscar`, `/favoritos` se infieren de la convención de Expo Router
+ * (grupo sin URL, `index.tsx` = raíz del grupo). PENDIENTE DE MEDIR EN
+ * DISPOSITIVO antes de confiar en esto en producción: agregar un
+ * `console.log(pathname)` temporal en `(tabs)/_layout.tsx` y visitar los
+ * cuatro tabs — ver CLAUDE.md §6, el simulador headless no reemplaza esta
+ * verificación.
+ */
+const TAB_ROOTS = new Set(['/', '/buscar', '/favoritos', '/perfil']);
+
+/**
+ * Auto-abre "Calificar" al volver a la app, si el usuario tiene una compra
+ * pendiente (RF-12) — una sola vez por SESIÓN, y solo la más reciente si hay
+ * varias. Se consume desde `(tabs)/_layout.tsx`, junto a
+ * `useRespuestaANotificacion()`.
+ */
+export function useAutoAbrirCalificarPendiente(): void {
+  const { status, session, profile, isProfileComplete } = useSession();
+  const pathname = usePathname();
+  // Asignación en un efecto, no en el cuerpo del render (`react-hooks/refs`
+  // rechaza mutar un ref durante el render) — declarado ANTES que los efectos
+  // de abajo, así que para cuando `revisar()` los usa, el ref ya trae el
+  // pathname de este render. Mismo patrón que `paramsRef`/`keyRef` en
+  // `listings.ts`.
+  const pathnameRef = useRef(pathname);
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  });
+
+  // Candado de UNA VEZ POR SESIÓN, fijado en `true` únicamente en el instante
+  // de navegar (no al "hacer el chequeo"). El requisito del usuario es
+  // literalmente "una sola vez, punto" — sin importar cuántas compras
+  // pendientes distintas aparezcan después — así que este booleano simple es
+  // exactamente la semántica pedida y NO repite el bug del guard del avatar de
+  // moderación (`cuenta-perfil.md`): aquel necesitaba distinguir EVENTOS
+  // distintos (cada avatar moderado merece su propio aviso) en un componente
+  // que nunca se desmonta; aquí no hay eventos que distinguir, solo un tope.
+  //
+  // Y sí se resetea solo, sin código adicional, al cambiar de cuenta en el
+  // mismo dispositivo sin cerrar la app del todo: `signOut()` dispara el
+  // guard de `(tabs)/_layout.tsx` (`if (!session) return <Redirect
+  // href="/splash" />`), que navega con un `REPLACE` dirigido al Stack RAÍZ —
+  // quita la entrada `(tabs)` del array de rutas en vez de dejarla debajo, así
+  // que `(tabs)/_layout.tsx` se desmonta de verdad (no es una vista nativa
+  // "congelada" de fondo, eso es `freezeOnBlur`, que solo aplica a rutas que
+  // SIGUEN en el array). Cuando otra cuenta entra después, este hook se monta
+  // como una instancia NUEVA y `abierto` vuelve a arrancar en `false`.
+  const abierto = useRef(false);
+  const enCurso = useRef(false); // evita solapar dos revisiones a la vez
+
+  const revisar = useCallback(async () => {
+    if (abierto.current || enCurso.current) return;
+    if (status !== 'ready' || !session || !isProfileComplete) return;
+    // Defensa en profundidad, no el candado real: el candado real sigue
+    // siendo `ratings_insert_own` exigiendo `private.is_active_user()` (§3 de
+    // CLAUDE.md). Sin este guard, un suspendido vería Calificar abrirse sola
+    // para terminar en un error al enviar.
+    if (profile?.estado !== 'activo') return;
+
+    enCurso.current = true;
+    // Reinicio de la señal de carrera AL EMPEZAR este ciclo, no al terminar la
+    // sesión. Es a propósito lo contrario de `abierto`: `abierto` es el
+    // candado de la ACCIÓN y debe quedar en `true` para siempre; esta bandera
+    // solo describe "¿navegó una notificación DENTRO de este ciclo (este
+    // mount, o este regreso a primer plano)?", así que debe volver a `false`
+    // en cada ciclo nuevo — dejarla en `true` de un ciclo a otro bloquearía
+    // para siempre el auto-open de cualquier compra pendiente futura sin
+    // relación alguna con esa notificación.
+    //
+    // Se CAPTURA el valor antes de resetear, y no se descarta: `AppState`
+    // 'change'→'active' y `addNotificationResponseReceivedListener` son dos
+    // streams de eventos nativos independientes, sin orden garantizado entre
+    // sí. Si el tap de notificación ya navegó y puso la bandera en `true`
+    // ANTES de que este reset corriera, resetear sin capturar borraría esa
+    // señal un instante antes de comprobarla — el auto-open empujaría
+    // Calificar encima de la pantalla de la notificación. Por eso se
+    // comprueban los DOS momentos más abajo: antes del reset y después del
+    // fetch. (El orden inverso —nuestro push ya ocurrió y la notificación
+    // aterriza después— no tiene candado posible sin una espera arbitraria, y
+    // hoy es inalcanzable: el push no entrega en ningún aparato todavía,
+    // pendiente 1 de CLAUDE.md §8.)
+    const yaNavegoAntesDeEsteCiclo = navegacionPorNotificacion.current;
+    navegacionPorNotificacion.current = false;
+    try {
+      let pendientes: CompraPendiente[];
+      let omitidas: number[];
+      try {
+        [pendientes, omitidas] = await Promise.all([
+          fetchComprasPendientesDeCalificar(session.user.id),
+          getListingsOmitidos(session.user.id),
+        ]);
+      } catch {
+        return; // fallo silencioso: nunca un error visible, nunca un loop
+      }
+
+      const elegida = elegirPendiente(pendientes, omitidas);
+      if (!elegida) return;
+
+      // Sin espera: se comprueba el estado real justo antes de navegar, no
+      // "probablemente ya pasó" (no hay ningún `setTimeout` en este hook a
+      // propósito — este repo ya resuelve esta familia de carreras con una
+      // bandera comprobable en el momento de actuar, ver `vigente`/
+      // `intentoRef` en `listings.ts`/`selector-campus.tsx`, nunca con una
+      // espera arbitraria). Si DENTRO DE ESTE MISMO CICLO un tap de
+      // notificación ya disparó su propia navegación —antes del reset de
+      // arriba, o durante este fetch—, o cualquier otra pantalla ya tomó el
+      // foco, este ciclo se retira SIN marcar el candado — se reintenta en el
+      // próximo regreso a primer plano, con la bandera de carrera otra vez en
+      // `false`.
+      if (yaNavegoAntesDeEsteCiclo || navegacionPorNotificacion.current) return;
+      if (!TAB_ROOTS.has(pathnameRef.current)) return;
+
+      abierto.current = true;
+      router.push({
+        pathname: '/(confianza)/calificar',
+        params: {
+          toUserId: elegida.sellerId,
+          listingId: String(elegida.listingId),
+          nombre: elegida.sellerName ?? '',
+          fotoUrl: elegida.sellerFotoUrl ?? '',
+        },
+      });
+    } finally {
+      enCurso.current = false;
+    }
+  }, [status, session, isProfileComplete, profile?.estado]);
+
+  useEffect(() => {
+    void revisar();
+  }, [revisar]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void revisar();
+    });
+    return () => sub.remove();
+  }, [revisar]);
 }
