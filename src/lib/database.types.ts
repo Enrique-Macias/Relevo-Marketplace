@@ -14,6 +14,38 @@ export type Database = {
   }
   public: {
     Tables: {
+      avatar_moderacion: {
+        Row: {
+          created_at: string
+          foto_url_nulificado: boolean
+          id: number
+          storage_path: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          foto_url_nulificado: boolean
+          id?: never
+          storage_path: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          foto_url_nulificado?: boolean
+          id?: never
+          storage_path?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "avatar_moderacion_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campus: {
         Row: {
           ciudad: string
@@ -168,6 +200,32 @@ export type Database = {
           },
         ]
       }
+      listing_moderacion_reclamos: {
+        Row: {
+          completada_at: string | null
+          listing_id: number
+          reclamada_at: string
+        }
+        Insert: {
+          completada_at?: string | null
+          listing_id: number
+          reclamada_at?: string
+        }
+        Update: {
+          completada_at?: string | null
+          listing_id?: number
+          reclamada_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_moderacion_reclamos_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: true
+            referencedRelation: "listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       listing_photos: {
         Row: {
           created_at: string
@@ -248,6 +306,7 @@ export type Database = {
           universidad_id: number
           updated_at: string
           user_id: string
+          veredicto_en_pantalla: boolean
           vistas_count: number
         }
         Insert: {
@@ -264,6 +323,7 @@ export type Database = {
           universidad_id: number
           updated_at?: string
           user_id: string
+          veredicto_en_pantalla?: boolean
           vistas_count?: number
         }
         Update: {
@@ -280,6 +340,7 @@ export type Database = {
           universidad_id?: number
           updated_at?: string
           user_id?: string
+          veredicto_en_pantalla?: boolean
           vistas_count?: number
         }
         Relationships: [
@@ -638,6 +699,7 @@ export type Database = {
           universidad_id: number
           updated_at: string
           user_id: string
+          veredicto_en_pantalla: boolean
           vistas_count: number
         }[]
         SetofOptions: {
