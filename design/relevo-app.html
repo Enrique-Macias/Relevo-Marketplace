@@ -3944,10 +3944,6 @@
             <div class="menu-label">Ayuda y soporte</div>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
           </div>
-          <div class="menu-row">
-            <div class="menu-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></div>
-            <div class="menu-label">Cerrar sesión</div>
-          </div>
         </div>
       </div>
 
@@ -3972,6 +3968,170 @@
           <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
           Perfil
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Configuración</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="page-heading">Configuración</div>
+      </div>
+      <div class="screen">
+
+        <div class="section-head" style="padding-top:4px;">
+          <div class="section-title">Notificaciones</div>
+        </div>
+        <div class="status-section" style="padding:0 20px 4px;">
+          <!-- Fila con TRES estados posibles (no es un toggle: el permiso lo
+               controla el sistema operativo, no la app). Aquí se pinta
+               'concedido'. Ver las otras dos variantes anotadas abajo. -->
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg></div>
+              <span class="status-row-text">Notificaciones</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:13px; color:var(--ink-soft);">Activadas</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+          <!-- Variante (doc, no es parte del flujo): permiso denegado. -->
+          <div style="margin:14px 0 0; padding-top:10px; border-top:1px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">
+              Variante (doc, no es parte del flujo): permiso denegado
+            </div>
+            <div class="status-row" style="border-bottom:none;">
+              <div class="status-row-label">
+                <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg></div>
+                <span class="status-row-text">Notificaciones</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:13px; color:var(--ink-soft);">Desactivadas</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+              </div>
+            </div>
+          </div>
+          <!-- Variante (doc, no es parte del flujo): permiso NUNCA solicitado
+               (real solo en simulador — ver cuenta-perfil.md). El tap pide el
+               permiso real en vez de abrir Ajustes: en iOS, Ajustes no tiene
+               sección de notificaciones para una app que nunca lo pidió. -->
+          <div style="margin:14px 0 0; padding-top:10px; border-top:1px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">
+              Variante (doc, no es parte del flujo): permiso nunca solicitado
+            </div>
+            <div class="status-row" style="border-bottom:none;">
+              <div class="status-row-label">
+                <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg></div>
+                <span class="status-row-text">Notificaciones</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:13px; font-weight:600; color:var(--brick);">Activar</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-head">
+          <div class="section-title">General</div>
+        </div>
+        <div class="status-section" style="padding:0 20px 4px;">
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></div>
+              <span class="status-row-text">Calificar la app</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg></div>
+              <span class="status-row-text">Compartir la app</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+        </div>
+
+        <div class="section-head">
+          <div class="section-title">Legal</div>
+        </div>
+        <div class="status-section" style="padding:0 20px 4px;">
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg></div>
+              <span class="status-row-text">Aviso de privacidad</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l4 4v16H6z"/><path d="M15 2v4h4"/><path d="M9 12h6M9 16h6"/></svg></div>
+              <span class="status-row-text">Términos de uso</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+        </div>
+
+        <div class="section-head">
+          <div class="section-title">Soporte</div>
+        </div>
+        <div class="status-section" style="padding:0 20px 4px;">
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6l9 6 9-6"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg></div>
+              <span class="status-row-text">Contacto</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 8h.01"/></svg></div>
+              <span class="status-row-text">Versión</span>
+            </div>
+            <span style="font-size:13px; color:var(--ink-soft);">1.0.0</span>
+          </div>
+        </div>
+
+        <div class="status-section" style="margin-top:22px; padding:0 20px 4px;">
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></div>
+              <span class="status-row-text">Cerrar sesión</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Zona separada: eliminar cuenta. Su flujo real es la tarea
+             siguiente — aquí solo se documenta el tratamiento visual
+             destructivo (mismo recurso que "Eliminar publicación": ícono +
+             texto en --brick, sin fondo ni borde especial, porque ese es el
+             único tratamiento de "acción destructiva" que existe hoy en este
+             sistema de diseño). La separación de "Cerrar sesión" es de
+             espaciado (margin-top:22px, igual que un .section-head nuevo),
+             no una línea punteada: esa línea en este archivo se usa solo para
+             anotar variantes de documentación, no como elemento real de UI. -->
+        <div class="status-section" style="margin-top:22px; padding:0 20px 24px;">
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon" style="color:var(--brick);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg></div>
+              <span class="status-row-text danger">Eliminar cuenta</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>

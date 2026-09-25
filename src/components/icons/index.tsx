@@ -658,3 +658,62 @@ export function IconUser({ size, color }: IconProps) {
     </Svg>
   );
 }
+
+// `.status-row-icon` de "Aviso de privacidad" (frame Configuración).
+export function IconShield({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />
+    </Svg>
+  );
+}
+
+// `.status-row-icon` de "Términos de uso" (frame Configuración): hoja con
+// esquina doblada + dos líneas de texto.
+export function IconDocument({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M6 2h9l4 4v16H6z" />
+      <Path d="M15 2v4h4" />
+      <Path d="M9 12h6M9 16h6" />
+    </Svg>
+  );
+}
+
+// `.status-row-icon` de "Versión" (frame Configuración) — círculo + "i",
+// distinto de `IconHelpCircle` (círculo + "?").
+export function IconInfo({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Circle cx={12} cy={12} r={9} />
+      <Path d="M12 11v5.5M12 8h.01" />
+    </Svg>
+  );
+}

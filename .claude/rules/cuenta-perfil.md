@@ -6,6 +6,7 @@ paths:
   - "src/lib/perfil.ts"
   - "src/lib/perfil-publico.ts"
   - "src/lib/catalogos.ts"
+  - "src/lib/configuracion.ts"
 ---
 
 # Cuenta: Mis publicaciones, Favoritos, Perfil, Editar perfil, Perfil público
@@ -785,6 +786,101 @@ Lo que no se ve en el diff:
   lo dijimos" —una columna en `users` o un valor nuevo de `notification_type`,
   que cuesta DOS migraciones por el `ALTER TYPE` partido, como
   `20260917000458`/`:459`—; (3) recién ahí el cliente.
+
+**"Configuración" construida — le da destino al engrane de `.profile-top`,
+inerte desde que existe "Perfil".** Vive en `src/app/(cuenta)/configuracion.tsx`,
+con `src/lib/configuracion.ts` como el único lugar que decide qué fila se
+pinta hoy (`filaVisible()`). "Cerrar sesión" se mudó aquí desde el
+`.menu-list` de Perfil (mismo `ConfirmModal`, mismo `IconLogout`, mismo
+`signOut()`); Perfil se queda con 4 filas (Mis publicaciones, Editar perfil,
+Verificación, Ayuda y soporte) y el comentario "Ajustes: sin pantalla..."
+sobre el engrane ya no aplica — solo sigue aplicando a "Verificación"/"Ayuda y
+soporte", que siguen sin destino.
+
+Lo que no se ve en el diff:
+
+- **Cero componentes nuevos de fila.** `StatusRow` (`src/components/StatusRow.tsx`)
+  ya cubre exactamente lo que esta pantalla necesita: `icon`+`label`+`trailing`
+  (chevron, un valor de texto, o nada) + `onPress` opcional (sin él la fila
+  queda inerte, ya era el patrón de "Marcar como vendida") + `danger`. Se
+  reusa tal cual para las 9 filas, incluida la de valor+chevron de
+  Notificaciones (un `<Text>` antes del chevron dentro de `trailing`, sin
+  clase/prop nueva). `SectionHead` ya soportaba título sin "Ver todo"
+  (`linkLabel` opcional).
+- **El permiso de notificaciones es de TRES estados, no dos**
+  (`EstadoPermisoPush` en `src/lib/push.ts`), porque `getPermissionsAsync`
+  puede devolver `'undetermined'` — real solo en simulador/emulador
+  (`Device.isDevice === false` hace que `registrarPushToken` nunca lo
+  resuelva, `push.ts`), porque en dispositivo físico el efecto de
+  `session.tsx` (`useEffect` en `[userId]`) ya pide el permiso real desde
+  que hay sesión, mucho antes de que el usuario pueda llegar aquí. Los tres
+  estados, con copy y acción distintos:
+  - `concedido`/`denegado` → "Activadas"/"Desactivadas" en `--ink-soft`, tap
+    abre Ajustes del sistema (`Linking.openSettings()`).
+  - `no_solicitado` → "Activar" en `--brick` (mismo verbo que el botón de
+    "Permiso de notificaciones" del onboarding), tap llama a
+    `registrarPushToken()` en vez de abrir Ajustes — en iOS, Ajustes no
+    muestra sección de notificaciones para una app que nunca pidió el
+    permiso.
+  - Mientras se resuelve la primera lectura (`permisoPush === null`), el
+    `StatusRow` va SIN `onPress`: sin ese guard, un tap en esa ventana caería
+    al `else` y abriría Ajustes de forma prematura.
+  - Se relee con **`useFocusEffect`**, no un `useEffect` de montaje: revocar
+    el permiso desde Ajustes y volver a la pantalla (sin matar la app) tiene
+    que actualizar el texto, y esa pantalla sigue montada al volver.
+- **`pushDisponible`** (`push.ts`) es una constante de módulo derivada DIRECTO
+  del `require` protegido de `expo-notifications` — no un flag a mano —, y es
+  lo que oculta la fila entera cuando el módulo nativo no está en el build.
+- **`filaVisible()` es por PLATAFORMA para "Calificar la app", no solo por
+  `APP_PUBLICADA`.** Si algún día `APP_PUBLICADA` es `true` pero solo una
+  tienda tiene URL real, la fila no se muestra en la plataforma sin URL —
+  `Platform.OS === 'ios' ? URL_APP_STORE !== '' : URL_GOOGLE_PLAY !== ''`.
+  "Compartir la app" solo depende de `APP_PUBLICADA`: es texto plano sin
+  ninguna URL de tienda.
+- **`mailto:` es el primer `Linking.openURL()` del repo con try/catch.** Los
+  dos usos existentes (`wa.me`, en Detalle/Perfil público) son links
+  universales `https://` que casi nunca rechazan (caen al navegador);
+  `mailto:` SÍ rechaza si el dispositivo no tiene cliente de correo
+  configurado, y `Linking.openURL()` sin manejo dejaría el tap sin ninguna
+  señal. Mismo tratamiento para "Calificar la app" (`market://`/`itms-apps://`
+  tampoco son universales), aunque hoy esa fila esté oculta — el código queda
+  correcto desde que se escribe. Las dos usan el toast de error ya existente
+  (`useToast`, variante `'error'`, `Toast.tsx:18` — la excepción de copy
+  efímero de §0 regla 4, sin componente nuevo).
+- **"Eliminar cuenta" existe en el frame Y en el código, oculta.** El JSX ya
+  está escrito (ícono+texto en `--brick`, `danger` de `StatusRow`), gateado
+  por `filaVisible('eliminar_cuenta')` (hoy `false` a mano, la única fila
+  oculta por decisión de producto y no por una condición externa) — la tarea
+  del flujo real solo tiene que voltear ese booleano y cablear el `onPress`.
+  **Sin separador punteado**: verificado contra TODO el archivo, esa línea
+  (`border-top: … dashed var(--line)`) se usa siempre para anotar variantes
+  de documentación ("Variante (doc, no es parte del flujo)"), nunca como
+  elemento real de zona destructiva — el precedente real ("Eliminar
+  publicación") es solo la última fila de su sección, sin separador. Aquí la
+  separación de "Cerrar sesión"/"Eliminar cuenta" es de espaciado
+  (`marginTop:22`, el mismo valor que ya usa `.section-head`), no una línea.
+- **La versión sale de `Constants.expoConfig?.version`** (`expo-constants`,
+  ya dependencia — `push.ts` ya lo usaba para `projectId`), no de un módulo
+  nuevo: no hace falta `expo-application` ni un dev build nuevo.
+
+**Deuda consciente, cada una con disparador:**
+
+- **"Calificar la app"/"Compartir la app" ocultas hasta que la app esté
+  publicada.** `APP_PUBLICADA` en `src/lib/configuracion.ts` es `false` a
+  mano; "Calificar" además exige `URL_APP_STORE`/`URL_GOOGLE_PLAY` con un link
+  real. **Revisar cuando:** exista una ficha publicada en al menos una tienda.
+  **Fix:** llenar la URL de esa plataforma y, si las dos ya están, voltear
+  `APP_PUBLICADA` a `true`.
+- **"Aviso de privacidad"/"Términos de uso" ocultas hasta que exista una URL
+  real.** `URL_PRIVACIDAD`/`URL_TERMINOS` están vacías. **Revisar cuando:**
+  se publique el aviso de privacidad o los términos de uso en algún lado.
+  **Fix:** poner la URL real en `src/lib/configuracion.ts` — la fila aparece
+  sola, sin tocar la pantalla.
+- **"Eliminar cuenta" no tiene flujo todavía.** El frame y el `StatusRow`
+  existen; `filaVisible('eliminar_cuenta')` es `false` y su `onPress` es
+  `() => {}`. **Revisar cuando:** se construya el flujo de eliminar cuenta
+  (la tarea siguiente, fuera de alcance de esta). **Fix:** voltear el
+  booleano y cablear el `onPress` — nada más de esta pantalla cambia.
 
 - ~~**La base no ata `users.campus_id` a `users.universidad_id`**~~ **[CERRADA]
   por `20260924000466` (fase 2A)**, con el fix que esta misma entrada proponía:

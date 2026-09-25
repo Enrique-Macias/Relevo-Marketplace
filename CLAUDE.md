@@ -2032,7 +2032,7 @@ mandado a `pendiente` al editar fotos, auto-aprobándose sin Studio.
 
 ---
 
-## 4. Inventario completo de pantallas (67)
+## 4. Inventario completo de pantallas (68)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -2191,10 +2191,26 @@ contrario —reintentar es la salida—, así que `esDeterminista()` **no cambi�
 el motivo nuevo vive en `falloGeneral`. Son **tres motivos y dos baldes**; el
 párrafo viejo hacía leer que eran tres baldes.
 
-### Cuenta (9)
+### Cuenta (10)
 Perfil · Editar perfil · **Selector de país** · Perfil público · Favoritos ·
 Favoritos vacío · Mis publicaciones · Mis publicaciones vacío ·
-Mis publicaciones (acciones)
+Mis publicaciones (acciones) · **Configuración**
+
+**"Configuración" es la décima, y le da destino al engrane de `.profile-top`
+de Perfil, inerte desde que existe la pantalla.** 68 en total, 10 de Cuenta,
+medido con el mismo `grep | uniq -c`. Agrupa notificaciones (con sus tres
+estados anotados como variantes: concedido/denegado/nunca solicitado),
+General (calificar/compartir la app), Legal (privacidad/términos), Soporte
+(contacto/versión), Cerrar sesión y, al final, Eliminar cuenta con el
+tratamiento destructivo ya existente (`.status-row-text.danger`) — sin
+separador punteado nuevo: esa línea en el archivo se usa solo para anotar
+variantes de documentación, nunca como zona real de UI, así que la separación
+de "Cerrar sesión"/"Eliminar cuenta" es de espaciado, no de una línea. **"Cerrar
+sesión" se mudó aquí desde el `.menu-list` de "Perfil"**, que se queda con 4
+filas (Mis publicaciones, Editar perfil, Verificación, Ayuda y soporte). El
+FRAME muestra todas las filas; el código solo pinta las que funcionan hoy
+(`filaVisible()`, `src/lib/configuracion.ts`) — detalle completo en
+`cuenta-perfil.md`.
 
 **"Selector de país" llegó con `20260927000470`** (WhatsApp de cualquier país):
 67 en total, 9 de Cuenta, medido con el mismo `grep | uniq -c`. Es el bottom
@@ -2923,6 +2939,9 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - La cola de `pendiente` mezcla lo marcado por moderación con lo abandonado a media subida → `moderacion.md`
 - La promoción de `moderarListing()` puede reventar con 500 si intenta activar una publicación con 0 fotos → `moderacion.md`
 - El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
+- "Calificar la app"/"Compartir la app" ocultas hasta que la app esté publicada (`APP_PUBLICADA`); "Calificar" además exige la URL de la tienda de esa plataforma → `cuenta-perfil.md`
+- "Aviso de privacidad"/"Términos de uso" ocultas hasta que exista una URL real (`URL_PRIVACIDAD`/`URL_TERMINOS`) → `cuenta-perfil.md`
+- "Eliminar cuenta" existe en el frame y en el código (oculta) pero su flujo todavía no existe → `cuenta-perfil.md`
 - ~~El aviso del avatar borrado por moderación se pierde si el usuario no abre Perfil o no ve el toast~~ **[CERRADA]** por `20260928000473` (`avatar_moderacion` + aviso `avatar_eliminado` en el inbox) → `cuenta-perfil.md`
 - Los builds viejos ya instalados crashean el inbox al leer un `tipo` de notificación nuevo (el fallback `ESTILO_DESCONOCIDO` solo existe desde RF-16 tanda 2) → CLAUDE.md §8, "Hecho", paso 5 del runbook de `20260928000471`/`472`/`473`
 - El push no rutea por `tipo`: los avisos sin publicación abren el inbox, no su destino → `notificaciones-push.md`

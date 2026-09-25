@@ -22,14 +22,12 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
-import { ConfirmModal } from '@/components/ConfirmModal';
 import { ErrorState } from '@/components/ErrorState';
 import {
   IconCheck,
   IconCheckCircle,
   IconChevronRight,
   IconHelpCircle,
-  IconLogout,
   IconPencil,
   IconSettings,
   IconStar,
@@ -65,7 +63,7 @@ const TINT_FG: Record<string, string> = {
 };
 
 export default function PerfilScreen() {
-  const { session, profile, refreshProfile, signOut } = useSession();
+  const { session, profile, refreshProfile } = useSession();
   const { mostrar } = useToast();
   const userId = session?.user.id ?? null;
 
@@ -257,17 +255,6 @@ export default function PerfilScreen() {
   const estado: 'loading' | 'ready' | 'error' =
     errorPara === userId ? 'error' : cargadoPara === userId ? 'ready' : 'loading';
 
-  const [confirmando, setConfirmando] = useState(false);
-  const [cerrandoSesion, setCerrandoSesion] = useState(false);
-
-  const cerrarSesion = async () => {
-    setCerrandoSesion(true);
-    await signOut();
-    // No hay que navegar a mano ni cerrar el modal aquí: cambiar la sesión
-    // dispara el guard de (tabs)/_layout.tsx, que ya redirige a /splash — el
-    // desmontaje de esta pantalla se encarga de todo lo demás.
-  };
-
   return (
     <>
       <Screen
@@ -284,8 +271,11 @@ export default function PerfilScreen() {
 
         <View style={styles.top}>
           <Text style={styles.wordmark}>Perfil</Text>
-          {/* Ajustes: sin pantalla en el inventario de 54 ni en product-spec.md. */}
-          <Pressable onPress={() => {}} accessibilityRole="button" hitSlop={12}>
+          <Pressable
+            onPress={() => router.push('/configuracion')}
+            accessibilityRole="button"
+            hitSlop={12}
+          >
             <IconSettings size={20} color={Colors.ink} />
           </Pressable>
         </View>
@@ -398,12 +388,6 @@ export default function PerfilScreen() {
                 icon={<IconHelpCircle size={16} color={Colors.inkSoft} />}
                 label="Ayuda y soporte"
                 onPress={() => {}}
-              />
-              <MenuRow
-                icon={<IconLogout size={16} color={Colors.inkSoft} />}
-                label="Cerrar sesión"
-                onPress={() => setConfirmando(true)}
-                chevron={false}
                 last
               />
             </View>
@@ -418,17 +402,6 @@ export default function PerfilScreen() {
           Perfil.
         */}
       </Screen>
-
-      <ConfirmModal
-        visible={confirmando}
-        icon={<IconLogout size={22} color={Colors.brick} />}
-        title="¿Cerrar sesión?"
-        body="Tendrás que verificar tu correo de nuevo la próxima vez que quieras entrar a Relevo."
-        confirmLabel="Cerrar sesión"
-        onConfirm={cerrarSesion}
-        onCancel={() => setConfirmando(false)}
-        confirming={cerrandoSesion}
-      />
     </>
   );
 }

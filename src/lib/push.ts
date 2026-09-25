@@ -32,6 +32,29 @@ try {
   console.warn('[push] módulo nativo de notificaciones no disponible:', (e as Error)?.message ?? e);
 }
 
+/** Derivada DIRECTO del require protegido de arriba — no un flag a mano. */
+export const pushDisponible = Notifications !== null;
+
+/**
+ * Estado del permiso del sistema, para la fila "Notificaciones" de
+ * Configuración. Son TRES valores, no dos — `getPermissionsAsync` puede
+ * devolver `'undetermined'` (nunca se pidió), no solo `'granted'`/`'denied'`
+ * (expo-modules-core, `PermissionsInterface.d.ts`).
+ */
+export type EstadoPermisoPush = 'concedido' | 'denegado' | 'no_solicitado';
+
+/**
+ * Lee el estado ACTUAL sin pedirlo (no dispara ningún diálogo). Para resolver
+ * `'no_solicitado'`, usar `registrarPushToken()`, que sí pide el permiso.
+ */
+export async function estadoPermisoPush(): Promise<EstadoPermisoPush> {
+  if (!Notifications) return 'no_solicitado';
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status === 'granted') return 'concedido';
+  if (status === 'undetermined') return 'no_solicitado';
+  return 'denegado';
+}
+
 /**
  * Qué hacer con una notificación que llega con la app ABIERTA.
  *
