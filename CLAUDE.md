@@ -199,6 +199,15 @@ más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando y
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
+**Repo y remoto: 37 y 37 (medido el 2026-09-25) — a la par.** `ls
+supabase/migrations | wc -l` da **37**; `mcp__supabase__list_migrations`
+también da **37**, con `20260928000471`, `…472` y `…473` incluidas. El runbook
+de §8 (antes pendiente 0g) ya corrió completo, evidencia en "Hecho".
+
+**Por DECIMOCUARTA vez.** Este párrafo decía "37 y 34, faltan la 471/472/473",
+y al remedirlo el remoto YA las tenía las tres. La historia de antes, tal como
+estaba:
+
 **Repo y remoto: 37 y 34 (medido el 2026-09-24).** `ls supabase/migrations |
 wc -l` da **37**; `mcp__supabase__list_migrations` da **34**. Las que faltan
 en remoto son `20260928000471` (el reclamo de moderación), `…472` (el enum de
@@ -2683,6 +2692,51 @@ de los route groups).
   dispositivo, con su `universidad_id` confirmado — es la única prueba que
   exige un teléfono de verdad y por eso queda para el usuario (ver Pendiente).
 
+- **Reclamo de moderación (`20260928000471`) y avisos nuevos del inbox
+  (`20260928000472`/`473`) EN REMOTO, los 6 pasos, CERRADOS (2026-09-25).**
+  Cada uno remedido con evidencia, no dado por bueno de memoria (era el
+  pendiente 0g):
+  - **Paso 1 (push):** `list_migrations` lista `20260928000471`, `…472` y
+    `…473` — remoto en 37, igual que el repo.
+  - **Paso 2 (verificación en remoto), las CUATRO comprobaciones:**
+    `enum_range(null::notification_type)` con los 8 valores; `pg_get_triggerdef`
+    de los 5 triggers, con el `WHEN` **idéntico** al de la migración
+    (`listings_notify_moderacion` con las dos ramas y el `not
+    veredicto_en_pantalla`; `listings_limpia_veredicto_en_pantalla` BEFORE con
+    su `WHEN`; `listings_notify_vendido`; `ratings_notify_insert` sin `WHEN`;
+    `avatar_moderacion_notify` con `WHEN (new.foto_url_nulificado)`); las 4
+    funciones `notify_*` nuevas con `has_function_privilege('authenticated', …,
+    'execute')` en `false`; y `listing_moderacion_reclamos`/`avatar_moderacion`
+    con 0 filas en `table_privileges` para `anon`/`authenticated` y 0 en
+    `pg_policies`.
+  - **Paso 3 (deploy):** `list_edge_functions` → `moderar-contenido`
+    **ACTIVE**, `version: 6`, `updated_at` = 2026-09-24 17:47:46 -06:00 —
+    **posterior** al commit `50df2c3` (17:42:18 -06:00) que cerró el código de
+    esta tanda, por ~5 min. El fuente desplegado (bajado con
+    `get_edge_function` y grepeado) trae los cuatro marcadores:
+    `listing_moderacion_reclamos` (6, una de ellas en el docblock de
+    `decision.ts`, que viaja empaquetado junto con `index.ts` — el `index.ts`
+    local solo tiene 5, porque ese docblock vive en otro archivo),
+    `descartado_por_carrera` (1), `veredicto_en_pantalla` (2) y
+    `avatar_moderacion` (3) — mismas cuentas que el fuente local.
+  - **Paso 4 (gen:types):** `git show 5b61009 -- src/lib/database.types.ts`
+    muestra el diff exacto (62 inserciones, 1 borrado): las dos tablas nuevas
+    y `listings.veredicto_en_pantalla` aparecen ahí por primera vez, y no
+    estaban en el commit anterior (`50df2c3`). Reforzado con una regeneración
+    EN VIVO contra remoto (`generate_typescript_types`), que coincide con lo
+    commiteado — `git diff HEAD -- src/lib/database.types.ts` da vacío.
+  - **Paso 5 (build): no hizo falta uno nuevo.** Esta tanda no tocó ningún
+    módulo nativo ni dependencia (`git diff` de `package.json`/`ios/`/`android/`
+    contra el commit anterior da vacío). Confirmado con el usuario: basta con
+    que el dev build ya instalado corra contra un Metro que sirva este JS
+    (reload, no rebuild) — no aplica el gotcha de CLAUDE.md §9 sobre módulos
+    nativos, porque no se agregó ninguno.
+  - **Paso 6 (pruebas manuales del inbox): CONFIRMADO POR EL USUARIO
+    (2026-09-25), sin desglose por caso** — el simulador headless no cuenta
+    como prueba (§6), así que esta confirmación es la que cierra el runbook.
+    Cubre lo listado en `notificaciones-push.md` "Tanda 2" (los 6 escenarios
+    del inbox) y la verificación del reclamo en Studio.
+
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
    CLAUDE.md §8 arriba).** Los pasos 0-5 ya corrieron y están en "Hecho"
@@ -2790,104 +2844,11 @@ de los route groups).
    **Paso 1 HECHO, fuera de la sesión que escribió este punto:** el
    2026-09-24, `list_migrations` ya listaba la 469 y la 470 (34 en remoto).
    Los pasos 2-5 no se verificaron en esa medición.
-0g. **Pasos 1-5 HECHOS y remedidos el 2026-09-25 (los 6 originales, tal como
-   estaba este punto, están abajo tal cual se escribieron — la moraleja de §3
-   otra vez: se remide, no se da por bueno de memoria). Falta solo el paso 6.**
-
-   - **Paso 1 (push):** `list_migrations` lista `20260928000471`, `…472` y
-     `…473` — remoto en 37, igual que el repo.
-   - **Paso 2 (verificación en remoto), las CUATRO comprobaciones, cada una
-     ejecutada:**
-     - `enum_range(null::notification_type)` → los 8 valores, incluidos los 5
-       nuevos.
-     - `pg_get_triggerdef` de los 5 triggers, con el `WHEN` **idéntico** al de
-       la migración (`listings_notify_moderacion` con las dos ramas y el `not
-       veredicto_en_pantalla`; `listings_limpia_veredicto_en_pantalla`
-       BEFORE con su `WHEN`; `listings_notify_vendido`;
-       `ratings_notify_insert` sin `WHEN`; `avatar_moderacion_notify` con
-       `WHEN (new.foto_url_nulificado)`).
-     - Las 4 funciones `notify_*` nuevas: `has_function_privilege('authenticated',
-       …, 'execute')` da `false` en las cuatro.
-     - `listing_moderacion_reclamos` y `avatar_moderacion`: 0 filas en
-       `table_privileges` para `anon`/`authenticated` y 0 en `pg_policies`,
-       las dos.
-   - **Paso 3 (deploy):** `list_edge_functions` → `moderar-contenido`
-     **ACTIVE**, `version: 6`, `updated_at` = 2026-09-24 17:47:46 -06:00 —
-     **posterior** al commit `50df2c3` (17:42:18 -06:00) que cerró el trabajo
-     de esta tanda, por ~5 min. El fuente desplegado (bajado con
-     `get_edge_function` y grepeado) trae los cuatro marcadores:
-     `listing_moderacion_reclamos` (6, una de ellas en el docblock de
-     `decision.ts` que viaja empaquetado junto con `index.ts` — el local
-     `index.ts` solo tiene 5 porque ese docblock vive en otro archivo),
-     `descartado_por_carrera` (1), `veredicto_en_pantalla` (2) y
-     `avatar_moderacion` (3) — mismas cuentas que el fuente local.
-   - **Paso 4 (gen:types):** `git show 5b61009 -- src/lib/database.types.ts`
-     muestra el diff exacto (62 inserciones, 1 borrado): las dos tablas nuevas
-     y `listings.veredicto_en_pantalla` aparecen ahí por primera vez — no
-     estaban en el commit anterior (`50df2c3`). Y no es solo un diff plausible:
-     se volvió a generar los tipos EN VIVO contra remoto
-     (`generate_typescript_types`) y el resultado coincide con lo que hay hoy
-     en el archivo (mismas dos tablas, misma columna, mismo enum de 8
-     valores) — `git diff HEAD -- src/lib/database.types.ts` da vacío, o sea
-     que el archivo commiteado es justo eso.
-   - **Paso 5 (build):** esta tanda **no tocó ningún módulo nativo ni
-     dependencia** — `git diff` de `package.json`/`ios/`/`android/` contra el
-     commit anterior a la tanda da vacío. Confirmado con el usuario: no hace
-     falta un build nuevo, basta con que el dev build YA instalado corra
-     contra un Metro que sirva este JS (reload, no rebuild). No hay ningún
-     Metro activo para este proyecto en este momento (el único `expo start`
-     corriendo en la máquina es de otro proyecto), así que esto no está
-     verificado por un proceso vivo — es la explicación de por qué no hace
-     falta, no la confirmación de que ya se recargó.
-   - **Lo que NO se puede dar por hecho: el paso 6.** No hay evidencia de que
-     las pruebas manuales del inbox se hayan corrido — por diseño, este tipo
-     de prueba no la puede confirmar una sesión de IA (CLAUDE.md §6). Sigue
-     como pendiente real, no como checkbox pendiente de marcar.
-
-   Texto original de este punto, con los 6 pasos tal como se escribieron —
-   sigue siendo la referencia de QUÉ hacer, aunque 1-5 ya estén hechos:
-
-   1. `supabase db push` con las TRES, que el CLI aplica en orden y en
-      transacciones distintas (la 472 tiene que commitear antes de que la 473
-      nombre sus valores, medido en `20260917000458`). `list_migrations` debe
-      listar la 471, la 472 y la 473 (remoto pasa de 34 a 37; se remide, no se
-      suma).
-   2. Verificar en remoto:
-      - `select enum_range(null::public.notification_type)` → 8 valores;
-      - `pg_trigger` con `listings_notify_moderacion`, `listings_notify_vendido`,
-        `listings_limpia_veredicto_en_pantalla`, `ratings_notify_insert` y
-        `avatar_moderacion_notify`, con los `WHEN` de la migración
-        (`pg_get_triggerdef`);
-      - `has_function_privilege('authenticated', …, 'execute')` false para las
-        4 `notify_*` nuevas;
-      - `listing_moderacion_reclamos` y `avatar_moderacion` con 0 privilegios
-        para `anon`/`authenticated` (`table_privileges` y
-        `column_privileges`) y 0 policies.
-   3. `supabase functions deploy moderar-contenido` a mano (no hay CI/CD). DEBE
-      ir después del paso 1: la función NUEVA contra una base vieja responde
-      500 en cada alta (escribe `veredicto_en_pantalla` y usa las dos tablas
-      nuevas). La función VIEJA contra la base nueva sigue funcionando, con un
-      efecto temporal: no marca la columna, así que el veredicto del alta
-      TAMBIÉN llega al inbox (duplicado con la pantalla) hasta este paso. Por
-      eso va inmediatamente después. Luego `list_edge_functions` con la
-      versión nueva, y bajar el fuente desplegado para grepear
-      `listing_moderacion_reclamos`, `descartado_por_carrera`,
-      `veredicto_en_pantalla` y `avatar_moderacion`.
-   4. `npm run gen:types` contra remoto. Hoy `database.types.ts` tiene el enum
-      escrito a mano y le faltan la columna y las dos tablas, que ningún
-      código del cliente lee.
-   5. Distribuir el build. Un build VIEJO contra el remoto nuevo lee filas de
-      tipos que no conoce: no revienta gracias a `ESTILO_DESCONOCIDO`… pero
-      ese fallback solo lo tiene el build NUEVO. **Los builds viejos ya
-      instalados crashean el inbox al pintar un tipo nuevo**
-      (`ESTILO_POR_TIPO[tipo]` es `undefined`). Distribuir el build nuevo lo
-      antes posible después del push. **Corrección (2026-09-25): esta tanda no
-      cambió nada nativo, así que "distribuir" es un reload de Metro contra el
-      dev build existente, no un build nuevo — ver arriba.**
-   6. Pruebas manuales en el INBOX (el push no llega hoy): ver
-      `notificaciones-push.md`, "Tanda 2". Y del reclamo: publicar algo limpio
-      y confirmar en Studio que el reclamo quedó con `completada_at` y una
-      sola fila en `listing_moderacion`. **Sigue sin correr.**
+**(El pendiente 0g — reclamo de moderación `20260928000471` y avisos nuevos del
+inbox `20260928000472`/`473` — se cerró completo el 2026-09-25, los 6 pasos.
+Evidencia en "Hecho", abajo. Se deja este hueco para no romper las referencias
+cruzadas a "pendiente 0g" de `CLAUDE.md` §3 y `notificaciones-push.md`, que
+ahora apuntan a "Hecho".)**
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
@@ -2959,7 +2920,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - La promoción de `moderarListing()` puede reventar con 500 si intenta activar una publicación con 0 fotos → `moderacion.md`
 - El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
 - ~~El aviso del avatar borrado por moderación se pierde si el usuario no abre Perfil o no ve el toast~~ **[CERRADA]** por `20260928000473` (`avatar_moderacion` + aviso `avatar_eliminado` en el inbox) → `cuenta-perfil.md`
-- Los builds viejos ya instalados crashean el inbox al leer un `tipo` de notificación nuevo (el fallback `ESTILO_DESCONOCIDO` solo existe desde RF-16 tanda 2) → CLAUDE.md §8, pendiente 0g paso 5
+- Los builds viejos ya instalados crashean el inbox al leer un `tipo` de notificación nuevo (el fallback `ESTILO_DESCONOCIDO` solo existe desde RF-16 tanda 2) → CLAUDE.md §8, "Hecho", paso 5 del runbook de `20260928000471`/`472`/`473`
 - El push no rutea por `tipo`: los avisos sin publicación abren el inbox, no su destino → `notificaciones-push.md`
 - El reintento solo distingue DOS errores deterministas → `publicar-fotos.md`
 - `publicandoRef` (`nueva.tsx`) solo cubre el doble-tap dentro de la misma sesión: un crash/reinicio de la app entre que `crearListing()` resuelve en el servidor y el cliente recibe la confirmación puede seguir creando una publicación duplicada — eso necesita idempotencia del lado del servidor → `publicar-fotos.md`

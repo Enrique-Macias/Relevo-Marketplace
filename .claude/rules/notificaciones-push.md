@@ -111,8 +111,8 @@ Detalles que no se ven en el diff:
     el `data` de `send-push` y que `destino()` reuse `rutaDeNotificacion()`.
   - **`NotifRow` tiene un estilo para un `tipo` que no conoce**
     (`ESTILO_DESCONOCIDO`, campana en --slate). Un build viejo sin ese fallback
-    CRASHEA el inbox al leer un tipo nuevo; ver CLAUDE.md §8, pendiente 0g,
-    paso 5.
+    CRASHEA el inbox al leer un tipo nuevo; ver CLAUDE.md §8, "Hecho", paso 5
+    del runbook de `20260928000471`/`472`/`473` (2026-09-25, cerrado).
   - **El `sub` de "Notificaciones vacío"** pasó a resumir por familia; va igual
     en el frame.
   - **Pruebas manuales que tocan en el INBOX**, no en el push (el push no llega
