@@ -936,6 +936,30 @@ importar qué dejó el intento anterior. De paso, el `catch` ahora loguea el
 error real con `console.warn` (mismo criterio que `push.ts`) antes de
 mostrar el toast — antes lo tragaba en silencio.
 
+**Vista previa: `VISTA_PREVIA_TODAS_LAS_FILAS` (`src/lib/configuracion.ts`)
+hace que `filaVisible()` devuelva `true` para todo**, para ver la pantalla
+completa contra el frame antes de que existan las URLs, la ficha de tienda o el
+flujo de eliminar cuenta. Es `__DEV__ && true`, así que ningún build de
+producción la hereda. Mientras esté encendida, las filas ocultas se pintan con
+su comportamiento REAL de hoy: "Eliminar cuenta" no hace nada, "Calificar"
+abre la URL de tienda que esté puesta, y los documentos legales abren su URL o
+avisan con un toast si no se puede (`abrirDocumentoLegal`, que se agregó al
+hacerlas alcanzables).
+
+**Los documentos legales se abren con `expo-web-browser`
+(`WebBrowser.openBrowserAsync`), no con `Linking.openURL`:** un navegador
+DENTRO de la app (SFSafariViewController en iOS, Custom Tabs en Android), así
+que el usuario cierra y vuelve a Configuración sin salir a Safari o Chrome. Ya
+era dependencia y el pod `ExpoWebBrowser` ya estaba en `ios/Podfile.lock`: no
+hizo falta dev build nuevo en iOS. **Solo acepta `http`/`https`**
+(`isValid(url:)` en `expo-web-browser/ios/WebBrowserModule.swift`), así que
+`URL_PRIVACIDAD`/`URL_TERMINOS` deben llevar `https://`. Sin esquema, la
+promesa rechaza con `WebBrowserInvalidURLException` y el usuario ve el toast
+"No pudimos abrir el documento.". Lo ideal es una página web y no un PDF: es la
+misma URL que las tiendas piden en la ficha, y se lee bien en el teléfono. **Apagarla** (`false`) para probar la lógica
+real de visibilidad, o antes de dar por cerrada cualquiera de las deudas de
+abajo.
+
 **Deuda consciente, cada una con disparador:**
 
 - **"Calificar la app"/"Compartir la app" ocultas hasta que la app esté

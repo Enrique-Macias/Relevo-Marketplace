@@ -13,6 +13,7 @@
 import Constants from 'expo-constants';
 import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useState } from 'react';
 import { Linking, Platform, Share, StyleSheet, Text, View } from 'react-native';
 
@@ -93,6 +94,20 @@ export default function ConfiguracionScreen() {
       await Linking.openURL(url);
     } catch {
       mostrar('No pudimos abrir la tienda de aplicaciones.', 'error');
+    }
+  }
+
+  async function abrirDocumentoLegal(url: string) {
+    // Navegador DENTRO de la app (SFSafariViewController en iOS, Custom Tabs en
+    // Android), no `Linking.openURL`: el usuario lee el documento y cierra de
+    // vuelta a Configuración sin salir a Safari/Chrome. Solo acepta `http(s)`:
+    // con una URL vacía o sin esquema la promesa rechaza
+    // (`WebBrowserInvalidURLException`, `expo-web-browser/ios/WebBrowserModule.swift`),
+    // y sin este catch sería un rechazo sin manejar.
+    try {
+      await WebBrowser.openBrowserAsync(url);
+    } catch {
+      mostrar('No pudimos abrir el documento.', 'error');
     }
   }
 
@@ -188,7 +203,7 @@ export default function ConfiguracionScreen() {
                   icon={<IconShield size={16} color={Colors.inkSoft} />}
                   label="Aviso de privacidad"
                   trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
-                  onPress={() => void Linking.openURL(URL_PRIVACIDAD)}
+                  onPress={() => void abrirDocumentoLegal(URL_PRIVACIDAD)}
                   last={!filaVisible('terminos')}
                 />
               ) : null}
@@ -197,7 +212,7 @@ export default function ConfiguracionScreen() {
                   icon={<IconDocument size={16} color={Colors.inkSoft} />}
                   label="Términos de uso"
                   trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
-                  onPress={() => void Linking.openURL(URL_TERMINOS)}
+                  onPress={() => void abrirDocumentoLegal(URL_TERMINOS)}
                   last
                 />
               ) : null}
