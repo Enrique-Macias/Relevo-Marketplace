@@ -3944,6 +3944,10 @@
             <div class="menu-label">Ayuda y soporte</div>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
           </div>
+          <div class="menu-row">
+            <div class="menu-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></div>
+            <div class="menu-label">Cerrar sesión</div>
+          </div>
         </div>
       </div>
 
@@ -4104,21 +4108,16 @@
           </div>
         </div>
 
-        <div class="status-section" style="margin-top:22px; padding:0 20px 4px;">
-          <div class="status-row">
-            <div class="status-row-label">
-              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></div>
-              <span class="status-row-text">Cerrar sesión</span>
-            </div>
-          </div>
-        </div>
+        <!-- "Cerrar sesión" NO vive aquí: vive en el .menu-list de "Perfil".
+             Estuvo aquí y se revirtió — el guard de sesión de (tabs) no
+             redirige mientras (tabs) no tiene foco (ver cuenta-perfil.md). -->
 
         <!-- Zona separada: eliminar cuenta. Su flujo real es la tarea
              siguiente — aquí solo se documenta el tratamiento visual
              destructivo (mismo recurso que "Eliminar publicación": ícono +
              texto en --brick, sin fondo ni borde especial, porque ese es el
              único tratamiento de "acción destructiva" que existe hoy en este
-             sistema de diseño). La separación de "Cerrar sesión" es de
+             sistema de diseño). La separación de "Soporte" es de
              espaciado (margin-top:22px, igual que un .section-head nuevo),
              no una línea punteada: esa línea en este archivo se usa solo para
              anotar variantes de documentación, no como elemento real de UI. -->

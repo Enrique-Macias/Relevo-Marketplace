@@ -55,16 +55,25 @@ export function GhostButton({
   label,
   onPress,
   style,
+  disabled = false,
 }: {
   label: string;
   onPress: () => void;
   style?: ViewStyle;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
-      style={({ pressed }) => [styles.ghost, pressed && styles.pressed, style]}
-      onPress={onPress}
+      style={({ pressed }) => [
+        styles.ghost,
+        pressed && !disabled && styles.pressed,
+        disabled && styles.disabled,
+        style,
+      ]}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
     >
       <Text style={styles.ghostLabel}>{label}</Text>
     </Pressable>

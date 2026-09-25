@@ -2201,14 +2201,17 @@ de Perfil, inerte desde que existe la pantalla.** 68 en total, 10 de Cuenta,
 medido con el mismo `grep | uniq -c`. Agrupa notificaciones (con sus tres
 estados anotados como variantes: concedido/denegado/nunca solicitado),
 General (calificar/compartir la app), Legal (privacidad/términos), Soporte
-(contacto/versión), Cerrar sesión y, al final, Eliminar cuenta con el
+(contacto/versión) y, al final, Eliminar cuenta con el
 tratamiento destructivo ya existente (`.status-row-text.danger`) — sin
 separador punteado nuevo: esa línea en el archivo se usa solo para anotar
 variantes de documentación, nunca como zona real de UI, así que la separación
-de "Cerrar sesión"/"Eliminar cuenta" es de espaciado, no de una línea. **"Cerrar
-sesión" se mudó aquí desde el `.menu-list` de "Perfil"**, que se queda con 4
-filas (Mis publicaciones, Editar perfil, Verificación, Ayuda y soporte). El
-FRAME muestra todas las filas; el código solo pinta las que funcionan hoy
+de "Soporte"/"Eliminar cuenta" es de espaciado, no de una línea. **"Cerrar
+sesión" NO está aquí: se mudó en `3752e7b` y se revirtió al `.menu-list` de
+"Perfil", que volvió a sus 5 filas** (Mis publicaciones, Editar perfil,
+Verificación, Ayuda y soporte, Cerrar sesión). El guard de sesión de
+`(tabs)/_layout.tsx` no redirige mientras `(tabs)` está tapado (§9), así que
+una acción de sesión fuera de `(tabs)` deja al usuario sin sesión en pantalla.
+El FRAME muestra todas las filas; el código solo pinta las que funcionan hoy
 (`filaVisible()`, `src/lib/configuracion.ts`) — detalle completo en
 `cuenta-perfil.md`.
 
@@ -2942,6 +2945,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - "Calificar la app"/"Compartir la app" ocultas hasta que la app esté publicada (`APP_PUBLICADA`); "Calificar" además exige la URL de la tienda de esa plataforma → `cuenta-perfil.md`
 - "Aviso de privacidad"/"Términos de uso" ocultas hasta que exista una URL real (`URL_PRIVACIDAD`/`URL_TERMINOS`) → `cuenta-perfil.md`
 - "Eliminar cuenta" existe en el frame y en el código (oculta) pero su flujo todavía no existe → `cuenta-perfil.md`
+- El guard de sesión de `(tabs)/_layout.tsx` no actúa fuera de foco (`<Redirect>` corre en `useFocusEffect`): Mis publicaciones, Editar perfil y cualquier pantalla fuera de `(tabs)` se quedan sin redirect a `/splash` si la sesión muere ahí (token vencido) → `cuenta-perfil.md`
 - ~~El aviso del avatar borrado por moderación se pierde si el usuario no abre Perfil o no ve el toast~~ **[CERRADA]** por `20260928000473` (`avatar_moderacion` + aviso `avatar_eliminado` en el inbox) → `cuenta-perfil.md`
 - Los builds viejos ya instalados crashean el inbox al leer un `tipo` de notificación nuevo (el fallback `ESTILO_DESCONOCIDO` solo existe desde RF-16 tanda 2) → CLAUDE.md §8, "Hecho", paso 5 del runbook de `20260928000471`/`472`/`473`
 - El push no rutea por `tipo`: los avisos sin publicación abren el inbox, no su destino → `notificaciones-push.md`
@@ -3656,3 +3660,37 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   migrar estos patrones, el path exacto es la forma que sobrevive a los dos
   motores; el `**` con paréntesis es la que depende de que Claude Code siga sin
   pasar el patrón crudo.
+
+- **`<Redirect>` de Expo Router NO navega al renderizarse: navega en
+  `useFocusEffect`. Un guard de sesión en un layout, por lo tanto, no hace
+  nada mientras ese layout esté TAPADO por un `Stack.Screen` hermano.**
+  Leído en el fuente: `node_modules/expo-router/build/link/Redirect.js`
+  envuelve el `router.replace(href)` en `useFocusEffect`. El único guard de
+  `if (!session) return <Redirect href="/splash" />` vive en
+  `(tabs)/_layout.tsx`, y `(tabs)`/`(cuenta)`/etc. son `Stack.Screen`
+  HERMANOS del stack raíz (`src/app/_layout.tsx`). Un `router.push` a otro
+  grupo no desmonta `(tabs)`, solo le quita el foco. Si la sesión pasa a
+  `null` en ese momento, el guard renderiza el `<Redirect>`, que no navega, y
+  el usuario se queda en una pantalla viva sin sesión. El salto a `/splash`
+  llega cuando vuelve a `(tabs)`, y se atribuye al "atrás". **Esto ya mordió:**
+  un primer diagnóstico escrito aquí mismo afirmaba lo contrario ("dispara el
+  redirect desde abajo del stack, sin que importe qué pantalla esté visible")
+  y era falso. Mover "Cerrar sesión" a Configuración (`3752e7b`) lo destapó, y
+  se revirtió a Perfil (`cuenta-perfil.md`). El hueco sigue abierto para
+  cualquier pantalla fuera de `(tabs)` cuando la sesión expira: es deuda con
+  disparador (§8, índice). **La regla:** no pongas una acción que termine la
+  sesión fuera del layout que tiene el guard, y no asumas que un `<Redirect>`
+  "vigila" desde abajo del stack.
+
+  **Hermano, y este sí sigue siendo válido: "Cancelar" en un modal de
+  confirmación no cancela nada si la acción ya está en curso, solo esconde el
+  resultado, que llega de todos modos.** No hay `AbortController` en la
+  cadena, así que cerrar el modal deja la promesa corriendo. El fix es del
+  lado del control y no depende de la pantalla. Primero, deshabilitar el
+  botón de escape mientras la acción está en curso (`Buttons.tsx`:
+  `GhostButton` ganó `disabled`, mismo patrón que `DangerButton`, y
+  `ConfirmModal` se lo pasa con `confirming`). Segundo, que la función que
+  dispara la acción tenga `try/catch` con reseteo de su propio estado de "en
+  curso", y que lo resetee también al ABRIR el modal. Sin eso, un fallo real,
+  o un valor que Fast Refresh preserva, deja el modal sin ninguna salida en
+  cuanto el botón de escape también queda deshabilitado.

@@ -1,7 +1,9 @@
 /**
  * Frame "Configuración" — destino del engrane de `.profile-top` en Perfil,
- * inerte hasta ahora (`(tabs)/perfil.tsx`). "Cerrar sesión" se mudó aquí desde
- * Perfil: es una acción de cuenta, no una fila más del menú de perfil.
+ * inerte hasta ahora (`(tabs)/perfil.tsx`). "Cerrar sesión" NO vive aquí: estuvo
+ * y se revirtió a Perfil, porque el guard de sesión de `(tabs)/_layout.tsx`
+ * (`<Redirect>`, que corre en `useFocusEffect`) no redirige mientras `(tabs)`
+ * está tapado por esta pantalla. Ver `.claude/rules/cuenta-perfil.md`.
  *
  * El frame muestra TODAS las filas; el código solo pinta las que funcionan
  * hoy, decidido en un solo lugar (`filaVisible()`, `src/lib/configuracion.ts`).
@@ -14,12 +16,10 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useState } from 'react';
 import { Linking, Platform, Share, StyleSheet, Text, View } from 'react-native';
 
-import { ConfirmModal } from '@/components/ConfirmModal';
 import {
   IconBell,
   IconChevronRight,
   IconDocument,
-  IconLogout,
   IconMail,
   IconInfo,
   IconShare,
@@ -45,7 +45,7 @@ import { estadoPermisoPush, pushDisponible, registrarPushToken, type EstadoPermi
 import { useSession } from '@/lib/session';
 
 export default function ConfiguracionScreen() {
-  const { session, signOut } = useSession();
+  const { session } = useSession();
   const { mostrar } = useToast();
 
   const [permisoPush, setPermisoPush] = useState<EstadoPermisoPush | null>(null);
@@ -103,16 +103,6 @@ export default function ConfiguracionScreen() {
       message: 'Descarga Relevo, el marketplace para comprar y vender entre estudiantes.',
     });
   }
-
-  const [confirmando, setConfirmando] = useState(false);
-  const [cerrandoSesion, setCerrandoSesion] = useState(false);
-
-  const cerrarSesion = async () => {
-    setCerrandoSesion(true);
-    await signOut();
-    // No hay que navegar a mano ni cerrar el modal: cambiar la sesión dispara
-    // el guard de (tabs)/_layout.tsx, que ya redirige a /splash.
-  };
 
   const textoPush =
     permisoPush === 'concedido'
@@ -231,14 +221,9 @@ export default function ConfiguracionScreen() {
           />
         </View>
 
-        <View style={[styles.section, styles.separado]}>
-          <StatusRow
-            icon={<IconLogout size={16} color={Colors.inkSoft} />}
-            label="Cerrar sesión"
-            onPress={() => setConfirmando(true)}
-            last
-          />
-        </View>
+        {/* "Cerrar sesión" NO va aquí: vive en Perfil, dentro de (tabs). Desde
+            esta pantalla el guard de (tabs)/_layout.tsx no redirigiría a
+            /splash — ver cuenta-perfil.md. */}
 
         {filaVisible('eliminar_cuenta') ? (
           <View style={[styles.section, styles.separado, styles.ultimaSeccion]}>
@@ -256,17 +241,6 @@ export default function ConfiguracionScreen() {
           </View>
         ) : null}
       </Screen>
-
-      <ConfirmModal
-        visible={confirmando}
-        icon={<IconLogout size={22} color={Colors.brick} />}
-        title="¿Cerrar sesión?"
-        body="Tendrás que verificar tu correo de nuevo la próxima vez que quieras entrar a Relevo."
-        confirmLabel="Cerrar sesión"
-        onConfirm={cerrarSesion}
-        onCancel={() => setConfirmando(false)}
-        confirming={cerrandoSesion}
-      />
     </>
   );
 }

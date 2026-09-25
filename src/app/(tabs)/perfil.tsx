@@ -22,12 +22,14 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { ErrorState } from '@/components/ErrorState';
 import {
   IconCheck,
   IconCheckCircle,
   IconChevronRight,
   IconHelpCircle,
+  IconLogout,
   IconPencil,
   IconSettings,
   IconStar,
@@ -63,7 +65,7 @@ const TINT_FG: Record<string, string> = {
 };
 
 export default function PerfilScreen() {
-  const { session, profile, refreshProfile } = useSession();
+  const { session, profile, refreshProfile, signOut } = useSession();
   const { mostrar } = useToast();
   const userId = session?.user.id ?? null;
 
@@ -255,6 +257,43 @@ export default function PerfilScreen() {
   const estado: 'loading' | 'ready' | 'error' =
     errorPara === userId ? 'error' : cargadoPara === userId ? 'ready' : 'loading';
 
+  const [confirmando, setConfirmando] = useState(false);
+  const [cerrandoSesion, setCerrandoSesion] = useState(false);
+
+  /**
+   * Abre el modal Y garantiza que arranca en estado limpio. `cerrandoSesion`
+   * solo se apaga en el `catch` de `cerrarSesion()` — si un intento anterior
+   * quedó atorado (una promesa que tardó, o un valor que Fast Refresh
+   * preservó) y el usuario reabre el modal, sin este reset los dos botones
+   * nacerían deshabilitados (los dos leen `confirming`, ver ConfirmModal.tsx)
+   * y el modal sería intocable.
+   */
+  function abrirConfirmarCerrarSesion() {
+    setCerrandoSesion(false);
+    setConfirmando(true);
+  }
+
+  const cerrarSesion = async () => {
+    setCerrandoSesion(true);
+    try {
+      await signOut();
+      // No hay que navegar a mano ni cerrar el modal aquí: cambiar la sesión
+      // dispara el guard de (tabs)/_layout.tsx, que ya redirige a /splash — el
+      // desmontaje de esta pantalla se encarga de todo lo demás. Funciona
+      // PORQUE esta pantalla vive dentro de (tabs): `<Redirect>` corre en
+      // `useFocusEffect` y no dispara con (tabs) tapado (cuenta-perfil.md).
+    } catch (e) {
+      // Sin loguear el error real, un fallo genuino de signOut() se tragaría
+      // en silencio — mismo criterio que push.ts.
+      console.warn('[perfil] no se pudo cerrar sesión:', (e as Error)?.message ?? e);
+      // El modal se queda abierto con "Cancelar" deshabilitado mientras
+      // `cerrandoSesion` sea `true` (ver ConfirmModal.tsx) — sin este reset,
+      // un fallo real dejaría al usuario sin ninguna salida.
+      setCerrandoSesion(false);
+      mostrar('No pudimos cerrar tu sesión. Intenta de nuevo.', 'error');
+    }
+  };
+
   return (
     <>
       <Screen
@@ -388,6 +427,12 @@ export default function PerfilScreen() {
                 icon={<IconHelpCircle size={16} color={Colors.inkSoft} />}
                 label="Ayuda y soporte"
                 onPress={() => {}}
+              />
+              <MenuRow
+                icon={<IconLogout size={16} color={Colors.inkSoft} />}
+                label="Cerrar sesión"
+                onPress={abrirConfirmarCerrarSesion}
+                chevron={false}
                 last
               />
             </View>
@@ -402,6 +447,17 @@ export default function PerfilScreen() {
           Perfil.
         */}
       </Screen>
+
+      <ConfirmModal
+        visible={confirmando}
+        icon={<IconLogout size={22} color={Colors.brick} />}
+        title="¿Cerrar sesión?"
+        body="Tendrás que verificar tu correo de nuevo la próxima vez que quieras entrar a Relevo."
+        confirmLabel="Cerrar sesión"
+        onConfirm={cerrarSesion}
+        onCancel={() => setConfirmando(false)}
+        confirming={cerrandoSesion}
+      />
     </>
   );
 }

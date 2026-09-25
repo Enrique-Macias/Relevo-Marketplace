@@ -469,7 +469,11 @@ Seis cosas que no se ven en el diff:
   las otras cuatro, sin chevron (es una acción terminal, no navegación) y sin
   color de alerta. Eso se corrigió aquí porque era la primera vez que se
   construía la pantalla real contra el frame — no un cambio de comportamiento
-  fuera de alcance.
+  fuera de alcance. **Sigue siendo cierto:** "Cerrar sesión" se mudó a
+  "Configuración" en `3752e7b` y se revirtió aquí (ver el bloque de
+  "Configuración", más abajo). La fila, el `ConfirmModal` y el import son los
+  de antes de la mudanza, restaurados con un reverse-apply parcial de ese
+  commit. Solo cambió el handler, que ganó `try/catch` y el reset al abrir.
   "Verificación" y "Ayuda y soporte" —sin pantalla propia en el inventario de
   54 ni en `product-spec.md`— y el engrane de `.profile-top` (ajustes) quedan
   inertes con el mismo patrón ya usado en Detalle para Compartir/Reportar/kebab:
@@ -790,12 +794,25 @@ Lo que no se ve en el diff:
 **"Configuración" construida — le da destino al engrane de `.profile-top`,
 inerte desde que existe "Perfil".** Vive en `src/app/(cuenta)/configuracion.tsx`,
 con `src/lib/configuracion.ts` como el único lugar que decide qué fila se
-pinta hoy (`filaVisible()`). "Cerrar sesión" se mudó aquí desde el
-`.menu-list` de Perfil (mismo `ConfirmModal`, mismo `IconLogout`, mismo
-`signOut()`); Perfil se queda con 4 filas (Mis publicaciones, Editar perfil,
-Verificación, Ayuda y soporte) y el comentario "Ajustes: sin pantalla..."
-sobre el engrane ya no aplica — solo sigue aplicando a "Verificación"/"Ayuda y
-soporte", que siguen sin destino.
+pinta hoy (`filaVisible()`). El comentario "Ajustes: sin pantalla..." sobre el
+engrane ya no aplica; solo sigue aplicando a "Verificación"/"Ayuda y soporte",
+que siguen sin destino.
+
+**"Cerrar sesión" NO vive aquí: se mudó en `3752e7b` y se REVIRTIÓ a Perfil,
+que volvió a sus 5 filas.** El motivo no es de diseño, es el guard de sesión.
+El único redirect a `/splash` es `<Redirect href="/splash" />` en
+`(tabs)/_layout.tsx:43-44`, y `<Redirect>` no navega al renderizarse: hace
+`router.replace` **dentro de `useFocusEffect`**
+(`node_modules/expo-router/build/link/Redirect.js`, leído en el fuente).
+"Configuración" es una ruta de `(cuenta)`, un `Stack.Screen` HERMANO de
+`(tabs)` en el stack raíz. Con ella encima, `(tabs)` sigue montado pero sin
+foco, así que su guard sí renderiza el `<Redirect>`, pero este no se ejecuta.
+Cerrar sesión desde aquí dejaba al usuario en una pantalla sin sesión hasta que
+volviera atrás. Desde Perfil funciona porque Perfil ES `(tabs)` con foco. **La
+regla que queda:** ninguna acción que termine la sesión va fuera de `(tabs)`
+mientras el guard sea este. Si hiciera falta, primero se arregla el guard (la
+deuda de abajo). El hueco de fondo NO se cerró con esta reversión: ver la deuda
+"El guard de sesión no actúa fuera de foco".
 
 Lo que no se ve en el diff:
 
@@ -803,7 +820,7 @@ Lo que no se ve en el diff:
   ya cubre exactamente lo que esta pantalla necesita: `icon`+`label`+`trailing`
   (chevron, un valor de texto, o nada) + `onPress` opcional (sin él la fila
   queda inerte, ya era el patrón de "Marcar como vendida") + `danger`. Se
-  reusa tal cual para las 9 filas, incluida la de valor+chevron de
+  reusa tal cual para las 8 filas (eran 9 con "Cerrar sesión"), incluida la de valor+chevron de
   Notificaciones (un `<Text>` antes del chevron dentro de `trailing`, sin
   clase/prop nueva). `SectionHead` ya soportaba título sin "Ver todo"
   (`linkLabel` opcional).
@@ -857,11 +874,67 @@ Lo que no se ve en el diff:
   de documentación ("Variante (doc, no es parte del flujo)"), nunca como
   elemento real de zona destructiva — el precedente real ("Eliminar
   publicación") es solo la última fila de su sección, sin separador. Aquí la
-  separación de "Cerrar sesión"/"Eliminar cuenta" es de espaciado
+  separación de "Soporte"/"Eliminar cuenta" es de espaciado
   (`marginTop:22`, el mismo valor que ya usa `.section-head`), no una línea.
 - **La versión sale de `Constants.expoConfig?.version`** (`expo-constants`,
   ya dependencia — `push.ts` ya lo usaba para `projectId`), no de un módulo
   nuevo: no hace falta `expo-application` ni un dev build nuevo.
+
+**Bug real, cazado en prueba manual y CERRADO: "Cancelar" en "Confirmar cerrar
+sesión" parecía cerrar la sesión él mismo, y el botón de confirmar se veía
+atorado en "…" desde que el modal aparecía.** No era un swap de props —
+verificado carácter por carácter contra el `ConfirmModal` original de Perfil
+(`git show 76b742c`), idéntico. La causa real, la misma en los dos lugares
+porque el bug es del componente compartido, no de esta pantalla:
+`GhostButton` ("Cancelar", `src/components/Buttons.tsx`) no tenía prop
+`disabled` — a diferencia de `DangerButton`, quedaba tocable durante todo el
+`confirming`. Tocarlo cierra el modal (`setConfirmando(false)`) pero **no
+cancela la promesa `signOut()` en curso** (no hay `AbortController`): esa
+llamada sigue corriendo de fondo, y `cerrandoSesion` nunca se resetea a
+`false` en ningún lado (ni al cancelar ni en un `finally` de `cerrarSesion()`)
+— así que reabrir el modal más tarde lo muestra atorado desde el primer
+render. Cuando el `signOut()` de fondo por fin resuelve, `session` pasa a
+`null` GLOBALMENTE. **Corrección del diagnóstico original, que decía que el
+guard redirigía "desde abajo del stack" sin importar qué pantalla estuviera
+visible: es FALSO.** `<Redirect>` navega dentro de `useFocusEffect`
+(`expo-router/build/link/Redirect.js`), así que con "Configuración" encima
+`(tabs)` no tiene foco y el redirect NO se ejecuta. El usuario se quedaba sin
+sesión en una pantalla viva, y el salto a `/splash` llegaba solo al volver a
+`(tabs)`, de modo que parecía causado por lo último que había tocado. Eso fue
+lo que motivó la reversión de "Cerrar sesión" a Perfil (bloque de arriba). El
+fix del modal, en cambio, es independiente de la pantalla y se quedó. Vive en
+`ConfirmModal.tsx` (beneficia también a "Confirmar eliminar" cuando llegue) y
+en el handler, que hoy está en `(tabs)/perfil.tsx`:
+- `GhostButton` ganó `disabled` (mismo patrón que `DangerButton`: opacidad
+  0.45, `onPress` se vuelve `undefined`, `accessibilityState`).
+- `ConfirmModal` le pasa `disabled={confirming}` — "Cancelar" ya no se puede
+  tocar mientras la acción sigue en curso, porque no la puede cancelar.
+- `cerrarSesion()` ganó un `try/catch`: si `signOut()` falla, resetea
+  `cerrandoSesion` a `false` y avisa con un toast de error — sin esto, un
+  fallo real habría dejado el modal sin ninguna salida, con "Cancelar" ya
+  deshabilitado.
+
+**Segunda regresión, del fix anterior, y CERRADA: tras deshabilitar
+"Cancelar", el botón de CONFIRMAR dejó de responder — el modal quedaba
+completamente intocable.** No era el guard de redirect (ese solo entra en
+juego DESPUÉS de que `signOut()` resuelve; esto pasaba ANTES de que
+`cerrarSesion()` llegara a ejecutarse). Causa real: `cerrandoSesion` solo se
+apagaba en el `catch` de `cerrarSesion()` — nunca al ABRIR el modal. Si un
+intento anterior había dejado `cerrandoSesion` en `true` (una promesa que
+tardó, o un fallo de antes de que existiera ese catch) y la app seguía
+corriendo la MISMA sesión de Fast Refresh —editar la pantalla (entonces
+`configuracion.tsx`, hoy `perfil.tsx`) sin
+cambiar el número/orden de sus hooks preserva el valor de `useState` entre
+recargas, no lo resetea—, reabrir el modal heredaba `cerrandoSesion=true`. Y
+como los DOS botones leen `disabled={confirming}` (el fix anterior le agregó
+esa lectura también a "Cancelar"), el modal completo nacía deshabilitado: un
+`Pressable` con `disabled` no dispara `onPress`, así que tocar "Cerrar
+sesión" literalmente no llamaba a nada. **Fix:** la fila "Cerrar sesión"
+llama a `abrirConfirmarCerrarSesion()`, que apaga `cerrandoSesion` ANTES de
+abrir el modal — cada apertura arranca garantizada en estado limpio, sin
+importar qué dejó el intento anterior. De paso, el `catch` ahora loguea el
+error real con `console.warn` (mismo criterio que `push.ts`) antes de
+mostrar el toast — antes lo tragaba en silencio.
 
 **Deuda consciente, cada una con disparador:**
 
@@ -881,6 +954,34 @@ Lo que no se ve en el diff:
   `() => {}`. **Revisar cuando:** se construya el flujo de eliminar cuenta
   (la tarea siguiente, fuera de alcance de esta). **Fix:** voltear el
   booleano y cablear el `onPress` — nada más de esta pantalla cambia.
+- **El guard de sesión no actúa fuera de foco: "Mis publicaciones" y "Editar
+  perfil" YA tienen este bug latente, sin resolver.** Es el mismo mecanismo que
+  obligó a revertir "Cerrar sesión" (bloque de "Configuración", arriba). El
+  único redirect a `/splash` es el `<Redirect>` de `(tabs)/_layout.tsx`, que
+  navega en `useFocusEffect`. Las dos pantallas son de `(cuenta)`, hermano de
+  `(tabs)` en el stack raíz. Si la sesión muere mientras el usuario está en
+  ellas, el guard renderiza el `<Redirect>` pero no navega, y el usuario se
+  queda en una pantalla sin sesión, con sus consultas fallando (`anon` no
+  tiene grants), hasta que vuelve atrás a `(tabs)`. Ahí sí salta a `/splash`,
+  y parece causado por el "atrás". La sesión muere así por un token vencido
+  cuyo refresh falla (`SIGNED_OUT` en `onAuthStateChange`, `session.tsx`), o
+  por un cierre de sesión desde otro camino. **Alcance real:** no son solo
+  esas dos. Le pasa a TODA pantalla fuera de `(tabs)`: el resto de `(cuenta)`
+  (Configuración, Perfil público), Detalle, Publicar/Editar, Calificar,
+  Reportar, el inbox. Se nombran esas dos porque son las que el usuario abre
+  desde Perfil y donde más tiempo se queda con un formulario. Hoy no hay
+  ninguna acción de la app que cierre la sesión fuera de `(tabs)` (la única
+  era "Cerrar sesión", y por eso se revirtió), así que el disparador depende
+  solo de la expiración. **Sin medir en dispositivo:** el mecanismo sale del
+  fuente de `Redirect.js`, no de una reproducción con token vencido.
+  **Revisar cuando:** (1) se quiera poner una acción que termine la sesión
+  fuera de `(tabs)` ("Eliminar cuenta" en Configuración es la primera
+  candidata, y está en la lista de deuda de arriba), o (2) alguien reporte
+  errores en una pantalla tras dejar la app abierta mucho tiempo. **Fix:** un
+  guard de sesión que no dependa del foco. Por ejemplo, en el `_layout.tsx`
+  raíz, un `useEffect` sobre `session` que haga `router.replace('/splash')`
+  cuando pase a `null` con `status === 'ready'`, cuidando de no pelear con
+  `(onboarding)`, que también vive sin sesión.
 
 - ~~**La base no ata `users.campus_id` a `users.universidad_id`**~~ **[CERRADA]
   por `20260924000466` (fase 2A)**, con el fix que esta misma entrada proponía:

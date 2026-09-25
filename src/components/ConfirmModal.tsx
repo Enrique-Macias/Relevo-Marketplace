@@ -46,7 +46,17 @@ export function ConfirmModal({
           <Text style={styles.body}>{body}</Text>
           <View style={styles.actions}>
             {/* width:undefined cancela el 100% de GhostButton — aquí vive en fila, no solo. */}
-            <GhostButton label="Cancelar" onPress={onCancel} style={styles.ghost} />
+            {/* Deshabilitado mientras `confirming`: "Cancelar" no puede
+                cancelar una acción que ya está en curso (`onConfirm` no
+                admite abortarse) — dejarlo tocable solo cierra el modal
+                mientras la acción sigue corriendo de fondo y termina
+                resolviendo sola, sin que el usuario sepa que va a pasar. */}
+            <GhostButton
+              label="Cancelar"
+              onPress={onCancel}
+              disabled={confirming}
+              style={styles.ghost}
+            />
             <DangerButton
               label={confirming ? '…' : confirmLabel}
               onPress={onConfirm}
