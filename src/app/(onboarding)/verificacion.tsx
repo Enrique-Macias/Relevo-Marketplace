@@ -10,7 +10,12 @@ import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
 import { Colors, Typography } from '@/constants/theme';
 import { useRedirectSiPerfilCompleto } from '@/lib/session';
-import { COPY_DOMINIO_NO_PARTICIPANTE, esDominioNoParticipante } from '@/lib/registro';
+import {
+  COPY_CORREO_BLOQUEADO,
+  COPY_DOMINIO_NO_PARTICIPANTE,
+  esCorreoBloqueado,
+  esDominioNoParticipante,
+} from '@/lib/registro';
 import { supabase } from '@/lib/supabase';
 
 import { usePerfilDraft } from './_layout';
@@ -30,10 +35,11 @@ export default function VerificacionScreen() {
   const { correo, setCorreo } = usePerfilDraft();
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // El rechazo del hook de dominios va aparte del error genérico porque tiene
-  // su propio frame ("Verificación (correo no participante)"): un `.notice`
-  // pegado al campo, en vez del texto rojo bajo el botón.
-  const [dominioRechazado, setDominioRechazado] = useState(false);
+  // Los rechazos del hook van aparte del error genérico porque tienen su
+  // propio frame ("Verificación (correo no participante)" y su variante
+  // "correo bloqueado"): un `.notice` pegado al campo, en vez del texto rojo
+  // bajo el botón.
+  const [rechazo, setRechazo] = useState<'dominio' | 'bloqueado' | null>(null);
 
   if (redirect) return redirect;
 
@@ -41,7 +47,7 @@ export default function VerificacionScreen() {
     setCorreo(valor);
     // El aviso habla del correo que se mandó. En cuanto el usuario lo edita,
     // deja de ser cierto.
-    setDominioRechazado(false);
+    setRechazo(null);
   };
 
   const valido = CORREO_RE.test(correo.trim());
@@ -49,7 +55,7 @@ export default function VerificacionScreen() {
   const enviarCodigo = async () => {
     setEnviando(true);
     setError(null);
-    setDominioRechazado(false);
+    setRechazo(null);
     // `shouldCreateUser: true` (el default) es lo que hace que este mismo
     // llamado sirva para registro: si el correo no existe, crea el usuario.
     const { error: e } = await supabase.auth.signInWithOtp({
@@ -60,7 +66,8 @@ export default function VerificacionScreen() {
     if (e) {
       // Quien decide es el servidor (el hook de dominios); aquí solo se
       // traduce su rechazo a copy. No hay lista de dominios en el cliente.
-      if (esDominioNoParticipante(e)) setDominioRechazado(true);
+      if (esDominioNoParticipante(e)) setRechazo('dominio');
+      else if (esCorreoBloqueado(e)) setRechazo('bloqueado');
       else setError(e.message);
       return;
     }
@@ -88,8 +95,11 @@ export default function VerificacionScreen() {
           editable={!enviando}
         />
 
-        {dominioRechazado ? (
-          <Notice text={COPY_DOMINIO_NO_PARTICIPANTE} style={styles.notice} />
+        {rechazo ? (
+          <Notice
+            text={rechazo === 'dominio' ? COPY_DOMINIO_NO_PARTICIPANTE : COPY_CORREO_BLOQUEADO}
+            style={styles.notice}
+          />
         ) : null}
 
         <PrimaryButton

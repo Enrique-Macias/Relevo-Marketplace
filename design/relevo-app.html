@@ -3144,6 +3144,22 @@
 
           <div class="auth-link">¿Ya tienes cuenta? <b>Inicia sesión</b></div>
           <div class="auth-terms">Al continuar aceptas los Términos de uso y el Aviso de privacidad de Relevo.</div>
+
+          <!-- El OTRO rechazo del mismo hook (20260929000474): el correo es de
+               una cuenta que se eliminó estando suspendida. Mismo lugar, mismo
+               .notice; el copy es NEUTRO a propósito — no anuncia una sanción,
+               igual que el toast del vendedor suspendido — y deja una salida. -->
+          <div style="width:100%; text-align:left; margin:14px 0 0; padding-top:10px; border-top:1px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">
+              Variante (doc, no es parte del flujo): correo bloqueado
+            </div>
+            <div class="notice" style="margin-bottom:0;">
+              <div class="notice-icon">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
+              </div>
+              <div class="notice-text">Este correo no puede registrarse en Relevo. Si crees que es un error, escríbenos a soporte.</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -4375,6 +4391,37 @@
     </div>
   </div>
 
+  <!-- "Cuenta eliminada": lo que ve el usuario al terminar. Vive en
+       (onboarding) porque ya no hay sesión — el guard de sesión global no la
+       pisa. Mismo esqueleto que "Publicación creada" (.empty-state +
+       .empty-icon.success). Un solo botón: no hay a dónde más ir. -->
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Cuenta eliminada</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="empty-state" style="padding-top:110px;">
+          <div class="empty-icon success">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <div class="empty-title">Tu cuenta fue eliminada</div>
+          <div class="empty-sub">Borramos tu perfil, tus publicaciones y sus fotos. Gracias por haber usado Relevo.</div>
+          <div class="empty-actions">
+            <button class="primary-btn" style="margin-top:0;">Entendido</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="phone-block" data-cat="explorar">
     <div class="phone-label">Búsqueda (recomendados)</div>
     <div class="device">
@@ -4810,6 +4857,24 @@
               </div>
             </div>
             <div class="review-text">Buena comunicación, quedamos rápido en un punto de entrega en el campus.</div>
+          </div>
+          <!-- Reseña de una cuenta ELIMINADA (20260929000474): se conservan las
+               estrellas y cuentan en el promedio, pero sin autor ni comentario.
+               El avatar pierde las iniciales (ya no hay nombre) y lleva el
+               ícono de persona; el nombre va en --ink-soft para que no se lea
+               como un usuario real. Sin .review-text: el comentario se borró. -->
+          <div class="review-row">
+            <div class="review-top" style="margin-bottom:0;">
+              <div class="review-avatar"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></div>
+              <span class="review-name" style="color:var(--ink-soft);">Usuario eliminado</span>
+              <div class="review-stars">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -6854,6 +6919,114 @@
             <div class="modal-actions">
               <div class="ghost-btn">Cancelar</div>
               <button class="danger-btn">Cerrar sesión</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- "Confirmar eliminar cuenta" (Apple 5.1.1(v)). Se abre desde la última
+       fila de "Configuración". Es el MISMO shell que "Confirmar eliminar" y
+       "Confirmar cerrar sesión" (.modal-card), con una sola pieza más: el campo
+       de contraseña entre el texto y los botones. La contraseña ES la
+       confirmación: no hay otra pantalla ni un segundo "¿seguro?".
+       · Mientras borra, el botón muestra "…" y los dos quedan deshabilitados,
+         igual que el `confirming` de ConfirmModal: "Cancelar" no puede
+         cancelar un borrado ya en curso.
+       · Los errores van DENTRO del modal, entre el campo y los botones: son
+         copy que se lee mientras se corrige (§0 regla 4). El campo de texto va
+         alineado a la izquierda, como en cualquier .field; el resto del modal
+         sigue centrado.
+       · Borrado INMEDIATO, sin periodo de gracia. Qué se conserva anonimizado
+         lo explica el aviso de privacidad, no este modal. -->
+  <div class="phone-block" data-cat="sistema">
+    <div class="phone-label">Confirmar eliminar cuenta</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="page-heading">Configuración</div>
+      </div>
+      <div class="screen">
+        <div class="section-head" style="padding-top:4px;">
+          <div class="section-title">Soporte</div>
+        </div>
+        <div class="status-section" style="padding:0 20px 4px;">
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6l9 6 9-6"/><rect x="3" y="5" width="18" height="14" rx="2"/></svg></div>
+              <span class="status-row-text">Contacto</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+        </div>
+        <div class="status-section" style="margin-top:22px; padding:0 20px 24px;">
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon" style="color:var(--brick);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg></div>
+              <span class="status-row-text danger">Eliminar cuenta</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+        </div>
+
+        <div class="modal-backdrop">
+          <div class="modal-card">
+            <div class="modal-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+            </div>
+            <div class="modal-title">¿Eliminar tu cuenta?</div>
+            <div class="modal-sub" style="margin-bottom:16px;">Se borrarán tu perfil y tus publicaciones de inmediato. Esta acción no se puede deshacer.</div>
+            <div class="field" style="margin-bottom:20px;">
+              <label class="field-label">Confirma con tu contraseña</label>
+              <input class="text-field" type="text" placeholder="••••••••">
+            </div>
+            <div class="modal-actions">
+              <div class="ghost-btn">Cancelar</div>
+              <button class="danger-btn">Eliminar</button>
+            </div>
+
+            <div style="margin:14px 0 0; padding-top:10px; border-top:1px dashed var(--line); text-align:left;">
+              <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">
+                Variante (doc, no es parte del flujo): contraseña incorrecta
+              </div>
+              <div class="field" style="margin-bottom:0;">
+                <input class="text-field is-invalid" type="text" value="••••••••">
+                <div class="field-error">La contraseña no es correcta.</div>
+              </div>
+            </div>
+
+            <div style="margin:14px 0 0; padding-top:10px; border-top:1px dashed var(--line); text-align:left;">
+              <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">
+                Variante (doc, no es parte del flujo): sin conexión
+              </div>
+              <div class="notice" style="margin-bottom:0;">
+                <div class="notice-icon">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
+            </div>
+                <div class="notice-text">No hay conexión. Tu cuenta no se borró; intenta de nuevo.</div>
+              </div>
+            </div>
+
+            <div style="margin:14px 0 0; padding-top:10px; border-top:1px dashed var(--line); text-align:left;">
+              <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">
+                Variante (doc, no es parte del flujo): fallo del servidor
+              </div>
+              <div class="notice" style="margin-bottom:0;">
+                <div class="notice-icon">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg>
+            </div>
+                <div class="notice-text">No pudimos eliminar tu cuenta. Intenta de nuevo.</div>
+              </div>
             </div>
           </div>
         </div>

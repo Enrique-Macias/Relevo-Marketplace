@@ -110,6 +110,21 @@ producción está en §8, "Hecho"). Del lado de la app:
 - **Fase 2 cerrada por la 2A (abajo):** la universidad ya no se elige, la
   asigna el servidor desde el mismo dominio que admite el hook.
 
+**"Eliminar cuenta" toca este grupo en dos puntos (`20260929000474`):**
+
+- **`(onboarding)/cuenta-eliminada.tsx`** es a donde aterriza el usuario tras
+  borrar su cuenta desde Configuración. Vive aquí porque ya no hay sesión, y
+  llega por el guard GLOBAL de sesión (`src/lib/salida-sesion.ts`), que reinicia
+  la navegación con ella como única ruta. "Entendido" va a `/splash`, que es el
+  único que decide a dónde va alguien sin sesión. El guard NO actúa si la
+  sesión muere dentro de `(onboarding)` sin destino pedido: "Usar otro correo" y
+  "Nueva contraseña" cierran sesión a propósito y navegan solos.
+- **Verificación tiene un segundo rechazo del hook**, `403 correo_bloqueado`:
+  el correo es de una cuenta que se eliminó estando SUSPENDIDA. Se reconoce con
+  `esCorreoBloqueado()` (`src/lib/registro.ts`) y pinta el mismo `Notice` con
+  el copy neutro de la variante "correo bloqueado" del frame. El amarre del
+  código con GoTrue es `probe-registro.mjs` caso 9.
+
 **Fase 2A — la universidad sale del dominio del correo (`20260924000466`).**
 El detalle de base (trigger, grants, FKs compuestas y el check) está en
 CLAUDE.md §3; aquí va lo que toca el flujo:

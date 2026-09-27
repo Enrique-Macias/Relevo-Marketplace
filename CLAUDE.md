@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 67 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 70 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -183,21 +183,28 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 37 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-09-24; decía "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 17 tablas más
+Definido en 38 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-09-26; decía "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 18 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
-**Ese 17 son 14 con policies más `listing_moderacion`,
+**Ese 18 son 15 con policies más `listing_moderacion`,
 `listing_moderacion_reclamos` y `avatar_moderacion`, que tienen RLS habilitado
 y CERO policies a propósito** (sus bloques propios, más abajo) — no son tablas
 a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 `20260928000471`, igual que decía la prosa; 16 con ella, 17 con
-`20260928000473`). **`universidad_dominios` cuenta entre las 14 "con policies", pero
-su única policy es para `supabase_auth_admin`, no para el cliente** (su bloque,
-más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
+`20260928000473`, 18 con `20260929000474`). **`universidad_dominios` y
+`correos_bloqueados` cuentan entre las 15 "con policies", pero su única policy
+es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 38 y 37 (medido el 2026-09-26).** `ls supabase/migrations |
+wc -l` da **38**; `mcp__supabase__list_migrations` da **37**. La que falta en
+remoto es `20260929000474` (eliminar cuenta), que no se pushea en su propia
+tarea: es el runbook pendiente 0h de §8, junto con el deploy de la Edge
+Function `eliminar-cuenta`, y en ese orden. La historia de antes, tal como
+estaba:
 
 **Repo y remoto: 37 y 37 (medido el 2026-09-25) — a la par.** `ls
 supabase/migrations | wc -l` da **37**; `mcp__supabase__list_migrations`
@@ -307,6 +314,11 @@ universidad_dominios (dominio text PK, universidad_id → universidades on delet
                  REGISTRAR una cuenta. Check: minúsculas, sin espacios, sin '@'.
                  NO es legible por el cliente (ni anon ni authenticated): la lee
                  solo el Auth Hook. Ver abajo.
+correos_bloqueados (correo_hash bytea PK — sha256 de lower(btrim(correo)),
+                 check de 32 bytes —, created_at) — correos de cuentas que se
+                 ELIMINARON estando suspendidas; el Auth Hook rechaza volver a
+                 registrarlos. Mismo acceso que universidad_dominios: solo
+                 supabase_auth_admin. Ver "Eliminar cuenta", abajo.
 
 **`campus.latitud`/`longitud` son para "Detectar campus más cercano" (fase
 2C, `20260925000467`).** Nullables a propósito: un campus sin coordenadas
@@ -391,19 +403,24 @@ listing_sales    (listing_id PK → listings, comprador_id → users, created_at
                  columna de `listings` — ver abajo.
 ratings
   from_user_id, to_user_id, listing_id, estrellas (1-5), comentario nullable.
+  from_user_id y listing_id son NULLABLES y `on delete set null` desde
+  20260929000474: la reseña de una cuenta eliminada sobrevive anónima, y la de
+  una publicación borrada sobrevive sin publicación (ver "Eliminar cuenta").
   Solo se puede calificar si hubo contacto real (función can_rate()).
   to_user_id/listing_id NO son editables tras crear la fila (protegido por
   grant de columna, no solo por policy — un UPDATE no puede reapuntar una
   reseña a otra persona). Sin DELETE: una calificación no se borra, es parte
   del historial de confianza.
 reports
-  reporter_id (not null, on delete cascade — si el reportante borra su
-  cuenta, el reporte pierde sentido), listing_id / reported_user_id
+  reporter_id (nullable, on delete SET NULL desde 20260929000474 — antes era
+  cascade; el reporte de una cuenta eliminada se conserva para moderación, sin
+  su identidad), listing_id / reported_user_id
   (mutuamente excluyentes al crear, pero on delete SET NULL — un reporte
   sobrevive al borrado de su objetivo, con snapshot en listing_titulo /
   reported_user_correo para seguir siendo legible). reported_user_correo
   NUNCA es legible por el cliente (mismo criterio que users.correo) — solo
-  service_role lo ve. NADIE puede reportarse a sí mismo, y son DOS
+  service_role lo ve, y un trigger lo BORRA cuando la cuenta reportada se
+  elimina (20260929000474). NADIE puede reportarse a sí mismo, y son DOS
   mecanismos distintos, no uno — ver abajo.
 
 -- Notificaciones (RF-16)
@@ -1015,13 +1032,14 @@ va en `private`). **`public.buscar_listings` NO es la cuarta**: también es una
 RPC de `public`, pero es INVOKER a propósito (bloque de la búsqueda de texto,
 más arriba), y volverla definer sería una fuga. `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
 acotado a las TRES que se invocan desde policies — `is_active_user()`,
-`can_rate()` y `listing_id_from_object_name()` — mientras las **16** que solo
+`can_rate()` y `listing_id_from_object_name()` — mientras las **18** que solo
 disparan por trigger siguen revocadas (decía "las otras cinco", un número de la
-Fase 2 que nadie actualizó, y después 12; medido con `pg_trigger` ⋈ `pg_proc`
-en local: **18** funciones de `private` cuelgan de un trigger. Las dos que no
-están revocadas son INVOKER y solo reescriben NEW: `set_updated_at()` y
-`limpia_veredicto_en_pantalla()`, que conservan su `EXECUTE` porque Postgres lo
-verifica al crear el trigger, no al dispararlo. T12 vigila las dos listas). Ver sección 9 sobre por qué ese `USAGE` existe (no
+Fase 2 que nadie actualizó, y después 12 y 16; medido con `pg_trigger` ⋈ `pg_proc`
+en local el 2026-09-26: **22** funciones de `private` cuelgan de un trigger. Las
+cuatro que no están revocadas son INVOKER y solo reescriben NEW:
+`set_updated_at()`, `limpia_veredicto_en_pantalla()`, `anonimiza_rating()` y
+`anonimiza_report()`, que conservan su `EXECUTE` porque Postgres lo verifica al
+crear el trigger, no al dispararlo. T12 vigila las dos listas). Ver sección 9 sobre por qué ese `USAGE` existe (no
 es lo que originalmente se pensó).
 
 **Una función `SECURITY DEFINER` de `public` llamando a una de `private` no
@@ -1215,6 +1233,13 @@ en remoto: `tec.mx` y `exatec.tec.mx`, los dos de Tec de Monterrey. El segundo
 es un ejemplo real de por qué el match es exacto: un subdominio no hereda del
 dominio padre, así que necesita su propia fila.
 
+- **Desde `20260929000474` tiene un SEGUNDO rechazo, que se evalúa primero:**
+  `403 correo_bloqueado` si el hash del correo normalizado está en
+  `public.correos_bloqueados` (una cuenta que se eliminó estando suspendida;
+  bloque "Eliminar cuenta", arriba). Se cambió con `create or replace`, así que
+  conserva OID y grants. El cliente lo reconoce con `esCorreoBloqueado()`
+  (`src/lib/registro.ts`) y pinta la variante "correo bloqueado" del frame, con
+  copy neutro.
 - **La regla:** el dominio es lo que sigue al ÚLTIMO `@`, en minúsculas y sin
   espacios, con coincidencia EXACTA. `estudiante.tec.mx` no hereda de `tec.mx`,
   y `eviltec.mx` o `tec.mx.evil.com` tampoco machean. Solo un match explícito
@@ -1321,8 +1346,82 @@ Tres consecuencias que no se ven en el diff:
   vacía, todo alta nacería sin universidad. Por eso el runbook (§8, pendiente
   0) tiene un paso 0 bloqueante.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 317 aserciones (medido con el
-`grep` de §8 el 2026-09-24; antes decía 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Eliminar cuenta (Apple 5.1.1(v), Google Play) — `20260929000474` + la Edge
+Function `eliminar-cuenta`.** Borrar la cuenta es `auth.admin.deleteUser`, y lo
+demás son cascadas desde `auth.users`. La migración ajusta lo que esas cascadas
+hacían MAL según seis decisiones de producto, tomadas antes de construir. Todo lo
+de anonimizar vive en la BASE (una FK `set null` + un trigger que limpia lo que
+el `set null` no alcanza), no en el cliente ni en la función: aplica igual si la
+cuenta se borra desde Studio.
+
+| FK (medida en `pg_constraint`, local = remoto) | Antes | Ahora | Decisión |
+|---|---|---|---|
+| `ratings.from_user_id → users` | cascade | **set null** + trigger borra `comentario` | 1. Las reseñas que ESCRIBIÓ se conservan: estrellas sí, autor y comentario no |
+| `ratings.to_user_id → users` | cascade | cascade | 2. Las que RECIBIÓ se borran con él |
+| `ratings.listing_id → listings` | cascade | **set null** | 1, otra vez: las que escribió COMO VENDEDOR cuelgan de SUS publicaciones |
+| `listing_sales.comprador_id → users` | cascade | cascade | 3. Su compra se borra; la publicación sigue `vendida` (= "No fue a través de Relevo") |
+| `listings.user_id` (y la compuesta) | cascade | cascade | 4. Sus publicaciones se borran; sus objetos de Storage los borra la función |
+| `reports.reporter_id → users` | cascade | **set null** | 5. Los reportes que HIZO se conservan para moderación, sin su identidad |
+| `reports.reported_user_id → users` | set null | set null + trigger borra `reported_user_correo` | 5. Los reportes EN SU CONTRA también, sin el snapshot de su correo |
+
+Lo que no se ve en la tabla:
+
+- **`ratings.listing_id` en `set null` es GLOBAL, y cambia el borrado NORMAL de
+  una publicación (decidido, no colateral).** Antes, borrar una publicación
+  vendida borraba las reseñas de las dos partes y movía los dos promedios, o sea
+  que un vendedor podía borrar una mala reseña borrando la publicación. Ahora
+  sobreviven. **Costo aceptado:** la reseña de una publicación borrada ya no la
+  puede editar su autor, porque `ratings_update_own` exige `can_rate(to_user_id,
+  listing_id)` y con `listing_id` NULL da false.
+- **Nada de esto rompe lo que mira `ratings` (medido en local, `begin …
+  rollback`, antes de escribir la migración):** el unique `(from_user_id,
+  to_user_id, listing_id)` es NULLS DISTINCT, así que las filas anónimas no
+  chocan; las dos acciones RI sobre la MISMA fila (autor y publicación anulados
+  en un solo borrado) no dan "tuple already modified"; el recálculo de
+  `rating_promedio` sobre la fila de un usuario que se está borrando no truena;
+  `notify_calificacion` es AFTER INSERT y no dispara; ningún embed de `ratings`
+  del cliente lleva `!inner`. `fetchReviews` marca `autorEliminado` cuando el
+  embed `from_user` viene NULL (no cuando `nombre` es null, que también pasa en
+  una cuenta viva sin perfil completo).
+- **`rating_promedio` no se mueve para quien él calificó**: es una columna que
+  mantiene un trigger con `avg(estrellas)` por `to_user_id`, y la fila anónima
+  conserva los dos. No existe `rating_count`: el conteo es el `count:'exact'` de
+  `fetchReviews`, que tampoco cambia.
+- **Los avisos de OTROS con su identidad se BORRAN** (trigger BEFORE DELETE en
+  `users`, `private.borra_avisos_de_cuenta()`). De los 7 productores de
+  `notifications` —medidos en migraciones y en `pg_proc.prosrc`, iguales en
+  local y remoto—, `compra_calificable` y `calificacion_recibida` materializan
+  el NOMBRE de otro usuario, y `precio_favorito`/`favorito_vendido` el TÍTULO de
+  sus publicaciones. Alcance: todo aviso ajeno con `listing_id` en sus
+  publicaciones, más los `calificacion_recibida` que ÉL generó en publicaciones
+  ajenas. **Efecto aceptado:** ese segundo caso empareja por (destinatario,
+  publicación, tipo), así que si otra persona calificó al mismo vendedor por la
+  misma publicación, su aviso también se va. Su reseña no.
+- **Evasión de suspensión cerrada: `public.correos_bloqueados`.** Si la cuenta
+  está `suspendida` al borrarse, `private.bloquea_correo_suspendido()` guarda el
+  `sha256` del correo normalizado igual que el Auth Hook (`lower(btrim(...))`),
+  y el hook lo rechaza con `403 correo_bloqueado` ANTES de mirar el dominio.
+  `sha256(bytea)` es core (PG 17.6 en local y remoto, medido); `supabase_auth_admin`
+  la puede ejecutar. **Alcance honesto:** un hash sin sal de un correo es un
+  seudónimo, no un dato anónimo (probar correos candidatos lo revierte), por eso
+  no es legible por el cliente y va al aviso de privacidad; un alias o un correo
+  distinto lo evaden; se guarda indefinidamente; desbloquear es borrar la fila
+  en Studio. **La policy de `supabase_auth_admin` es portante, y quitarla falla
+  ABIERTO en silencio** (medido, `probe-registro.mjs` caso 9): ese rol no tiene
+  bypassrls, la tabla se le ve vacía y la cuenta vetada se registra sin error.
+- **Lo que se borra y es correcto con las FKs de antes:** `favorites`,
+  `listing_contacts`, `push_tokens`, sus `notifications`, `avatar_moderacion`, y
+  `listing_moderacion(_reclamos)` de sus publicaciones (se pierde su historial de
+  moderación: consecuencia de la decisión 4). Sus `listing_sales` como vendedor
+  se van con sus publicaciones. `reports.listing_titulo` de los reportes contra
+  sus publicaciones se conserva: es contenido, no identidad.
+- **El orden de la Edge Function es load-bearing:** Storage PRIMERO y
+  `deleteUser` después, porque las carpetas `listing-photos/{id}/` se enumeran
+  desde `listings`, que el borrado se lleva. Detalle de la función (auth,
+  reautenticación por `amr`, idempotencia) en §8 y en §9.
+
+**Regresión de RLS:** `supabase/tests/rls.sql`, 335 aserciones (medido con el
+`grep` de §8 el 2026-09-26; antes decía 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -1866,6 +1965,53 @@ esperado: esas invariantes viven en T12, que no está en T32. Sin el trigger de
 limpieza también caería (x1), después de (a4). La suite corta en la primera
 caída.
 
+Y a **335** con las de "Eliminar cuenta" (`20260929000474`): 16 de T33 más 2
+en T12 (`correos_bloqueados` sin privilegios para el cliente, y con la ÚNICA
+policy para `supabase_auth_admin`). La lista de funciones solo-trigger revocadas
+pasó de 16 a **18** (`borra_avisos_de_cuenta`, `bloquea_correo_suspendido`) y la
+de las INVOKER de 2 a **4** (`anonimiza_rating`, `anonimiza_report`), sin
+cambiar la cuenta. Además se CORRIGIÓ una aserción de T8, que afirmaba la regla
+vieja ("borrar la cuenta reportada conserva el correo"): la decisión 5 la
+invierte. T33 es autocontenida, con sus propios `:K33` (la cuenta que se borra),
+`:V33`, `:C33`, `:R33` y `:S33`/`:A33`, y siembra ventas, reseñas en los dos
+sentidos, reportes en las dos direcciones y avisos disparando los triggers
+REALES (baja de precio, venta). Guarda todo con `\gset` ANTES del borrado y
+compara después, en sentencias distintas (lección de T28). Su (h) es un barrido
+genérico: ninguna columna `uuid` de ninguna tabla de `public` guarda el id
+borrado, así que una tabla nueva con la FK equivocada cae ahí sin que nadie la
+agregue a una lista. Los 15 controles se corrieron uno a la vez dentro de la
+MISMA transacción que la suite (`begin; <variante>; <suite>; rollback`, así que
+nunca se persistieron), imprimiendo antes el estado vivo, contra la suite
+completa **y** contra T33 aislada:
+
+| Variante rota | Suite | T33 aislada |
+|---|---|---|
+| `ratings.from_user_id` de vuelta a cascade | (a) | (a) |
+| `ratings.listing_id` de vuelta a cascade | (a) | (a) |
+| `reports.reporter_id` de vuelta a cascade | (f) | (f) |
+| sin el trigger que borra el comentario | (a) | (a) |
+| sin el trigger que borra el correo del reporte | **T8** | (g) |
+| sin `users_borra_avisos_de_cuenta` | (g2) | (g2) |
+| borrado de avisos solo de los dos tipos con nombre | (g2) | (g2) |
+| borrado de avisos sin la rama de publicaciones ajenas | (g2c) | (g2c) |
+| borrado de avisos sin filtrar por dueño | (g3) | (g3) |
+| sin `users_bloquea_correo_suspendido` | (k) | (k) |
+| el hook sin la comprobación de `correos_bloqueados` | (k2) | (k2) |
+| `grant update (from_user_id)` en `ratings` | **(i)** | **(i)** |
+| `grant update (reporter_id)` en `reports` | (i) | (i) |
+| `grant select` de `correos_bloqueados` a authenticated | T12 | pasa |
+| sin la policy de `correos_bloqueados` | T12 | pasa |
+
+**La fila del `grant update (from_user_id)` es la lección de la sección.** La
+primera versión de (i) solo miraba el COMPORTAMIENTO (el update da 42501), y
+con ese grant puesto a mano siguió en verde: el `with check (from_user_id =
+auth.uid())` de `ratings_update_own` también rechaza. La aserción pasaba por la
+policy y no por el grant que decía vigilar. Ahora mira también
+`has_column_privilege`. **Y otra, del plan:** (a) esperaba `listing_id` NULL en
+TODAS las reseñas que escribió, y era falso: la que escribió sobre una
+publicación AJENA la conserva, porque esa publicación no se borra. Lo destapó la
+primera corrida, no el control.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -2032,21 +2178,21 @@ mandado a `pendiente` al editar fotos, auto-aprobándose sin Studio.
 
 ---
 
-## 4. Inventario completo de pantallas (68)
+## 4. Inventario completo de pantallas (70)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
 usa el filtro visual del prototipo. Para el estado de qué grupo ya existe
 como código real (vs. solo diseño), ver §8 y las reglas de `.claude/rules/`.
 
-### Onboarding (15)
+### Onboarding (16)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
 **Verificación (correo no participante)** ·
 Código de verificación · Completar perfil ·
 Completar perfil (estado inicial) · Completar perfil (selector de campus) ·
 Permiso de notificaciones ·
 Iniciar sesión · Recuperar contraseña · **Código de recuperación** ·
-**Nueva contraseña**
+**Nueva contraseña** · **Cuenta eliminada**
 
 **Eran 16: "Selector de universidad" salió con la fase 2A** (`20260924000466`).
 La universidad ya no se elige: la asigna el servidor desde el dominio del
@@ -2208,9 +2354,12 @@ variantes de documentación, nunca como zona real de UI, así que la separación
 de "Soporte"/"Eliminar cuenta" es de espaciado, no de una línea. **"Cerrar
 sesión" NO está aquí: se mudó en `3752e7b` y se revirtió al `.menu-list` de
 "Perfil", que volvió a sus 5 filas** (Mis publicaciones, Editar perfil,
-Verificación, Ayuda y soporte, Cerrar sesión). El guard de sesión de
-`(tabs)/_layout.tsx` no redirige mientras `(tabs)` está tapado (§9), así que
-una acción de sesión fuera de `(tabs)` deja al usuario sin sesión en pantalla.
+Verificación, Ayuda y soporte, Cerrar sesión). El motivo de la reversión —el
+`<Redirect>` de `(tabs)/_layout.tsx` no redirige mientras `(tabs)` está
+tapado— ya lo cerró el guard global de "Eliminar cuenta" (§9); "Cerrar sesión"
+se queda en Perfil porque ahí es donde vive en el frame, no por el guard.
+"Eliminar cuenta" SÍ funciona desde aquí: abre "Confirmar eliminar cuenta"
+(Sistema).
 El FRAME muestra todas las filas; el código solo pinta las que funcionan hoy
 (`filaVisible()`, `src/lib/configuracion.ts`) — detalle completo en
 `cuenta-perfil.md`.
@@ -2283,9 +2432,23 @@ reporte. Los íconos de las filas nuevas reusan los componentes existentes
 path de la etiqueta y de la estrella del frame se alinearon a los de esos
 componentes, para no tener dos formas del mismo ícono.
 
-### Sistema (6)
-Confirmar eliminar · Confirmar cerrar sesión · Error de conexión ·
-Toast de éxito · Toast de error · Loading / skeleton
+### Sistema (7)
+Confirmar eliminar · Confirmar cerrar sesión · **Confirmar eliminar cuenta** ·
+Error de conexión · Toast de éxito · Toast de error · Loading / skeleton
+
+**"Confirmar eliminar cuenta" y "Cuenta eliminada" (Onboarding) llegaron con
+"Eliminar cuenta" (`20260929000474`)**: 70 en total, 7 de Sistema y 16 de
+Onboarding, medido con el mismo `grep | uniq -c`. La confirmación es el MISMO
+shell que "Confirmar eliminar"/"Confirmar cerrar sesión" (`.modal-card`) con una
+sola pieza más, el campo de contraseña, que ES la confirmación. Se probó primero
+como pantalla completa con la lista de qué se borra y qué se conserva, y se
+descartó a decisión del usuario: eso lo explica el aviso de privacidad, no el
+modal. Sus errores (contraseña incorrecta, sin conexión, fallo del servidor) son
+variantes etiquetadas DENTRO del modal, porque son copy persistente (§0 regla
+4). "Cuenta eliminada" vive en Onboarding porque ya no hay sesión. Dos variantes
+más, que no cuentan aparte: la reseña "Usuario eliminado" en "Perfil público"
+(ícono de persona, nombre en `--ink-soft`, sin comentario) y "correo bloqueado"
+en "Verificación (correo no participante)".
 
 ---
 
@@ -2353,7 +2516,7 @@ Toast de éxito · Toast de error · Loading / skeleton
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 67 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 70 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -2382,8 +2545,8 @@ Toast de éxito · Toast de error · Loading / skeleton
   quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son NUEVE pasos, no uno (decía "SIETE" con ocho en la
-  lista):
+  `postgres`/superusuario. Son DIEZ pasos, no uno (decía "NUEVE" antes de
+  eliminar cuenta, y "SIETE" con ocho en la lista):
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
      **`psql` puede no estar instalado en la máquina** (no lo está en la de
      desarrollo actual, aunque este comando lo dé por supuesto). El contenedor
@@ -2494,7 +2657,20 @@ Toast de éxito · Toast de error · Loading / skeleton
      `begin … rollback`, así que no deja estado. Sus controles —desincronizar la
      clase, la cota, quitar el NFC o el colapso de espacios— caen cada uno en
      su caso.
-  Los probes 2, 3, 6, 7 y 9 necesitan el stack local arriba y limpian lo suyo (el
+  10. `node scripts/probe-eliminar-cuenta.mjs`: la Edge Function
+     `eliminar-cuenta` por HTTP. Igual que el paso 6, **necesita DOS procesos**
+     (stack + `supabase functions serve --env-file supabase/functions/.env`),
+     pero es gratis: sin llamadas a terceros, y los triggers de Storage no
+     llaman a nada en local mientras Vault no tenga los secretos de moderación
+     (el probe lo imprime al arrancar). Importa la decisión PURA de la ventana
+     de reautenticación (`reautenticacion.ts`, sin imports) para probar los
+     bordes de 5 minutos sin esperarlos, y por HTTP: quién entra, que el body no
+     elige a quién se borra, 0 objetos en Storage y 0 filas en `auth.users`
+     tras el borrado, la reseña anónima con sus estrellas y el promedio
+     intacto, y que reintentar da 200. Sus cuatro controles (sin chequeo de
+     `amr`, uid del body, sin Storage, 404 como error) caen cada uno en su caso.
+     No repite la semántica de la base: eso es T33.
+  Los probes 2, 3, 6, 7, 9 y 10 necesitan el stack local arriba y limpian lo suyo (el
   9, con un rollback); si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4, 5 y 8 no necesitan nada: ni stack, ni red, ni credenciales.
 
@@ -2872,6 +3048,52 @@ inbox `20260928000472`/`473` — se cerró completo el 2026-09-25, los 6 pasos.
 Evidencia en "Hecho", abajo. Se deja este hueco para no romper las referencias
 cruzadas a "pendiente 0g" de `CLAUDE.md` §3 y `notificaciones-push.md`, que
 ahora apuntan a "Hecho".)**
+0h. **Eliminar cuenta (`20260929000474` + Edge Function `eliminar-cuenta`):
+   construida y probada en LOCAL, sin pushear ni desplegar.** En este orden, y
+   el orden importa: un build con la fila encendida contra un remoto sin la
+   función daría "No pudimos eliminar tu cuenta" en cada intento.
+   0. Remedir antes de empezar: `list_migrations` en **37**, sin `…474`.
+   1. `supabase db push`, y `list_migrations` con `20260929000474` (38).
+   2. Verificar en remoto con `execute_sql`, todo de solo lectura:
+      - `pg_constraint`: `ratings_from_user_id_fkey`, `ratings_listing_id_fkey`
+        y `reports_reporter_id_fkey` con `confdeltype = 'n'` (set null);
+      - `pg_trigger`: `ratings_anonimiza`, `reports_anonimiza`,
+        `users_borra_avisos_de_cuenta` y `users_bloquea_correo_suspendido`, con
+        el `WHEN` idéntico al de la migración (`pg_get_triggerdef`);
+      - `has_function_privilege('authenticated', …, 'execute')` en `false` para
+        `borra_avisos_de_cuenta()` y `bloquea_correo_suspendido()`;
+      - `correos_bloqueados`: 0 filas en `table_privileges`/`column_privileges`
+        para `anon`/`authenticated`, y una sola policy, la de
+        `supabase_auth_admin`;
+      - `prosrc` de `public.hook_before_user_created` contiene
+        `correos_bloqueados`, y un registro normal de `tec.mx` sigue pasando
+        (logs de Auth, `run_hook` con `Hook ran successfully`).
+   3. `supabase functions deploy eliminar-cuenta` (paso manual: este repo no
+      tiene CI/CD). `list_edge_functions` → **ACTIVE**, y el fuente desplegado
+      (`get_edge_function`) trae `reautenticacionReciente` y `vaciarCarpeta`.
+      **Sin secretos nuevos**: la función solo usa la URL y las llaves que la
+      plataforma ya inyecta.
+   4. `npm run gen:types` contra remoto: las columnas nullable de `ratings` y
+      `reports` y la tabla `correos_bloqueados` están escritas a mano hoy en
+      `database.types.ts`, igual que en 0d/0e. El diff debe coincidir.
+   5. Distribuir el build DESPUÉS de 1-3. No hay módulos nativos nuevos (ni
+      `package.json` ni `ios/` cambiaron), así que un dev build existente sirve
+      con un reload de JS. Un build VIEJO contra el remoto nuevo no se rompe:
+      lo único que ve distinto es el rechazo `correo_bloqueado` en Verificación,
+      que le llega como texto crudo bajo el botón.
+   6. Pruebas manuales en dispositivo: ver `cuenta-perfil.md`, "Eliminar
+      cuenta".
+0i. **Publicación en tiendas: lo que falta para someter la app.** El
+   inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
+   versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que
+   sale de tareas cerradas:
+   - **Enlace WEB para pedir el borrado de la cuenta.** Google Play lo exige
+     además del flujo dentro de la app (que ya existe). Quedó fuera de alcance
+     de "Eliminar cuenta" a propósito. **Fix:** una página en el mismo dominio
+     que el aviso de privacidad, que explique el borrado desde la app y ofrezca
+     un correo de soporte (`CORREO_CONTACTO`) para quien ya no la tenga.
+   - **El aviso de privacidad tiene contenido pendiente**: la lista vive en la
+     auditoría, §6.
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
@@ -2944,8 +3166,13 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
 - "Calificar la app"/"Compartir la app" ocultas hasta que la app esté publicada (`APP_PUBLICADA`); "Calificar" además exige la URL de la tienda de esa plataforma → `cuenta-perfil.md`
 - "Aviso de privacidad"/"Términos de uso" ocultas hasta que exista una URL real (`URL_PRIVACIDAD`/`URL_TERMINOS`) → `cuenta-perfil.md`
-- "Eliminar cuenta" existe en el frame y en el código (oculta) pero su flujo todavía no existe → `cuenta-perfil.md`
-- El guard de sesión de `(tabs)/_layout.tsx` no actúa fuera de foco (`<Redirect>` corre en `useFocusEffect`): Mis publicaciones, Editar perfil y cualquier pantalla fuera de `(tabs)` se quedan sin redirect a `/splash` si la sesión muere ahí (token vencido) → `cuenta-perfil.md`
+- ~~"Eliminar cuenta" existe en el frame y en el código (oculta) pero su flujo todavía no existe~~ **[CERRADA]** por `20260929000474` + `eliminar-cuenta` → `cuenta-perfil.md`
+- ~~El guard de sesión de `(tabs)/_layout.tsx` no actúa fuera de foco~~ **[CERRADA]** por el guard global del layout raíz (`src/lib/salida-sesion.ts`); falta confirmarlo en dispositivo → `cuenta-perfil.md`
+- La reseña de una publicación BORRADA ya no la puede editar su autor (`can_rate(to, NULL)` da false), efecto del `ratings.listing_id` en set null → CLAUDE.md §3, "Eliminar cuenta"
+- Al eliminar una cuenta se borra también el aviso de calificación de un TERCERO si calificó al mismo usuario por la misma publicación (el aviso no guarda quién lo causó) → CLAUDE.md §3, "Eliminar cuenta"
+- `correos_bloqueados` guarda un hash SIN sal (seudónimo, no anónimo), para siempre, y un alias lo evade → CLAUDE.md §3, "Eliminar cuenta"
+- Eliminar cuenta no borra los huérfanos de Storage que YA existían de publicaciones borradas antes (no están bajo una carpeta enumerable) → `publicar-fotos.md` (la deuda del barrido)
+- Falta el enlace WEB para pedir el borrado de la cuenta (Google Play) → CLAUDE.md §8, pendiente 0i
 - ~~El aviso del avatar borrado por moderación se pierde si el usuario no abre Perfil o no ve el toast~~ **[CERRADA]** por `20260928000473` (`avatar_moderacion` + aviso `avatar_eliminado` en el inbox) → `cuenta-perfil.md`
 - Los builds viejos ya instalados crashean el inbox al leer un `tipo` de notificación nuevo (el fallback `ESTILO_DESCONOCIDO` solo existe desde RF-16 tanda 2) → CLAUDE.md §8, "Hecho", paso 5 del runbook de `20260928000471`/`472`/`473`
 - El push no rutea por `tipo`: los avisos sin publicación abren el inbox, no su destino → `notificaciones-push.md`
@@ -2978,7 +3205,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `CampusBottomSheet` | `CampusBottomSheet` | `Modal` de RN real — **no** es `SheetScreen` |
 | `CategoryTile` | `CategoryTile` | Tile de categoría con su tinte |
 | `Chip` | `Chip` | Chip genérico |
-| `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" |
+| `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" / "Confirmar eliminar cuenta". `children` es el único hueco (entre el cuerpo y los botones) y `confirmDisabled` apaga solo el confirm; sin hijos se ve igual que siempre |
 | `EmptyState` | `EmptyState` | Estado vacío, con `.empty-actions` opcional |
 | `ErrorState` | `ErrorState` | Estado de fallo con "Reintentar" (label hardcodeado — ver deuda) |
 | `Field` | `Field`, `PhoneField`, `SelectField`, `FixedField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio. `FixedField` = valor que se muestra y no se elige (sin chevron, no es botón). `PhoneField` recibe `pais`/`onPaisPress`/`error` (el país es un botón). `Field` tiene `error` (`.field-error` + borde `--brick`), copy persistente: frame primero |
@@ -3498,6 +3725,18 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   negativo, con la misma disciplina que una policy de RLS — de otro modo
   apaga más de lo que dice apagar.
 
+- **`iat` NO prueba que el usuario escribió su contraseña hace poco; `amr` sí.**
+  Medido contra GoTrue local (B0 de "Eliminar cuenta", 2026-09-26): un refresh
+  de sesión emite un access token con `iat` NUEVO sin pedir nada, y conserva el
+  `amr` intacto — `login: iat …353, amr password @…353` → `refresh: iat …356,
+  amr password @…353` → `relogin: iat …358, amr password @…358`; una sesión por
+  OTP trae `amr: [{method: 'otp'}]`. O sea que exigir "token reciente" para una
+  acción sensible lo pasa cualquier app abierta con solo esperar al refresh. Lo
+  que hay que exigir es una entrada `password` de `amr` con `timestamp` reciente
+  (`supabase/functions/eliminar-cuenta/reautenticacion.ts`). Y el corolario: un
+  JWT sigue verificando por firma hasta su `exp` aunque la cuenta ya no exista —
+  `withSupabase({ auth: 'user' })` no pregunta a Auth (medido: un segundo
+  `invoke` con el mismo token tras `deleteUser` da 200).
 - **Confirmar que un campo EXISTE no es confirmar su FORMA, y con un shim sin
   tipar la diferencia sale como un 401.** El E-spike de `@supabase/server` leyó
   los `.d.mts` publicados y confirmó correctamente que `ctx.userClaims` existe;
@@ -3676,11 +3915,23 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   un primer diagnóstico escrito aquí mismo afirmaba lo contrario ("dispara el
   redirect desde abajo del stack, sin que importe qué pantalla esté visible")
   y era falso. Mover "Cerrar sesión" a Configuración (`3752e7b`) lo destapó, y
-  se revirtió a Perfil (`cuenta-perfil.md`). El hueco sigue abierto para
-  cualquier pantalla fuera de `(tabs)` cuando la sesión expira: es deuda con
-  disparador (§8, índice). **La regla:** no pongas una acción que termine la
-  sesión fuera del layout que tiene el guard, y no asumas que un `<Redirect>`
-  "vigila" desde abajo del stack.
+  se revirtió a Perfil (`cuenta-perfil.md`). **El hueco se cerró con
+  "Eliminar cuenta"** (la primera acción que termina la sesión fuera de
+  `(tabs)`): un guard GLOBAL en el layout raíz, que nunca pierde el foco,
+  detecta la transición con sesión → sin sesión con un `useEffect` (no de foco)
+  y reinicia el navegador raíz (`src/lib/salida-sesion.ts`). No actúa si la
+  sesión muere en `(tabs)` (su `<Redirect>` ya navega) ni en `(onboarding)`
+  (esos flujos cierran sesión a propósito), salvo que se haya pedido un destino
+  con `salirHacia()`. **La regla que queda:** no asumas que un `<Redirect>`
+  "vigila" desde abajo del stack; si hace falta vigilar, es un efecto en el
+  layout raíz. **Sin medir en dispositivo todavía** (§8, pendiente 0h, paso 6).
+
+  **Y reiniciar, no `dismissAll()`.** `router.dismissAll()` cierra solo el
+  stack MÁS CERCANO (`expo-router/build/global-state/router.d.ts`): llamado
+  desde una pantalla de `(cuenta)`, vacía el stack de `(cuenta)` y deja `(tabs)`
+  vivo debajo, con su `<Redirect>` esperando el foco. Para aterrizar en una
+  pantalla sin nada con sesión debajo hace falta `navigationRef.reset(...)` del
+  contenedor raíz (`useNavigationContainerRef()`).
 
   **Hermano, y este sí sigue siendo válido: "Cancelar" en un modal de
   confirmación no cancela nada si la acción ya está en curso, solo esconde el

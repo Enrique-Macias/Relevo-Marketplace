@@ -22,9 +22,9 @@ export type FilaConfiguracion =
  * VISTA PREVIA: pinta TODAS las filas, ignorando las condiciones de abajo,
  * para ver la pantalla completa contra el frame. Gateado a `__DEV__`, así que
  * un build de producción nunca la hereda aunque se quede en `true`. Las filas
- * que se pintan por esto tienen su comportamiento REAL de hoy: "Eliminar
- * cuenta" no hace nada (su flujo es otra tarea) y la de notificaciones sale
- * sin texto ni acción si el módulo nativo no está en el build. Apagarla
+ * que se pintan por esto tienen su comportamiento REAL de hoy: la de
+ * notificaciones sale sin texto ni acción si el módulo nativo no está en el
+ * build. Apagarla
  * (`false`) para probar la lógica real de visibilidad.
  */
 const VISTA_PREVIA_TODAS_LAS_FILAS = __DEV__ && true;
@@ -59,9 +59,10 @@ export function filaVisible(fila: FilaConfiguracion): boolean {
     case 'terminos':
       return URL_TERMINOS !== 'https://enriquemacias.dev/';
     case 'eliminar_cuenta':
-      // Oculta por decisión de producto, no por una condición externa: su
-      // flujo todavía no existe (tarea siguiente).
-      return false;
+      // Siempre: Apple (5.1.1(v)) y Google Play exigen poder borrar la cuenta
+      // desde la app. El flujo es el modal de `configuracion.tsx` + la Edge
+      // Function `eliminar-cuenta`.
+      return true;
     case 'contacto':
     case 'version':
       return true;

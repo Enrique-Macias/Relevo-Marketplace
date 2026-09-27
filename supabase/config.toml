@@ -483,6 +483,15 @@ verify_jwt = false
 [functions.moderar-contenido]
 verify_jwt = false
 
+# eliminar-cuenta — borra la cuenta de quien llama (Apple 5.1.1(v)). Un solo
+# llamador, el cliente, con un JWT de usuario de verdad. `verify_jwt = false`
+# por consistencia con `moderar-contenido`: quien autoriza es
+# `withSupabase({ auth: 'user' })`, que verifica el JWT contra JWKS, y además
+# la función exige una reautenticación con contraseña reciente (`amr`), cosa
+# que la verificación integrada de la plataforma no sabe hacer.
+[functions.eliminar-cuenta]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

@@ -358,11 +358,17 @@ select pg_temp.assert(
           where listing_id is null and listing_titulo = 'RLS Cálculo de Larson'),
   'borrar la publicación reportada no falla y el reporte sobrevive con su título');
 
+-- Hasta 20260929000474 el correo se CONSERVABA (era para qué existía el
+-- snapshot). Desde "Eliminar cuenta" (decisión 5, CLAUDE.md §3) el reporte
+-- sobrevive pero sin la identidad de quien borró su cuenta. T33 lo prueba a
+-- fondo; aquí se corrige la aserción que afirmaba lo contrario.
 delete from auth.users where id = :C::uuid;
 select pg_temp.assert(
   exists (select 1 from public.reports
-          where reported_user_id is null and reported_user_correo = 'rls-c@tec.mx'),
-  'borrar la cuenta reportada no borra el reporte y conserva el correo');
+          where reported_user_id is null and reported_user_correo is null
+            and listing_id is null and listing_titulo is null)
+  and not exists (select 1 from public.reports where reported_user_correo = 'rls-c@tec.mx'),
+  'borrar la cuenta reportada no borra el reporte, pero sí el snapshot de su correo');
 
 -- ---------------------------------------------------------------------------
 \echo ''
@@ -2352,8 +2358,13 @@ select pg_temp.assert(
   and not has_function_privilege('authenticated',
         'private.notify_favorito_vendido()', 'execute')
   and not has_function_privilege('authenticated',
-        'private.notify_avatar_eliminado()', 'execute'),
-  'las 16 funciones que solo disparan por trigger siguen revocadas');
+        'private.notify_avatar_eliminado()', 'execute')
+  -- Eliminar cuenta (20260929000474): las dos borran/escriben filas ajenas.
+  and not has_function_privilege('authenticated',
+        'private.borra_avisos_de_cuenta()', 'execute')
+  and not has_function_privilege('authenticated',
+        'private.bloquea_correo_suspendido()', 'execute'),
+  'las 18 funciones que solo disparan por trigger siguen revocadas');
 
 -- Las DOS funciones de trigger que NO están en la lista de arriba, a
 -- propósito: `set_updated_at()` y `limpia_veredicto_en_pantalla()` son
@@ -2370,8 +2381,13 @@ select pg_temp.assert(
             where oid = 'private.limpia_veredicto_en_pantalla()'::regprocedure)
   and has_function_privilege('authenticated', 'private.set_updated_at()', 'execute')
   and has_function_privilege('authenticated',
-        'private.limpia_veredicto_en_pantalla()', 'execute'),
-  'set_updated_at() y limpia_veredicto_en_pantalla() son INVOKER y no están revocadas');
+        'private.limpia_veredicto_en_pantalla()', 'execute')
+  -- Eliminar cuenta (20260929000474): mismo caso, solo reescriben NEW.
+  and not (select prosecdef from pg_proc where oid = 'private.anonimiza_rating()'::regprocedure)
+  and not (select prosecdef from pg_proc where oid = 'private.anonimiza_report()'::regprocedure)
+  and has_function_privilege('authenticated', 'private.anonimiza_rating()', 'execute')
+  and has_function_privilege('authenticated', 'private.anonimiza_report()', 'execute'),
+  'las 4 funciones de trigger que solo reescriben NEW son INVOKER y no están revocadas');
 
 -- El webhook no puede quedar como un grant abierto sobre Vault: si
 -- `authenticated` pudiera leer `vault.decrypted_secrets`, la secret key del
@@ -2592,6 +2608,31 @@ select pg_temp.assert(
   not exists (select 1 from pg_policies
               where schemaname = 'public' and tablename = 'avatar_moderacion'),
   'avatar_moderacion no tiene ninguna policy (solo service_role la usa)');
+
+-- `correos_bloqueados` (20260929000474): hashes de correos de cuentas borradas
+-- estando suspendidas. Un seudónimo, no un dato anónimo: el cliente no lo lee
+-- ni lo escribe. Mismas dos gemelas, con una diferencia: aquí SÍ hay una
+-- policy, la de `supabase_auth_admin` (portante, como la de
+-- `universidad_dominios`), y tiene que ser la ÚNICA.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee in ('authenticated', 'anon')
+                and table_schema = 'public'
+                and table_name = 'correos_bloqueados')
+  and not exists (select 1 from information_schema.column_privileges
+                  where grantee in ('authenticated', 'anon')
+                    and table_schema = 'public'
+                    and table_name = 'correos_bloqueados'),
+  'correos_bloqueados no tiene ni un privilegio para authenticated ni anon');
+
+select pg_temp.assert(
+  has_table_privilege('supabase_auth_admin', 'public.correos_bloqueados', 'select')
+  and (select count(*) from pg_policies
+       where schemaname = 'public' and tablename = 'correos_bloqueados'
+         and roles = '{supabase_auth_admin}' and cmd = 'SELECT') = 1
+  and (select count(*) from pg_policies
+       where schemaname = 'public' and tablename = 'correos_bloqueados') = 1,
+  'correos_bloqueados: supabase_auth_admin la lee y tiene la ÚNICA policy');
 
 -- Todas las tablas de public tienen RLS activo.
 select pg_temp.assert(
@@ -3787,6 +3828,299 @@ select pg_temp.assert(
     'delete from public.notifications where user_id = %L', :F32a::uuid)) = '42501'
   and pg_temp.t32_u(:F32a::uuid, 'avatar_eliminado') = 1,
   '(w) authenticated NO puede borrar sus notificaciones');
+
+\echo ''
+\echo '== T33 — eliminar cuenta: qué se borra y qué se conserva anonimizado =='
+-- 20260929000474. Autocontenida: siembra sus propios usuarios, publicaciones,
+-- ventas, reseñas, reportes y avisos, y no reusa nada de secciones anteriores.
+--
+--   :K33 — la cuenta que se borra ("Kevinesco"). Vende una publicación a :C33,
+--          compra una de :V33, califica y es calificado en las dos, reporta a
+--          :V33 y es reportado por :R33.
+--   :V33 — vendedor que le vendió a :K33.
+--   :C33 — comprador de :K33.
+--   :R33 — reporta a :K33 (usuario y publicación) y tiene en favoritos una
+--          publicación de :K33 y otra de :V33.
+--   :S33 / :A33 — una cuenta suspendida y una activa, para el hash de (k).
+--
+-- El borrado es `delete from auth.users` como `postgres`: lo mismo que hace
+-- `auth.admin.deleteUser` (las cascadas hacen el resto). La acción y cada
+-- comprobación van en SENTENCIAS DISTINTAS (lección de T28), y todo lo que se
+-- compara después se guarda antes con `\gset`.
+--
+-- CONTROLES NEGATIVOS, uno a la vez contra la suite completa: ver la tabla de
+-- CLAUDE.md §3 ("Y a N con las de T33").
+
+\set K33 '''3a3a3a3a-0000-0000-0000-0000000033a0'''
+\set V33 '''3a3a3a3a-0000-0000-0000-0000000033b0'''
+\set C33 '''3a3a3a3a-0000-0000-0000-0000000033c0'''
+\set R33 '''3a3a3a3a-0000-0000-0000-0000000033d0'''
+\set S33 '''3a3a3a3a-0000-0000-0000-0000000033e0'''
+\set A33 '''3a3a3a3a-0000-0000-0000-0000000033f0'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:K33, 'rls-t33-k@tec.mx'), (:V33, 'rls-t33-v@tec.mx'),
+               (:C33, 'rls-t33-c@tec.mx'), (:R33, 'rls-t33-r@tec.mx'),
+               (:S33, 'rls-t33-s@tec.mx'), (:A33, 'rls-t33-a@tec.mx')) as x(u, e);
+
+update public.users set nombre = 'Kevinesco' where id = :K33::uuid;
+update public.users set nombre = 'Vera' where id = :V33::uuid;
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id, titulo,
+                             descripcion, precio, condicion, estado)
+values (:K33::uuid, 1, 1, 1, 'RLS T33 K vendida', 'T33', 500, 'nuevo', 'activa'),
+       (:K33::uuid, 1, 1, 1, 'RLS T33 K fav',     'T33', 500, 'nuevo', 'activa'),
+       (:V33::uuid, 1, 1, 1, 'RLS T33 V vendida', 'T33', 500, 'nuevo', 'activa'),
+       (:V33::uuid, 1, 1, 1, 'RLS T33 V otra',    'T33', 500, 'nuevo', 'activa');
+
+insert into public.listing_photos (listing_id, storage_path, orden)
+select id, id || '/t33.jpg', 0 from public.listings where titulo like 'RLS T33 %';
+
+select (select id from public.listings where titulo = 'RLS T33 K vendida') as l_kv,
+       (select id from public.listings where titulo = 'RLS T33 K fav')     as l_kf,
+       (select id from public.listings where titulo = 'RLS T33 V vendida') as l_vv,
+       (select id from public.listings where titulo = 'RLS T33 V otra')    as l_vo \gset
+
+-- Contactos y ventas, en el orden del cliente (la venta antes del estado).
+insert into public.listing_contacts (user_id, listing_id)
+values (:C33::uuid, :l_kv), (:K33::uuid, :l_vv);
+
+select pg_temp.as_user(:K33::uuid, format(
+  'insert into public.listing_sales (listing_id, comprador_id) values (%s, %L)', :l_kv, :C33::uuid));
+select pg_temp.as_user(:K33::uuid, format(
+  'update public.listings set estado = ''vendida'' where id = %s', :l_kv));
+select pg_temp.as_user(:V33::uuid, format(
+  'insert into public.listing_sales (listing_id, comprador_id) values (%s, %L)', :l_vv, :K33::uuid));
+select pg_temp.as_user(:V33::uuid, format(
+  'update public.listings set estado = ''vendida'' where id = %s', :l_vv));
+
+-- Reseñas en las dos direcciones de las dos ventas. Las de :K33 llevan
+-- comentario, que es lo que (a) comprueba que se borra.
+select pg_temp.as_user(:K33::uuid, format(
+  'insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas, comentario) '
+  || 'values (%L, %L, %s, 4, ''COMENTARIO-K33-a-C33'')', :K33::uuid, :C33::uuid, :l_kv));
+select pg_temp.as_user(:C33::uuid, format(
+  'insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas) '
+  || 'values (%L, %L, %s, 5)', :C33::uuid, :K33::uuid, :l_kv));
+select pg_temp.as_user(:K33::uuid, format(
+  'insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas, comentario) '
+  || 'values (%L, %L, %s, 2, ''COMENTARIO-K33-a-V33'')', :K33::uuid, :V33::uuid, :l_vv));
+select pg_temp.as_user(:V33::uuid, format(
+  'insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas) '
+  || 'values (%L, %L, %s, 1)', :V33::uuid, :K33::uuid, :l_vv));
+
+-- Favoritos de :R33 y los avisos que producen los triggers REALES: una baja
+-- de precio y una venta sin comprador sobre la publicación de :K33, y una
+-- baja de precio sobre la de :V33 (la que debe sobrevivir, (g3)).
+insert into public.favorites (user_id, listing_id) values (:R33::uuid, :l_kf), (:R33::uuid, :l_vo);
+select pg_temp.as_user(:K33::uuid, format(
+  'update public.listings set precio = 400 where id = %s', :l_kf));
+select pg_temp.as_user(:V33::uuid, format(
+  'update public.listings set precio = 400 where id = %s', :l_vo));
+
+-- Reportes, antes de vender la favorita: :K33 reporta a :V33, :R33 reporta a
+-- :K33 como usuario y a su publicación.
+select pg_temp.as_user(:K33::uuid, format(
+  'insert into public.reports (reporter_id, reported_user_id, motivo, comentario) '
+  || 'values (%L, %L, ''otro'', ''COMENTARIO-REPORTE-K33'')', :K33::uuid, :V33::uuid));
+select pg_temp.as_user(:R33::uuid, format(
+  'insert into public.reports (reporter_id, reported_user_id, motivo) '
+  || 'values (%L, %L, ''sospecha_fraude'')', :R33::uuid, :K33::uuid));
+select pg_temp.as_user(:R33::uuid, format(
+  'insert into public.reports (reporter_id, listing_id, motivo) '
+  || 'values (%L, %s, ''spam_publicidad'')', :R33::uuid, :l_kf));
+
+select pg_temp.as_user(:K33::uuid, format(
+  'update public.listings set estado = ''vendida'' where id = %s', :l_kf));
+
+-- Todo lo que se compara después del borrado, guardado ANTES.
+select
+  (select id from public.ratings where from_user_id = :K33::uuid and to_user_id = :C33::uuid) as r_kc,
+  (select id from public.ratings where from_user_id = :K33::uuid and to_user_id = :V33::uuid) as r_kv,
+  (select id from public.ratings where from_user_id = :C33::uuid and to_user_id = :K33::uuid) as r_ck,
+  (select id from public.ratings where from_user_id = :V33::uuid and to_user_id = :K33::uuid) as r_vk,
+  (select rating_promedio from public.users where id = :V33::uuid) as prom_v,
+  (select rating_promedio from public.users where id = :C33::uuid) as prom_c,
+  (select count(*) from public.ratings where to_user_id = :V33::uuid) as n_v,
+  (select count(*) from public.ratings where to_user_id = :C33::uuid) as n_c,
+  (select id from public.notifications
+    where user_id = :R33::uuid and listing_id = :l_kf and tipo = 'precio_favorito') as n_pf,
+  (select id from public.notifications
+    where user_id = :R33::uuid and listing_id = :l_kf and tipo = 'favorito_vendido') as n_fv,
+  (select id from public.notifications
+    where user_id = :C33::uuid and listing_id = :l_kv and tipo = 'calificacion_recibida') as n_cr_c,
+  (select id from public.notifications
+    where user_id = :C33::uuid and listing_id = :l_kv and tipo = 'compra_calificable') as n_cc,
+  (select id from public.notifications
+    where user_id = :V33::uuid and listing_id = :l_vv and tipo = 'calificacion_recibida') as n_cr_v,
+  (select id from public.notifications
+    where user_id = :R33::uuid and listing_id = :l_vo and tipo = 'precio_favorito') as n_otra,
+  (select id from public.reports where reporter_id = :K33::uuid) as rep_kv,
+  (select id from public.reports where reporter_id = :R33::uuid and reported_user_id = :K33::uuid) as rep_rk,
+  (select id from public.reports where reporter_id = :R33::uuid and listing_id = :l_kf) as rep_rl
+\gset
+
+select pg_temp.assert(
+  (select count(*) from public.ratings where id in (:r_kc, :r_kv, :r_ck, :r_vk)) = 4
+  and (select count(*) from public.notifications
+        where id in (:n_pf, :n_fv, :n_cr_c, :n_cc, :n_cr_v, :n_otra)) = 6
+  and (select count(*) from public.notifications
+        where id in (:n_cr_c, :n_cc, :n_cr_v) and cuerpo like '%Kevinesco%') = 3
+  and (select count(*) from public.reports where id in (:rep_kv, :rep_rk, :rep_rl)) = 3
+  and (select reported_user_correo = 'rls-t33-k@tec.mx' from public.reports where id = :rep_rk),
+  'precondición: 4 reseñas, 6 avisos (3 con el nombre de Kevinesco) y 3 reportes sembrados');
+
+-- (i) ANTES del borrado: la anonimización solo la produce el borrado. Un
+-- cliente no puede anular el autor de una reseña ni el reportante de un
+-- reporte, así que no puede "anonimizarse" a medias.
+--
+-- Mira el PRIVILEGIO de columna además del comportamiento, y no es redundante:
+-- medido con un `grant update (from_user_id)` puesto a mano, el update de
+-- ratings SIGUE dando 42501, porque el `with check (from_user_id = auth.uid())`
+-- de `ratings_update_own` lo rechaza también. Solo con el comportamiento, esta
+-- aserción pasaba por la policy y no por el grant que dice vigilar.
+select pg_temp.assert(
+  not has_column_privilege('authenticated', 'public.ratings', 'from_user_id', 'UPDATE')
+  and not has_column_privilege('authenticated', 'public.reports', 'reporter_id', 'UPDATE')
+  and pg_temp.rechazo_de(:C33::uuid, format(
+    'update public.ratings set from_user_id = null where id = %s', :r_ck)) = '42501'
+  and pg_temp.rechazo_de(:R33::uuid, format(
+    'update public.reports set reporter_id = null where id = %s', :rep_rk)) = '42501',
+  '(i) un cliente no puede anular from_user_id ni reporter_id (sin privilegio y rechazado)');
+
+-- EL BORRADO.
+delete from auth.users where id = :K33::uuid;
+
+-- (a) Decisión 1: las reseñas que ESCRIBIÓ siguen, con sus estrellas, sin
+-- autor y sin comentario. La de :C33 colgaba de SU publicación (con
+-- listing_id en CASCADE habría desaparecido) y queda sin publicación; la de
+-- :V33 cuelga de una publicación AJENA, que sigue existiendo, y la conserva.
+select pg_temp.assert(
+  (select count(*) from public.ratings
+    where id = :r_kc and from_user_id is null and to_user_id = :C33::uuid
+      and estrellas = 4 and comentario is null and listing_id is null) = 1
+  and (select count(*) from public.ratings
+        where id = :r_kv and from_user_id is null and to_user_id = :V33::uuid
+          and estrellas = 2 and comentario is null and listing_id = :l_vv) = 1,
+  '(a) las reseñas que escribió siguen, con estrellas, sin autor ni comentario');
+
+-- (b) El promedio Y el conteo de quienes calificó no se mueven.
+select pg_temp.assert(
+  (select rating_promedio from public.users where id = :V33::uuid) = :prom_v
+  and (select rating_promedio from public.users where id = :C33::uuid) = :prom_c
+  and (select count(*) from public.ratings where to_user_id = :V33::uuid) = :n_v
+  and (select count(*) from public.ratings where to_user_id = :C33::uuid) = :n_c,
+  '(b) promedio y conteo de reseñas de los calificados quedan idénticos');
+
+-- (c) Decisión 2: las que RECIBIÓ se borran con él.
+select pg_temp.assert(
+  (select count(*) from public.ratings where id in (:r_ck, :r_vk)) = 0,
+  '(c) las reseñas que recibió se borran');
+
+-- (d) Decisión 3: su compra se borra; la publicación del vendedor sigue vendida.
+select pg_temp.assert(
+  (select count(*) from public.listing_sales where listing_id = :l_vv) = 0
+  and (select estado from public.listings where id = :l_vv) = 'vendida',
+  '(d) su fila de comprador en listing_sales se borra y la publicación sigue vendida');
+
+-- (e) Decisión 4: sus publicaciones y sus filas de fotos se borran (los
+-- objetos de Storage los borra la Edge Function, probe-eliminar-cuenta.mjs).
+select pg_temp.assert(
+  (select count(*) from public.listings where id in (:l_kv, :l_kf)) = 0
+  and (select count(*) from public.listing_photos where listing_id in (:l_kv, :l_kf)) = 0,
+  '(e) sus publicaciones y sus listing_photos se borran');
+
+-- (f) Decisión 5: el reporte que HIZO sigue, sin reportante. Su objetivo y su
+-- texto quedan para moderación.
+select pg_temp.assert(
+  (select count(*) from public.reports
+    where id = :rep_kv and reporter_id is null and reported_user_id = :V33::uuid
+      and comentario = 'COMENTARIO-REPORTE-K33') = 1,
+  '(f) el reporte que hizo sigue, con reporter_id NULL');
+
+-- (g) Decisión 5: los reportes EN SU CONTRA siguen, sin su id ni su correo.
+-- El de su publicación conserva el título (contenido, no identidad).
+select pg_temp.assert(
+  (select count(*) from public.reports
+    where id = :rep_rk and reporter_id = :R33::uuid
+      and reported_user_id is null and reported_user_correo is null) = 1
+  and (select count(*) from public.reports
+        where id = :rep_rl and reporter_id = :R33::uuid and listing_id is null
+          and listing_titulo = 'RLS T33 K fav') = 1,
+  '(g) los reportes en su contra siguen, sin reported_user_id ni el snapshot del correo');
+
+-- (g2) Alcance ampliado del borrado de avisos. Cada grupo en su aserción, para
+-- que su control negativo caiga en una sola.
+select pg_temp.assert(
+  (select count(*) from public.notifications where id in (:n_pf, :n_fv)) = 0,
+  '(g2) los avisos ajenos con el TÍTULO de su publicación (precio_favorito, favorito_vendido) desaparecen');
+
+select pg_temp.assert(
+  (select count(*) from public.notifications where id in (:n_cr_c, :n_cc)) = 0,
+  '(g2b) los avisos ajenos con su NOMBRE sobre su publicación (calificacion_recibida, compra_calificable) desaparecen');
+
+select pg_temp.assert(
+  (select count(*) from public.notifications where id = :n_cr_v) = 0,
+  '(g2c) el calificacion_recibida que generó sobre una publicación AJENA desaparece');
+
+-- (g3) Y no más: el aviso de :R33 sobre la publicación de :V33 sobrevive.
+select pg_temp.assert(
+  (select count(*) from public.notifications where id = :n_otra) = 1,
+  '(g3) un aviso ajeno que no es de su cuenta sobrevive');
+
+-- (h) El barrido: ni una columna uuid de `public` guarda su id, auth.users
+-- tampoco, y ningún aviso lleva su nombre. Genérico a propósito: una tabla
+-- nueva con una FK mal elegida cae aquí sin que nadie la agregue a la lista.
+create or replace function pg_temp.t33_filas_con(p_uid uuid) returns bigint
+language plpgsql as $$
+declare
+  c record;
+  v_n bigint;
+  v_total bigint := 0;
+begin
+  for c in select table_name, column_name from information_schema.columns
+            where table_schema = 'public' and data_type = 'uuid'
+              and table_name in (select table_name from information_schema.tables
+                                  where table_schema = 'public' and table_type = 'BASE TABLE')
+  loop
+    execute format('select count(*) from public.%I where %I = $1', c.table_name, c.column_name)
+      into v_n using p_uid;
+    v_total := v_total + v_n;
+  end loop;
+  return v_total;
+end $$;
+
+select pg_temp.assert(
+  pg_temp.t33_filas_con(:K33::uuid) = 0
+  and (select count(*) from auth.users where id = :K33::uuid) = 0
+  and (select count(*) from public.notifications where cuerpo like '%Kevinesco%') = 0
+  and (select count(*) from public.reports where reported_user_correo = 'rls-t33-k@tec.mx') = 0,
+  '(h) ninguna fila de public ni de auth.users guarda su id, su nombre en avisos ni su correo');
+
+-- (k) Evasión de suspensión: borrar una cuenta SUSPENDIDA deja el hash de su
+-- correo; una ACTIVA no. El hook rechaza ese correo (normalizado igual que el
+-- dominio) y sigue aceptando otro del mismo dominio. La otra mitad —que GoTrue
+-- lo aplique con la policy de supabase_auth_admin— vive en probe-registro.mjs.
+update public.users set estado = 'suspendido' where id = :S33::uuid;
+delete from auth.users where id in (:S33::uuid, :A33::uuid);
+
+select pg_temp.assert(
+  (select count(*) from public.correos_bloqueados
+    where correo_hash = sha256(convert_to('rls-t33-s@tec.mx', 'UTF8'))) = 1
+  and (select count(*) from public.correos_bloqueados
+        where correo_hash = sha256(convert_to('rls-t33-a@tec.mx', 'UTF8'))) = 0,
+  '(k) borrar una cuenta suspendida guarda el hash de su correo; una activa no');
+
+select pg_temp.assert(
+  public.hook_before_user_created(
+    jsonb_build_object('user', jsonb_build_object('email', '  RLS-T33-S@TEC.MX ')))
+    = '{"error": {"http_code": 403, "message": "correo_bloqueado"}}'::jsonb
+  and public.hook_before_user_created(
+    jsonb_build_object('user', jsonb_build_object('email', 'rls-t33-a@tec.mx'))) = '{}'::jsonb,
+  '(k2) el hook rechaza el correo bloqueado (mayúsculas/espacios incluidos) y acepta otro del dominio');
 
 \echo ''
 \echo '==========================================='

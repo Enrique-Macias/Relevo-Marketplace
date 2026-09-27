@@ -54,6 +54,13 @@ export async function fetchPerfilPublico(userId: string): Promise<PerfilPublico 
 
 export type Review = {
   id: number;
+  /**
+   * La cuenta que la escribió ya no existe (20260929000474): se conservan las
+   * estrellas, sin autor ni comentario, y se pinta "Usuario eliminado". Sale de
+   * que el embed `from_user` venga NULL, NO de `fromNombre === null`: `nombre`
+   * también es null en una cuenta viva que no completó su perfil.
+   */
+  autorEliminado: boolean;
   fromNombre: string | null;
   /** El avatar de quien escribió la reseña (`.review-avatar`, 26px). */
   fromFotoUrl: string | null;
@@ -100,6 +107,7 @@ export async function fetchReviews(
 
   const items = (data ?? []).map((row: any) => ({
     id: row.id,
+    autorEliminado: row.from_user == null,
     fromNombre: row.from_user?.nombre ?? null,
     fromFotoUrl: row.from_user?.foto_url ?? null,
     estrellas: row.estrellas,

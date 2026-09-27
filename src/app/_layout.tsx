@@ -15,9 +15,20 @@ import { useEffect } from "react";
 
 import { ToastProvider } from "@/components/Toast";
 import { ExplorarStateProvider } from "@/lib/explorar-state";
+import { useSalidaAlPerderSesion } from "@/lib/salida-sesion";
 import { SessionProvider } from "@/lib/session";
 
 SplashScreen.preventAutoHideAsync();
+
+/**
+ * El guard GLOBAL de sesión (ver `src/lib/salida-sesion.ts`). Vive aquí, en el
+ * layout raíz, porque este es el único layout que nunca pierde el foco: el de
+ * `(tabs)` usa `<Redirect>`, que no actúa mientras `(tabs)` está tapado.
+ */
+function GuardSesion() {
+  useSalidaAlPerderSesion();
+  return null;
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -43,6 +54,7 @@ export default function RootLayout() {
     // El provider envuelve TODO el árbol de rutas: el splash, el guard de
     // (tabs) y las pantallas de auth leen del mismo estado de sesión.
     <SessionProvider>
+      <GuardSesion />
       <ExplorarStateProvider>
         {/* El toast va POR ENCIMA del Stack, no dentro de una pantalla: es un
             overlay absoluto que debe sobrevivir a la navegación (el de RF-13 se

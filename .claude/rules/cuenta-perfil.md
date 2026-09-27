@@ -812,7 +812,9 @@ volviera atrás. Desde Perfil funciona porque Perfil ES `(tabs)` con foco. **La
 regla que queda:** ninguna acción que termine la sesión va fuera de `(tabs)`
 mientras el guard sea este. Si hiciera falta, primero se arregla el guard (la
 deuda de abajo). El hueco de fondo NO se cerró con esta reversión: ver la deuda
-"El guard de sesión no actúa fuera de foco".
+"El guard de sesión no actúa fuera de foco". **Actualización: el guard se
+arregló con "Eliminar cuenta" (bloque de abajo), así que esa regla ya no
+aplica. "Cerrar sesión" se queda en Perfil porque es donde el frame la pinta.**
 
 Lo que no se ve en el diff:
 
@@ -864,11 +866,10 @@ Lo que no se ve en el diff:
   correcto desde que se escribe. Las dos usan el toast de error ya existente
   (`useToast`, variante `'error'`, `Toast.tsx:18` — la excepción de copy
   efímero de §0 regla 4, sin componente nuevo).
-- **"Eliminar cuenta" existe en el frame Y en el código, oculta.** El JSX ya
-  está escrito (ícono+texto en `--brick`, `danger` de `StatusRow`), gateado
-  por `filaVisible('eliminar_cuenta')` (hoy `false` a mano, la única fila
-  oculta por decisión de producto y no por una condición externa) — la tarea
-  del flujo real solo tiene que voltear ese booleano y cablear el `onPress`.
+- **"Eliminar cuenta" ya tiene flujo y se pinta siempre** (bloque "Eliminar
+  cuenta", abajo). El JSX es el de siempre (ícono+texto en `--brick`, `danger`
+  de `StatusRow`); `filaVisible('eliminar_cuenta')` devuelve `true` porque las
+  dos tiendas exigen que exista.
   **Sin separador punteado**: verificado contra TODO el archivo, esa línea
   (`border-top: … dashed var(--line)`) se usa siempre para anotar variantes
   de documentación ("Variante (doc, no es parte del flujo)"), nunca como
@@ -941,7 +942,7 @@ hace que `filaVisible()` devuelva `true` para todo**, para ver la pantalla
 completa contra el frame antes de que existan las URLs, la ficha de tienda o el
 flujo de eliminar cuenta. Es `__DEV__ && true`, así que ningún build de
 producción la hereda. Mientras esté encendida, las filas ocultas se pintan con
-su comportamiento REAL de hoy: "Eliminar cuenta" no hace nada, "Calificar"
+su comportamiento REAL de hoy: "Calificar"
 abre la URL de tienda que esté puesta, y los documentos legales abren su URL o
 avisan con un toast si no se puede (`abrirDocumentoLegal`, que se agregó al
 hacerlas alcanzables).
@@ -960,6 +961,70 @@ misma URL que las tiendas piden en la ficha, y se lee bien en el teléfono. **Ap
 real de visibilidad, o antes de dar por cerrada cualquiera de las deudas de
 abajo.
 
+**"Eliminar cuenta" construida (Apple 5.1.1(v), Google Play) —
+`20260929000474` + Edge Function `eliminar-cuenta`.** La base (qué se borra y qué
+se conserva anonimizado, y por qué) está en CLAUDE.md §3, "Eliminar cuenta"; la
+función, en CLAUDE.md §8 (runbook 0h) y §9 (`amr`). Lo de este grupo:
+
+- **Es un MODAL, no una pantalla** — frame "Confirmar eliminar cuenta"
+  (Sistema), el mismo shell que "Confirmar cerrar sesión" más el campo de
+  contraseña. Se diseñó primero como pantalla con la lista de qué se borra y qué
+  se conserva, y se descartó a decisión del usuario: eso lo cuenta el aviso de
+  privacidad. `ConfirmModal` ganó `children` (el único hueco, entre el cuerpo y
+  los botones), `confirmDisabled` y un `KeyboardAvoidingView` (en iOS el teclado
+  tapaba la tarjeta centrada); "Cerrar sesión" no pasa hijos y se ve igual.
+- **La contraseña ES la confirmación, y viaja a GoTrue, nunca a la función.**
+  `eliminarCuenta()` (`src/lib/eliminar-cuenta.ts`) hace `signInWithPassword`
+  con el correo de la sesión y después `functions.invoke('eliminar-cuenta')`,
+  que adjunta el token NUEVO. La función exige ese `amr` de hace menos de 5
+  minutos. Un `signInWithPassword` fallido NO borra la sesión actual
+  (`GoTrueClient.js:950`), así que "contraseña incorrecta" no saca a nadie.
+- **Los tres errores del frame, y cómo se distinguen:**
+  `invalid_credentials` (AuthApiError) → "La contraseña no es correcta." bajo el
+  campo; `AuthRetryableFetchError`, `FunctionsFetchError` o
+  `FunctionsRelayError` → "No hay conexión…"; cualquier otra cosa → "No pudimos
+  eliminar tu cuenta…". Los dos últimos van como `Notice` DENTRO del modal. El
+  de contraseña se borra al volver a teclear.
+- **La salida no depende del `<Redirect>` de `(tabs)`.** Tras el 200, la
+  pantalla llama `salirHacia('cuenta-eliminada')` y
+  `supabase.auth.signOut({ scope: 'local' })`; el guard GLOBAL del layout raíz
+  ve la sesión desaparecer y reinicia la navegación con "Cuenta eliminada"
+  (`(onboarding)/cuenta-eliminada.tsx`) como única ruta. Un solo dueño de la
+  navegación: la pantalla no navega. `signOut` limpia el storage aunque
+  `/logout` conteste 401/404, que es lo esperado con la cuenta ya borrada
+  (`GoTrueClient.js:3424-3440`). El push token NO se borra desde el cliente: se
+  fue con la cascada de `push_tokens` (medido en el probe).
+- **Cancelar y el "atrás" de Android están deshabilitados mientras borra**
+  (`confirming` de `ConfirmModal` + un guard en `onCancel`): la función no se
+  puede abortar. Todo el estado del modal se resetea al ABRIR, por el bug de
+  Fast Refresh que ya mordió a "Cerrar sesión" (arriba).
+- **"Perfil público" pinta la reseña de una cuenta eliminada** con el ícono de
+  persona, "Usuario eliminado" en `--ink-soft` y sin comentario; cuenta en el
+  promedio. `fetchReviews` la marca con `autorEliminado` cuando el embed
+  `from_user` viene NULL.
+
+**Pruebas manuales que tocan en dispositivo** (el simulador headless no cuenta,
+CLAUDE.md §6), en LOCAL o después del runbook 0h:
+1. Configuración → "Eliminar cuenta": abre el modal; "Eliminar" apagado sin
+   contraseña; con el teclado abierto el campo se ve.
+2. Contraseña incorrecta → error bajo el campo, la sesión sigue, "Cancelar"
+   cierra y la app sigue igual.
+3. Modo avión → "No hay conexión…"; la cuenta NO se borró (Studio).
+4. Contraseña correcta → "…" en el botón, luego "Cuenta eliminada";
+   "Entendido" → splash sin sesión. No se puede volver atrás a ninguna
+   pantalla con sesión (gesto de atrás en iOS, botón en Android).
+5. La cuenta ya no entra (login → credenciales inválidas), su correo SÍ se
+   puede volver a registrar; desde otra cuenta, su reseña sale como "Usuario
+   eliminado" con el promedio intacto; sus publicaciones ya no aparecen; en
+   Studio, 0 objetos en `avatars/{uid}/` y `listing-photos/{id}/`.
+6. El guard global con token vencido: dejar la app en "Mis publicaciones" o
+   "Editar perfil", invalidar la sesión (borrar la fila de `auth.sessions` en
+   Studio y esperar al refresh, o cerrar sesión desde otro camino) → aterriza en
+   splash sin volver a `(tabs)`. Y "Cerrar sesión" desde Perfil sigue yendo a
+   splash una sola vez.
+7. Borrar una cuenta SUSPENDIDA (suspenderla en Studio antes) e intentar
+   registrar ese correo → la variante "correo bloqueado" de Verificación.
+
 **Deuda consciente, cada una con disparador:**
 
 - **"Calificar la app"/"Compartir la app" ocultas hasta que la app esté
@@ -973,11 +1038,16 @@ abajo.
   se publique el aviso de privacidad o los términos de uso en algún lado.
   **Fix:** poner la URL real en `src/lib/configuracion.ts` — la fila aparece
   sola, sin tocar la pantalla.
-- **"Eliminar cuenta" no tiene flujo todavía.** El frame y el `StatusRow`
-  existen; `filaVisible('eliminar_cuenta')` es `false` y su `onPress` es
-  `() => {}`. **Revisar cuando:** se construya el flujo de eliminar cuenta
-  (la tarea siguiente, fuera de alcance de esta). **Fix:** voltear el
-  booleano y cablear el `onPress` — nada más de esta pantalla cambia.
+- ~~**"Eliminar cuenta" no tiene flujo todavía.**~~ **[CERRADA]** — bloque
+  "Eliminar cuenta", abajo.
+- ~~**El guard de sesión no actúa fuera de foco**~~ **[CERRADA] con "Eliminar
+  cuenta"**, con el fix que esta misma entrada proponía: un efecto en el layout
+  raíz (`src/lib/salida-sesion.ts`). Dos diferencias con lo propuesto: reinicia
+  el navegador raíz en vez de `router.replace('/splash')` (`replace` desde
+  `(cuenta)` dejaría `(tabs)` vivo debajo), y actúa por TRANSICIÓN de sesión y no
+  por `status === 'ready'`, que no distingue "arrancó sin sesión" de "la perdió".
+  Falta confirmarlo en dispositivo (prueba manual 6 del bloque de abajo). Texto
+  original, para el historial:
 - **El guard de sesión no actúa fuera de foco: "Mis publicaciones" y "Editar
   perfil" YA tienen este bug latente, sin resolver.** Es el mismo mecanismo que
   obligó a revertir "Cerrar sesión" (bloque de "Configuración", arriba). El

@@ -18,6 +18,7 @@ import {
   IconFlag,
   IconShare,
   IconStar,
+  IconUser,
   IconWhatsapp,
 } from '@/components/icons';
 import { Screen } from '@/components/Screen';
@@ -334,14 +335,25 @@ export default function PerfilPublicoScreen() {
                 i === reviews.items.length - 1 && styles.reviewRowLast,
               ]}
             >
-              <View style={styles.reviewTop}>
-                <Avatar
-                  path={r.fromFotoUrl}
-                  nombre={r.fromNombre}
-                  style={styles.reviewAvatar}
-                  textStyle={styles.reviewAvatarText}
-                />
-                <Text style={styles.reviewName}>{r.fromNombre ?? ''}</Text>
+              <View style={[styles.reviewTop, r.autorEliminado && styles.reviewTopSolo]}>
+                {r.autorEliminado ? (
+                  // Frame "Perfil público": ícono de persona en vez de
+                  // iniciales (ya no hay nombre) y el nombre en --ink-soft
+                  // para que no se lea como un usuario real.
+                  <View style={styles.reviewAvatar}>
+                    <IconUser size={12} color={Colors.slate} />
+                  </View>
+                ) : (
+                  <Avatar
+                    path={r.fromFotoUrl}
+                    nombre={r.fromNombre}
+                    style={styles.reviewAvatar}
+                    textStyle={styles.reviewAvatarText}
+                  />
+                )}
+                <Text style={[styles.reviewName, r.autorEliminado && styles.reviewNameEliminado]}>
+                  {r.autorEliminado ? 'Usuario eliminado' : (r.fromNombre ?? '')}
+                </Text>
                 <View style={styles.reviewStars}>
                   {[1, 2, 3, 4, 5].map((n) => (
                     <IconStar key={n} size={11} color={Colors.gold} filled={n <= r.estrellas} />
@@ -511,6 +523,11 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 5,
   },
+  // Frame "Perfil público", reseña de cuenta eliminada: `margin-bottom:0`
+  // inline, porque no lleva `.review-text` debajo (el comentario se borró).
+  reviewTopSolo: {
+    marginBottom: 0,
+  },
   // .review-avatar{width:26px; height:26px; border-radius:50%; background:slate-tint;}
   reviewAvatar: {
     width: 26,
@@ -527,6 +544,9 @@ const styles = StyleSheet.create({
   reviewName: {
     ...Typography.reviewName,
     color: Colors.ink,
+  },
+  reviewNameEliminado: {
+    color: Colors.inkSoft,
   },
   // .review-stars{display:flex; gap:2px; margin-left:auto;}
   reviewStars: {

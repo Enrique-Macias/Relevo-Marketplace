@@ -96,6 +96,21 @@ export type Database = {
         }
         Relationships: []
       }
+      correos_bloqueados: {
+        Row: {
+          correo_hash: string
+          created_at: string
+        }
+        Insert: {
+          correo_hash: string
+          created_at?: string
+        }
+        Update: {
+          correo_hash?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       favorites: {
         Row: {
           created_at: string
@@ -466,27 +481,27 @@ export type Database = {
           comentario: string | null
           created_at: string
           estrellas: number
-          from_user_id: string
+          from_user_id: string | null
           id: number
-          listing_id: number
+          listing_id: number | null
           to_user_id: string
         }
         Insert: {
           comentario?: string | null
           created_at?: string
           estrellas: number
-          from_user_id: string
+          from_user_id?: string | null
           id?: never
-          listing_id: number
+          listing_id?: number | null
           to_user_id: string
         }
         Update: {
           comentario?: string | null
           created_at?: string
           estrellas?: number
-          from_user_id?: string
+          from_user_id?: string | null
           id?: never
-          listing_id?: number
+          listing_id?: number | null
           to_user_id?: string
         }
         Relationships: [
@@ -524,7 +539,7 @@ export type Database = {
           motivo: Database["public"]["Enums"]["report_reason"]
           reported_user_correo: string | null
           reported_user_id: string | null
-          reporter_id: string
+          reporter_id: string | null
           resolved_at: string | null
         }
         Insert: {
@@ -537,7 +552,7 @@ export type Database = {
           motivo: Database["public"]["Enums"]["report_reason"]
           reported_user_correo?: string | null
           reported_user_id?: string | null
-          reporter_id: string
+          reporter_id?: string | null
           resolved_at?: string | null
         }
         Update: {
@@ -550,7 +565,7 @@ export type Database = {
           motivo?: Database["public"]["Enums"]["report_reason"]
           reported_user_correo?: string | null
           reported_user_id?: string | null
-          reporter_id?: string
+          reporter_id?: string | null
           resolved_at?: string | null
         }
         Relationships: [

@@ -25,7 +25,12 @@
 
 import { execFileSync } from 'node:child_process';
 
-import { DOMINIO_NO_PARTICIPANTE, esDominioNoParticipante } from '../src/lib/registro.ts';
+import {
+  CORREO_BLOQUEADO,
+  DOMINIO_NO_PARTICIPANTE,
+  esCorreoBloqueado,
+  esDominioNoParticipante,
+} from '../src/lib/registro.ts';
 
 const RUN = Date.now();
 const DB = 'supabase_db_relevo-marketplace';
@@ -167,6 +172,9 @@ async function main() {
   console.log('\n== Estado bajo prueba ==');
   console.log(`  dominios: [${sql('select string_agg(dominio, \', \' order by dominio) from public.universidad_dominios')}]`);
   console.log(`  policies: [${sql("select string_agg(policyname, ', ') from pg_policies where tablename = 'universidad_dominios'")}]`);
+  console.log(`  policies de correos_bloqueados: [${sql("select string_agg(policyname, ', ') from pg_policies where tablename = 'correos_bloqueados'")}]`);
+  console.log(`  hook revisa correos_bloqueados: ${sql(
+    "select (prosrc like '%correos_bloqueados%')::text from pg_proc where proname = 'hook_before_user_created'")}`);
   const hook = execFileSync('docker', ['inspect', 'supabase_auth_relevo-marketplace', '--format',
     '{{range .Config.Env}}{{println .}}{{end}}'], { encoding: 'utf8' })
     .split('\n').filter((l) => l.startsWith('GOTRUE_HOOK_BEFORE_USER_CREATED_')).join(' ');
@@ -272,10 +280,38 @@ async function main() {
     // asignada".
     ok('gmail.com por admin API → el perfil existe, con universidad null',
       universidadDe(admin) === 'null', `universidad_id ${universidadDe(admin)}`);
+
+    console.log('\n== 9. Una cuenta borrada estando SUSPENDIDA no se vuelve a registrar ==');
+    // 20260929000474. T33 (k) prueba el hash y la función llamada como
+    // `postgres`; esto prueba la otra mitad: que GoTrue lo aplique, corriendo
+    // como `supabase_auth_admin` con SU policy sobre `correos_bloqueados` (sin
+    // ella la tabla se le vería vacía y el bloqueo fallaría ABIERTO). El borrado
+    // va por el admin API, el mismo camino que la Edge Function `eliminar-cuenta`.
+    const vetada = `probe-reg-vetada-${RUN}@tec.mx`;
+    const altaVetada = await crearConAdmin(E, vetada, PASS);
+    if (altaVetada.status !== 200) throw new Error(`no se pudo sembrar la cuenta vetada: ${altaVetada.status}`);
+    sql(`update public.users set estado = 'suspendido' where id = '${altaVetada.id}'`);
+    const borrado = await fetch(`${E.API_URL}/auth/v1/admin/users/${altaVetada.id}`, {
+      method: 'DELETE',
+      headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
+    });
+    ok('DELETE /admin/users de la cuenta suspendida → 200', borrado.status === 200, `status ${borrado.status}`);
+
+    const r9 = await registrar(E, vetada.toUpperCase());
+    ok('volver a registrarse (en mayúsculas) → 403', r9.status === 403, `status ${r9.status}`);
+    ok('…con el código que reconoce el cliente', r9.error?.message === CORREO_BLOQUEADO,
+      `recibido: ${r9.error?.message}`);
+    ok('…esCorreoBloqueado() lo reconoce y esDominioNoParticipante() no',
+      esCorreoBloqueado(r9.error) && !esDominioNoParticipante(r9.error));
+    ok('…sin fila en auth.users', filas(vetada) === 0);
+    ok('…sin correo', (await esperarCorreos(E, vetada, 1, 2000)).length === 0);
   } finally {
     // Por patrón y no por la lista de `creados`: bajo un control negativo, los
     // correos que DEBÍAN rechazarse sí crean fila, y también hay que borrarlos.
     sql(`delete from auth.users where email like 'probe-reg-%${RUN}@%'`);
+    // El hash del caso 9 no cuelga de ninguna FK: se borra aparte.
+    sql(`delete from public.correos_bloqueados
+          where correo_hash = sha256(convert_to('probe-reg-vetada-${RUN}@tec.mx', 'UTF8'))`);
   }
 
   console.log(`\n${'='.repeat(43)}`);

@@ -37,3 +37,24 @@ export function esDominioNoParticipante(
 ): boolean {
   return e?.status === 403 && e.message === DOMINIO_NO_PARTICIPANTE;
 }
+
+/**
+ * El otro rechazo del mismo hook (20260929000474): el correo es de una cuenta
+ * que se eliminó mientras estaba SUSPENDIDA (`public.correos_bloqueados`). Mismo
+ * `403`, mismo `error_code: unknown`; lo distingue solo el `message`.
+ */
+export const CORREO_BLOQUEADO = 'correo_bloqueado';
+
+/**
+ * Copy de la variante "correo bloqueado" del frame "Verificación (correo no
+ * participante)". NEUTRO a propósito: no anuncia una sanción, igual que el
+ * toast del vendedor suspendido.
+ */
+export const COPY_CORREO_BLOQUEADO =
+  'Este correo no puede registrarse en Relevo. Si crees que es un error, escríbenos a soporte.';
+
+export function esCorreoBloqueado(
+  e: { message?: string; status?: number } | null | undefined,
+): boolean {
+  return e?.status === 403 && e.message === CORREO_BLOQUEADO;
+}
