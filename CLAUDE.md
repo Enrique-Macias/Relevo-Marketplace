@@ -199,6 +199,15 @@ es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). E
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
+**Repo y remoto: 38 y 38 (medido el 2026-09-27) — a la par.** `ls
+supabase/migrations | wc -l` da **38**; `mcp__supabase__list_migrations`
+también da **38**, con `20260929000474` incluida. El runbook de §8 (antes
+pendiente 0h) ya corrió completo, evidencia en "Hecho".
+
+**Por DECIMOQUINTA vez, y esta vez sin sorpresa:** el párrafo de abajo decía
+"38 y 37" y el usuario avisó del push antes de remedir; el comando lo
+confirmó. La historia de antes, tal como estaba:
+
 **Repo y remoto: 38 y 37 (medido el 2026-09-26).** `ls supabase/migrations |
 wc -l` da **38**; `mcp__supabase__list_migrations` da **37**. La que falta en
 remoto es `20260929000474` (eliminar cuenta), que no se pushea en su propia
@@ -2936,6 +2945,41 @@ de los route groups).
     Cubre lo listado en `notificaciones-push.md` "Tanda 2" (los 6 escenarios
     del inbox) y la verificación del reclamo en Studio.
 
+- **Eliminar cuenta (`20260929000474` + Edge Function `eliminar-cuenta`) EN
+  REMOTO, los 6 pasos, CERRADOS (2026-09-27).** El runbook lo corrió el
+  usuario; la evidencia de los pasos 1-4 se REMIDIÓ contra remoto después, no se
+  dio por buena de memoria (era el pendiente 0h):
+  - **Paso 1 (push):** `list_migrations` lista `20260929000474`
+    (`eliminar_cuenta`) — remoto en 38, igual que el repo.
+  - **Paso 2 (verificación en remoto):** `pg_constraint` con
+    `ratings_from_user_id_fkey`, `ratings_listing_id_fkey` y
+    `reports_reporter_id_fkey` en `confdeltype = 'n'`; `pg_get_triggerdef` de
+    `ratings_anonimiza`, `reports_anonimiza`, `users_borra_avisos_de_cuenta` y
+    `users_bloquea_correo_suspendido` idéntico a la migración, con sus `WHEN`;
+    `has_function_privilege('authenticated', …, 'execute')` en `false` para
+    `borra_avisos_de_cuenta`/`bloquea_correo_suspendido` y en `true` para las dos
+    INVOKER; `correos_bloqueados` con 0 filas en `table_privileges` y en
+    `column_privileges` para `anon`/`authenticated` y una sola policy
+    (`correos_bloqueados_select_auth_admin`, rol `supabase_auth_admin`); `prosrc`
+    del hook con `correos_bloqueados`.
+  - **Paso 3 (deploy):** `list_edge_functions` → `eliminar-cuenta` **ACTIVE**,
+    `version: 1`, `verify_jwt: false`, desplegada el 2026-09-27 22:49 UTC. El
+    fuente desplegado (`get_edge_function`) trae `index.ts` y
+    `reautenticacion.ts` con `reautenticacionReciente`, `vaciarCarpeta` y el
+    import pineado a `@supabase/server@1.7.0`.
+  - **Paso 4 (gen:types):** una regeneración EN VIVO contra remoto
+    (`generate_typescript_types`) coincide con lo commiteado en `1ed1407` en las
+    piezas de esta tarea: `correos_bloqueados`, `ratings.from_user_id`/
+    `listing_id` nullable y `reports.reporter_id` nullable. Comparado pieza por
+    pieza, no con un `diff` del archivo entero.
+  - **Pasos 5 y 6 (build y pruebas manuales): CONFIRMADOS POR EL USUARIO
+    (2026-09-27)**, las 7 pruebas de `cuenta-perfil.md` en dispositivo, sin
+    desglose por caso. Incluye la del guard global con sesión vencida.
+  - **Dato al remedir, que no cuadra solo:** `public.correos_bloqueados` tiene
+    **0 filas** en remoto. La prueba 7 (borrar una cuenta SUSPENDIDA e intentar
+    registrar su correo) deja un hash ahí si corre contra remoto, así que o se
+    corrió en local, o el hash se borró después a mano. No se decide aquí cuál.
+
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
    CLAUDE.md §8 arriba).** Los pasos 0-5 ya corrieron y están en "Hecho"
@@ -3048,41 +3092,10 @@ inbox `20260928000472`/`473` — se cerró completo el 2026-09-25, los 6 pasos.
 Evidencia en "Hecho", abajo. Se deja este hueco para no romper las referencias
 cruzadas a "pendiente 0g" de `CLAUDE.md` §3 y `notificaciones-push.md`, que
 ahora apuntan a "Hecho".)**
-0h. **Eliminar cuenta (`20260929000474` + Edge Function `eliminar-cuenta`):
-   construida y probada en LOCAL, sin pushear ni desplegar.** En este orden, y
-   el orden importa: un build con la fila encendida contra un remoto sin la
-   función daría "No pudimos eliminar tu cuenta" en cada intento.
-   0. Remedir antes de empezar: `list_migrations` en **37**, sin `…474`.
-   1. `supabase db push`, y `list_migrations` con `20260929000474` (38).
-   2. Verificar en remoto con `execute_sql`, todo de solo lectura:
-      - `pg_constraint`: `ratings_from_user_id_fkey`, `ratings_listing_id_fkey`
-        y `reports_reporter_id_fkey` con `confdeltype = 'n'` (set null);
-      - `pg_trigger`: `ratings_anonimiza`, `reports_anonimiza`,
-        `users_borra_avisos_de_cuenta` y `users_bloquea_correo_suspendido`, con
-        el `WHEN` idéntico al de la migración (`pg_get_triggerdef`);
-      - `has_function_privilege('authenticated', …, 'execute')` en `false` para
-        `borra_avisos_de_cuenta()` y `bloquea_correo_suspendido()`;
-      - `correos_bloqueados`: 0 filas en `table_privileges`/`column_privileges`
-        para `anon`/`authenticated`, y una sola policy, la de
-        `supabase_auth_admin`;
-      - `prosrc` de `public.hook_before_user_created` contiene
-        `correos_bloqueados`, y un registro normal de `tec.mx` sigue pasando
-        (logs de Auth, `run_hook` con `Hook ran successfully`).
-   3. `supabase functions deploy eliminar-cuenta` (paso manual: este repo no
-      tiene CI/CD). `list_edge_functions` → **ACTIVE**, y el fuente desplegado
-      (`get_edge_function`) trae `reautenticacionReciente` y `vaciarCarpeta`.
-      **Sin secretos nuevos**: la función solo usa la URL y las llaves que la
-      plataforma ya inyecta.
-   4. `npm run gen:types` contra remoto: las columnas nullable de `ratings` y
-      `reports` y la tabla `correos_bloqueados` están escritas a mano hoy en
-      `database.types.ts`, igual que en 0d/0e. El diff debe coincidir.
-   5. Distribuir el build DESPUÉS de 1-3. No hay módulos nativos nuevos (ni
-      `package.json` ni `ios/` cambiaron), así que un dev build existente sirve
-      con un reload de JS. Un build VIEJO contra el remoto nuevo no se rompe:
-      lo único que ve distinto es el rechazo `correo_bloqueado` en Verificación,
-      que le llega como texto crudo bajo el botón.
-   6. Pruebas manuales en dispositivo: ver `cuenta-perfil.md`, "Eliminar
-      cuenta".
+**(El pendiente 0h — eliminar cuenta, `20260929000474` + Edge Function
+`eliminar-cuenta` — se cerró completo el 2026-09-27, los 6 pasos. Evidencia en
+"Hecho", arriba. Se deja este hueco para no romper las referencias cruzadas a
+"pendiente 0h" de `CLAUDE.md` §3 y `cuenta-perfil.md`.)**
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que
@@ -3167,7 +3180,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - "Calificar la app"/"Compartir la app" ocultas hasta que la app esté publicada (`APP_PUBLICADA`); "Calificar" además exige la URL de la tienda de esa plataforma → `cuenta-perfil.md`
 - "Aviso de privacidad"/"Términos de uso" ocultas hasta que exista una URL real (`URL_PRIVACIDAD`/`URL_TERMINOS`) → `cuenta-perfil.md`
 - ~~"Eliminar cuenta" existe en el frame y en el código (oculta) pero su flujo todavía no existe~~ **[CERRADA]** por `20260929000474` + `eliminar-cuenta` → `cuenta-perfil.md`
-- ~~El guard de sesión de `(tabs)/_layout.tsx` no actúa fuera de foco~~ **[CERRADA]** por el guard global del layout raíz (`src/lib/salida-sesion.ts`); falta confirmarlo en dispositivo → `cuenta-perfil.md`
+- ~~El guard de sesión de `(tabs)/_layout.tsx` no actúa fuera de foco~~ **[CERRADA]** por el guard global del layout raíz (`src/lib/salida-sesion.ts`), confirmado en dispositivo el 2026-09-27 → `cuenta-perfil.md`
 - La reseña de una publicación BORRADA ya no la puede editar su autor (`can_rate(to, NULL)` da false), efecto del `ratings.listing_id` en set null → CLAUDE.md §3, "Eliminar cuenta"
 - Al eliminar una cuenta se borra también el aviso de calificación de un TERCERO si calificó al mismo usuario por la misma publicación (el aviso no guarda quién lo causó) → CLAUDE.md §3, "Eliminar cuenta"
 - `correos_bloqueados` guarda un hash SIN sal (seudónimo, no anónimo), para siempre, y un alias lo evade → CLAUDE.md §3, "Eliminar cuenta"
@@ -3924,7 +3937,9 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   (esos flujos cierran sesión a propósito), salvo que se haya pedido un destino
   con `salirHacia()`. **La regla que queda:** no asumas que un `<Redirect>`
   "vigila" desde abajo del stack; si hace falta vigilar, es un efecto en el
-  layout raíz. **Sin medir en dispositivo todavía** (§8, pendiente 0h, paso 6).
+  layout raíz. **Confirmado en dispositivo por el usuario (2026-09-27)**, con
+  sesión vencida en "Mis publicaciones"/"Editar perfil" y con "Cerrar sesión"
+  desde Perfil (`cuenta-perfil.md`, prueba manual 6).
 
   **Y reiniciar, no `dismissAll()`.** `router.dismissAll()` cierra solo el
   stack MÁS CERCANO (`expo-router/build/global-state/router.d.ts`): llamado

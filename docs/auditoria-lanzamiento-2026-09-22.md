@@ -71,7 +71,7 @@ Las definiciones actuales se leyeron de `pg_policy` en **remoto** y en local, y 
 
 | Punto | Estado real | ¿Bloquea App Store / Google Play? | Evidencia |
 |---|---|---|---|
-| 1. Borrar cuenta | **Construido en local (2026-09-26)**: `20260929000474` + Edge Function `eliminar-cuenta`, sin pushear ni desplegar (CLAUDE.md §8, pendiente 0h). Falta el enlace WEB que pide Play (pendiente 0i) | **Sí / Sí** hasta que se despliegue (Apple 5.1.1(v); Play exige borrado en la app y por web) | `20260906000438:87`; `pg_constraint` remoto |
+| 1. Borrar cuenta | **En producción (2026-09-27)**: `20260929000474` + Edge Function `eliminar-cuenta`, remedido contra remoto (CLAUDE.md §8, "Hecho"). Falta el enlace WEB que pide Play (pendiente 0i) | **No en App Store** (5.1.1(v) cubierto dentro de la app). **Sí en Google Play** hasta que exista el enlace web | `20260906000438:87`; `pg_constraint` remoto |
 | 2. Bloquear usuarios | No existe | **Sí en App Store** (1.2 UGC exige bloqueo). En Play es riesgo, no requisito explícito | grep sin resultados |
 | 3. Fotos de `bloqueada` | El dueño las lee, los demás no | No | `pg_policy` remoto+local; lectura local 1/1/1 contra 0/0/0 (SQL, no HTTP) |
 | 4. Observabilidad | Sin SDK, sin handler global, sin métricas | No (pero incumple RNF-10) | package.json; grep en src |

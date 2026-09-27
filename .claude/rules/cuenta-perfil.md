@@ -1003,8 +1003,10 @@ función, en CLAUDE.md §8 (runbook 0h) y §9 (`amr`). Lo de este grupo:
   promedio. `fetchReviews` la marca con `autorEliminado` cuando el embed
   `from_user` viene NULL.
 
-**Pruebas manuales que tocan en dispositivo** (el simulador headless no cuenta,
-CLAUDE.md §6), en LOCAL o después del runbook 0h:
+**Pruebas manuales en dispositivo** (el simulador headless no cuenta, CLAUDE.md
+§6). **Las 7 las corrió el usuario el 2026-09-27, con el runbook 0h ya aplicado
+en remoto**, sin desglose por caso. Se conservan como la lista a repetir si el
+flujo cambia:
 1. Configuración → "Eliminar cuenta": abre el modal; "Eliminar" apagado sin
    contraseña; con el teclado abierto el campo se ve.
 2. Contraseña incorrecta → error bajo el campo, la sesión sigue, "Cancelar"
@@ -1046,8 +1048,8 @@ CLAUDE.md §6), en LOCAL o después del runbook 0h:
   el navegador raíz en vez de `router.replace('/splash')` (`replace` desde
   `(cuenta)` dejaría `(tabs)` vivo debajo), y actúa por TRANSICIÓN de sesión y no
   por `status === 'ready'`, que no distingue "arrancó sin sesión" de "la perdió".
-  Falta confirmarlo en dispositivo (prueba manual 6 del bloque de abajo). Texto
-  original, para el historial:
+  **Confirmado en dispositivo por el usuario (2026-09-27)**, prueba manual 6
+  del bloque de arriba. Texto original, para el historial:
 - **El guard de sesión no actúa fuera de foco: "Mis publicaciones" y "Editar
   perfil" YA tienen este bug latente, sin resolver.** Es el mismo mecanismo que
   obligó a revertir "Cerrar sesión" (bloque de "Configuración", arriba). El
