@@ -16,9 +16,12 @@ import {
   IconKebab,
   IconMapPin,
   IconShare,
+  IconTrash,
   IconWhatsapp,
 } from '@/components/icons';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { ErrorState } from '@/components/ErrorState';
+import { HojaAccionesListing } from '@/components/HojaAccionesListing';
 import {
   PhotoCarousel,
   PhotoDots,
@@ -34,16 +37,21 @@ import { useExplorarState } from '@/lib/explorar-state';
 import { Avatar } from '@/components/Avatar';
 import { formatPrecio, formatRelativo } from '@/lib/format';
 import {
+  borrarListing,
+  cambiarEstadoListing,
   fetchListingById,
   fetchStatsPropias,
   fetchVentasVendedor,
   incrementListingView,
+  ListingNoBorrableError,
+  puedeEditarListing,
   registrarContacto,
   type EstadoListing,
   type ListingDetalle,
 } from '@/lib/listings';
 import { fetchTelefonoVendedor, urlWhatsapp } from '@/lib/perfil';
 import { useSession } from '@/lib/session';
+import { borrarFotos } from '@/lib/storage';
 
 const CONDICION_LABEL: Record<string, string> = {
   nuevo: 'Nuevo',
@@ -89,6 +97,11 @@ export default function DetalleScreen() {
   const [stats, setStats] = useState({ contactos: 0, favoritos: 0 });
   const [recargas, setRecargas] = useState(0);
 
+  /** El kebab del dueño abre la MISMA hoja que "Mis publicaciones". */
+  const [accionesAbiertas, setAccionesAbiertas] = useState(false);
+  const [porBorrar, setPorBorrar] = useState(false);
+  const [borrando, setBorrando] = useState(false);
+
   /**
    * Carrusel del hero. `indiceFoto` es la ÚNICA fuente de verdad de en qué foto
    * está: `PhotoCarousel` no guarda índice propio a propósito, justo para que
@@ -118,9 +131,10 @@ export default function DetalleScreen() {
   const accionDeVenta = listing ? accionVenta(listing.estado, venta) : null;
   // RF-08 + RF-18: son TRES los estados en los que el dueño ya no manda, y
   // `listings_update_own` los excluye a los tres de su `using` (20260913000454
-  // + 20260917000459). Hermano del `puedeEditar` de la hoja de "Mis
-  // publicaciones" — la misma regla, en la otra entrada a la misma pantalla.
-  const puedeEditar = listing?.estado === 'activa' || listing?.estado === 'pausada';
+  // + 20260917000459). Misma función que usa `HojaAccionesListing` para su
+  // propia fila de "Editar publicación" — la misma regla, en la otra entrada
+  // a esta pantalla.
+  const puedeEditar = listing ? puedeEditarListing(listing.estado) : false;
   /**
    * Los dos estados de moderación, que reparten el `.sticky-cta` igual que una
    * vendida sin nada pendiente —ningún botón, solo un `.notice`— por la misma
@@ -409,6 +423,83 @@ export default function DetalleScreen() {
     );
   }
 
+  /**
+   * Pausar/reactivar desde el kebab. Mismo guard de 0 fotos que "Mis
+   * publicaciones" (traduce `listings_enforce_activation_has_photos`, no lo
+   * reemplaza), pero a diferencia de aquella pantalla no hay optimismo local:
+   * ni el `.sticky-cta` ni el `.stat-row` cambian de reparto entre
+   * activa↔pausada (los tres derivan de `estado`, y los dos son iguales en
+   * ambos), así que basta un refetch silencioso tras la mutación.
+   */
+  async function alternarPausaDetalle() {
+    if (!listing) return;
+    const nuevo: 'activa' | 'pausada' = listing.estado === 'pausada' ? 'activa' : 'pausada';
+
+    if (nuevo === 'activa' && listing.fotos.length === 0) {
+      setAccionesAbiertas(false);
+      mostrar('Agrega al menos una foto para reactivarla', 'error');
+      router.push(`/(publicar)/editar/${listing.id}`);
+      return;
+    }
+
+    setAccionesAbiertas(false);
+    try {
+      await cambiarEstadoListing(listing.id, nuevo);
+      mostrar(nuevo === 'pausada' ? 'Publicación pausada' : 'Publicación reactivada');
+      try {
+        await cargarDetalle(listing.id, { silent: true });
+      } catch (e: any) {
+        console.warn('[detalle] no se pudo refrescar tras cambiar el estado:', e?.message ?? e);
+      }
+    } catch (e: any) {
+      console.warn('[detalle] no se pudo cambiar el estado:', e?.message ?? e);
+      mostrar('No pudimos cambiar el estado de la publicación', 'error');
+    }
+  }
+
+  /**
+   * Eliminar desde el kebab. Mismo orden y las mismas dos funciones que "Mis
+   * publicaciones" (`borrarFotos()` best-effort, después `borrarListing()`,
+   * que SÍ lanza si `count === 0` — CLAUDE.md §9): una cuenta suspendida ve el
+   * mismo toast de error, sin navegar, con la publicación intacta.
+   *
+   * `ListingNoBorrableError` puede significar dos cosas — rechazo real, o que
+   * la publicación ya se había borrado antes (respuesta perdida en un
+   * reintento) — y las dos se reconcilian igual: un refetch silencioso, sin
+   * quitar el toast de error. Si ya no existe, `cargarDetalle` lo marca
+   * `noDisponible` (su propio `ErrorState`, con salida a un tap, nunca
+   * automática — ver el comentario de esa rama más abajo). Si es una cuenta
+   * suspendida, vuelve a traer la misma publicación intacta.
+   */
+  async function eliminarDetalle() {
+    if (!listing) return;
+    setBorrando(true);
+    try {
+      await borrarFotos(listing.fotos);
+      await borrarListing(listing.id);
+      mostrar('Publicación eliminada');
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(cuenta)/mis-publicaciones');
+      }
+    } catch (e: any) {
+      console.warn('[detalle] no se pudo eliminar:', e?.message ?? e);
+      mostrar('No pudimos eliminar la publicación', 'error');
+      if (e instanceof ListingNoBorrableError) {
+        void cargarDetalle(listing.id, { silent: true }).catch((e2: any) =>
+          console.warn(
+            '[detalle] no se pudo refrescar tras un fallo de borrado:',
+            e2?.message ?? e2
+          )
+        );
+      }
+    } finally {
+      setBorrando(false);
+      setPorBorrar(false);
+    }
+  }
+
   if (!idValido || estado === 'error') {
     return (
       <Screen>
@@ -503,8 +594,7 @@ export default function DetalleScreen() {
                 <IconShare size={15} color={Colors.ink} />
               </RoundIconButton>
               {isOwner ? (
-                // más opciones: pendiente de (publicar)/(confianza)
-                <RoundIconButton onPress={() => {}}>
+                <RoundIconButton onPress={() => setAccionesAbiertas(true)}>
                   <IconKebab size={17} color={Colors.ink} />
                 </RoundIconButton>
               ) : (
@@ -775,6 +865,44 @@ export default function DetalleScreen() {
           }}
         />
       ) : null}
+      {/* La MISMA hoja que "Mis publicaciones" — una sola fuente para qué fila
+          mostrar, ver `HojaAccionesListing`. `venta` ya está en scope (arriba,
+          para el `.sticky-cta`): sin segunda consulta. */}
+      <HojaAccionesListing
+        item={accionesAbiertas ? { titulo: listing.titulo, estado: listing.estado } : null}
+        venta={venta}
+        onCerrar={() => setAccionesAbiertas(false)}
+        onAlternarPausa={alternarPausaDetalle}
+        onEditar={() => {
+          setAccionesAbiertas(false);
+          router.push(`/(publicar)/editar/${listing.id}`);
+        }}
+        onVenta={() => {
+          setAccionesAbiertas(false);
+          router.push({
+            pathname: '/(confianza)/vendida/[id]',
+            params: { id: String(listing.id), titulo: listing.titulo },
+          });
+        }}
+        onEliminar={() => {
+          setAccionesAbiertas(false);
+          setPorBorrar(true);
+        }}
+      />
+      <ConfirmModal
+        visible={porBorrar}
+        icon={<IconTrash size={22} color={Colors.brick} />}
+        title="¿Eliminar publicación?"
+        body="Se borrarán también sus fotos. Esta acción no se puede deshacer."
+        confirmLabel="Eliminar"
+        onConfirm={eliminarDetalle}
+        // También es el "atrás" de Android (`onRequestClose`): con el
+        // borrado en curso no hay nada que cancelar.
+        onCancel={() => {
+          if (!borrando) setPorBorrar(false);
+        }}
+        confirming={borrando}
+      />
     </>
   );
 }

@@ -604,7 +604,11 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
         body="Se borrarán también sus fotos. Esta acción no se puede deshacer."
         confirmLabel="Eliminar"
         onConfirm={eliminar}
-        onCancel={() => setConfirmandoBorrado(false)}
+        // También es el "atrás" de Android (`onRequestClose`): con el
+        // borrado en curso no hay nada que cancelar.
+        onCancel={() => {
+          if (!borrando) setConfirmandoBorrado(false);
+        }}
         confirming={borrando}
       />
     </>

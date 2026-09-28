@@ -91,19 +91,26 @@ Detalles que no se ven en el diff:
   publicaciones" desde que la hoja sirve los dos objetivos; los toasts son la
   excepción de §0 regla 4, así que ese texto vive en código y no en el frame.
 - **La bandera solo existe para quien NO es el dueño** (el frame la cambia por el
-  kebab en "Detalle (vista vendedor)"), y **el kebab sigue inerte**: es otra
-  tarea. Compartir, en cambio, se pinta en las TRES variantes y nunca dependió de
-  `isOwner`. **En "Perfil público" rige el mismo reparto**: la bandera se esconde
+  kebab en "Detalle (vista vendedor)"), y **el kebab ya no está inerte: abre la
+  MISMA hoja de acciones que "Mis publicaciones"** (`HojaAccionesListing`, ver el
+  bloque de `accionVenta()` más abajo). Compartir, en cambio, se pinta en las TRES
+  variantes y nunca dependió de `isOwner`. **En "Perfil público" rige el mismo
+  reparto**: la bandera se esconde
   en el perfil propio (`profile?.id === id`), compartir se pinta siempre. Hoy no
   se llega a la propia —el `.seller-card` que navega ahí ya está gateado por
   `!isOwner`, y es el único call site—, pero la ruta es alcanzable por deep link
   y el guard cuesta una línea.
 
 - **`accionVenta()` es el derivado de TRES estados de la fila de venta, y vive en
-  un solo lugar a propósito.** Lo consumen las tres entradas —"Editar
-  publicación", "Detalle (vista vendedor)" y la hoja de "Mis publicaciones"—:
-  calcularlo tres veces es la forma de que se desincronicen. Los estados son
-  "Marcar como vendida" / "Cambiar comprador" / ausente.
+  un solo lugar a propósito.** Hoy se llama desde TRES sitios de código —"Editar
+  publicación" (`editar/[id].tsx`), el `.sticky-cta` de "Detalle (vista
+  vendedor)" (`detalle/[id].tsx`) y `HojaAccionesListing`
+  (`src/components/HojaAccionesListing.tsx`)— sirviendo CUATRO entradas de UI:
+  las tres de siempre más la hoja que abre el kebab de Detalle, que reusa el
+  MISMO componente que "Mis publicaciones" en vez de reimplementar su propia
+  hoja. Calcularlo aparte en cualquiera de esos sitios es la forma de que se
+  desincronicen. Los estados son "Marcar como vendida" / "Cambiar comprador" /
+  ausente.
   **RF-18 le agregó una cuarta razón para devolver `null`, y ese cambio NO es de
   tipos sino de comportamiento**: hasta entonces devolvía `'marcar'` para TODO
   estado distinto de `vendida`, así que con `pendiente`/`bloqueada` en el enum
@@ -114,14 +121,22 @@ Detalles que no se ven en el diff:
   ANTES del `!== 'vendida'`, o la primera línea se lo come. Que el helper viva en
   un solo lugar es lo que hizo que esto fuera una línea y no tres.
   **Ojo: desde que vendida es terminal (RF-08), "Cambiar comprador" perdió una de
-  esas tres entradas.** La de "Editar publicación" quedó inalcanzable sobre una
+  esas entradas.** La de "Editar publicación" quedó inalcanzable sobre una
   vendida —esa pantalla ahora rebota con su guard— y eso es correcto, no una
-  regresión: las otras dos siguen ofreciéndola. `accionVenta()` no cambió.
-- **"Editar publicación" se esconde sobre una vendida en las DOS entradas que la
-  ofrecen** (`mis-publicaciones.tsx`, con `puedeEditar` hermano de
-  `puedeAlternar`; y `detalle/[id].tsx`, en la rama `isOwner`), más un guard
-  dentro de la propia pantalla para el deep link. Ninguno es el candado: lo es el
-  `using` de `listings_update_own` (§3). Dos consecuencias que no se ven:
+  regresión: las otras siguen ofreciéndola. `accionVenta()` no cambió.
+- **"Editar publicación" se esconde sobre una vendida en las TRES entradas que la
+  ofrecen — antes eran dos, la hoja compartida sumó la tercera.** El candado del
+  lado del cliente es `puedeEditarListing()` (`src/lib/listings.ts`), llamado
+  desde `detalle/[id].tsx` (su `.sticky-cta`, variable `puedeEditar`) y desde
+  `HojaAccionesListing` (su propia fila de "Editar publicación", con
+  `puedeAlternarPausa()` como hermana para la fila de pausar/reactivar) — la
+  misma hoja que ahora abre tanto el kebab de Detalle como el de "Mis
+  publicaciones". Antes de esa extracción, `mis-publicaciones.tsx` y
+  `detalle/[id].tsx` tenían cada uno su propio `estado === 'activa' ||
+  estado === 'pausada'` inline; ahora es una sola función, en un solo lugar.
+  Más un guard dentro de la propia pantalla de Editar para el deep link.
+  Ninguno de los dos es el candado: lo es el `using` de `listings_update_own`
+  (§3). Dos consecuencias que no se ven:
   - **En Detalle el reparto del `.sticky-cta` pasó de cuatro a seis**, y el del
     dueño ahora tiene tres: ghost+primary, solo el ghost ("Cambiar comprador", a
     ancho completo por su propio `flex:1`), o el `.notice` de "ya se vendió"
@@ -131,6 +146,25 @@ Detalles que no se ven en el diff:
     gusto: `accionVenta()` devuelve `'marcar'` para todo estado distinto de
     vendida, así que cuando ese botón se pinta el ghost está siempre al lado. La
     rama era inalcanzable; el estilo sigue vivo para las ramas del comprador.
+- **El kebab de "Detalle (vista vendedor)" abre `HojaAccionesListing`
+  (`src/components/HojaAccionesListing.tsx`), extraída de la `HojaAcciones` que
+  antes vivía solo en `mis-publicaciones.tsx`.** Mismo `Modal` de RN, mismas
+  filas, mismo criterio de "item null → no se monta" — ver
+  `componentes-compartidos.md` para la ficha del componente. Lo que cambia
+  entre las dos pantallas es lo que pasa DESPUÉS de cada acción, no cuál se
+  ofrece:
+  - **Pausar/reactivar**: "Mis publicaciones" es optimista con rollback (una
+    fila de lista puede parpadear); Detalle usa
+    `cargarDetalle(id,{silent:true})` tras la mutación, sin optimismo, porque
+    pausar/reactivar no mueve ningún reparto visual de esa pantalla
+    (`explorar.md`).
+  - **Eliminar**: "Mis publicaciones" filtra la fila del array local; Detalle
+    navega hacia atrás (con el fallback de `canGoBack()`, `explorar.md`) — las
+    dos comparten el mismo candado corregido en `borrarListing()`
+    (`cuenta-perfil.md`, el bug de la cuenta suspendida) y el mismo
+    `borrarFotos()` sin cambios.
+  - **Editar / Marcar como vendida / Cambiar comprador**: idénticos en las
+    dos — los mismos `router.push`, sin ninguna rama nueva.
 - **Detalle y Editar recargan al recuperar el foco** (`useFocusEffect` + el ref
   que salta el primer foco, el patrón de `mis-publicaciones.tsx`), y no es
   frescura general: es lo único que hace que esconder el botón sirva. El flujo de

@@ -3442,6 +3442,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `EmptyState` | `EmptyState` | Estado vacío, con `.empty-actions` opcional |
 | `ErrorState` | `ErrorState` | Estado de fallo con "Reintentar" (label hardcodeado — ver deuda) |
 | `Field` | `Field`, `PhoneField`, `SelectField`, `FixedField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio. `FixedField` = valor que se muestra y no se elige (sin chevron, no es botón). `PhoneField` recibe `pais`/`onPaisPress`/`error` (el país es un botón). `Field` tiene `error` (`.field-error` + borde `--brick`), copy persistente: frame primero |
+| `HojaAccionesListing` | `HojaAccionesListing` | Hoja de acciones de una publicación (pausar/reactivar, editar, marcar vendida/cambiar comprador, eliminar). `Modal` de RN, no `SheetScreen` — mismo criterio que `CampusBottomSheet`. Calcula internamente `puedeAlternarPausa()`/`puedeEditarListing()`/`accionVenta()`; consumida por "Mis publicaciones" y por el kebab de Detalle (vista vendedor) |
 | `ListRow` | `FormHeader`, `SearchField`, `ListRow`, `RadioCircle` | Fila de lista, header de formulario y el radio que reusan 3 pantallas |
 | `ListingFormFields` | `ListingFormFields` | EL formulario de publicación, compartido por Publicar y Editar |
 | `ListingPhoto` | `ListingPhoto` | Punto ÚNICO de contacto con el bucket privado (header `Authorization`) |
@@ -3670,6 +3671,38 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   (`listings_update_own`, `listing_sales_update_seller`) y el `expect_error` que
   acepta cualquier error: en este repo, *lo que no lanza* es lo que hay que mirar
   dos veces.
+
+  **Y `borrarFotos()` (`src/lib/storage.ts`) sigue sin revisar ese array a
+  propósito — el corolario no se aplicó ahí, y no es un descuido.** Al cerrar el
+  bug de "Eliminar" en "Mis publicaciones" (una cuenta suspendida veía un falso
+  éxito, `cuenta-perfil.md`), la primera versión del fix sí volvía estricta a
+  `borrarFotos()` — y se descartó, porque la lista vacía que devuelve `.remove()`
+  es AMBIGUA entre dos causas indistinguibles desde esa respuesta: un objeto que
+  la RLS esconde (rechazo real) y un objeto que YA NO EXISTE porque un intento
+  anterior sí lo borró. Como el orden `borrarFotos()` → `borrarListing()` es
+  obligatorio (`listing_photos_objects_delete_own` exige que la fila de
+  `listings` exista todavía) y no se puede invertir para resolver la ambigüedad
+  desde el otro lado, una `borrarFotos()` estricta lanzaría sobre un REINTENTO
+  legítimo — fotos ya borradas en el intento anterior, `borrarListing()` falló
+  solo esa vez por una razón de red — y dejaría la publicación imposible de
+  eliminar desde la app para siempre. El candado se puso solo en
+  `borrarListing()` (`{count:'exact'}`, lanza `ListingNoBorrableError` si
+  `count === 0`), que no tiene este problema: borra por `id`, no por un conjunto
+  de rutas que cambia de significado entre reintentos.
+
+  **Y ese `count === 0` de `borrarListing()` tiene la MISMA ambigüedad de dos
+  causas, sin poder distinguirlas sin una consulta aparte**: un rechazo real
+  (la fila no es tuya, o estás suspendido) o la publicación YA se había borrado
+  antes (doble toque con la respuesta perdida, otro dispositivo, un reintento
+  justo después de que el borrado del servidor sí se hubiera completado). Las
+  dos dan el mismo toast genérico de error, y eso se documenta, no se resuelve.
+  **Mitigación, sin consulta extra**: `mis-publicaciones.tsx` y
+  `detalle/[id].tsx` reconcilian la UI con el servidor cuando cae
+  `ListingNoBorrableError` — un refetch silencioso (`refrescar()`/
+  `cargarDetalle(id,{silent:true})`) sin quitar el toast de error, para que un
+  reintento sobre algo ya borrado haga desaparecer la tarjeta en vez de quedar
+  atorado repitiendo el mismo error. `editar/[id].tsx` se queda SIN esa
+  reconciliación — límite conocido, no un hueco escondido.
 - **No se puede borrar de `storage.objects` por SQL, ni siquiera como
   `postgres`.** El trigger `storage.protect_delete` aborta con *"Direct deletion
   from storage tables is not allowed. Use the Storage API instead."* y se dispara

@@ -12,38 +12,29 @@
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useRef, useState } from 'react';
-import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { PrimaryButton } from '@/components/Buttons';
 import { Chip } from '@/components/Chip';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
-import {
-  IconCheckCircle,
-  IconChevronRight,
-  IconClose,
-  IconKebab,
-  IconPause,
-  IconPencil,
-  IconPlay,
-  IconPlus,
-  IconTrash,
-} from '@/components/icons';
+import { HojaAccionesListing } from '@/components/HojaAccionesListing';
+import { IconKebab, IconPause, IconPlus, IconTrash } from '@/components/icons';
 import { CategoryIcon } from '@/components/icons/categories';
 import { ListingPhoto } from '@/components/ListingPhoto';
 import { PageHeader } from '@/components/PageHeader';
 import { Screen } from '@/components/Screen';
 import { SkeletonRows } from '@/components/Skeleton';
-import { StatusRow } from '@/components/StatusRow';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding, Typography } from '@/constants/theme';
-import { accionVenta, LABEL_ACCION_VENTA, useVenta } from '@/lib/confianza';
+import { useVenta } from '@/lib/confianza';
 import { useExplorarState } from '@/lib/explorar-state';
 import { formatPrecio, formatRelativo } from '@/lib/format';
 import {
   borrarListing,
   cambiarEstadoListing,
+  ListingNoBorrableError,
   useMisListings,
   type EstadoFiltrable,
   type EstadoListing,
@@ -116,6 +107,21 @@ export default function MisPublicacionesScreen() {
   const [acciones, setAcciones] = useState<MiListing | null>(null);
   const [porBorrar, setPorBorrar] = useState<MiListing | null>(null);
   const [borrando, setBorrando] = useState(false);
+
+  /**
+   * La venta registrada, para el derivado de tres estados de la fila de venta
+   * de `HojaAccionesListing`. Solo se pide cuando la hoja está abierta Y la
+   * publicación ya está vendida: `MiListing` no trae ese dato y meterlo en la
+   * query de la lista pagaría un join por fila para un caso minoritario.
+   *
+   * Toda fila de esta lista es del usuario en sesión (`useMisListings` filtra
+   * por `user_id = auth.uid()`), así que él ES el vendedor — de ahí `userId`
+   * como segundo argumento, sin necesitar un campo aparte en `MiListing`.
+   */
+  const { venta } = useVenta(
+    acciones && acciones.estado === 'vendida' ? acciones.id : null,
+    userId
+  );
 
   /**
    * Refrescar al volver a la pantalla.
@@ -226,6 +232,23 @@ export default function MisPublicacionesScreen() {
     } catch (e: any) {
       console.warn('[mis-publicaciones] no se pudo eliminar:', e?.message ?? e);
       mostrar('No pudimos eliminar la publicación', 'error');
+      /**
+       * `count === 0` en `borrarListing()` no distingue "rechazado" de "ya se
+       * había borrado" (respuesta perdida en un intento anterior). Sin esto,
+       * un reintento sobre una publicación que el servidor YA borró se queda
+       * mostrando el mismo error para siempre, con la tarjeta atorada en la
+       * lista local. `refrescar()` reconcilia con el servidor sin tocar el
+       * toast de error: si de verdad ya no existe, desaparece; si es una
+       * cuenta suspendida, sigue ahí porque nunca salió de `items`.
+       */
+      if (e instanceof ListingNoBorrableError) {
+        void refrescar().catch((e2: any) =>
+          console.warn(
+            '[mis-publicaciones] no se pudo refrescar tras un fallo de borrado:',
+            e2?.message ?? e2
+          )
+        );
+      }
     } finally {
       setBorrando(false);
       setPorBorrar(null);
@@ -297,24 +320,27 @@ export default function MisPublicacionesScreen() {
         )}
       </Screen>
 
-      <HojaAcciones
+      <HojaAccionesListing
         item={acciones}
-        vendedorId={userId}
+        venta={venta}
         onCerrar={() => setAcciones(null)}
-        onAlternarPausa={alternarPausa}
-        onEditar={(item) => {
+        onAlternarPausa={() => acciones && alternarPausa(acciones)}
+        onEditar={() => {
+          if (!acciones) return;
           setAcciones(null);
-          router.push(`/(publicar)/editar/${item.id}`);
+          router.push(`/(publicar)/editar/${acciones.id}`);
         }}
-        onEliminar={(item) => {
+        onEliminar={() => {
+          if (!acciones) return;
           setAcciones(null);
-          setPorBorrar(item);
+          setPorBorrar(acciones);
         }}
-        onVenta={(item) => {
+        onVenta={() => {
+          if (!acciones) return;
           setAcciones(null);
           router.push({
             pathname: '/(confianza)/vendida/[id]',
-            params: { id: String(item.id), titulo: item.titulo },
+            params: { id: String(acciones.id), titulo: acciones.titulo },
           });
         }}
       />
@@ -326,7 +352,11 @@ export default function MisPublicacionesScreen() {
         body="Se borrarán también sus fotos. Esta acción no se puede deshacer."
         confirmLabel="Eliminar"
         onConfirm={() => porBorrar && eliminar(porBorrar)}
-        onCancel={() => setPorBorrar(null)}
+        // También es el "atrás" de Android (`onRequestClose`): con el
+        // borrado en curso no hay nada que cancelar.
+        onCancel={() => {
+          if (!borrando) setPorBorrar(null);
+        }}
         confirming={borrando}
       />
     </>
@@ -442,146 +472,6 @@ function MiListingRow({
         <IconKebab size={16} color={Colors.inkSoft} />
       </Pressable>
     </Pressable>
-  );
-}
-
-/**
- * La hoja de acciones — un `Modal` de RN, NO una ruta de Stack, y la diferencia
- * importa: eliminar necesita las rutas de Storage de ESTA fila, que ya están en
- * memoria. Una ruta aparte solo recibe params serializables y obligaría a
- * re-fetchear la publicación o a inventar un canal de vuelta hacia la lista.
- * Es el mismo criterio que separa `CampusBottomSheet` de `SheetScreen`
- * (CLAUDE.md §8b): son dos patrones de hoja para dos casos distintos.
- *
- * El contenido es la `.status-section` del frame "Editar publicación" tal cual,
- * por eso comparte `StatusRow` con esa pantalla.
- */
-function HojaAcciones({
-  item,
-  onCerrar,
-  onAlternarPausa,
-  onEditar,
-  onEliminar,
-  onVenta,
-  vendedorId,
-}: {
-  item: MiListing | null;
-  onCerrar: () => void;
-  onAlternarPausa: (item: MiListing) => void;
-  onEditar: (item: MiListing) => void;
-  onEliminar: (item: MiListing) => void;
-  onVenta: (item: MiListing) => void;
-  vendedorId: string | null;
-}) {
-  /**
-   * La venta registrada, para el derivado de tres estados de la fila de venta.
-   * Solo se pide cuando la hoja está abierta Y la publicación ya está vendida:
-   * `MiListing` no trae ese dato y meterlo en la query de la lista pagaría un
-   * join por fila para un caso minoritario.
-   *
-   * El hook va ANTES del early return: no puede haber hooks condicionales.
-   */
-  // `MiListing` no trae `userId` porque no hace falta: `useMisListings` filtra
-  // por `user_id = auth.uid()`, así que toda fila de esta lista es del usuario
-  // en sesión — él ES el vendedor, verificable en la query y no supuesto.
-  const { venta } = useVenta(
-    item && item.estado === 'vendida' ? item.id : null,
-    vendedorId
-  );
-
-  if (!item) return null;
-
-  // Una publicación vendida no se pausa, no se reactiva y no se edita: ese
-  // estado es terminal (RF-08). Y desde RF-18, tampoco una `pendiente` ni una
-  // `bloqueada`: `listings_update_own` excluye los TRES de su `using`
-  // (20260917000459), así que sobre cualquiera de ellos el update afecta 0
-  // filas SIN LANZAR. Las filas simplemente no se pintan.
-  //
-  // `puedeEditar` es hermano de `puedeAlternar`, no una variante suya: son dos
-  // filas distintas que hoy comparten condición pero no razón — si algún día
-  // uno de esos estados dejara de bloquear una de las dos, se toca una sola.
-  //
-  // Ninguno de los dos es el candado. Ese vive en el `using` de
-  // `listings_update_own` (20260913000454 + 20260917000459) y lo vigilan T20 y
-  // T24; esconder las filas solo evita ofrecer algo que la base va a rechazar.
-  //
-  // Con la fila de venta también ausente (`accionVenta()` devuelve null en esos
-  // dos estados), la hoja queda con UNA sola fila y es la destructiva. Es el
-  // reparto degenerado que el frame ya dibuja como variante para la vendida
-  // congelada: la hoja conserva su header con el título, que es lo que evita
-  // que se lea como un menú roto.
-  const editable = item.estado === 'activa' || item.estado === 'pausada';
-  const puedeAlternar = editable;
-  const puedeEditar = editable;
-  const accion = accionVenta(item.estado, venta);
-
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onCerrar}>
-      <Pressable style={styles.backdrop} onPress={onCerrar}>
-        {/* El onPress vacío NO es un descuido: es lo que hace que este Pressable
-            se vuelva responder del toque y no lo deje burbujear al backdrop, que
-            cerraría la hoja al tocar su propio contenido. Sin él, un Pressable
-            sin handler no reclama el gesto. */}
-        <Pressable style={styles.sheetCard} onPress={() => {}}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle} numberOfLines={1}>
-              {item.titulo}
-            </Text>
-            <Pressable onPress={onCerrar} hitSlop={12} accessibilityRole="button">
-              <IconClose size={18} color={Colors.ink} />
-            </Pressable>
-          </View>
-
-          <View style={styles.statusSection}>
-            {puedeAlternar ? (
-              <StatusRow
-                icon={
-                  item.estado === 'pausada' ? (
-                    <IconPlay size={16} color={Colors.inkSoft} />
-                  ) : (
-                    <IconPause size={16} color={Colors.inkSoft} />
-                  )
-                }
-                label={
-                  item.estado === 'pausada' ? 'Reactivar publicación' : 'Pausar publicación'
-                }
-                onPress={() => onAlternarPausa(item)}
-              />
-            ) : null}
-
-            {puedeEditar ? (
-              <StatusRow
-                icon={<IconPencil size={16} color={Colors.inkSoft} />}
-                label="Editar publicación"
-                trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
-                onPress={() => onEditar(item)}
-              />
-            ) : null}
-
-            {/* La fila de venta, con el MISMO derivado de tres estados que usa
-                "Editar publicación" y "Detalle (vista vendedor)" — por eso vive
-                en `src/lib/confianza.ts` y no se recalcula por pantalla. */}
-            {accion ? (
-              <StatusRow
-                icon={<IconCheckCircle size={16} color={Colors.inkSoft} />}
-                label={LABEL_ACCION_VENTA[accion]}
-                trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
-                onPress={() => onVenta(item)}
-              />
-            ) : null}
-
-            <StatusRow
-              icon={<IconTrash size={16} color={Colors.brick} />}
-              label="Eliminar publicación"
-              danger
-              onPress={() => onEliminar(item)}
-              last
-            />
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
   );
 }
 
@@ -701,53 +591,5 @@ const styles = StyleSheet.create({
   // .mine-state.warn{color:var(--brick);}
   estadoWarn: {
     color: Colors.brick,
-  },
-  // .modal-backdrop con align-items:flex-end — ancla la hoja abajo.
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(34,31,28,0.55)',
-    justifyContent: 'flex-end',
-  },
-  // .sheet-card{width:100%; background:var(--card); border-radius:20px 20px 0 0;}
-  sheetCard: {
-    width: '100%',
-    backgroundColor: Colors.card,
-    borderTopLeftRadius: Radii.xxl,
-    borderTopRightRadius: Radii.xxl,
-    overflow: 'hidden',
-  },
-  // .sheet-handle{width:36px; height:4px; border-radius:2px; margin:10px auto 6px;}
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.line,
-    alignSelf: 'center',
-    marginTop: 10,
-    marginBottom: 6,
-  },
-  // .sheet-header{padding:6px 20px 14px; border-bottom:1px solid var(--line);}
-  sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingTop: 6,
-    paddingHorizontal: ScreenPadding,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.line,
-  },
-  sheetTitle: {
-    ...Typography.sheetTitle,
-    color: Colors.ink,
-    flex: 1,
-  },
-  // .status-section, con el padding inferior de la hoja (24) en vez del de
-  // Editar (100): aquí la tarjeta termina donde termina el contenido.
-  statusSection: {
-    paddingTop: 6,
-    paddingHorizontal: ScreenPadding,
-    paddingBottom: 24,
   },
 });

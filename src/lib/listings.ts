@@ -37,6 +37,26 @@ export type EstadoListing = 'activa' | 'pausada' | 'vendida' | 'pendiente' | 'bl
  */
 export type EstadoFiltrable = 'activa' | 'pausada' | 'vendida';
 
+/**
+ * RF-08 + RF-18: `listings_update_own` excluye `vendida`/`pendiente`/
+ * `bloqueada` de su `using` (20260913000454 + 20260917000459) — sobre esos
+ * tres, CUALQUIER update afecta 0 filas sin error. Este `if` no es el
+ * candado, lo traduce: evita ofrecer "Editar publicación" sobre algo que la
+ * base va a rechazar.
+ *
+ * Hermana de `puedeAlternarPausa()`, no un alias suyo — comparten condición
+ * hoy, no razón: si algún día uno de esos estados dejara de bloquear una de
+ * las dos acciones, se toca una sola.
+ */
+export function puedeEditarListing(estado: EstadoListing): boolean {
+  return estado === 'activa' || estado === 'pausada';
+}
+
+/** Ver `puedeEditarListing()` — misma condición, razón propia. */
+export function puedeAlternarPausa(estado: EstadoListing): boolean {
+  return estado === 'activa' || estado === 'pausada';
+}
+
 export type Orden = 'recientes' | 'precio_asc' | 'precio_desc' | 'mejor_calificados';
 
 /**
@@ -885,13 +905,42 @@ export async function cambiarEstadoListing(
 }
 
 /**
+ * Sibling de `ListingNoEditableError`, no la misma clase: el mensaje de
+ * aquella es sobre EDITAR, y reusarla confundiría los logs de un fallo de
+ * BORRAR (el toast que ve el usuario es fijo y no depende de este mensaje,
+ * pero el `console.warn` del llamador sí lo cita).
+ *
+ * `count === 0` aquí tiene DOS causas posibles, y no se puede distinguir
+ * sin una consulta aparte: la fila no es tuya o estás suspendido (rechazo
+ * real de `listings_delete_own`), o la publicación YA se había borrado
+ * antes — un doble toque con la respuesta perdida, otro dispositivo, un
+ * reintento tras un corte de red justo después de que el borrado del
+ * servidor sí se completara. Ver CLAUDE.md §9.
+ */
+export class ListingNoBorrableError extends Error {
+  constructor() {
+    super('Esta publicación ya no se puede eliminar');
+    this.name = 'ListingNoBorrableError';
+  }
+}
+
+/**
  * RF-06. Las filas de `listing_photos` se van solas por `on delete cascade`;
  * los ARCHIVOS no. Quien llama debe borrarlos ANTES con `borrarFotos()` —
  * ver la nota de orden en `src/lib/storage.ts`.
+ *
+ * Revisa `count` por el mismo motivo que `cambiarEstadoListing()`: un DELETE
+ * que `listings_delete_own` rechaza (dueño suspendido) afecta 0 filas SIN
+ * error — sin este chequeo, el llamador seguía de largo creyendo que borró
+ * algo que en realidad sigue intacto en la base.
  */
 export async function borrarListing(id: number): Promise<void> {
-  const { error } = await supabase.from('listings').delete().eq('id', id);
+  const { error, count } = await supabase
+    .from('listings')
+    .delete({ count: 'exact' })
+    .eq('id', id);
   if (error) throw error;
+  if ((count ?? 0) === 0) throw new ListingNoBorrableError();
 }
 
 /**

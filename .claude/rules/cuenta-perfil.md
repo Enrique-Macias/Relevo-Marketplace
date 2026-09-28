@@ -501,6 +501,61 @@ mismo criterio que `campusChip`/`buttonWhatsapp`).
   `(cuenta)/mis-publicaciones.tsx`, entrada por un `.menu-row` en Perfil. Ver
   `publicar-fotos.md`. Es también lo que desbloqueó el modelo atómico de publicación.
 
+- **"Eliminar" le mentía con éxito a una cuenta suspendida — bug preexistente,
+  CERRADO.** Verificado contra las policies vigentes, no contra el cliente:
+  `listings_delete_own` (`20260906000439:72-74`) exige `is_active_user()` igual
+  que `listings_update_own`, así que un suspendido que tocara "Eliminar" sobre
+  su propia publicación recibía el mismo rechazo silencioso de RLS (0 filas, sin
+  error) que ya documentaba CLAUDE.md §9. La diferencia estaba en el CLIENTE:
+  `cambiarEstadoListing()` siempre revisó `count` (por eso "Reactivar" ya
+  mostraba un error real), pero `borrarListing()` (`src/lib/listings.ts`) solo
+  revisaba `error` — nunca `count`. Con `borrarFotos()` también rechazada en
+  silencio por la policy de Storage (`listing_photos_objects_delete_own`,
+  también exige `is_active_user()`), ninguna de las dos llamadas de `eliminar()`
+  lanzaba, así que el código seguía de largo: quitaba la tarjeta de la lista y
+  mostraba **"Publicación eliminada"** — mientras la fila y sus fotos seguían
+  intactas en el servidor. Si la suspensión se levantaba, la publicación
+  "eliminada" reaparecía al volver a esta pantalla.
+  - **El fix es solo `borrarListing()`.** Ahora hace `.delete({count:'exact'})`
+    y lanza `ListingNoBorrableError` si `count === 0` — mismo criterio que
+    `cambiarEstadoListing()`/`ListingNoEditableError`, con una clase propia
+    porque reusar aquella confundiría los logs de un fallo de BORRAR con uno de
+    EDITAR (el toast que ve el usuario es fijo y no depende del mensaje).
+  - **`borrarFotos()` NO se tocó, y no por falta de intento.** La primera
+    versión del fix también la volvía estricta, y se descartó: la lista vacía
+    que devuelve `.remove()` (CLAUDE.md §9) es AMBIGUA entre un rechazo de RLS y
+    un objeto que YA NO EXISTE porque un intento anterior sí lo borró, y el
+    orden `borrarFotos()` → `borrarListing()` es obligatorio y no se puede
+    invertir para resolver esa ambigüedad desde el otro lado. Con
+    `borrarFotos()` estricta, un simple reintento tras un corte de red (fotos ya
+    borradas, `borrarListing()` fallando solo esa vez) habría lanzado sobre algo
+    que no era un rechazo, dejando la publicación imposible de eliminar desde
+    la app para siempre.
+  - **`count === 0` en `borrarListing()` tiene la misma ambigüedad de dos
+    causas**: rechazo real, o la publicación ya se había borrado antes (doble
+    toque con la respuesta perdida, otro dispositivo, un reintento justo
+    después de que el borrado del servidor sí se completara). Sin resolver esa
+    distinción con una consulta aparte, se mitiga en el `catch` de `eliminar()`:
+    si el error es `instanceof ListingNoBorrableError`, se llama a `refrescar()`
+    (la misma función ya en uso para el pull-to-refresh y el
+    `useFocusEffect`) SIN quitar el toast de error. Si la publicación ya no
+    existe, la tarjeta desaparece con el refetch; si es una cuenta suspendida,
+    nunca salió de la lista local (el `catch` corre antes de `setItems`), así
+    que sigue ahí sin cambio.
+  - **`editar/[id].tsx` tiene el MISMO bug y se arregla SOLO**, porque
+    `borrarListing()` es compartida — sin tocar ninguna línea de sus llamadas.
+    Su propio `eliminar()` **no** tiene la reconciliación silenciosa: si el
+    reintento cae en el caso benigno (respuesta perdida), el usuario ve el
+    toast de error y se queda en el formulario, mostrando una publicación que
+    ya no existe en el servidor, hasta que navegue hacia atrás a mano —
+    "Mis publicaciones" sí mostrará el estado correcto al volver, porque hace
+    su propio fetch fresco. Límite conocido, no arreglado a propósito.
+  - **De paso, los `ConfirmModal` de "Eliminar" en las dos pantallas ganaron el
+    guard de `onCancel` que "Confirmar eliminar cuenta" ya tenía**
+    (`configuracion.tsx`): `onCancel={() => { if (!borrando) ... }}`, para que
+    el botón físico de Android (`<Modal onRequestClose>`) no cierre el modal
+    mientras el borrado sigue en curso.
+
 - **RF-13 completo: el botón de WhatsApp abre el número REAL del vendedor**
   (migración `20260910000448`). Se cerró el "HUECO CONOCIDO" que
   `docs/product-spec.md` arrastraba desde el principio. Cuatro cosas que no se

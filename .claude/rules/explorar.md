@@ -202,13 +202,36 @@ en el catálogo tiene los tres números en 0 por definición, y "0 vistas · 0
 favoritos · 0 contactos" lee como fracaso en vez de como "no ha empezado" — mismo
 recurso que el bloque de rating de Perfil sin reseñas.
 
-Botones inertes a propósito: **ya solo el menú kebab** del dueño, que es otra
-tarea. Los demás se fueron cableando y conviene no "restaurarlos": "Editar
-publicación" navega a `(publicar)/editar/[id]`; "Marcar como vendida" lanza el
-flujo de venta (RF-07); **Reportar** abre `/reportar/[id]` (RF-14) y **Compartir**
-llama a `Share.share()` con texto plano (`compartir-deeplinks.md`). **El botón de
-WhatsApp ya no tiene nada mock**: pide el número real por `seller_whatsapp` y
-registra el contacto en `listing_contacts`, en ese orden.
+**Ya no hay botones inertes en Detalle.** El menú kebab del dueño abre la
+MISMA hoja de acciones que "Mis publicaciones" —`HojaAccionesListing`,
+`componentes-compartidos.md`/`confianza-ventas.md`—, con las mismas cuatro
+filas posibles (pausar/reactivar, editar, marcar vendida/cambiar comprador,
+eliminar), decididas por la misma función compartida en cualquiera de los
+siete estados. Los demás se fueron cableando y conviene no "restaurarlos":
+"Editar publicación" navega a `(publicar)/editar/[id]`; "Marcar como vendida"
+lanza el flujo de venta (RF-07); **Reportar** abre `/reportar/[id]` (RF-14) y
+**Compartir** llama a `Share.share()` con texto plano
+(`compartir-deeplinks.md`). **El botón de WhatsApp ya no tiene nada mock**:
+pide el número real por `seller_whatsapp` y registra el contacto en
+`listing_contacts`, en ese orden.
+
+- **Pausar/reactivar desde el kebab NO cambia ningún reparto del
+  `.sticky-cta` ni del `.stat-row`** — los dos derivan de `estado`, y activa↔
+  pausada es indistinguible para ambos (`puedeEditar` es `true` en los dos,
+  `accionDeVenta` es `'marcar'` en los dos, `enModeracion` es `false` en los
+  dos) — así que `alternarPausaDetalle()` no hace optimismo local: llama
+  `cambiarEstadoListing()` y refresca con `cargarDetalle(id,{silent:true})`, a
+  diferencia del optimista-con-rollback de "Mis publicaciones", que sí
+  necesita evitar el parpadeo de una fila de lista.
+- **Eliminar desde el kebab usa `router.canGoBack()` con fallback a
+  `router.replace('/(cuenta)/mis-publicaciones')`, y es la ÚNICA acción de
+  este archivo que lo hace.** Un push de moderación (`publicacion_aprobada`/
+  `publicacion_bloqueada`, que sí llega al DUEÑO de la publicación) rutea a
+  Detalle desde `destino()` (`src/lib/push.ts`) sin distinguir por `tipo`, y
+  puede llegar con la app recién abierta desde segundo plano/cerrada — un
+  caso real donde `router.back()` a secas podría no tener a dónde ir. La rama
+  `noDisponible` de abajo NO lleva este guard: sigue con su `router.back()`
+  sin resguardo, deuda aparte (ver más abajo).
 
 **El orden de `contactarPorWhatsapp()` cambió y no es cosmético.** Antes
 registraba primero y abría después, porque el `wa.me` con placeholder no podía
@@ -263,6 +286,21 @@ registro: si el insert revienta, WhatsApp se abre igual y el usuario ve un toast
     variantes a mano antes de decidir esta (sin guard: marca; con `.catch()` en
     vez de guard: sigue marcando; con el guard: no marca) — no se asumió por
     analogía con el gotcha ya escrito.
+  - **`onRetry={() => router.back()}` de esta rama NO tiene guard de
+    `canGoBack()`, deuda consciente.** Grepeado todo `src/`: `router.canGoBack()`
+    no se usa en ningún lugar del repo salvo en `eliminarDetalle()` (el kebab
+    del dueño, ver más abajo), que SÍ lo necesita porque una notificación de
+    moderación puede abrir esta pantalla con poco o ningún historial detrás.
+    Esta rama —"la publicación ya no está disponible"— es más vieja y no se
+    tocó al agregar ese guard, para no mezclar cambios: si se abre por un deep
+    link genuino como primera pantalla del stack, `router.back()` es un no-op
+    silencioso en producción (confirmado leyendo la fuente instalada de
+    `expo-router@57.0.19`, `ExpoRoot.js`, `onUnhandledAction`) — sin crash, sin
+    aviso, el botón "Reintentar" simplemente no hace nada. **Revisar cuando:**
+    alguien reporte quedarse atorado en esta pantalla tras abrir la app desde
+    un link externo. **Fix:** el mismo `router.canGoBack() ? router.back() :
+    router.replace('/(cuenta)/mis-publicaciones')` que ya usa
+    `eliminarDetalle()`.
 
 - **Búsqueda de texto por tsvector** (migración `20260908000444`). **La mitad del
   índice de este párrafo era falsa.** Decía que "el índice GIN por fin se usa
