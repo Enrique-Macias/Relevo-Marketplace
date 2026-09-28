@@ -1050,7 +1050,9 @@ decisión del usuario: una sola puerta.
 - **Componentes:** la rejilla es `CategoriasSelector` (nuevo, compartido con el
   paso del onboarding) sobre `CategoryTile` con su `selected` opcional
   (`componentes-compartidos.md`).
-- **Pruebas manuales:**
+- **Pruebas manuales, CONFIRMADAS POR EL USUARIO (2026-09-27)** en
+  dispositivo, con el runbook 0j aplicado; se conservan para repetirlas si el
+  flujo cambia:
   - Perfil → "Mis intereses" abre con los guardados marcados;
   - "Guardar" apagado sin cambios;
   - quitar uno y agregar otro → toast "Intereses guardados", de vuelta en

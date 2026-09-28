@@ -193,7 +193,9 @@ sigue a `/permiso-notificaciones` pase lo que pase. Qué hace y qué NO toca:
   permiso. Es aceptado: se eligen después en Perfil → "Mis intereses".
 - **La ruta es `/intereses`**, así que la de Cuenta es `/mis-intereses`: los
   grupos no entran en la URL y los dos chocarían.
-- **Pruebas manuales:**
+- **Pruebas manuales, CONFIRMADAS POR EL USUARIO (2026-09-27)** en
+  dispositivo, con el runbook 0j aplicado; se conservan para repetirlas si el
+  flujo cambia:
   - alta nueva → el paso aparece tras "Completar perfil";
   - "Omitir" llega a Permiso y `user_intereses` queda vacía (Studio);
   - elegir 2 y "Continuar" deja 2 filas;

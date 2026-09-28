@@ -785,8 +785,9 @@ la cifra de "80 000 filas" de la búsqueda nunca llegó al repo. Mismas reglas
 que `multiuniversidad.sql`: fuera de `sql_paths`, se corre DESPUÉS de la suite
 de RLS, es idempotente y se borra con `supabase db reset`.
 
-**Pruebas manuales pendientes** (dispositivo, CLAUDE.md §6). Requieren la
-migración en remoto (§8, pendiente 0j):
+**Pruebas manuales en dispositivo: CONFIRMADAS POR EL USUARIO (2026-09-27)**,
+con el runbook 0j ya aplicado en remoto (CLAUDE.md §8, "Hecho") y sin desglose
+por caso. Se conservan como la lista a repetir si el flujo cambia:
 1. Con 2 intereses elegidos, "Recomendados para ti" muestra primero sus
    categorías, aunque haya algo más nuevo de otra.
 2. Contactar por WhatsApp o dar favorito en una categoría sin interés: tras un

@@ -200,6 +200,12 @@ es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). E
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
+**Repo y remoto: 39 y 39 (medido el 2026-09-27) — a la par.** `ls
+supabase/migrations | wc -l` da **39**; `mcp__supabase__list_migrations`
+también da **39**, con `20260930000475` incluida. El runbook de §8 (antes
+pendiente 0j) ya corrió completo, evidencia en "Hecho". La historia de antes,
+tal como estaba:
+
 **Repo y remoto: 39 y 38 (medido el 2026-09-27).** `ls supabase/migrations |
 wc -l` da **39**; `mcp__supabase__list_migrations` da **38**. La que falta en
 remoto es `20260930000475` (intereses y "Recomendados para ti"), que no se
@@ -3158,6 +3164,33 @@ de los route groups).
     registrar su correo) deja un hash ahí si corre contra remoto, así que o se
     corrió en local, o el hash se borró después a mano. No se decide aquí cuál.
 
+- **Intereses y "Recomendados para ti" (`20260930000475`) EN REMOTO, los 6
+  pasos, CERRADOS (2026-09-27).** El runbook lo corrió el usuario; los pasos
+  1, 2 y 4 se REMIDIERON contra remoto después, no se dieron por buenos de
+  memoria (era el pendiente 0j):
+  - **Paso 1 (push):** `list_migrations` lista `20260930000475`
+    (`user_intereses_recomendados`), así que remoto está en 39, igual que el repo.
+  - **Paso 2 (verificación en remoto), una sola consulta:**
+    - `recomendar_listings` da `prosecdef/provolatile/proconfig` =
+      `false | s | null`;
+    - su `EXECUTE` es true para `authenticated` y false para `anon`;
+    - `user_intereses` tiene solo `DELETE, INSERT, SELECT` para
+      `authenticated`, 0 privilegios de tabla o columna para `anon`, las 3
+      policies (`…_select_own`, `…_insert_own`, `…_delete_own`), RLS activo y
+      las dos FKs en `confdeltype = 'c'`.
+  - **Paso 3 (`explain analyze` como authenticated):** lo corrió el usuario. No
+    se remidió aquí, porque la cifra no se puede reconstruir desde un `select`.
+  - **Paso 4 (gen:types):** una regeneración EN VIVO contra remoto
+    (`generate_typescript_types`) coincide campo por campo con lo commiteado en
+    `1e1c26e`, en las dos entradas de esta tarea (`user_intereses` y
+    `recomendar_listings`). Las dos se habían copiado de un `gen types --local`.
+  - **Pasos 5 y 6 (build y pruebas manuales): CONFIRMADOS POR EL USUARIO
+    (2026-09-27)**, sin desglose por caso. Son las pruebas de `explorar.md`
+    ("Recomendados para ti"), `onboarding-auth.md` ("Intereses") y
+    `cuenta-perfil.md` ("Mis intereses"). No hizo falta build nativo nuevo.
+  - **Dato al remedir:** `user_intereses` tiene **1** fila en remoto, que
+    encaja con lo que dejan las pruebas manuales.
+
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
    CLAUDE.md §8 arriba).** Los pasos 0-5 ya corrieron y están en "Hecho"
@@ -3274,35 +3307,10 @@ ahora apuntan a "Hecho".)**
 `eliminar-cuenta` — se cerró completo el 2026-09-27, los 6 pasos. Evidencia en
 "Hecho", arriba. Se deja este hueco para no romper las referencias cruzadas a
 "pendiente 0h" de `CLAUDE.md` §3 y `cuenta-perfil.md`.)**
-0j. **Intereses y "Recomendados para ti" (`20260930000475`): construida y
-   probada en LOCAL, sin pushear.** El cliente YA llama a la RPC, así que **un
-   build con este código contra un remoto sin la función rompe el estado
-   recomendados de Búsqueda** (PGRST202) y el paso de intereses. Por eso el
-   push va ANTES de distribuir el build. En este orden:
-   1. `supabase db push`, y confirmar con `list_migrations` que aparece
-      `20260930000475` (remoto pasa de 38 a 39).
-   2. Verificar en remoto con `execute_sql`:
-      - `select prosecdef, provolatile, proconfig from pg_proc where oid =
-        'public.recomendar_listings(bigint,bigint,integer,timestamptz,bigint,integer)'::regprocedure`
-        debe dar `f | s | null`;
-      - `has_function_privilege` para `authenticated` debe dar true, y para
-        `anon`, false;
-      - en `user_intereses`, `table_privileges` debe tener solo SELECT,
-        INSERT y DELETE para `authenticated`, 0 filas para `anon`, y 3 filas
-        en `pg_policies`.
-   3. `explain analyze` en remoto COMO `authenticated` (`set local role` +
-      `request.jwt.claims`, dentro de un `begin … rollback`, imprimiendo el
-      rol), sobre `recomendar_listings(p_campus_id => 1)`. Confirmar que se
-      inlinea (sin `Function Scan`) y anotar el tiempo.
-   4. `npm run gen:types` contra remoto. Hoy `user_intereses` y
-      `recomendar_listings` de `database.types.ts` se copiaron de un
-      `gen types --local`, el mismo caso que los pendientes 0d/0e. El diff
-      contra remoto debe salir vacío en esas dos entradas.
-   5. Build: **no hace falta dev build nativo nuevo** (JS puro, sin módulos
-      nativos), basta un reload contra un Metro con este JS.
-   6. Pruebas manuales en dispositivo: `explorar.md` ("Recomendados para ti"),
-      `onboarding-auth.md` ("Intereses") y `cuenta-perfil.md` ("Mis
-      intereses").
+**(El pendiente 0j — intereses y "Recomendados para ti", `20260930000475` —
+se cerró completo el 2026-09-27, los 6 pasos. Evidencia en "Hecho", arriba. Se
+deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
+`CLAUDE.md` §3 y `explorar.md`.)**
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que
