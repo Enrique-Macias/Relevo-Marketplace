@@ -38,15 +38,6 @@ export function formatRelativo(fecha: Date): string {
   return `hace ${dias}d`;
 }
 
-/**
- * Iniciales para los avatares (`.avatar`, `.seller-avatar`, `.profile-avatar`).
- *
- * En los mocks venían precomputadas ("JM"); con datos reales solo hay
- * `users.nombre`, que además es nullable hasta que el usuario pasa por
- * "Completar perfil". Toma la primera letra de las dos primeras palabras —
- * "Jorge Muñoz" → "JM", "Ana" → "A" — y cae a "?" si no hay nombre, que es lo
- * que puede pasar con un perfil a medias visto desde otra pantalla.
- */
 const MS_DIA = 1000 * 60 * 60 * 24;
 const MS_MES = MS_DIA * 30.44;
 
@@ -67,6 +58,9 @@ const MS_MES = MS_DIA * 30.44;
  * "1a" empieza en 12 × 30.44 = 365.28 días, y a los 365.25 días todavía se
  * muestra "11m". No importa que no sea calendario exacto: es un stat de
  * antigüedad, no una fecha.
+ *
+ * El formato lo fija el frame (§0 regla 4): una rama nueva va primero a
+ * design/relevo-app.html.
  */
 export function antiguedadEnRelevo(createdAt: Date): string {
   const diffMs = Date.now() - createdAt.getTime();
@@ -78,6 +72,15 @@ export function antiguedadEnRelevo(createdAt: Date): string {
   return `${anios}a`;
 }
 
+/**
+ * Iniciales para los avatares (`.avatar`, `.seller-avatar`, `.profile-avatar`).
+ *
+ * En los mocks venían precomputadas ("JM"); con datos reales solo hay
+ * `users.nombre`, que además es nullable hasta que el usuario pasa por
+ * "Completar perfil". Toma la primera letra de las dos primeras palabras —
+ * "Jorge Muñoz" → "JM", "Ana" → "A" — y cae a "?" si no hay nombre, que es lo
+ * que puede pasar con un perfil a medias visto desde otra pantalla.
+ */
 export function iniciales(nombre: string | null | undefined): string {
   const palabras = (nombre ?? '').trim().split(/\s+/).filter(Boolean);
   if (palabras.length === 0) return '?';

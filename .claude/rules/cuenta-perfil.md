@@ -183,9 +183,8 @@ Seis cosas que no se ven en el diff:
   `Na`. El mes es UNA sola constante, 30.44 días, y los años salen de
   `totalMeses / 12`: "1a" empieza en 365.28 días, y 365.25 días todavía muestra
   "11m". Las variantes "21d", "Hoy" y "2a" están en el frame de Perfil público
-  (§0 regla 4). Antes era solo `Nm` (y se llamaba `mesesEnRelevo()`): a
-  septiembre de 2026 todas las cuentas tenían menos de un mes, así que todas
-  mostraban "0m".
+  (§0 regla 4). Antes era solo `Nm`: a septiembre de 2026 todas las cuentas
+  tenían menos de un mes, así que todas mostraban "0m".
 - **Perfil público tiene pull-to-refresh, y su refactor es más simple que el de
   "Perfil": sin `useFocusEffect` que reconciliar.** Las cuatro consultas
   (`fetchPerfilPublico`, `fetchActivasVendedor`, `fetchVentasVendedor`,
