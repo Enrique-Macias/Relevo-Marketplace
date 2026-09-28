@@ -14,6 +14,7 @@ Componentes reusables ya construidos aquí (no los reconstruyas):
 `ProductCard`, `CategoryTile`, `PageHeader`, `EmptyState`,
 `SegmentedControl`, `Chip`, `ActiveFilterChip`, `SheetScreen`,
 `RoundIconButton`, `PhotoCarousel`/`PhotoDots`, `PhotoViewer`,
+`HojaAccionesListing`,
 más los íconos de categorías. Al conectar datos reales se
 sumaron tres del grupo Sistema, transcritos de sus frames: `SkeletonGrid` /
 `SkeletonCatGrid`, `ErrorState` (con "Reintentar") y `Toast` (`ToastProvider`
@@ -26,6 +27,24 @@ dentro de `(explorar)/`, ver el gotcha de sección 9) — es distinto de
 `CampusBottomSheet.tsx` (un `Modal` de RN real, usado solo por Completar
 perfil en Onboarding); no unificar ambos, sirven casos de uso distintos ya
 documentados en sección 5.
+
+**`HojaAccionesListing`** (`src/components/HojaAccionesListing.tsx`) es la hoja
+de acciones de una publicación (pausar/reactivar, editar, marcar como
+vendida/cambiar comprador, eliminar) — extraída de un componente local
+(`HojaAcciones`) que antes vivía solo en `mis-publicaciones.tsx`, cuando ganó
+un segundo consumidor: el kebab de "Detalle (vista vendedor)"
+(`confianza-ventas.md`/`explorar.md`). Mismo criterio que `CampusBottomSheet`
+frente a `SheetScreen` (arriba): es un `Modal` de RN, no una ruta de Stack,
+porque quien la abre ya tiene el estado y la venta de la publicación en la
+mano — una ruta solo recibiría params serializables y obligaría a
+re-fetchear o inventar un canal de vuelta. Calcula internamente
+`puedeAlternarPausa()`, `puedeEditarListing()` (`src/lib/listings.ts`) y
+`accionVenta()` (`src/lib/confianza.ts`) a partir de `estado`/`venta`: las
+decisiones de qué fila mostrar viven en el componente, nunca recalculadas en
+cada pantalla que lo monta. Sus dos consumidores difieren en lo que pasa
+DESPUÉS de cada acción (optimista+rollback y filtrar un array en la lista;
+refetch silencioso o `router.back()` en Detalle), no en cuál fila se ofrece
+— ver `confianza-ventas.md`.
 
 **`Field` tiene `error` (nombre válido, `20260927000469`).** Pinta
 `.field-error` bajo el campo y el borde en `--brick` (`.text-field.is-invalid`),

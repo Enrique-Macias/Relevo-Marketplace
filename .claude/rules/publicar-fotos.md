@@ -326,9 +326,11 @@ Detalles que no se ven en el diff:
   **Revisar cuando:** alguien reporte no entender por qué su publicación no
   guarda.
 - **"Marcar como vendida" ya NO es inerte en Editar** (lo era antes de RF-07):
-  navega a "¿A quién le vendiste?" del grupo Confianza, con el mismo
-  `accionVenta()` que las otras dos entradas. Cablearla como un update suelto a
-  `'vendida'` saltándose ese paso seguiría rompiendo RF-12.
+  navega a "¿A quién le vendiste?" del grupo Confianza, con la misma
+  `accionVenta()` que las demás entradas (Detalle, y la hoja compartida de
+  "Mis publicaciones" y del kebab de Detalle — `confianza-ventas.md`).
+  Cablearla como un update suelto a `'vendida'` saltándose ese paso seguiría
+  rompiendo RF-12.
   Y desde RF-08 esa fila **solo existe en su primer estado aquí**: al volver de
   Calificar, el refetch al foco descubre que la publicación ya es vendida y la
   pantalla rebota con su guard, así que "Cambiar comprador" nunca llega a pintarse

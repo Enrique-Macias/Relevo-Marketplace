@@ -42,9 +42,16 @@ una sola fila y es la destructiva. El detalle, en `moderacion.md`.
   objetos ANTES que el listing (`listing_photos_objects_delete_own` exige que el
   listing exista para autorizar el borrado), y para entonces ya no hay de dónde
   leer las rutas. Es la misma secuencia de `editar/[id].tsx`.
-- **La hoja de acciones es un `Modal` de RN, no un `SheetScreen`**, y por la
-  misma razón: necesita el objeto de la fila en la mano, no params
-  serializables. Es el caso de `CampusBottomSheet`, no el de `filtros.tsx`.
+- **La hoja de acciones vive en `src/components/HojaAccionesListing.tsx`,
+  extraída de aquí cuando ganó un segundo consumidor** (el kebab de "Detalle
+  (vista vendedor)", `confianza-ventas.md`/`explorar.md`) — antes era un
+  componente local (`HojaAcciones`) exclusivo de esta pantalla. Sigue siendo
+  un `Modal` de RN, no un `SheetScreen`, y por la misma razón de siempre:
+  necesita el estado y la venta de la publicación en la mano, no params
+  serializables — es el caso de `CampusBottomSheet`, no el de `filtros.tsx`.
+  Las decisiones de qué fila mostrar (`accionVenta()`, `puedeEditarListing()`,
+  `puedeAlternarPausa()`) viven DENTRO del componente, no en cada pantalla que
+  lo monta — ver `componentes-compartidos.md` para la ficha completa.
 - **`useMisListings` resetea su estado en RENDER, no dentro del efecto**
   (compara una `key` contra la anterior) — mismo patrón que ya trae
   `useListings`, alineado a este cuando se detectó la inconsistencia (ver
@@ -480,7 +487,7 @@ Seis cosas que no se ven en el diff:
   commit. Solo cambió el handler, que ganó `try/catch` y el reset al abrir.
   "Verificación" y "Ayuda y soporte" —sin pantalla propia en el inventario de
   54 ni en `product-spec.md`— y el engrane de `.profile-top` (ajustes) quedan
-  inertes con el mismo patrón ya usado en Detalle para Compartir/Reportar/kebab:
+  inertes con el mismo patrón ya usado en Detalle para Compartir/Reportar:
   `onPress={() => {}}` con un comentario de una línea, no un `View` sin
   `accessibilityRole` — esa fila SÍ es un control que algún día podría hacer
   algo, a diferencia del círculo de foto de "Editar perfil"/"Completar perfil".
