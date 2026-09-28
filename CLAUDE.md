@@ -183,21 +183,28 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 38 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-09-26; decía "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 18 tablas más
+Definido en 39 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-09-27; decía "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
-**Ese 18 son 15 con policies más `listing_moderacion`,
+**Ese 19 son 16 con policies más `listing_moderacion`,
 `listing_moderacion_reclamos` y `avatar_moderacion`, que tienen RLS habilitado
 y CERO policies a propósito** (sus bloques propios, más abajo) — no son tablas
 a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 `20260928000471`, igual que decía la prosa; 16 con ella, 17 con
-`20260928000473`, 18 con `20260929000474`). **`universidad_dominios` y
-`correos_bloqueados` cuentan entre las 15 "con policies", pero su única policy
+`20260928000473`, 18 con `20260929000474`, 19 con `20260930000475`, que suma
+`user_intereses` a las "con policies"). **`universidad_dominios` y
+`correos_bloqueados` cuentan entre las 16 "con policies", pero su única policy
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 39 y 38 (medido el 2026-09-27).** `ls supabase/migrations |
+wc -l` da **39**; `mcp__supabase__list_migrations` da **38**. La que falta en
+remoto es `20260930000475` (intereses y "Recomendados para ti"), que no se
+pushea en su propia tarea: es el runbook pendiente 0j de §8. La historia de
+antes, tal como estaba:
 
 **Repo y remoto: 38 y 38 (medido el 2026-09-27) — a la par.** `ls
 supabase/migrations | wc -l` da **38**; `mcp__supabase__list_migrations`
@@ -328,6 +335,10 @@ correos_bloqueados (correo_hash bytea PK — sha256 de lower(btrim(correo)),
                  ELIMINARON estando suspendidas; el Auth Hook rechaza volver a
                  registrarlos. Mismo acceso que universidad_dominios: solo
                  supabase_auth_admin. Ver "Eliminar cuenta", abajo.
+user_intereses  (user_id → users on delete cascade, categoria_id → categories
+                 on delete cascade, created_at, PK (user_id, categoria_id)) —
+                 las categorías que el usuario ELIGE. Cada quien lee y escribe
+                 solo las suyas; sin UPDATE. Ver "Intereses y recomendados".
 
 **`campus.latitud`/`longitud` son para "Detectar campus más cercano" (fase
 2C, `20260925000467`).** Nullables a propósito: un campus sin coordenadas
@@ -941,8 +952,9 @@ decisiones de la función, cada una vigilada por T30:
   definer saltaría `listings_select` y entregaría las pausadas, pendientes y
   bloqueadas ajenas que casen con el texto. Como invoker, la RLS aplica igual que
   en un `from('listings')`. Si la vuelves definer, cae T30 (h).
-- **No lleva `set search_path`, y es la ÚNICA función del repo sin él, a
-  propósito.** Una cláusula SET impide que Postgres inlinee una función SQL que
+- **No lleva `set search_path`, a propósito, y eran la ÚNICA del repo sin él
+  hasta que `recomendar_listings` (abajo) repitió la decisión por la misma
+  razón.** Una cláusula SET impide que Postgres inlinee una función SQL que
   devuelve un set. Inlineada, el filtro de texto y los filtros del cliente se
   planean como una sola consulta; sin inlinear, sería un Function Scan que
   materializa todas las coincidencias antes de filtrar. Para compensar, todo va
@@ -965,6 +977,93 @@ lo que hace que la búsqueda funcione — la suite lo vigila (T13), porque
 "endurecerlo" a una lista explícita rompería la búsqueda sin ningún error
 visible en la app. Escribirla es imposible por definición: Postgres rechaza
 cualquier escritura sobre una columna generada, sin importar los grants.
+
+**Intereses y "Recomendados para ti" (`20260930000475`, 2026-09-27).** El
+estado sin texto de Búsqueda dejó de ser "las 4 más recientes" y pasó a un
+ranking personalizado con scroll infinito. Sin ML: un puntaje por categoría en
+SQL (RNF-09). El Feed no cambia. Decisión de producto sin RF numerado, anotada
+en `docs/product-spec.md` (Descubrimiento).
+
+- **`public.user_intereses`** guarda las categorías que el usuario ELIGE: paso
+  opcional "Intereses" del alta, y después Perfil → "Mis intereses". Tiene PK
+  `(user_id, categoria_id)`, una fila por categoría y no un arreglo en `users`.
+  - Las dos FKs son `on delete cascade`. Borrar la cuenta se lleva los
+    intereses sin ningún trigger de `20260929000474`, porque un interés no
+    menciona a nadie más. T33 (h) cazaría una FK equivocada, y T34 (k) lo prueba.
+  - RLS con tres policies (select/insert/delete), todas
+    `user_id = auth.uid()` y sin `is_active_user()`: es el mismo criterio que
+    `favorites`.
+  - `revoke all` y después `grant select, insert, delete`, **sin UPDATE**:
+    cambiar de interés es borrar una fila y crear otra.
+  - **Sin índice sobre `categoria_id`, a propósito.** Todo lo que lee la tabla
+    filtra por `user_id`, que es la columna líder de la PK. El único que lo
+    aprovecharía es el cascade al borrar una categoría desde Studio. Se agrega
+    cuando exista una consulta que lo use.
+- **`public.recomendar_listings(p_campus_id, p_universidad_id, p_cursor_puntaje,
+  p_cursor_created_at, p_cursor_id, p_limit)`** devuelve solo
+  `(id, puntaje, created_at)`, ya ordenado y paginado.
+  - **Son DOS PASOS y no `setof listings`.** El puntaje no es columna de
+    `listings`, así que el patrón de `buscar_listings` (el cliente encadena
+    orden y cursor encima) no podría ordenar ni hacer keyset por él. El
+    cliente trae las tarjetas con `from('listings').in('id', ids)` y pinta en
+    el orden de la RPC (`fetchRecomendados()`, `explorar.md`).
+  - **Puntaje por categoría:** `4·interés + 2·contacto + 1·favorito`, con cada
+    señal en 0/1 (el `union` deduplica).
+    - Son potencias de 2 sobre señales binarias, así que el orden es
+      lexicográfico y cumple "explícito > contactos > favoritos" siempre: un
+      interés solo (4) le gana a contacto + favorito juntos (3).
+    - **No se cuentan repeticiones, a propósito:** con conteo, diez favoritos le
+      ganarían a una categoría elegida a mano.
+    - Se explica en una frase: primero lo que elegiste, luego lo que
+      contactaste, luego lo que guardaste.
+  - **Ventana de 90 días** (≈ un periodo escolar) para contactos y favoritos,
+    sobre `listing_contacts.created_at` y `favorites.created_at`. Los intereses
+    explícitos no caducan.
+  - **Cold start:** sin señales todo puntaje es 0 y el orden se reduce a
+    `created_at desc, id desc`. O sea, lo más reciente del alcance: la sección
+    nunca queda vacía por falta de intereses (T34 (f)).
+  - **Orden total y estable entre páginas:** `(puntaje, created_at, id)` desc,
+    con `id` único como último desempate, y un keyset por comparación de fila.
+    Sin el `id`, las publicaciones empatadas se saltan al paginar (T34 (h)).
+  - **Excluye las propias en la función** (`user_id <> auth.uid()`), no en el
+    cliente: es regla del ranking, y así se prueba (T34 (g)).
+  - **SECURITY INVOKER.** Hoy la salida de un definer sería idéntica, porque el
+    `estado = 'activa'` de la propia función ya descarta las ocultas: (d) tiene
+    dos candados. **Lo que cambiaría con definer son las SEÑALES:** leería
+    favoritos y contactos sobre publicaciones que la RLS le esconde (T34 (d3)).
+    Y para las **vendidas**, que son públicas por RLS, el único candado es ese
+    `estado = 'activa'` (T34 (d4)).
+  - **Matiz heredado por ser invoker, aceptado:** el favorito o contacto de una
+    publicación ajena que HOY está pausada, pendiente o bloqueada no da señal.
+    Las vendidas sí cuentan, y las borradas ya no existen, por el cascade.
+  - **Sin `set search_path`**, igual que `buscar_listings` y por la misma razón,
+    que aquí está MEDIDA. Inlineada, el plan trae
+    `Index Cond: (campus_id = '1'::bigint)`: los parámetros entran como
+    constantes y el `p_campus_id is null or …` se resuelve al planear. Todo va
+    calificado por esquema, y T34 (j1) vigila `proconfig is null`.
+  - **Grant:** `revoke all` y después `execute` solo a `authenticated`.
+- **Costo, medido como `authenticated`** con `supabase/seeds-local/volumen.sql`
+  (80 000 activas y 4 000 pausadas), página 1:
+
+  | Alcance | Recencia de hoy (la deuda que ya existía) | `recomendar_listings` |
+  |---|---|---|
+  | campus (20k) | 6.1 ms | 5.6 ms |
+  | universidad (60k) | 13.8 ms | 15.1 ms |
+  | todo (80k) | 12.1 ms | 21.2 ms |
+
+  - La página 2 cuesta lo mismo que la 1: el puntaje sale de un join, así que
+    el keyset no puede saltarse filas.
+  - Leer el alcance es la deuda de `explorar.md` ("Alcance del catálogo").
+  - Lo nuevo es el join con las señales más el top-N sobre el puntaje. Calcular
+    las señales cuesta 0.1-0.3 ms, y la segunda consulta por id, 0.03 ms.
+  - **Los índices que propone aquella deuda NO abaratan esta función**, porque
+    ordenan por `created_at` y aquí manda el puntaje. Deuda propia, con
+    disparador, en `explorar.md`.
+- **El cliente no filtra nada.** `interesesVersion`, en `explorar-state.tsx`,
+  solo existe para reiniciar la lista tras guardar intereses. La base decide
+  qué se ve y en qué orden (§0 regla 7).
+- **No se guarda historial de búsquedas** (decisión explícita). Queda como
+  deuda con disparador en `explorar.md`.
 
 **El bucket `listing-photos` es privado, y eso NO es una preferencia.** Es lo
 único que hace real la regla de que las fotos de una publicación pausada solo las
@@ -1037,9 +1136,9 @@ cliente: `increment_listing_view`, `listing_favorites_count` y
 `seller_whatsapp` (eran una sola hasta que Detalle necesitó el conteo de
 favoritos, y dos hasta que el botón de WhatsApp necesitó el número real; si
 algún día hay una cuarta, revisa primero si de verdad la invoca el cliente o si
-va en `private`). **`public.buscar_listings` NO es la cuarta**: también es una
-RPC de `public`, pero es INVOKER a propósito (bloque de la búsqueda de texto,
-más arriba), y volverla definer sería una fuga. `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
+va en `private`). **`public.buscar_listings` y `public.recomendar_listings` NO son la
+cuarta**: también son RPC de `public`, pero INVOKER a propósito (sus bloques,
+más arriba), y volverlas definer sería una fuga. `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
 acotado a las TRES que se invocan desde policies — `is_active_user()`,
 `can_rate()` y `listing_id_from_object_name()` — mientras las **18** que solo
 disparan por trigger siguen revocadas (decía "las otras cinco", un número de la
@@ -1429,8 +1528,8 @@ Lo que no se ve en la tabla:
   desde `listings`, que el borrado se lleva. Detalle de la función (auth,
   reautenticación por `amr`, idempotencia) en §8 y en §9.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 335 aserciones (medido con el
-`grep` de §8 el 2026-09-26; antes decía 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 358 aserciones (medido con el
+`grep` de §8 el 2026-09-27; antes decía 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2021,6 +2120,64 @@ TODAS las reseñas que escribió, y era falso: la que escribió sobre una
 publicación AJENA la conserva, porque esa publicación no se borra. Lo destapó la
 primera corrida, no el control.
 
+Y a **358** con las 23 de T34 (intereses y `recomendar_listings`,
+`20260930000475`), autocontenida con sus propios `:A34`/`:B34`/`:N34`/`:X34`,
+su universidad `rls-t34.mx`, dos campus propios y 16 publicaciones. Nada en
+T12: la aserción universal de RLS ya cubre la tabla nueva, y las invariantes de
+la función (invoker, STABLE, sin SET, EXECUTE solo a authenticated) viven en
+T34 (j), junto a la lógica que protegen, igual que las de T30. Las 17 variantes
+rotas se corrieron una a la vez dentro de la misma transacción que la suite
+(`begin; <variante>; <suite>; rollback`, así que nunca se persistieron). Antes
+de cada corrida se imprimió el estado vivo, y cada una se corrió contra la
+suite completa **y** contra T34 aislada:
+
+| Variante rota | Suite | T34 aislada |
+|---|---|---|
+| policy select `using (true)` | (a) | (a) |
+| policy insert `with check (true)` | (b) | (b) |
+| policy delete `using (true)` | (c) | (c) |
+| `grant update` a authenticated | (c2) | (c2) |
+| `grant select` a anon | **T12** | (c2) |
+| la función DEFINER | **(d3)** | **(d3)** |
+| sin `estado = 'activa'` | (d4) | (d4) |
+| sin el término de interés | (e) | (e) |
+| contacto pesa igual que favorito | (e2) | (e2) |
+| sin la ventana de 90 días | (e3) | (e3) |
+| orden sin `created_at` | (f) | (f) |
+| sin excluir las propias | (g) | (g) |
+| cursor sin `id` | (h) | (h) |
+| sin el filtro de alcance | (i1) | (i1) |
+| con `set search_path` | (j1) | (j1) |
+| `grant execute` a anon | (j2) | (j2) |
+| sin la FK hacia `users` | (k) | (k) |
+
+**Cuatro aserciones de la primera versión pasaban por la razón equivocada**, y
+las destapó correr los controles, no razonarlos:
+
+- **(c) borraba con `where user_id = B`**, y un DELETE con `WHERE` aplica
+  también la policy de SELECT a las filas que filtra. Afectaba 0 filas aunque
+  la de DELETE fuera `using (true)`, o sea que (c) probaba la de SELECT. Ahora
+  borra SIN filtro. Medido: con filtro, 0 filas; sin filtro, 2. El caso general
+  está en §9.
+- **El helper reordenaba** con su propio `string_agg(... order by puntaje, …)`,
+  así que (f) y (e2) probaban los puntajes pero no el ORDER BY de la función:
+  quitarle `created_at` no lo cazaba ninguna de las dos. Ahora el helper lee
+  el orden de emisión (`with ordinality`).
+- **(d) miraba títulos a través de un join con `listings`** hecho como
+  authenticated, y ese join escondía por su cuenta lo que la función
+  devolviera. Ahora cuenta ids crudos de la función. Aun así, la variante
+  definer no la tumba, por los dos candados de (d). Por eso nacieron (d3) (las
+  señales) y (d4) (las vendidas, con un solo candado).
+- **El orden de las aserciones:** la propia, la del campus B y la de la otra
+  universidad son de c1 y más nuevas que X. Una variante que las dejara pasar
+  tumbaba primero a (e) y la aserción con su nombre nunca corría. Por eso (i)
+  va primero, y (g) y (d) van antes que las de orden.
+
+**Y el fixture tenía un bug propio:** un `insert … select … join users` NO
+asigna los ids en el orden del `values`, porque el join reordena. T1-T3
+salieron al revés, así que (e2) esperaba un orden que no existía. Ahora va
+`order by v.n`, y la precondición de T34 verifica los ids.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -2194,12 +2351,12 @@ dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
 usa el filtro visual del prototipo. Para el estado de qué grupo ya existe
 como código real (vs. solo diseño), ver §8 y las reglas de `.claude/rules/`.
 
-### Onboarding (16)
+### Onboarding (17)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
 **Verificación (correo no participante)** ·
 Código de verificación · Completar perfil ·
 Completar perfil (estado inicial) · Completar perfil (selector de campus) ·
-Permiso de notificaciones ·
+**Intereses** · Permiso de notificaciones ·
 Iniciar sesión · Recuperar contraseña · **Código de recuperación** ·
 **Nueva contraseña** · **Cuenta eliminada**
 
@@ -2346,10 +2503,30 @@ contrario —reintentar es la salida—, así que `esDeterminista()` **no cambi�
 el motivo nuevo vive en `falloGeneral`. Son **tres motivos y dos baldes**; el
 párrafo viejo hacía leer que eran tres baldes.
 
-### Cuenta (10)
+### Cuenta (11)
 Perfil · Editar perfil · **Selector de país** · Perfil público · Favoritos ·
 Favoritos vacío · Mis publicaciones · Mis publicaciones vacío ·
-Mis publicaciones (acciones) · **Configuración**
+Mis publicaciones (acciones) · **Configuración** · **Editar intereses**
+
+**"Intereses" (Onboarding) y "Editar intereses" (Cuenta) llegaron con
+`20260930000475`**: 72 en total, 17 de Onboarding y 11 de Cuenta, medido con el
+mismo `grep | uniq -c`.
+- **"Intereses"** va entre "Completar perfil" y "Permiso de notificaciones", y
+  se ve UNA sola vez. Tiene "Continuar" (deshabilitado sin ninguna elegida,
+  variante etiquetada) y "Omitir".
+- **"Editar intereses"** se abre desde una fila nueva de "Perfil", **"Mis
+  intereses"**, entre "Mis publicaciones" y "Editar perfil" (el menú pasó a 6
+  filas). No se abre desde Editar perfil: a decisión del usuario, una sola
+  puerta.
+- Las dos usan la rejilla de 3 de "Ver todas" con un estado nuevo,
+  `.cat-item.selected`: el `active` de siempre (--ink / --paper), sin tokens
+  nuevos.
+- **"Búsqueda (recomendados)" no ganó frame**, solo cambió el título a
+  "Recomendados para ti".
+  - **Sin texto que explique el orden y sin botón de intereses**, a decisión
+    del usuario: tiene que sentirse natural.
+  - Sin intereses, es lo más reciente del alcance: no hay estado vacío especial
+    ni invitación.
 
 **"Configuración" es la décima, y le da destino al engrane de `.profile-top`
 de Perfil, inerte desde que existe la pantalla.** 68 en total, 10 de Cuenta,
@@ -2363,7 +2540,8 @@ variantes de documentación, nunca como zona real de UI, así que la separación
 de "Soporte"/"Eliminar cuenta" es de espaciado, no de una línea. **"Cerrar
 sesión" NO está aquí: se mudó en `3752e7b` y se revirtió al `.menu-list` de
 "Perfil", que volvió a sus 5 filas** (Mis publicaciones, Editar perfil,
-Verificación, Ayuda y soporte, Cerrar sesión). El motivo de la reversión —el
+Verificación, Ayuda y soporte, Cerrar sesión; hoy 6, con "Mis intereses" desde
+`20260930000475`). El motivo de la reversión —el
 `<Redirect>` de `(tabs)/_layout.tsx` no redirige mientras `(tabs)` está
 tapado— ya lo cerró el guard global de "Eliminar cuenta" (§9); "Cerrar sesión"
 se queda en Perfil porque ahí es donde vive en el frame, no por el guard.
@@ -3096,6 +3274,35 @@ ahora apuntan a "Hecho".)**
 `eliminar-cuenta` — se cerró completo el 2026-09-27, los 6 pasos. Evidencia en
 "Hecho", arriba. Se deja este hueco para no romper las referencias cruzadas a
 "pendiente 0h" de `CLAUDE.md` §3 y `cuenta-perfil.md`.)**
+0j. **Intereses y "Recomendados para ti" (`20260930000475`): construida y
+   probada en LOCAL, sin pushear.** El cliente YA llama a la RPC, así que **un
+   build con este código contra un remoto sin la función rompe el estado
+   recomendados de Búsqueda** (PGRST202) y el paso de intereses. Por eso el
+   push va ANTES de distribuir el build. En este orden:
+   1. `supabase db push`, y confirmar con `list_migrations` que aparece
+      `20260930000475` (remoto pasa de 38 a 39).
+   2. Verificar en remoto con `execute_sql`:
+      - `select prosecdef, provolatile, proconfig from pg_proc where oid =
+        'public.recomendar_listings(bigint,bigint,integer,timestamptz,bigint,integer)'::regprocedure`
+        debe dar `f | s | null`;
+      - `has_function_privilege` para `authenticated` debe dar true, y para
+        `anon`, false;
+      - en `user_intereses`, `table_privileges` debe tener solo SELECT,
+        INSERT y DELETE para `authenticated`, 0 filas para `anon`, y 3 filas
+        en `pg_policies`.
+   3. `explain analyze` en remoto COMO `authenticated` (`set local role` +
+      `request.jwt.claims`, dentro de un `begin … rollback`, imprimiendo el
+      rol), sobre `recomendar_listings(p_campus_id => 1)`. Confirmar que se
+      inlinea (sin `Function Scan`) y anotar el tiempo.
+   4. `npm run gen:types` contra remoto. Hoy `user_intereses` y
+      `recomendar_listings` de `database.types.ts` se copiaron de un
+      `gen types --local`, el mismo caso que los pendientes 0d/0e. El diff
+      contra remoto debe salir vacío en esas dos entradas.
+   5. Build: **no hace falta dev build nativo nuevo** (JS puro, sin módulos
+      nativos), basta un reload contra un Metro con este JS.
+   6. Pruebas manuales en dispositivo: `explorar.md` ("Recomendados para ti"),
+      `onboarding-auth.md` ("Intereses") y `cuenta-perfil.md` ("Mis
+      intereses").
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que
@@ -3202,6 +3409,10 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - El mínimo de 3 letras del prefijo se midió con 76 publicaciones: la amplitud crece con el catálogo → `explorar.md`
 - Scroll infinito sin virtualización → `explorar.md`
 - El log de contactos que falla se pierde → `confianza-ventas.md`
+- No se guarda historial de búsquedas: "Recomendados para ti" solo usa intereses, contactos y favoritos → `explorar.md`
+- El cursor de "Recomendados para ti" es un puntaje: quitar un favorito o un contacto a media lista puede saltar tarjetas hasta el siguiente refresh → `explorar.md`
+- "Recomendados para ti" ordena TODO el alcance por puntaje en cada página (sin índice posible; 21 ms en "todo" con 80k) → `explorar.md`
+- Un favorito o contacto sobre una publicación ajena hoy oculta no da señal al ranking (efecto de ser INVOKER) → CLAUDE.md §3, "Intereses y recomendados"
 
 **Inventario de componentes reutilizables (`src/components/`) — no los
 reconstruyas.** El porqué de cada uno vive en la regla de su feature; lo que es
@@ -3216,7 +3427,8 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `Buttons` | `PrimaryButton`, `GhostButton`, `DangerButton` | Los tres botones; `PrimaryButton` tiene `busy` ≠ `disabled` |
 | `BuyerRow` | `BuyerRow`, `BuyerRowAvatarNeutro` | Fila de comprador con avatar y radio |
 | `CampusBottomSheet` | `CampusBottomSheet` | `Modal` de RN real — **no** es `SheetScreen` |
-| `CategoryTile` | `CategoryTile` | Tile de categoría con su tinte |
+| `CategoryTile` | `CategoryTile` | Tile de categoría con su tinte. `selected` opcional = `.cat-item.selected` (checkbox); sin la prop, navega como siempre |
+| `CategoriasSelector` | `CategoriasSelector`, `alternar` | Rejilla de 3 de selección múltiple ("Intereses" y "Editar intereses"). **No** unificar con "Ver todas": esa navega, esta elige |
 | `Chip` | `Chip` | Chip genérico |
 | `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" / "Confirmar eliminar cuenta". `children` es el único hueco (entre el cuerpo y los botones) y `confirmDisabled` apaga solo el confirm; sin hijos se ve igual que siempre |
 | `EmptyState` | `EmptyState` | Estado vacío, con `.empty-actions` opcional |
@@ -3738,6 +3950,21 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   negativo, con la misma disciplina que una policy de RLS — de otro modo
   apaga más de lo que dice apagar.
 
+- **Un `DELETE` (o `UPDATE`) con `WHERE` aplica TAMBIÉN la policy de SELECT a
+  las filas que filtra, así que una aserción de borrado "con filtro" no prueba
+  la policy de DELETE.** Medido con la policy de DELETE aflojada a
+  `using (true)` (T34 (c), 2026-09-27):
+  `delete from user_intereses where user_id = <ajeno>` → **`DELETE 0`**;
+  `delete from user_intereses` sin `where` → **`DELETE 2`**, las ajenas
+  incluidas. La de SELECT (`user_id = auth.uid()`) escondía las filas ajenas
+  del `WHERE`, así que la aserción pasaba por la policy equivocada. Es la
+  familia de "lo que no falla es lo que hay que mirar dos veces", ahora del
+  lado de las pruebas. **Cómo aplicarlo:** para probar SOLO la policy de
+  DELETE/UPDATE, la sentencia va sin `WHERE` sobre columnas (y sin
+  `RETURNING`), y la comprobación se hace después como `postgres`. Y cuando
+  una tabla tiene la misma condición en SELECT y DELETE, un control negativo
+  que afloje una sola de las dos no dice nada hasta que la aserción deje de
+  depender de la otra.
 - **`iat` NO prueba que el usuario escribió su contraseña hace poco; `amr` sí.**
   Medido contra GoTrue local (B0 de "Eliminar cuenta", 2026-09-26): un refresh
   de sesión emite un access token con `iat` NUEVO sin pedir nada, y conserva el

@@ -77,3 +77,22 @@ color pleno — bajarlo apagaría los puntos que comunican el avance.
   no hace lo que dice. **Fix:** una prop `actionLabel` con default `'Reintentar'`,
   o migrar ese guard a `EmptyState` como el de vendida — pero el copy del botón es
   persistente, así que el frame va primero (§0 regla 4).
+
+**`CategoryTile` ganó `selected` opcional (`20260930000475`)**, y es
+estrictamente aditivo:
+- Sin la prop, la tile se ve, se toca y se anuncia igual que siempre: el Feed y
+  "Ver todas" navegan.
+- Con la prop es una casilla: `accessibilityRole="checkbox"` y
+  `accessibilityState.checked`.
+- Seleccionada lleva fondo y borde `--ink` y ícono y texto `--paper`
+  (`.cat-item.selected`, el `active` de siempre del sistema).
+
+**`CategoriasSelector` (nuevo)** es la rejilla de 3 de selección múltiple de
+"Intereses" (onboarding) y "Editar intereses" (Cuenta). Es presentacional: el
+set y el `onToggle` son del dueño, y `alternar()` devuelve un `Set` nuevo sin
+mutar. **No se unifica con "Ver todas (categorías)"** aunque la geometría sea
+la misma (gap 10 y relleno de la última fila): esa pantalla navega y esta
+elige.
+
+**`AuthSub` ganó `style` opcional**, igual que `AuthHeadline`. Lo pide el
+frame "Intereses", que baja su `margin-bottom` a 20.

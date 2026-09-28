@@ -148,6 +148,16 @@ vez validado.
 - **RF-09** Catálogo/feed principal, ordenado por más reciente.
 - **RF-10** Búsqueda por texto (título/descripción).
 - **RF-11** Filtros por categoría, precio, condición y campus/zona.
+- **Recomendados para ti** (decisión de producto del 2026-09-27, sin RF
+  numerado en el documento original). El estado sin texto de Búsqueda ordena
+  el catálogo del alcance elegido por un puntaje por categoría, en SQL y sin
+  ML (RNF-09): primero las categorías que el usuario ELIGIÓ como intereses
+  (paso opcional del alta, editable en Perfil → "Mis intereses"), luego las de
+  las publicaciones que contactó por WhatsApp y luego las de sus favoritos,
+  estas dos de los últimos 90 días; dentro de cada una, lo más reciente. Sin
+  intereses ni señales es simplemente lo más reciente. Nunca muestra las
+  propias. No se guarda historial de búsquedas. El Feed no cambia. Ver
+  CLAUDE.md §3 ("Intereses y recomendados").
 
 ### Confianza y contacto
 - **RF-12** Calificación post-transacción entre comprador y vendedor

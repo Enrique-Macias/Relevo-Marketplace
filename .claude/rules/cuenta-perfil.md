@@ -1027,6 +1027,38 @@ flujo cambia:
 7. Borrar una cuenta SUSPENDIDA (suspenderla en Studio antes) e intentar
    registrar ese correo → la variante "correo bloqueado" de Verificación.
 
+**"Mis intereses" → "Editar intereses" (`20260930000475`),
+`(cuenta)/mis-intereses.tsx`.** Es la única entrada a los intereses fuera del
+onboarding: una fila nueva del menú de Perfil, entre "Mis publicaciones" y
+"Editar perfil" (el menú pasó a 6 filas). Lleva `IconStar` con `strokeWidth`
+1.8, porque el corazón ya es Favoritos. **No vive en Editar perfil**, a
+decisión del usuario: una sola puerta.
+
+- **Mismo patrón que "Editar perfil":** el formulario solo se monta con los
+  intereses REALES ya leídos (esqueleto mientras, `ErrorState` si falla). Por
+  eso "Guardar" se habilita comparando contra lo leído, nunca contra una
+  precarga vacía.
+- **Guardar sin ninguna elegida es válido.** Recomendados vuelve a lo más
+  reciente, y hacerlo no pide confirmación.
+- **`guardarIntereses()` parte de lo que hay HOY en la base, no de lo que la
+  pantalla cree.** Inserta con `ignoreDuplicates` (sin grant de UPDATE, un
+  upsert normal daría 42501) y borra lo que salió. Al final RE-LEE y compara:
+  un `delete` que la RLS filtra no lanza, y sin esa comprobación la pantalla
+  diría "Intereses guardados" sobre algo que no se escribió.
+- Al guardar, sube `interesesVersion` (`explorar-state.tsx`), y "Recomendados
+  para ti" se reinicia sola al volver a Búsqueda.
+- **Componentes:** la rejilla es `CategoriasSelector` (nuevo, compartido con el
+  paso del onboarding) sobre `CategoryTile` con su `selected` opcional
+  (`componentes-compartidos.md`).
+- **Pruebas manuales:**
+  - Perfil → "Mis intereses" abre con los guardados marcados;
+  - "Guardar" apagado sin cambios;
+  - quitar uno y agregar otro → toast "Intereses guardados", de vuelta en
+    Perfil, y Studio lo confirma;
+  - quitar todos y guardar → 0 filas, y Recomendados muestra lo más reciente;
+  - en modo avión → toast de error y la pantalla sigue abierta con la
+    selección.
+
 **Deuda consciente, cada una con disparador:**
 
 - **"Calificar la app"/"Compartir la app" ocultas hasta que la app esté

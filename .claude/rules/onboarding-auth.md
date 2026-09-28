@@ -171,6 +171,34 @@ explícita viven en CLAUDE.md §3. Lo de esta pantalla:
   error y deja "Continuar" apagado; "  Ana   Luz  " guarda como "Ana Luz"
   (verificar en Studio).
 
+**Paso "Intereses" (`20260930000475`), `(onboarding)/intereses.tsx`.** Es
+OPCIONAL y va entre "Completar perfil" y "Permiso de notificaciones":
+`completar-perfil.tsx` ahora hace `router.replace('/intereses')`, y el paso
+sigue a `/permiso-notificaciones` pase lo que pase. Qué hace y qué NO toca:
+
+- **No toca el gating.** `isProfileComplete` sigue siendo `nombre &&
+  campus_id` (`session.tsx`); los intereses no entran ahí.
+- **NO llama a `useRedirectSiPerfilCompleto()`**, por el mismo motivo que
+  "Permiso de notificaciones": al llegar aquí el perfil ya está completo, y el
+  guard lo expulsaría al Feed a media pantalla.
+- **Nada bloquea el alta:**
+  - "Omitir" no escribe nada;
+  - "Continuar" guarda con `guardarIntereses()` (`src/lib/intereses.ts`), y si
+    falla avisa con un toast ("…Puedes elegirlos desde tu perfil.") y sigue;
+  - si las categorías no cargaron, se ve el esqueleto y "Omitir" funciona.
+  - "Continuar" va deshabilitado sin ninguna elegida (variante del frame), para
+    que no haya dos botones que hagan lo mismo.
+- **Se ve una sola vez.** Si la app muere en este paso, al reabrir el splash
+  manda al Feed (el perfil ya está completo) y el paso se salta, igual que el
+  permiso. Es aceptado: se eligen después en Perfil → "Mis intereses".
+- **La ruta es `/intereses`**, así que la de Cuenta es `/mis-intereses`: los
+  grupos no entran en la URL y los dos chocarían.
+- **Pruebas manuales:**
+  - alta nueva → el paso aparece tras "Completar perfil";
+  - "Omitir" llega a Permiso y `user_intereses` queda vacía (Studio);
+  - elegir 2 y "Continuar" deja 2 filas;
+  - con la tile elegida, VoiceOver/TalkBack la anuncia como casilla marcada.
+
 - **Auth gating cableado end-to-end y confirmado con una cuenta real de Tec
   de Monterrey**: `SessionProvider` (`src/lib/session.tsx`) escucha
   `onAuthStateChange` y lee el perfil de `public.users`; el splash decide

@@ -284,6 +284,13 @@
     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
     overflow:hidden;
   }
+  /* Tile ELEGIDA (paso "Intereses" y "Editar intereses"): el `active` de
+     siempre del sistema —fondo --ink, texto --paper, igual que .chip.active y
+     .segment.active—, no un color nuevo. El trazo del ícono pasa a --paper en
+     el propio SVG. Se nombra .selected por consistencia con
+     .radio-circle.selected: es una elección, no un filtro activo. */
+  .cat-item.selected{background:var(--ink); border-color:var(--ink);}
+  .cat-item.selected .cat-label{color:var(--paper);}
 
   /* Product grid — uniform, responsive to any number/mix of items */
   .grid{
@@ -3945,6 +3952,14 @@
             <div class="menu-label">Mis publicaciones</div>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
           </div>
+          <!-- La única puerta a "Editar intereses" después del onboarding. La
+               estrella es IconStar tal cual (el corazón ya es Favoritos y los
+               sliders son Filtros). -->
+          <div class="menu-row">
+            <div class="menu-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></div>
+            <div class="menu-label">Mis intereses</div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
           <div class="menu-row">
             <div class="menu-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></div>
             <div class="menu-label">Editar perfil</div>
@@ -4445,8 +4460,17 @@
           </div>
         </div>
 
+        <!-- "Recomendados para ti": el orden lo da `recomendar_listings`
+             (20260930000475) — primero las categorías que el usuario eligió,
+             luego las de lo que contactó y guardó, y dentro de cada una lo más
+             reciente; nunca las propias. SIN texto que lo explique ni botón de
+             intereses aquí, a propósito (decisión de producto): debe sentirse
+             natural. Sin intereses ni señales, esto es simplemente lo más
+             reciente del alcance — nunca queda vacío por falta de intereses.
+             Los intereses se editan desde "Mis intereses" en Perfil.
+             El grid es scroll infinito: se pintan 4 tarjetas por espacio. -->
         <div class="section-head" style="padding-top:6px;">
-          <div class="section-title">Recomendado para ti</div>
+          <div class="section-title">Recomendados para ti</div>
         </div>
 
         <div class="grid">
@@ -5748,6 +5772,125 @@
   </div>
 
   <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Intereses</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <!-- Paso OPCIONAL entre "Completar perfil" y "Permiso de notificaciones",
+           que se ve UNA sola vez, en el alta; después, "Mis intereses" en Perfil.
+           No toca el gating: el perfil ya está completo (nombre + campus) al
+           llegar aquí, así que "Omitir" sigue adelante sin guardar nada.
+           Las tiles son las de "Ver todas (categorías)" —mismos íconos, mismo
+           orden, misma rejilla de 3— con un estado seleccionado nuevo,
+           `.cat-item.selected`, que es el `active` de siempre del sistema
+           (fondo --ink, texto --paper, como .chip.active y .segment.active).
+           Selección múltiple, sin tope. -->
+      <div class="screen">
+        <div class="auth-body" style="padding-bottom:150px;">
+          <div class="auth-headline" style="margin-bottom:6px;">¿Qué te interesa?</div>
+          <div class="auth-sub" style="margin-bottom:20px;">Elige las categorías que más buscas y te las mostramos primero. Puedes cambiarlas cuando quieras desde tu perfil.</div>
+          <div class="cat-grid" style="width:100%; padding:0; grid-template-columns:repeat(3, 1fr); gap:10px;">
+            <div class="cat-item selected">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              </div>
+              <div class="cat-label">Libros</div>
+            </div>
+            <div class="cat-item selected">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="1.6"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+              </div>
+              <div class="cat-label">Electrónica</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+              </div>
+              <div class="cat-label">Muebles</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg>
+              </div>
+              <div class="cat-label">Ropa</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><circle cx="12" cy="12" r="7"/><path d="M12 5v14M5 12h14" stroke-width="1"/></svg>
+              </div>
+              <div class="cat-label">Deportes</div>
+            </div>
+            <div class="cat-item selected">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+              </div>
+              <div class="cat-label">Apuntes</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
+              </div>
+              <div class="cat-label">Hogar</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+              </div>
+              <div class="cat-label">Papelería</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              </div>
+              <div class="cat-label">Instrumentos</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M12 21a9 9 0 110-18c4 0 7 2.5 7 5.5 0 2-1.5 3-3 3h-2a1.5 1.5 0 000 3h.5a1.5 1.5 0 010 3H12z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/></svg>
+              </div>
+              <div class="cat-label">Arte y manualidades</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M3 9a2 2 0 100 6 2 2 0 010 4h16a2 2 0 010-4 2 2 0 100-6 2 2 0 010-4H3a2 2 0 010 4z"/><path d="M9 4v16" stroke-dasharray="2 2"/></svg>
+              </div>
+              <div class="cat-label">Boletos y eventos</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+              </div>
+              <div class="cat-label">Otros</div>
+            </div>
+          </div>
+
+          <!-- Variante de ESTE botón, no una pantalla aparte: sin ninguna
+               categoría elegida, "Continuar" va deshabilitado y la única
+               salida es "Omitir" — así no hay dos botones que hagan lo mismo. -->
+          <div style="width:100%; margin-top:22px; padding-top:14px; border-top:1.5px dashed var(--line); text-align:left;">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): ninguna elegida
+            </div>
+            <button class="primary-btn disabled" style="margin-top:0;">Continuar</button>
+          </div>
+        </div>
+      </div>
+      <div class="sticky-cta stacked">
+        <button class="primary-btn" style="margin-top:0;">Continuar</button>
+        <div class="ghost-btn">Omitir</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
     <div class="phone-label">Permiso de notificaciones</div>
     <div class="device">
       <div class="notch"></div>
@@ -6029,6 +6172,110 @@
                 <div class="radio-circle"></div>
               </div>
               <div style="font-size:12.5px; color:var(--ink-soft); text-align:center; padding:20px 0 0;">Sin coincidencias se lee: No encontramos ese país.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Editar intereses</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <!-- Se abre desde la fila "Mis intereses" del menú de Perfil (su única
+           entrada fuera del onboarding).
+           Mismo grid y mismo `.cat-item.selected` que el paso "Intereses" del
+           onboarding. "Guardar" se habilita en cuanto cambia la selección;
+           guardar sin ninguna elegida es válido (vuelve a lo más reciente). -->
+      <div class="form-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="form-title">Intereses</div>
+        <span style="font-size:13px; font-weight:600; color:var(--brick);">Guardar</span>
+      </div>
+      <div class="screen">
+        <div class="form-body">
+          <div class="auth-sub" style="max-width:none; margin-bottom:18px;">Elige las categorías que más buscas.</div>
+          <div class="cat-grid" style="padding:0; grid-template-columns:repeat(3, 1fr); gap:10px;">
+            <div class="cat-item selected">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+              </div>
+              <div class="cat-label">Libros</div>
+            </div>
+            <div class="cat-item selected">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="1.6"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+              </div>
+              <div class="cat-label">Electrónica</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+              </div>
+              <div class="cat-label">Muebles</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg>
+              </div>
+              <div class="cat-label">Ropa</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><circle cx="12" cy="12" r="7"/><path d="M12 5v14M5 12h14" stroke-width="1"/></svg>
+              </div>
+              <div class="cat-label">Deportes</div>
+            </div>
+            <div class="cat-item selected">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+              </div>
+              <div class="cat-label">Apuntes</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
+              </div>
+              <div class="cat-label">Hogar</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+              </div>
+              <div class="cat-label">Papelería</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              </div>
+              <div class="cat-label">Instrumentos</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M12 21a9 9 0 110-18c4 0 7 2.5 7 5.5 0 2-1.5 3-3 3h-2a1.5 1.5 0 000 3h.5a1.5 1.5 0 010 3H12z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/></svg>
+              </div>
+              <div class="cat-label">Arte y manualidades</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><path d="M3 9a2 2 0 100 6 2 2 0 010 4h16a2 2 0 010-4 2 2 0 100-6 2 2 0 010-4H3a2 2 0 010 4z"/><path d="M9 4v16" stroke-dasharray="2 2"/></svg>
+              </div>
+              <div class="cat-label">Boletos y eventos</div>
+            </div>
+            <div class="cat-item">
+              <div class="cat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.6"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+              </div>
+              <div class="cat-label">Otros</div>
             </div>
           </div>
         </div>

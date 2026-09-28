@@ -4123,6 +4123,368 @@ select pg_temp.assert(
   '(k2) el hook rechaza el correo bloqueado (mayúsculas/espacios incluidos) y acepta otro del dominio');
 
 \echo ''
+\echo '== T34 — intereses del usuario y recomendar_listings =='
+-- 20260930000475. Autocontenida: su propia universidad (dominio `rls-t34.mx`)
+-- con DOS campus, sus propios usuarios y sus propias publicaciones. Como
+-- universidad AJENA usa la de `tec.mx`, que siembra seed.sql.
+--
+--   :A34 — el que recibe recomendaciones. Interés explícito en c1, contactó una
+--          de c2, guardó una de c3 y guardó una de c4 hace 100 días (fuera de
+--          la ventana). Publica UNA propia (c1, la más nueva) que nunca debe
+--          verse en SUS recomendados.
+--   :B34 — vendedor en la misma universidad. Tiene su propio interés (c2), y
+--          publicaciones pausada/pendiente/bloqueada de c1 que, si se vieran,
+--          saldrían primero.
+--   :N34 — cold start: ninguna señal.
+--   :X34 — vendedor de OTRA universidad (tec.mx), para el alcance "todo".
+--
+-- Los fixtures se insertan en un orden en que `id` y `created_at` NO
+-- coinciden: si coincidieran, (f) y (h) no distinguirían "ordena por recencia"
+-- de "ordena por id". Las acciones corren como `authenticated` (la RLS es
+-- parte de lo que se prueba) y cada comprobación va en su propia sentencia.
+--
+-- CONTROLES NEGATIVOS, uno a la vez contra la suite completa: ver la tabla de
+-- CLAUDE.md §3 ("Y a N con las de T34").
+
+\set A34 '''34343434-0000-0000-0000-0000000034a0'''
+\set B34 '''34343434-0000-0000-0000-0000000034b0'''
+\set N34 '''34343434-0000-0000-0000-0000000034c0'''
+\set X34 '''34343434-0000-0000-0000-0000000034d0'''
+
+insert into public.universidades (nombre) values ('RLS T34 Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t34.mx', id from public.universidades where nombre = 'RLS T34 Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, c, 'Ciudad T34'
+from public.universidades, unnest(array['RLS T34 Campus A', 'RLS T34 Campus B']) as c
+where nombre = 'RLS T34 Universidad';
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:A34, 'rls-t34-a@rls-t34.mx'), (:B34, 'rls-t34-b@rls-t34.mx'),
+               (:N34, 'rls-t34-n@rls-t34.mx'), (:X34, 'rls-t34-x@tec.mx')) as x(u, e);
+
+create temp table t34 as
+select
+  (select id from public.universidades where nombre = 'RLS T34 Universidad') as uni,
+  (select id from public.campus where nombre = 'RLS T34 Campus A') as campus_a,
+  (select id from public.campus where nombre = 'RLS T34 Campus B') as campus_b,
+  (select min(c.id) from public.campus c
+    join public.universidad_dominios d on d.universidad_id = c.universidad_id
+   where d.dominio = 'tec.mx') as campus_ajeno,
+  (select id from public.categories order by id limit 1 offset 0) as c1,
+  (select id from public.categories order by id limit 1 offset 1) as c2,
+  (select id from public.categories order by id limit 1 offset 2) as c3,
+  (select id from public.categories order by id limit 1 offset 3) as c4,
+  (select id from public.categories order by id limit 1 offset 4) as c5;
+grant select on t34 to authenticated;
+
+update public.users u
+   set campus_id = case when u.id = :X34::uuid then t.campus_ajeno else t.campus_a end
+  from t34 t
+ where u.id in (:A34::uuid, :B34::uuid, :N34::uuid, :X34::uuid);
+
+-- Como postgres: la policy de insert obliga a `pendiente`, y aquí hacen falta
+-- `activa`/`pausada`/`bloqueada` y fechas fijas. El `order by v.n` fija el
+-- orden de los ids (sin él, el join con `users` los reordena: medido, T1-T3
+-- salieron al revés): X es la MÁS VIEJA pero la de menor id, y T1-T3
+-- comparten `created_at` para que solo el `id` las desempate.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, descripcion, precio, condicion, estado, created_at)
+select v.dueno::uuid,
+       case v.cat when 1 then t.c1 when 2 then t.c2 when 3 then t.c3 when 4 then t.c4 else t.c5 end,
+       u.universidad_id,
+       case v.lugar when 'a' then t.campus_a when 'b' then t.campus_b else t.campus_ajeno end,
+       v.titulo, 'T34', 100, 'usado', v.estado::public.listing_status,
+       now() - v.edad
+  from t34 t,
+       (values
+         ( 1, :B34, 1, 'a', 'RLS T34 X',          'activa',    interval '30 days'),
+         ( 2, :B34, 2, 'a', 'RLS T34 Y',          'activa',    interval '1 day'),
+         ( 3, :B34, 3, 'a', 'RLS T34 Z',          'activa',    interval '2 hours'),
+         ( 4, :B34, 4, 'a', 'RLS T34 W',          'activa',    interval '1 minute'),
+         ( 5, :B34, 4, 'a', 'RLS T34 T1',         'activa',    interval '10 days'),
+         ( 6, :B34, 4, 'a', 'RLS T34 T2',         'activa',    interval '10 days'),
+         ( 7, :B34, 4, 'a', 'RLS T34 T3',         'activa',    interval '10 days'),
+         ( 8, :B34, 1, 'a', 'RLS T34 pausada',    'pausada',   interval '1 second'),
+         ( 9, :B34, 1, 'a', 'RLS T34 pendiente',  'pendiente', interval '1 second'),
+         (10, :B34, 1, 'a', 'RLS T34 bloqueada',  'bloqueada', interval '1 second'),
+         (11, :B34, 1, 'b', 'RLS T34 campus B',   'activa',    interval '1 second'),
+         (12, :X34, 1, 'x', 'RLS T34 ajena',      'activa',    interval '1 second'),
+         (13, :A34, 1, 'a', 'RLS T34 propia',     'activa',    interval '0 seconds'),
+         (14, :B34, 5, 'a', 'RLS T34 V',          'activa',    interval '20 days'),
+         (15, :B34, 5, 'a', 'RLS T34 pausada 2',  'pausada',   interval '1 second'),
+         (16, :B34, 1, 'a', 'RLS T34 vendida',    'vendida',   interval '1 second'))
+         as v(n, dueno, cat, lugar, titulo, estado, edad)
+  join public.users u on u.id = v.dueno::uuid
+ order by v.n;
+
+-- Señales de :A34 (y un interés de :B34 para (a)-(c)).
+insert into public.user_intereses (user_id, categoria_id)
+select :A34::uuid, c1 from t34
+union all select :B34::uuid, c2 from t34;
+insert into public.listing_contacts (user_id, listing_id)
+select :A34::uuid, id from public.listings where titulo = 'RLS T34 Y';
+insert into public.favorites (user_id, listing_id, created_at)
+select :A34::uuid, id, now() from public.listings where titulo = 'RLS T34 Z'
+union all
+select :A34::uuid, id, now() - interval '100 days' from public.listings where titulo = 'RLS T34 W'
+union all
+-- Un favorito RECIENTE sobre una pausada ajena de c5: por ser INVOKER, la
+-- categoría de esa señal no se ve y c5 queda en 0 — lo prueba (d3).
+select :A34::uuid, id, now() from public.listings where titulo = 'RLS T34 pausada 2';
+
+select pg_temp.assert(
+  (select count(*) from public.listings where titulo like 'RLS T34 %') = 16
+  and (select c1 is not null and c5 is not null and campus_a is not null
+              and campus_b is not null and campus_ajeno is not null from t34)
+  and (select count(*) from public.users
+        where id in (:A34::uuid, :B34::uuid, :N34::uuid)
+          and universidad_id = (select uni from t34)) = 3
+  and (select array_agg(titulo order by id) from public.listings
+        where titulo in ('RLS T34 X', 'RLS T34 T1', 'RLS T34 T2', 'RLS T34 T3'))
+      = array['RLS T34 X', 'RLS T34 T1', 'RLS T34 T2', 'RLS T34 T3'],
+  'T34: fixtures completos (16 publicaciones, 5 categorías, 3 campus, universidad asignada, ids en orden)');
+
+-- Lo que devuelve la función para `p_uid`, como una lista de títulos, EN EL
+-- ORDEN EN QUE LA FUNCIÓN LOS EMITE (`with ordinality`), no en uno propio: la
+-- primera versión reordenaba con su `string_agg(... order by puntaje, ...)` y
+-- así (e2)/(f) solo probaban los puntajes, no el ORDER BY de la función
+-- (medido: quitarle `created_at` al orden no lo cazaba ninguna de las dos).
+-- El join con `listings` corre como authenticated; una fila que la función
+-- devuelva y la RLS esconda sale como "RLS T34 OCULTA" en vez de perderse.
+-- p_alcance: 'a' = campus A, 'u' = la universidad T34, 't' = todo.
+create or replace function pg_temp.t34(p_uid uuid, p_alcance text, p_limit int default 50)
+returns text language sql as $$
+  select pg_temp.as_user_text(p_uid, format(
+    'select string_agg(coalesce(l.titulo, ''RLS T34 OCULTA''), '','' order by r.ord)
+       from public.recomendar_listings(p_campus_id => %s, p_universidad_id => %s, p_limit => %s)
+            with ordinality as r(id, puntaje, created_at, ord)
+       left join public.listings l on l.id = r.id
+      where coalesce(l.titulo, ''RLS T34 OCULTA'') like ''RLS T34 %%''',
+    case when p_alcance = 'a' then (select campus_a from t34)::text else 'null' end,
+    case when p_alcance = 'u' then (select uni from t34)::text else 'null' end,
+    p_limit))
+$$;
+
+-- Los ids de las cuatro ocultas de B, leídos como postgres: (d) los cuenta en la
+-- salida CRUDA de la función, sin pasar por un join con `listings` que la RLS
+-- filtraría por su cuenta (medido: con la función como DEFINER, la versión
+-- que miraba títulos seguía en verde por ese join).
+create temp table t34_ocultas as
+select id from public.listings
+ where titulo in ('RLS T34 pausada', 'RLS T34 pendiente', 'RLS T34 bloqueada', 'RLS T34 pausada 2');
+grant select on t34_ocultas to authenticated;
+
+-- Recorre TODAS las páginas de tamaño p_tam con el cursor de la última fila,
+-- como lo hará el cliente, y devuelve los títulos en el orden recibido.
+create or replace function pg_temp.t34_paginado(p_uid uuid, p_tam int)
+returns text language plpgsql as $$
+declare
+  v_p int; v_c timestamptz; v_i bigint;
+  v_out text := ''; v_n int; r record; v_vueltas int := 0;
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
+  loop
+    v_n := 0;
+    for r in
+      select x.id, x.puntaje, x.created_at, l.titulo
+        from public.recomendar_listings((select campus_a from t34), null,
+                                        v_p, v_c, v_i, p_tam) with ordinality as x(id, puntaje, created_at, ord)
+        join public.listings l on l.id = x.id
+       order by x.ord
+    loop
+      v_n := v_n + 1;
+      v_out := v_out || r.titulo || ',';
+      v_p := r.puntaje; v_c := r.created_at; v_i := r.id;
+    end loop;
+    v_vueltas := v_vueltas + 1;
+    exit when v_n < p_tam or v_vueltas > 50;
+  end loop;
+  perform set_config('role', 'postgres', true);
+  return rtrim(v_out, ',');
+end $$;
+
+-- (a)-(c2) user_intereses: cada quien ve y edita SOLO las suyas.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A34::uuid, 'select count(*) from public.user_intereses') = 1
+  and pg_temp.as_user_int(:A34::uuid, format(
+        'select count(*) from public.user_intereses where user_id = %L', :B34)) = 0,
+  '(a) A lee su interés y NO lee los de B');
+
+select pg_temp.assert(
+  pg_temp.rechazo_de(:A34::uuid, format(
+    'insert into public.user_intereses (user_id, categoria_id) values (%L, %s)',
+    :B34, (select c3 from t34))) = '42501',
+  '(b) A no inserta un interés a nombre de B (42501)');
+
+select pg_temp.assert(
+  pg_temp.rechazo_de(:A34::uuid, format(
+    'insert into public.user_intereses (user_id, categoria_id) values (%L, %s)',
+    :A34, (select c3 from t34))) = 'ok',
+  '(b2) A SÍ inserta uno propio (control: el rechazo de (b) es por el dueño)');
+-- Se deshace (b2) para no mover el puntaje de c3 en (e2).
+delete from public.user_intereses where user_id = :A34::uuid and categoria_id = (select c3 from t34);
+
+-- (c) El DELETE va SIN `where`, a propósito: con un `where user_id = B`
+-- Postgres aplica también la policy de SELECT a las filas que filtra, así que
+-- afectaría 0 filas aunque la de DELETE fuera `using (true)` — medido, la
+-- aserción pasaba por la policy equivocada. Sin `where` solo decide la de
+-- DELETE. Borra también la fila propia de A, que se restaura enseguida.
+select pg_temp.as_user(:A34::uuid, 'delete from public.user_intereses');
+select pg_temp.assert(
+  (select count(*) from public.user_intereses where user_id = :B34::uuid) = 1
+  and (select count(*) from public.user_intereses where user_id = :A34::uuid) = 0,
+  '(c) un DELETE sin filtro de A borra solo lo suyo: los intereses de B siguen');
+insert into public.user_intereses (user_id, categoria_id) select :A34::uuid, c1 from t34;
+
+select pg_temp.assert(
+  not has_table_privilege('authenticated', 'public.user_intereses', 'update')
+  and not exists (select 1 from information_schema.table_privileges
+                   where table_schema = 'public' and table_name = 'user_intereses'
+                     and grantee = 'anon')
+  and not exists (select 1 from information_schema.column_privileges
+                   where table_schema = 'public' and table_name = 'user_intereses'
+                     and (grantee = 'anon'
+                          or (grantee = 'authenticated' and privilege_type = 'UPDATE'))),
+  '(c2) sin UPDATE para authenticated y sin un solo privilegio para anon');
+
+-- (i) Alcance. Va PRIMERO entre las de la función: todas las demás leen
+-- `p_limit => 50` del campus A, y sin el filtro de alcance ese corte se
+-- llena con publicaciones de toda la suite (medido: (d3) leía NULL porque V
+-- quedaba fuera del corte, y la variante caía ahí en vez de aquí).
+select pg_temp.assert(
+  position('campus B' in pg_temp.t34(:A34::uuid, 'a')) = 0
+  and position('ajena' in pg_temp.t34(:A34::uuid, 'a')) = 0,
+  '(i1) campus: ni el otro campus ni la otra universidad');
+select pg_temp.assert(
+  position('campus B' in pg_temp.t34(:A34::uuid, 'u')) > 0
+  and position('ajena' in pg_temp.t34(:A34::uuid, 'u')) = 0,
+  '(i2) universidad: incluye su otro campus, no la otra universidad');
+select pg_temp.assert(
+  position('campus B' in pg_temp.t34(:A34::uuid, 't')) > 0
+  and position('ajena' in pg_temp.t34(:A34::uuid, 't')) > 0,
+  '(i3) todo: incluye la otra universidad');
+
+-- ORDEN DE LAS ASERCIONES, a propósito: las de presencia ((d), (g)) y
+-- las de un solo puntaje ((e), (e3)) van ANTES de las de orden completo
+-- ((f), (e2), (h)). La propia, la del campus B y la de la otra universidad
+-- son de c1 y más nuevas que X, así que una variante que las dejara pasar
+-- tumbaría primero a (e) y la aserción con su nombre nunca llegaría a correr.
+
+-- (d) La RLS aplica DENTRO de la función (SECURITY INVOKER): las pausada,
+-- pendiente y bloqueada de B son de c1 y las más nuevas, así que visibles
+-- saldrían primero. (d2) es el control: son SUS filas y su dueño sí las lee
+-- desde `listings`, así que (d) no pasa porque no existan.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A34::uuid, format(
+    'select count(*) from public.recomendar_listings(p_campus_id => %s)
+      where id in (select id from t34_ocultas)', (select campus_a from t34))) = 0
+  and (select count(*) from t34_ocultas) = 4,
+  '(d) no devuelve pausadas, pendientes ni bloqueadas ajenas');
+select pg_temp.assert(
+  pg_temp.as_user_int(:B34::uuid,
+    'select count(*) from public.listings where id in (select id from t34_ocultas)') = 4,
+  '(d2) control: su dueño sí las ve en listings');
+
+-- (d) tiene DOS candados sobre esas filas —el `estado = 'activa'` de la
+-- función y la RLS— y ninguna variante de una sola pieza la tumba (medido:
+-- con la función como DEFINER sigue en verde). Lo que distingue a un DEFINER
+-- en su comportamiento es otra cosa, y la prueba (d3): leería las SEÑALES de
+-- publicaciones que la RLS le esconde. A guardó hace un momento la pausada de
+-- c5; invoker no ve esa publicación, así que c5 (la de V) sigue en 0.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A34::uuid, format(
+    'select r.puntaje from public.recomendar_listings(p_campus_id => %s) r
+       join public.listings l on l.id = r.id where l.titulo = ''RLS T34 V''',
+    (select campus_a from t34))) = 0,
+  '(d3) un favorito sobre una publicación ajena oculta no da señal (INVOKER)');
+
+-- (d4) Las VENDIDAS son públicas por RLS (el campus entero las ve), así que
+-- ahí el ÚNICO candado es el `estado = 'activa'` de la función. La segunda
+-- mitad es el control: A sí la lee en `listings`.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A34::uuid, format(
+    'select count(*) from public.recomendar_listings(p_campus_id => %s) r
+       join public.listings l on l.id = r.id where l.titulo = ''RLS T34 vendida''',
+    (select campus_a from t34))) = 0
+  and pg_temp.as_user_int(:A34::uuid,
+    'select count(*) from public.listings where titulo = ''RLS T34 vendida''') = 1,
+  '(d4) no devuelve vendidas, que sí son visibles en listings');
+
+-- (g) Las propias nunca aparecen, en ningún alcance. (g2) es el control: la
+-- misma publicación SÍ le aparece a otro usuario.
+select pg_temp.assert(
+  position('propia' in coalesce(pg_temp.t34(:A34::uuid, 'a'), '')) = 0
+  and position('propia' in coalesce(pg_temp.t34(:A34::uuid, 't'), '')) = 0,
+  '(g) las publicaciones propias no aparecen');
+select pg_temp.assert(
+  position('propia' in pg_temp.t34(:N34::uuid, 'a')) > 0,
+  '(g2) control: la misma publicación sí le aparece a otro usuario');
+
+-- (e) Con interés en c1, X (c1) sale PRIMERO aunque sea la más vieja. Con
+-- p_limit = 1 lo decide el ORDER BY + LIMIT de la función.
+select pg_temp.assert(pg_temp.t34(:A34::uuid, 'a', 1) = 'RLS T34 X',
+  '(e) con interés explícito en X, la de X sale primero aunque sea la más vieja');
+
+-- (e3) El favorito de W tiene 100 días: fuera de la ventana, c4 vale 0.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A34::uuid, format(
+    'select r.puntaje from public.recomendar_listings(p_campus_id => %s) r
+       join public.listings l on l.id = r.id where l.titulo = ''RLS T34 W''',
+    (select campus_a from t34))) = 0,
+  '(e3) una señal de hace 100 días no cuenta (ventana de 90)');
+
+-- (f) Cold start: sin señales, puntaje 0 y el orden es recencia
+-- (created_at, id) desc. Por id sería V,T3,T2,T1,W,Z,Y,X; por recencia es otro.
+select pg_temp.assert(
+  pg_temp.t34(:N34::uuid, 'a') = 'RLS T34 propia,RLS T34 W,RLS T34 Z,RLS T34 Y,RLS T34 T3,RLS T34 T2,RLS T34 T1,RLS T34 V,RLS T34 X'
+  and pg_temp.as_user_int(:N34::uuid, format(
+        'select max(puntaje) from public.recomendar_listings(p_campus_id => %s)',
+        (select campus_a from t34))) = 0,
+  '(f) sin señales, puntaje 0 y orden por recencia');
+
+-- (e2) El orden COMPLETO con señales: X (interés), Y (contacto) antes que Z
+-- (favorito) aunque Z sea más nueva, y luego W y T1-T3 (puntaje 0) por
+-- recencia, con T1-T3 desempatadas por id.
+select pg_temp.assert(
+  pg_temp.t34(:A34::uuid, 'a') = 'RLS T34 X,RLS T34 Y,RLS T34 Z,RLS T34 W,RLS T34 T3,RLS T34 T2,RLS T34 T1,RLS T34 V',
+  '(e2) orden: interés > contacto > favorito > sin señal, y recencia/id dentro de cada puntaje');
+
+-- (h) Keyset: recorrer páginas de 2 da exactamente la lista completa, sin
+-- duplicados ni saltos. T1-T3 empatan en (puntaje, created_at) y solo el `id`
+-- las ordena: es lo que caza un cursor sin `id`.
+select pg_temp.assert(
+  pg_temp.t34_paginado(:A34::uuid, 2) = pg_temp.t34(:A34::uuid, 'a'),
+  '(h) paginar de 2 en 2 con cursor reproduce la lista completa');
+
+-- (j) Invariantes de la función. `proconfig is null` no es cosmético: una
+-- cláusula SET impide el inlining (ver la migración).
+select pg_temp.assert(
+  (select not prosecdef and provolatile = 's' and proconfig is null
+     from pg_proc
+    where oid = 'public.recomendar_listings(bigint, bigint, integer, timestamptz, bigint, integer)'::regprocedure),
+  '(j1) recomendar_listings es INVOKER, STABLE y sin SET');
+select pg_temp.assert(
+  has_function_privilege('authenticated',
+    'public.recomendar_listings(bigint, bigint, integer, timestamptz, bigint, integer)', 'execute')
+  and not has_function_privilege('anon',
+    'public.recomendar_listings(bigint, bigint, integer, timestamptz, bigint, integer)', 'execute'),
+  '(j2) EXECUTE solo para authenticated');
+
+-- (k) Borrar la cuenta borra sus intereses (cascade desde auth.users).
+select count(*) as t34_intereses_antes from public.user_intereses where user_id = :A34::uuid \gset
+delete from auth.users where id = :A34::uuid;
+select pg_temp.assert(
+  :t34_intereses_antes = 1
+  and (select count(*) from public.user_intereses where user_id = :A34::uuid) = 0,
+  '(k) borrar la cuenta borra sus intereses');
+
+\echo ''
 \echo '==========================================='
 \echo '   TODAS LAS PRUEBAS PASARON'
 \echo '==========================================='

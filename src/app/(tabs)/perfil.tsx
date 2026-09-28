@@ -409,6 +409,14 @@ export default function PerfilScreen() {
                 label="Mis publicaciones"
                 onPress={() => router.push('/mis-publicaciones')}
               />
+              {/* La única entrada a "Editar intereses" fuera del onboarding
+                  (20260930000475). Estrella y no corazón: el corazón es
+                  Favoritos. `strokeWidth` 1.8 = el de los íconos del menú. */}
+              <MenuRow
+                icon={<IconStar size={16} color={Colors.inkSoft} strokeWidth={1.8} />}
+                label="Mis intereses"
+                onPress={() => router.push('/mis-intereses')}
+              />
               <MenuRow
                 icon={<IconPencil size={16} color={Colors.inkSoft} />}
                 label="Editar perfil"

@@ -720,6 +720,120 @@ migración en remoto (§8, pendiente 0e):
   **Cómo:** re-correr la medición de la tabla de arriba y ver si algún prefijo
   de 3 letras que no sea de una familia legítima casa con más del 10 %.
 
+## "Recomendados para ti" (`20260930000475`)
+
+**Qué cambió.** El estado recomendados de Búsqueda (sin texto ni filtros) ya
+no es "las 4 más recientes": es un ranking personalizado con scroll infinito.
+El Feed no cambia. La base (tabla, función, pesos y su porqué, costos) está en
+CLAUDE.md §3, "Intereses y recomendados". Aquí va lo del cliente.
+
+- **Es un modo de `fetchListings()`, no un hook aparte.** Con
+  `recomendados: { interesesVersion }` en los params, `fetchListings()` delega
+  en `fetchRecomendados()` (`src/lib/listings.ts`) y el resto se hereda sin
+  tocarlo: el reseteo por alcance, `refrescar()` (pull-to-refresh) y los
+  guards `keyRef`/`version` de `useListings`. El cursor ganó una tercera forma,
+  `{ tipo: 'recomendados', puntaje, createdAt, id }`, y las pantallas lo siguen
+  pasando sin mirarlo.
+- **Dos requests por página**, porque el puntaje no es columna de `listings`:
+  1. `rpc('recomendar_listings', args, { get: true })` más un `.order()`
+     explícito por `(puntaje, created_at, id)` desc. El ORDER BY + LIMIT de la
+     función decide QUÉ filas entran; este `.order()` GARANTIZA en qué orden
+     llegan.
+  2. `from('listings').select(SELECT_CARD).in('id', ids)`, con la misma portada
+     acotada que el resto del catálogo, pintado en el orden del paso 1.
+- **`hayMas` sale del paso 1.** Una publicación que se pausa entre los dos
+  requests no se pinta y la lista no se da por terminada.
+- **Los parámetros que no aplican se OMITEN**, no se mandan en `null`: con
+  `get: true` viajan en la URL, y `p_campus_id=null` llegaría como el texto
+  "null".
+- **`loadMore()` deduplica por id** al anexar (en todos los modos; en los otros
+  no filtra nada). En este modo el cursor es un puntaje: si el usuario da un
+  favorito a media lista, una tarjeta ya pintada puede volver a la página
+  siguiente.
+- **`interesesVersion`** (`explorar-state.tsx`) sube al guardar intereses. Está
+  en la `key` de `useListings`, así que Búsqueda, que es un tab que no se
+  desmonta, reinicia la lista con el ranking nuevo al volver de "Editar
+  intereses". Dar un favorito NO reinicia: se ve en el siguiente pull o
+  reinicio.
+- **Sin texto que explique el orden, sin botón de intereses y sin estado
+  especial de cold start**, a decisión del usuario (frame "Búsqueda
+  (recomendados)"): debe sentirse natural. Sin intereses ni señales, la lista
+  es lo más reciente del alcance. Los intereses se editan desde Perfil → "Mis
+  intereses".
+
+**Medido por HTTP como authenticated**, con el mismo supabase-js 2.115.0, la
+cuenta `vol-yo@tec.mx` y `supabase/seeds-local/volumen.sql`, réplica exacta de
+`fetchRecomendados()`:
+- 3 alcances × páginas 1 y 2: **200 en los 4 requests de cada alcance, sin
+  PGRST201**;
+- 20 + 20 filas con 40 ids distintos, el orden `(puntaje, created_at, id)`
+  sostenido a través del cursor, y las 20 tarjetas del paso 2 en el orden del
+  paso 1;
+- 0 fuera del alcance;
+- escribir los intereses propios da 201 y 204, y un insert repetido no truena.
+  Un insert a nombre de otro, o un UPDATE, dan `403 42501`.
+
+**Alcance honesto de esa medición:**
+- las dos páginas cayeron en puntaje 4 (el seed tiene miles de publicaciones de
+  las categorías de interés), así que el cruce de un puntaje a otro a través
+  del cursor lo prueba T34 (h) en SQL, no esta corrida;
+- `vol-yo` no publica, así que "0 propias" ahí es trivial: lo prueba T34 (g).
+
+**`supabase/seeds-local/volumen.sql`** es el seed de VOLUMEN (80 000 activas,
+4 000 pausadas y 3 alcances) con el que se miden los planes. Nació aquí porque
+la cifra de "80 000 filas" de la búsqueda nunca llegó al repo. Mismas reglas
+que `multiuniversidad.sql`: fuera de `sql_paths`, se corre DESPUÉS de la suite
+de RLS, es idempotente y se borra con `supabase db reset`.
+
+**Pruebas manuales pendientes** (dispositivo, CLAUDE.md §6). Requieren la
+migración en remoto (§8, pendiente 0j):
+1. Con 2 intereses elegidos, "Recomendados para ti" muestra primero sus
+   categorías, aunque haya algo más nuevo de otra.
+2. Contactar por WhatsApp o dar favorito en una categoría sin interés: tras un
+   pull-to-refresh, esa categoría sube, por debajo de las elegidas.
+3. Sin intereses ni señales (cuenta nueva que omitió el paso): se ve lo más
+   reciente del alcance, nunca vacío (salvo el alcance sin publicaciones).
+4. Scroll infinito: sin tarjetas duplicadas y sin cortes; el pull-to-refresh
+   funciona.
+5. Cambiar de alcance reinicia la lista, y las propias nunca aparecen.
+6. Guardar intereses en Perfil → "Mis intereses" y volver a Búsqueda: la lista
+   ya está reordenada, sin tocar nada.
+
+**Deudas nuevas, cada una con disparador:**
+
+- **No se guarda historial de búsquedas** (decisión explícita al construir
+  esto): el ranking solo usa intereses, contactos y favoritos.
+  **Revisar cuando:** usuarios reporten que "Recomendados" no refleja lo que
+  buscan, o haya más de ~1 000 activas por campus (ahí las tres señales de hoy
+  quedan cortas para distinguir).
+  **Fix:** una tabla de consultas propia (`user_id`, término normalizado,
+  `created_at`) con RLS de dueño, retención acotada (90 días, la misma
+  ventana) y su línea en el aviso de privacidad. El término se mapearía a
+  categorías por las publicaciones que casa, en SQL, como una cuarta señal.
+- **El cursor de recomendados es un puntaje, y el puntaje puede cambiar a media
+  lista.** Dar un favorito lo cubre el dedupe. Quitar un favorito o un contacto
+  a media sesión baja el puntaje de una categoría, y sus tarjetas que todavía no
+  se pintaban quedan "detrás" del cursor: se saltan hasta el siguiente pull o
+  cambio de alcance.
+  **Revisar cuando:** alguien reporte que "faltaba" algo en Recomendados y
+  apareció al refrescar.
+  **Fix:** congelar las señales de la sesión de scroll (un `p_hasta
+  timestamptz` para las altas, y los pesos de la página 1 pasados como
+  parámetro para las bajas).
+- **Cada página ordena el alcance ENTERO por puntaje.** Medido: 5.6 / 15.1 /
+  21.2 ms (campus / universidad / todo, con 80k), y la página 2 cuesta igual.
+  **Ningún índice sirve ese orden**, porque el puntaje sale de un join, y los
+  índices que propone la deuda de "Alcance del catálogo" (arriba) ordenan por
+  `created_at`, así que NO lo abaratan.
+  **Revisar cuando:** el alcance "todo" pase de ~50 ms como `authenticated`
+  (`explain analyze` con el rol impreso, CLAUDE.md §9), o haya más de ~300 000
+  activas.
+  **Fix:** reescribir la función por NIVELES de puntaje (a lo más 8 niveles,
+  porque es binario), con un `LATERAL` por categoría sobre un índice
+  `(campus_id, categoria_id, created_at desc, id desc) where estado = 'activa'`,
+  para leer solo ~20 filas por nivel en vez del alcance entero. Es un cambio de
+  función más un índice, no solo un índice.
+
 ## Datos de prueba en remoto — BORRAR antes de usuarios reales
 
 Sembrados el 2026-09-23 por `execute_sql`, para probar a mano la fase 2B en

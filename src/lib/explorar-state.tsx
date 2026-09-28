@@ -119,6 +119,15 @@ type ExplorarState = {
   limpiarFiltros: () => void;
   favoritos: Set<number>;
   toggleFavorito: (id: number) => void;
+  /**
+   * Sube cada vez que se guardan los intereses. "Recomendados para ti" la mete
+   * en los params de `useListings`, así que cambiarla reinicia la lista desde
+   * la página 1 con el ranking nuevo. Búsqueda es un tab que no se desmonta
+   * (`explorar.md`), así que sin esto seguiría mostrando el orden viejo al
+   * volver de "Editar intereses".
+   */
+  interesesVersion: number;
+  interesesCambiaron: () => void;
 };
 
 const Ctx = createContext<ExplorarState | null>(null);
@@ -138,6 +147,8 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
   const [categoriasListas, setCategoriasListas] = useState(false);
   const [filtros, setFiltrosState] = useState<Filtros>(FILTROS_VACIOS);
   const [favoritos, setFavoritos] = useState<Set<number>>(new Set());
+  const [interesesVersion, setInteresesVersion] = useState(0);
+  const interesesCambiaron = useCallback(() => setInteresesVersion((v) => v + 1), []);
   // De quién es el Set que tenemos. Al cambiar de cuenta, esto es lo que evita
   // pintar los corazones del usuario anterior mientras carga el nuevo — sin
   // tener que limpiarlo con un setState sincrónico dentro del efecto.
@@ -335,6 +346,8 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
       limpiarFiltros,
       favoritos: favoritosVigentes,
       toggleFavorito,
+      interesesVersion,
+      interesesCambiaron,
     }),
     [
       alcance,
@@ -348,6 +361,8 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
       limpiarFiltros,
       favoritosVigentes,
       toggleFavorito,
+      interesesVersion,
+      interesesCambiaron,
     ]
   );
 

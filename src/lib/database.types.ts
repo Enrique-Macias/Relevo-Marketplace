@@ -633,6 +633,39 @@ export type Database = {
         }
         Relationships: []
       }
+      user_intereses: {
+        Row: {
+          categoria_id: number
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          categoria_id: number
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          categoria_id?: number
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_intereses_categoria_id_fkey"
+            columns: ["categoria_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_intereses_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           campus_id: number | null
@@ -732,6 +765,21 @@ export type Database = {
       listing_favorites_count: {
         Args: { p_listing_id: number }
         Returns: number
+      }
+      recomendar_listings: {
+        Args: {
+          p_campus_id?: number
+          p_cursor_created_at?: string
+          p_cursor_id?: number
+          p_cursor_puntaje?: number
+          p_limit?: number
+          p_universidad_id?: number
+        }
+        Returns: {
+          created_at: string
+          id: number
+          puntaje: number
+        }[]
       }
       seller_whatsapp: { Args: { p_user_id: string }; Returns: string }
     }

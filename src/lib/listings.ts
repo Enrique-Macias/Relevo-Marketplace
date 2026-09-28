@@ -186,7 +186,9 @@ export type MiListing = ListingCard & {
  */
 export type ListingsCursor =
   | { tipo: 'keyset'; createdAt: string; id: number }
-  | { tipo: 'offset'; offset: number };
+  | { tipo: 'offset'; offset: number }
+  /** "Recomendados para ti": la última fila de `recomendar_listings`, con su puntaje. */
+  | { tipo: 'recomendados'; puntaje: number; createdAt: string; id: number };
 
 export type ListingsPage = {
   items: ListingCard[];
@@ -220,6 +222,14 @@ export type FetchListingsParams = {
   limit?: number;
   cursor?: ListingsCursor | null;
   withCount?: boolean;
+  /**
+   * "Recomendados para ti" (estado recomendados de Búsqueda, 20260930000475).
+   * Con esto, el orden lo da `recomendar_listings` y se ignoran `orden`, `q`,
+   * los filtros y `withCount` (el estado recomendados no tiene ninguno).
+   * `interesesVersion` no viaja a la base: está aquí para entrar en la `key` de
+   * `useListings`, de modo que guardar intereses reinicie la lista.
+   */
+  recomendados?: { interesesVersion: number };
 };
 
 const PAGE_SIZE = 20;
@@ -244,6 +254,7 @@ function mapCard(row: any): ListingCard {
 }
 
 export async function fetchListings(p: FetchListingsParams): Promise<ListingsPage> {
+  if (p.recomendados) return fetchRecomendados(p);
   const limit = p.limit ?? PAGE_SIZE;
   const q = p.q?.trim();
 
@@ -347,6 +358,81 @@ export async function fetchListings(p: FetchListingsParams): Promise<ListingsPag
   }
 
   return { items, nextCursor, total: count ?? null };
+}
+
+/**
+ * "Recomendados para ti", en DOS pasos (20260930000475).
+ *
+ * 1. `recomendar_listings` ordena y pagina en SQL y devuelve solo
+ *    `(id, puntaje, created_at)`. No puede ser `setof listings` con el orden
+ *    encadenado aquí, como `buscar_listings`: el puntaje no es columna de
+ *    `listings`, así que PostgREST no podría ordenar ni hacer keyset por él.
+ *    El `.order()` sobre el resultado NO es decorativo: el orden de la función
+ *    es el que decide QUÉ filas entran en la página (ORDER BY + LIMIT dentro),
+ *    y este es el que GARANTIZA en qué orden llegan, sin depender de que
+ *    PostgREST preserve el de la subconsulta.
+ * 2. Las tarjetas, con sus embeds, por `id`. Se pintan en el orden del paso 1.
+ *
+ * `hayMas` sale del paso 1, no del 2: entre las dos consultas una publicación
+ * pudo pausarse o borrarse (la RLS la esconde en el paso 2), y eso no quiere
+ * decir que la lista se acabó. Esa tarjeta simplemente no se pinta.
+ *
+ * Los parámetros que no aplican se OMITEN, no se mandan como `null`: con
+ * `get: true` viajan en la URL, y `p_campus_id=null` llegaría como el texto
+ * "null".
+ */
+async function fetchRecomendados(p: FetchListingsParams): Promise<ListingsPage> {
+  const limit = p.limit ?? PAGE_SIZE;
+  const args: {
+    p_limit: number;
+    p_campus_id?: number;
+    p_universidad_id?: number;
+    p_cursor_puntaje?: number;
+    p_cursor_created_at?: string;
+    p_cursor_id?: number;
+  } = { p_limit: limit };
+  if (p.alcance.tipo === 'campus') args.p_campus_id = p.alcance.campusId;
+  else if (p.alcance.tipo === 'universidad') args.p_universidad_id = p.alcance.universidadId;
+  const c = p.cursor;
+  if (c && c.tipo === 'recomendados') {
+    args.p_cursor_puntaje = c.puntaje;
+    args.p_cursor_created_at = c.createdAt;
+    args.p_cursor_id = c.id;
+  }
+
+  const { data: ranking, error: e1 } = await supabase
+    .rpc('recomendar_listings', args, { get: true })
+    .order('puntaje', { ascending: false })
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
+  if (e1) throw e1;
+
+  const filas = ranking ?? [];
+  const ultima = filas[filas.length - 1];
+  const nextCursor: ListingsCursor | null =
+    filas.length === limit && ultima
+      ? { tipo: 'recomendados', puntaje: ultima.puntaje, createdAt: ultima.created_at, id: ultima.id }
+      : null;
+  if (filas.length === 0) return { items: [], nextCursor: null, total: null };
+
+  const { data, error: e2 } = await supabase
+    .from('listings')
+    .select(SELECT_CARD)
+    .in(
+      'id',
+      filas.map((f) => f.id)
+    )
+    // Misma portada que `fetchListings`: la foto de menor `orden`.
+    .order('orden', { referencedTable: 'fotos', ascending: true })
+    .limit(1, { referencedTable: 'fotos' });
+  if (e2) throw e2;
+
+  const porId = new Map((data ?? []).map((row: any) => [row.id as number, mapCard(row)]));
+  const items = filas.flatMap((f) => {
+    const card = porId.get(f.id);
+    return card ? [card] : [];
+  });
+  return { items, nextCursor, total: null };
 }
 
 export async function fetchListingById(id: number): Promise<ListingDetalle | null> {
@@ -1007,7 +1093,14 @@ export function useListings(params: FetchListingsParams | null) {
         // `refrescar()` (pull-to-refresh) que reemplazó `items` por completo
         // mientras esta página viajaba, sin tocar el filtro.
         if (versionRef.current !== versionPedida) return;
-        setItems((prev) => [...prev, ...page.items]);
+        // Sin repetidos: en "Recomendados para ti" el cursor es un PUNTAJE, y
+        // si el usuario da un favorito a media lista, el ranking de una
+        // categoría sube y una tarjeta ya pintada puede volver en la página
+        // siguiente. En los demás órdenes esto no filtra nada.
+        setItems((prev) => {
+          const vistos = new Set(prev.map((l) => l.id));
+          return [...prev, ...page.items.filter((l) => !vistos.has(l.id))];
+        });
         setCursor(page.nextCursor);
       })
       .catch((e) => console.warn('[listings] falló la página siguiente:', e?.message ?? e))

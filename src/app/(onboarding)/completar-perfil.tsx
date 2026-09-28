@@ -172,7 +172,9 @@ export default function CompletarPerfilScreen() {
 
     await refreshProfile();
     setGuardando(false);
-    router.replace('/permiso-notificaciones');
+    // Siguiente: el paso OPCIONAL de intereses, que después sigue a
+    // "Permiso de notificaciones" (con o sin guardar nada).
+    router.replace('/intereses');
   };
 
   return (

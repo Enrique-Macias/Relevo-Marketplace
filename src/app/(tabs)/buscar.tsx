@@ -65,6 +65,7 @@ export default function BuscarScreen() {
     favoritos,
     toggleFavorito,
     getCategoria,
+    interesesVersion,
   } = useExplorarState();
 
   const hayFiltrosActivos = !!(filtros.categoriaId || filtros.condicion || filtros.precioMin || filtros.precioMax);
@@ -73,10 +74,19 @@ export default function BuscarScreen() {
   const { profile } = useSession();
 
   // Las dos ramas siguen el alcance elegido en el selector del Feed (fase 2B).
+  // Recomendados: el orden lo da `recomendar_listings` (intereses > contactos >
+  // favoritos, y lo más reciente dentro de cada uno). Sin intereses ni señales
+  // es simplemente lo más reciente del alcance: nunca queda vacío por falta de
+  // intereses. Sin texto ni botón que lo explique, a propósito (frame
+  // "Búsqueda (recomendados)").
   const { items, estado, total, cargandoMas, loadMore, reintentar, refrescar } = useListings(
     alcance
       ? modoRecomendados
-        ? { alcance: alcanceFiltro(alcance), orden: 'recientes' as const, limit: 4 }
+        ? {
+            alcance: alcanceFiltro(alcance),
+            orden: 'recientes' as const,
+            recomendados: { interesesVersion },
+          }
         : {
             alcance: alcanceFiltro(alcance),
             q: queryDiferida,
@@ -131,9 +141,9 @@ export default function BuscarScreen() {
 
   if (modoRecomendados) {
     return (
-      <Screen refreshControl={refreshControl}>
+      <Screen onEndReached={loadMore} refreshControl={refreshControl}>
         {buscador}
-        <SectionHead title="Recomendado para ti" />
+        <SectionHead title="Recomendados para ti" />
         {estado === 'error' ? (
           <ErrorState onRetry={reintentar} />
         ) : cargando ? (
@@ -165,6 +175,7 @@ export default function BuscarScreen() {
                 {row.length < 2 ? <View style={styles.padCell} /> : null}
               </View>
             ))}
+            {cargandoMas ? <SkeletonGrid tarjetas={2} style={styles.skeletonMas} /> : null}
           </View>
         )}
       </Screen>

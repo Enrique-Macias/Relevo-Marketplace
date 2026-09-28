@@ -25,8 +25,8 @@ export function AuthHeadline({ children, style }: { children: React.ReactNode; s
   return <Text style={[styles.headline, style]}>{children}</Text>;
 }
 
-export function AuthSub({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.sub}>{children}</Text>;
+export function AuthSub({ children, style }: { children: React.ReactNode; style?: TextStyle }) {
+  return <Text style={[styles.sub, style]}>{children}</Text>;
 }
 
 /** `.auth-link` — el `<b>` interno va en `--brick` semibold; se pasa como hijo. */

@@ -1,4 +1,11 @@
-/** `.cat-item` — tile de categoría (grid 4 col del Feed / 3 col de "Ver todas"). */
+/**
+ * `.cat-item` — tile de categoría (grid 4 col del Feed / 3 col de "Ver todas").
+ *
+ * `selected` es `.cat-item.selected` (pasos "Intereses" y "Editar intereses"):
+ * el `active` de siempre del sistema, fondo --ink y texto/ícono --paper. Sin
+ * la prop, la tile se ve y se anuncia igual que antes: el Feed y "Ver todas"
+ * navegan, no eligen.
+ */
 
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -11,15 +18,23 @@ type CategoryTileProps = {
   slug: string;
   nombre: string;
   onPress: () => void;
+  /** Solo en una selección múltiple. `undefined` = la tile navega (no es un checkbox). */
+  selected?: boolean;
 };
 
-export function CategoryTile({ slug, nombre, onPress }: CategoryTileProps) {
+export function CategoryTile({ slug, nombre, onPress, selected }: CategoryTileProps) {
+  const elegible = selected !== undefined;
   return (
-    <Pressable style={styles.item} onPress={onPress}>
+    <Pressable
+      style={[styles.item, selected && styles.itemSelected]}
+      onPress={onPress}
+      accessibilityRole={elegible ? 'checkbox' : undefined}
+      accessibilityState={elegible ? { checked: selected } : undefined}
+    >
       <View style={styles.icon}>
-        <CategoryIcon categoriaId={slug} size={20} color={Colors.ink} />
+        <CategoryIcon categoriaId={slug} size={20} color={selected ? Colors.paper : Colors.ink} />
       </View>
-      <Text style={styles.label} numberOfLines={2}>
+      <Text style={[styles.label, selected && styles.labelSelected]} numberOfLines={2}>
         {nombre}
       </Text>
     </Pressable>
@@ -41,6 +56,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 7,
   },
+  // .cat-item.selected{background:var(--ink); border-color:var(--ink);}
+  itemSelected: {
+    backgroundColor: Colors.ink,
+    borderColor: Colors.ink,
+  },
   // .cat-icon{width:32px; height:32px;}
   icon: {
     width: 32,
@@ -53,5 +73,9 @@ const styles = StyleSheet.create({
     color: Colors.ink,
     textAlign: 'center',
     lineHeight: 13.75, // 11 × 1.25
+  },
+  // .cat-item.selected .cat-label{color:var(--paper);}
+  labelSelected: {
+    color: Colors.paper,
   },
 });
