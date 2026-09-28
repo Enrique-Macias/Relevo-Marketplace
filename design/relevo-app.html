@@ -4746,6 +4746,28 @@
             </div>
           </div>
 
+          <!-- Variante de ESTA hoja, no una pantalla aparte: abierta desde
+               Categoría (su ícono de filtro), este field NO se pinta. La
+               categoría ya la fija la RUTA de esa pantalla
+               (`categoria/[id].tsx`), no este filtro — mostrarlo no tenía
+               ningún efecto sobre el resultado, y tocarlo contaminaba en
+               silencio el filtro compartido de Búsqueda (ver
+               `.claude/rules/explorar.md`). Precio, Condición y Ordenar por
+               siguen exactamente igual; el resto de la hoja (título,
+               footer) tampoco cambia. -->
+          <div style="margin:-2px 0 22px; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): abierto desde Categoría
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label class="field-label">Precio</label>
+              <div class="price-row">
+                <input class="text-field" type="text" placeholder="Mínimo">
+                <input class="text-field" type="text" placeholder="Máximo">
+              </div>
+            </div>
+          </div>
+
           <div class="field">
             <label class="field-label">Precio</label>
             <div class="price-row">

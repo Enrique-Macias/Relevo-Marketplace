@@ -375,7 +375,35 @@ así que el usuario volvía sin ver ningún cambio, aunque el filtro sí había
 quedado guardado en el contexto compartido. Ahora el ícono de filtro del
 Feed manda `params: { origin: 'feed' }`, y "Aplicar filtros" ramifica:
 `origin === 'feed' ? router.dismissTo('/buscar') : router.back()`. Desde
-Búsqueda o Categoría (que no mandan `origin`) el comportamiento no cambió.
+Búsqueda (que no manda `origin`) el comportamiento no cambió.
+
+**Un tercer valor de `origin`, `'categoria'`, oculta el campo — no cambia
+el destino.** Categoría (`(explorar)/categoria/[id].tsx`) manda `params: {
+origin: 'categoria' }` al abrir Filtros. A diferencia de `'feed'`, este
+valor no toca la rama de "Aplicar filtros" de arriba (sigue haciendo
+`router.back()`, igual que antes de este cambio): solo oculta el
+`<SegmentedControl label="Categoría">` de `filtros.tsx`. La razón:
+Categoría fija su categoría por el PARAM DE RUTA (`categoriaId =
+Number(id)`, `categoria/[id].tsx:36`), nunca por `filtros.categoriaId` —
+el campo no tenía ningún efecto sobre el resultado de esa pantalla, y
+mostrarlo era puro ruido. `filtros.categoriaId` sigue existiendo en el
+contexto compartido igual que antes; lo único que cambia es que Categoría
+ya no ofrece una UI para escribirlo.
+
+**Deuda preexistente, sin arreglar aquí: `filtros` sigue siendo UN solo
+objeto compartido entre Búsqueda y Categoría, sin aislar por pantalla.**
+Antes de este cambio, tocar el campo "Categoría" desde la hoja abierta
+desde Categoría escribía `filtros.categoriaId` — que Categoría ignora
+pero Búsqueda SÍ lee (`buscar.tsx:93`, y `hayFiltrosActivos` en la línea
+71 se volvía `true` por su causa) — así que una categoría tocada por
+accidente desde Categoría aparecía luego en Búsqueda como filtro activo,
+con su chip removible (`buscar.tsx:186-191`). Ocultar el campo cierra ESE
+vector (ya no se puede escribir `categoriaId` desde ahí), pero
+precio/condición/orden siguen siendo el mismo objeto compartido sin
+aislar por pantalla, y tocarlos desde la hoja abierta en Categoría sigue
+contaminando lo que Búsqueda ve después — sin cambios en esta tarea.
+**Revisar cuando:** alguien lo reporte, o se decida aislar `filtros` por
+pantalla en vez de compartirlo.
 
 **`dismissTo('/buscar')` SÍ conmuta el tab activo del `NativeTabs` anidado —
 confirmado con prueba manual en dispositivo, no asumido por lectura de

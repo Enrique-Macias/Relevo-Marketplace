@@ -90,7 +90,10 @@ export default function CategoriaScreen() {
         <PageHeader
           title={categoria?.nombre ?? ''}
           trailing={
-            <RoundIconButton variant="bordered" onPress={() => router.push('/filtros')}>
+            <RoundIconButton
+              variant="bordered"
+              onPress={() => router.push({ pathname: '/filtros', params: { origin: 'categoria' } })}
+            >
               <IconFilterSliders size={15} color={Colors.ink} />
             </RoundIconButton>
           }

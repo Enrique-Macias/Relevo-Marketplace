@@ -45,13 +45,19 @@ export default function FiltrosScreen() {
       }
     >
       {/* `SegmentedControl` trabaja con strings; el id real es bigint, así que
-          se serializa en la opción y se parsea de vuelta al elegir. */}
-      <SegmentedControl
-        label="Categoría"
-        options={categorias.map((c) => ({ value: String(c.id), label: c.nombre }))}
-        value={filtros.categoriaId === undefined ? undefined : String(filtros.categoriaId)}
-        onChange={(v) => setFiltros({ categoriaId: Number(v) })}
-      />
+          se serializa en la opción y se parsea de vuelta al elegir.
+          Oculto cuando se abre desde Categoría (`origin === 'categoria'`):
+          esa pantalla fija la categoría por el param de ruta, no por este
+          filtro, así que mostrarlo no tenía ningún efecto sobre el
+          resultado — ver `.claude/rules/explorar.md`. */}
+      {origin !== 'categoria' && (
+        <SegmentedControl
+          label="Categoría"
+          options={categorias.map((c) => ({ value: String(c.id), label: c.nombre }))}
+          value={filtros.categoriaId === undefined ? undefined : String(filtros.categoriaId)}
+          onChange={(v) => setFiltros({ categoriaId: Number(v) })}
+        />
+      )}
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Precio</Text>
