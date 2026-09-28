@@ -177,10 +177,15 @@ Seis cosas que no se ven en el diff:
   `contactarPorWhatsapp()` es el mismo criterio que Detalle: los mismos 3
   motivos de `null`, el mismo orden de prioridad, el mismo tono neutro para el
   vendedor suspendido.
-- **"En Relevo" (`mesesEnRelevo()`, `src/lib/format.ts`) no tiene rama de
-  años.** El frame solo ilustra un ejemplo en meses; sin un estado en
-  `relevo-app.html` con una cuenta de más de un año, no se inventa un formato
-  `Na` sin evidencia (§0 regla 4).
+- **"En Relevo" (`antiguedadEnRelevo()`, `src/lib/format.ts`) tiene cuatro
+  ramas, en este orden:** "Hoy" (menos de 1 día, SIN límite inferior, así que
+  un reloj atrasado nunca da "-1d"), `Nd` (menos de un mes), `Nm` (1-11) y
+  `Na`. El mes es UNA sola constante, 30.44 días, y los años salen de
+  `totalMeses / 12`: "1a" empieza en 365.28 días, y 365.25 días todavía muestra
+  "11m". Las variantes "21d", "Hoy" y "2a" están en el frame de Perfil público
+  (§0 regla 4). Antes era solo `Nm` (y se llamaba `mesesEnRelevo()`): a
+  septiembre de 2026 todas las cuentas tenían menos de un mes, así que todas
+  mostraban "0m".
 - **Perfil público tiene pull-to-refresh, y su refactor es más simple que el de
   "Perfil": sin `useFocusEffect` que reconciliar.** Las cuatro consultas
   (`fetchPerfilPublico`, `fetchActivasVendedor`, `fetchVentasVendedor`,

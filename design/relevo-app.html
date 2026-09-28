@@ -4841,6 +4841,33 @@
           <div class="stat-card"><div class="stat-num">12</div><div class="stat-label">Vendidos</div></div>
           <div class="stat-card"><div class="stat-num">8m</div><div class="stat-label">En Relevo</div></div>
         </div>
+        <!-- Variante (doc, no es parte del flujo): las lecturas de "En Relevo"
+             que no son meses. Cuatro ramas, en este orden: "Hoy" (menos de 1
+             día, también si el reloj del dispositivo va atrasado), "Nd" (menos
+             de un mes de 30.44 días), "Nm" (1 a 11, el "8m" de arriba) y "Na"
+             (años completos = meses completos / 12, así que "1a" empieza en
+             365.28 días). Cada .stat-row va COMPLETO, con los otros dos stats
+             iguales al de arriba, para ver el ancho del card en contexto. -->
+        <div style="margin:0 0 22px; padding-top:14px; border-top:1.5px dashed var(--line);">
+          <div style="padding:0 20px; font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+            Variante (doc, no es parte del flujo): "En Relevo" con menos de un mes y con más de un año
+          </div>
+          <div class="stat-row">
+            <div class="stat-card"><div class="stat-num">8</div><div class="stat-label">Activas</div></div>
+            <div class="stat-card"><div class="stat-num">12</div><div class="stat-label">Vendidos</div></div>
+            <div class="stat-card"><div class="stat-num">21d</div><div class="stat-label">En Relevo</div></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-card"><div class="stat-num">8</div><div class="stat-label">Activas</div></div>
+            <div class="stat-card"><div class="stat-num">12</div><div class="stat-label">Vendidos</div></div>
+            <div class="stat-card"><div class="stat-num">Hoy</div><div class="stat-label">En Relevo</div></div>
+          </div>
+          <div class="stat-row" style="padding-bottom:0;">
+            <div class="stat-card"><div class="stat-num">8</div><div class="stat-label">Activas</div></div>
+            <div class="stat-card"><div class="stat-num">12</div><div class="stat-label">Vendidos</div></div>
+            <div class="stat-card"><div class="stat-num">2a</div><div class="stat-label">En Relevo</div></div>
+          </div>
+        </div>
 
         <div style="padding:0 20px 20px;">
           <div class="whatsapp-btn" style="border-radius:14px; padding:13px 0;">

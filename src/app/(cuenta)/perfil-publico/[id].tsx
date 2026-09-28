@@ -25,7 +25,7 @@ import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { Avatar } from '@/components/Avatar';
-import { mesesEnRelevo } from '@/lib/format';
+import { antiguedadEnRelevo } from '@/lib/format';
 import { fetchActivasVendedor, fetchVentasVendedor } from '@/lib/listings';
 import { fetchTelefonoVendedor, urlWhatsapp } from '@/lib/perfil';
 import { fetchPerfilPublico, fetchReviews, type PerfilPublico, type Review } from '@/lib/perfil-publico';
@@ -303,7 +303,7 @@ export default function PerfilPublicoScreen() {
           <Text style={styles.statLabel}>Vendidos</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statNum}>{mesesEnRelevo(new Date(perfil.createdAt))}</Text>
+          <Text style={styles.statNum}>{antiguedadEnRelevo(new Date(perfil.createdAt))}</Text>
           <Text style={styles.statLabel}>En Relevo</Text>
         </View>
       </View>
