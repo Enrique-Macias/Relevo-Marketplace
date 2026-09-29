@@ -26,6 +26,10 @@
 //      contraseña también funciona.
 //   6. Un nombre con comilla simple (O'Brien) llega intacto a
 //      `private.admins`, y `crear-admin.mjs` no contiene ningún dollar-quote.
+//   7. El clasificador de rechazos del panel (`admin/src/lib/rechazos.ts`,
+//      importado REAL): solo los tres mensajes de `exigir_admin()` cierran la
+//      sesión o piden TOTP; los 42501 de las guardas solo se muestran. Y el
+//      amarre: los mensajes que devuelve la base por HTTP son esas constantes.
 //
 // Limpia lo suyo al final (sus cuentas; la auditoría es append-only y se
 // queda, como en cualquier borrado de cuenta de admin).
@@ -35,6 +39,9 @@ import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { crear, activar } from './crear-admin.mjs';
+import {
+  clasificarRechazo, NO_ADMIN, MFA_REQUERIDO, TOTP_VENCIDO,
+} from '../admin/src/lib/rechazos.ts';
 
 const DB = 'supabase_db_relevo-marketplace';
 const MAIL = 'http://127.0.0.1:54324';
@@ -237,7 +244,8 @@ async function main() {
     const prevB = (await correos(B)).length;
     const rB = await cli().auth.resetPasswordForEmail(B);
     const codB = await codigoNuevo(B, prevB);
-    const vB = await cli().auth.verifyOtp({ type: 'recovery', email: B, token: codB });
+    const cB = cli();
+    const vB = await cB.auth.verifyOtp({ type: 'recovery', email: B, token: codB });
     ok('pedir otro código y verificarlo → sesión', !rB.error && !vB.error && Boolean(vB.data.session),
       rB.error?.message ?? vB.error?.message);
 
@@ -257,6 +265,40 @@ async function main() {
     rechazo = null;
     try { await crear(`probe-admin-x-${RUN}@rlvo.com.mx`, 'Juan\n; drop table x'); } catch (e) { rechazo = e.message; }
     ok('crear() rechaza un nombre con salto de línea', Boolean(rechazo));
+
+    // -------------------------------------------------------------------
+    console.log('\n== 7. clasificador de rechazos del panel ==');
+    const casos = [
+      [{ code: '42501', message: 'no_admin' }, 'cerrar_sesion'],
+      [{ code: '42501', message: 'mfa_requerido' }, 'pedir_totp'],
+      [{ code: '42501', message: 'totp_vencido' }, 'pedir_totp'],
+      [{ code: '42501', message: 'no_sobre_si_mismo' }, 'mostrar'],
+      [{ code: '42501', message: 'objetivo_es_admin' }, 'mostrar'],
+      [{ code: '42501', message: 'new row violates row-level security policy for table "x"' }, 'mostrar'],
+      [{ code: '22023', message: 'motivo_invalido' }, 'mostrar'],
+      [{ code: 'P0001', message: 'no_admin' }, 'mostrar'],
+      [null, 'mostrar'],
+    ];
+    for (const [err, esperado] of casos) {
+      ok(`7a ${JSON.stringify(err)} → ${esperado}`, clasificarRechazo(err) === esperado, clasificarRechazo(err));
+    }
+
+    // 7b: el amarre contra la base REAL, por HTTP.
+    ok('7b mfa_requerido de la base (caso 4) === MFA_REQUERIDO', b1.error?.message === MFA_REQUERIDO, b1.error?.message);
+    const noAdm = await cB.schema('admin').rpc('buscar_usuarios', { p_q: 'x' });
+    ok('7b una cuenta sin activar recibe exactamente NO_ADMIN',
+      noAdm.error?.code === '42501' && noAdm.error?.message === NO_ADMIN, noAdm.error?.message);
+    const idA = sql(`select id from auth.users where email = '${A}'`);
+    const idB = sql(`select id from auth.users where email = '${B}'`);
+    const self = await c5.schema('admin').rpc('suspender_usuario', { p_user_id: idA, p_motivo: 'probe 7b' });
+    ok('7b suspenderse a sí mismo → 42501 no_sobre_si_mismo, y el panel solo lo muestra',
+      self.error?.message === 'no_sobre_si_mismo' && clasificarRechazo(self.error) === 'mostrar', self.error?.message);
+    const otro = await c5.schema('admin').rpc('suspender_usuario', { p_user_id: idB, p_motivo: 'probe 7b' });
+    ok('7b suspender a otro admin → 42501 objetivo_es_admin, y el panel solo lo muestra',
+      otro.error?.message === 'objetivo_es_admin' && clasificarRechazo(otro.error) === 'mostrar', otro.error?.message);
+    const fuenteExigir = sql("select prosrc from pg_proc where oid = 'private.exigir_admin()'::regprocedure");
+    ok('7b las tres constantes del panel están literales en private.exigir_admin()',
+      [NO_ADMIN, MFA_REQUERIDO, TOTP_VENCIDO].every((m) => fuenteExigir.includes(`'${m}'`)));
   } finally {
     for (const c of creadas) {
       sql(`delete from auth.users where email = '${c.replace(/'/g, "''")}'`);

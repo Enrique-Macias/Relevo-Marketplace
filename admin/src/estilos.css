@@ -1,0 +1,61 @@
+/*
+ * Panel de admin, Ola 1: pantallas funcionales SIN frame (D14). Solo reusa los
+ * TOKENS de color y tipografía de CLAUDE.md §2 (`design/relevo-app.html`
+ * :root). Nada de tamaños ni componentes de teléfono: la Ola 2 alinea esto a
+ * los frames de `design/admin-panel.html`.
+ */
+:root {
+  --ink: #221F1C;
+  --ink-soft: #6B6660;
+  --paper: #F3F0EA;
+  --card: #FFFFFF;
+  --brick: #C1440E;
+  --forest: #2F6B4F;
+  --gold: #D9A441;
+  --slate: #5B6B78;
+  --display: 'Fraunces', Georgia, serif;
+  --body: 'Inter', system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 14px; }
+h1, h2 { font-family: var(--display); font-weight: 600; margin: 0 0 12px; }
+h1 { font-size: 26px; }
+h2 { font-size: 20px; }
+.marca { font-family: var(--display); font-weight: 600; font-size: 20px; }
+.marca small { font-family: var(--body); font-weight: 500; font-size: 12px; color: var(--ink-soft); margin-left: 8px; }
+.barra { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: var(--card); border-bottom: 1px solid #e6e1d8; }
+.contenido { max-width: 1100px; margin: 0 auto; padding: 24px; }
+.tarjeta { background: var(--card); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+.auth { max-width: 380px; margin: 64px auto; }
+label { display: block; font-weight: 500; margin: 12px 0 6px; }
+input, textarea { width: 100%; padding: 10px 12px; border: 1px solid #d9d3c8; border-radius: 12px; font: inherit; background: var(--card); color: var(--ink); }
+textarea { min-height: 80px; resize: vertical; }
+button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 10px 16px; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.primario { background: var(--brick); color: #fff; }
+.secundario { background: transparent; color: var(--ink); border: 1px solid #d9d3c8; }
+.peligro { background: var(--brick); color: #fff; }
+.confianza { background: var(--forest); color: #fff; }
+.enlace { background: none; color: var(--brick); padding: 0; font-weight: 500; }
+.fila { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
+.notice { border-radius: 12px; padding: 10px 12px; margin: 12px 0; background: #fbeee7; color: var(--brick); }
+.notice.info { background: #e9f1ec; color: var(--forest); }
+.notice.aviso { background: #f8efd9; color: #7a5a14; }
+.sub { color: var(--ink-soft); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #eee9e0; vertical-align: top; }
+th { font-weight: 600; color: var(--ink-soft); font-size: 12px; }
+tr.seleccionable { cursor: pointer; }
+tr.seleccionable:hover { background: var(--paper); }
+.chip { display: inline-block; border-radius: 9999px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
+.chip.activo { background: #e9f1ec; color: var(--forest); }
+.chip.suspendido { background: #fbeee7; color: var(--brick); }
+.chip.admin { background: #eef0f2; color: var(--slate); }
+.qr { width: 200px; height: 200px; background: #fff; border-radius: 12px; }
+.secreto { font-family: ui-monospace, monospace; word-break: break-all; }
+.rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px 16px; }
+.rejilla dt { color: var(--ink-soft); font-size: 12px; }
+.rejilla dd { margin: 0 0 8px; }
+.modal-fondo { position: fixed; inset: 0; background: rgba(34, 31, 28, .45); display: flex; align-items: center; justify-content: center; }
+.modal { background: var(--card); border-radius: 16px; padding: 24px; width: 360px; }
+.oculto { display: none; }
