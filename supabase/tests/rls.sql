@@ -149,6 +149,70 @@ exception when others then
   return sqlstate || coalesce(':' || nullif(v_con, ''), '');
 end $$;
 
+-- RF-17, Ola 1 (T35): claims con `aal` y `amr`. Los helpers de arriba solo
+-- ponen `sub` y `role`. Con `p_con_amr = false` la clave `amr` NO va; con
+-- `p_con_amr = true` y `p_amr = null` va como JSON `null`, a propósito: es el
+-- caso de D18 que `coalesce` no atrapa (`cannot extract elements from a scalar`).
+create or replace function pg_temp.claims_aal(
+  p_uid uuid, p_aal text, p_amr jsonb, p_con_amr boolean default true)
+returns text language sql as $$
+  select (jsonb_build_object('sub', p_uid, 'role', 'authenticated', 'aal', p_aal)
+          || case when p_con_amr then jsonb_build_object('amr', p_amr)
+                  else '{}'::jsonb end)::text
+$$;
+
+-- El `amr` que emite GoTrue tras password + TOTP (medido en el Paso 0 de la
+-- Ola 1), con los dos timestamps de hace `p_horas` horas.
+create or replace function pg_temp.amr_totp(p_horas int)
+returns jsonb language sql as $$
+  select jsonb_build_array(
+    jsonb_build_object('method', 'password',
+                       'timestamp', extract(epoch from now())::bigint - p_horas * 3600),
+    jsonb_build_object('method', 'totp',
+                       'timestamp', extract(epoch from now())::bigint - p_horas * 3600))
+$$;
+
+-- `'ok'` o `<sqlstate>:<constraint, o el MENSAJE si no hay constraint>`. Las
+-- guardas de `admin.*` y de `private.exigir_admin()` comparten SQLSTATE (42501)
+-- y se distinguen por el mensaje (`no_admin`, `mfa_requerido`, `totp_vencido`,
+-- `objetivo_es_admin`…), así que compararlo es lo único que dice CUÁL rechazó.
+-- Con `p_como_authenticated = false` corre como `postgres` con los claims
+-- puestos: así se llama a `private.exigir_admin()`, revocada a authenticated.
+create or replace function pg_temp.rechazo_aal(
+  p_uid uuid, p_aal text, p_amr jsonb, p_sql text,
+  p_con_amr boolean default true, p_como_authenticated boolean default true)
+returns text language plpgsql as $$
+declare v_con text; v_msg text;
+begin
+  perform set_config('request.jwt.claims',
+    pg_temp.claims_aal(p_uid, p_aal, p_amr, p_con_amr), true);
+  if p_como_authenticated then
+    perform set_config('role', 'authenticated', true);
+  end if;
+  execute p_sql;
+  perform set_config('role', 'postgres', true);
+  return 'ok';
+exception when others then
+  get stacked diagnostics v_con = constraint_name, v_msg = message_text;
+  perform set_config('role', 'postgres', true);
+  return sqlstate || ':' || coalesce(nullif(v_con, ''), v_msg);
+end $$;
+
+-- Hermana de `as_user_text` con `aal`/`amr`: el escalar de p_sql, como
+-- authenticated.
+create or replace function pg_temp.as_aal_text(
+  p_uid uuid, p_aal text, p_amr jsonb, p_sql text, p_con_amr boolean default true)
+returns text language plpgsql as $$
+declare v_out text;
+begin
+  perform set_config('request.jwt.claims',
+    pg_temp.claims_aal(p_uid, p_aal, p_amr, p_con_amr), true);
+  perform set_config('role', 'authenticated', true);
+  execute p_sql into v_out;
+  perform set_config('role', 'postgres', true);
+  return v_out;
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- Fixtures. Se crean dentro de la transacción y desaparecen con el rollback
 -- final, así que la suite es idempotente y puede correrse cuantas veces sea.
@@ -2323,8 +2387,11 @@ select pg_temp.assert(
   has_function_privilege('authenticated', 'private.is_active_user()', 'execute')
   and has_function_privilege('authenticated', 'private.can_rate(uuid,bigint)', 'execute')
   and has_function_privilege('authenticated',
-        'private.listing_id_from_object_name(text)', 'execute'),
-  'authenticated puede ejecutar las 3 funciones invocadas desde policies');
+        'private.listing_id_from_object_name(text)', 'execute')
+  -- RF-17 (20260930000477): la invocará la policy de Storage del admin en la
+  -- Ola 2, así que lleva el mismo workaround desde que existe.
+  and has_function_privilege('authenticated', 'private.is_admin()', 'execute'),
+  'authenticated puede ejecutar las 4 funciones invocadas desde policies');
 
 -- Estas sí son de seguridad: solo disparan por trigger y nadie debe poder
 -- invocarlas. Postgres verifica EXECUTE al crear el trigger, no al dispararlo.
@@ -2363,8 +2430,11 @@ select pg_temp.assert(
   and not has_function_privilege('authenticated',
         'private.borra_avisos_de_cuenta()', 'execute')
   and not has_function_privilege('authenticated',
-        'private.bloquea_correo_suspendido()', 'execute'),
-  'las 18 funciones que solo disparan por trigger siguen revocadas');
+        'private.bloquea_correo_suspendido()', 'execute')
+  -- RF-17 (20260930000477): el append-only de la auditoría del panel.
+  and not has_function_privilege('authenticated',
+        'private.admin_acciones_inmutable()', 'execute'),
+  'las 19 funciones que solo disparan por trigger siguen revocadas');
 
 -- Las DOS funciones de trigger que NO están en la lista de arriba, a
 -- propósito: `set_updated_at()` y `limpia_veredicto_en_pantalla()` son
@@ -2633,6 +2703,82 @@ select pg_temp.assert(
   and (select count(*) from pg_policies
        where schemaname = 'public' and tablename = 'correos_bloqueados') = 1,
   'correos_bloqueados: supabase_auth_admin la lee y tiene la ÚNICA policy');
+
+-- RF-17, Ola 1 (20260930000477). Las funciones internas del panel que NO son
+-- de trigger ni se invocan desde policies: solo las llaman RPCs definer de
+-- `admin.*` (que corren como su dueño), así que nadie más debe poder
+-- ejecutarlas. `exigir_admin()` invocable a mano no daría nada, pero
+-- `auditar()` sí: escribiría auditoría a nombre de quien llama.
+select pg_temp.assert(
+  not has_function_privilege('authenticated', 'private.exigir_admin()', 'execute')
+  and not has_function_privilege('authenticated', 'private.totp_timestamp()', 'execute')
+  and not has_function_privilege('authenticated',
+        'private.claves_auditoria_ok(text,jsonb)', 'execute')
+  and not has_function_privilege('authenticated',
+        'private.auditar(text,text,text,jsonb,jsonb,text)', 'execute')
+  and not has_function_privilege('anon', 'private.exigir_admin()', 'execute')
+  and not has_function_privilege('anon', 'private.totp_timestamp()', 'execute')
+  and not has_function_privilege('anon', 'private.claves_auditoria_ok(text,jsonb)', 'execute')
+  and not has_function_privilege('anon',
+        'private.auditar(text,text,text,jsonb,jsonb,text)', 'execute'),
+  'exigir_admin, totp_timestamp, claves_auditoria_ok y auditar están revocadas a authenticated y anon');
+
+-- `private.admins` y `private.admin_acciones`: sin un solo privilegio para el
+-- cliente, mirando tabla Y columna (la lección de `listing_moderacion`: un
+-- `grant select (motivo)` no aparece en `table_privileges`).
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee in ('authenticated', 'anon') and table_schema = 'private'
+                and table_name in ('admins', 'admin_acciones'))
+  and not exists (select 1 from information_schema.column_privileges
+                  where grantee in ('authenticated', 'anon') and table_schema = 'private'
+                    and table_name in ('admins', 'admin_acciones')),
+  'private.admins y private.admin_acciones no tienen ni un privilegio para authenticated ni anon');
+
+-- Schema `admin`: authenticated lo usa, anon no.
+select pg_temp.assert(
+  has_schema_privilege('authenticated', 'admin', 'usage')
+  and not has_schema_privilege('anon', 'admin', 'usage'),
+  'authenticated tiene USAGE sobre el schema admin y anon no');
+
+-- Toda función de `admin.*`: definer, `search_path` fijo, EXECUTE para
+-- authenticated y NUNCA para anon ni PUBLIC. PUBLIC se mira en el ACL mismo
+-- (grantee 0): Postgres le da EXECUTE a PUBLIC en toda función nueva, y
+-- `has_function_privilege('anon', …)` ya lo cubriría, pero así el mensaje de
+-- la caída dice cuál de los dos faltó revocar.
+select pg_temp.assert(
+  exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'admin')
+  and not exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'admin'
+       and (not p.prosecdef
+            or not coalesce(p.proconfig @> array['search_path=""'], false)
+            or has_function_privilege('anon', p.oid, 'execute')
+            or not has_function_privilege('authenticated', p.oid, 'execute')
+            or exists (select 1
+                         from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                        where a.grantee = 0))),
+  'toda función de admin.* es definer, con search_path fijo y EXECUTE solo para authenticated');
+
+-- Dos candados PREVENTIVOS sobre `public.users` (medido en local y en remoto
+-- el 2026-09-29: hoy ninguna vía devuelve su fila entera). Con columnas que no
+-- son legibles para el cliente (`correo`, `telefono` y, desde la Ola 1,
+-- `suspendido_at`/`suspension_motivo`), dos caminos las expondrían sin tocar
+-- ningún grant: publicar la tabla en Realtime, o una función que devuelva la
+-- fila completa.
+select pg_temp.assert(
+  not exists (select 1 from pg_publication_tables
+              where schemaname = 'public' and tablename = 'users'),
+  'public.users no está en ninguna publicación (Realtime no la emite)');
+
+select pg_temp.assert(
+  not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname in ('public', 'admin')
+                and p.prorettype in ('public.users'::regtype,
+                                     (select typarray from pg_type
+                                       where oid = 'public.users'::regtype))),
+  'ninguna función de public ni admin devuelve la fila completa de public.users');
 
 -- Todas las tablas de public tienen RLS activo.
 select pg_temp.assert(
@@ -4483,6 +4629,220 @@ select pg_temp.assert(
   :t34_intereses_antes = 1
   and (select count(*) from public.user_intereses where user_id = :A34::uuid) = 0,
   '(k) borrar la cuenta borra sus intereses');
+
+\echo ''
+\echo '== T35 — admins del panel: identidad, MFA y auditoría append-only (RF-17, Ola 1) =='
+-- 20260930000477. Autocontenida: sus propias cuentas, ninguna de otra sección.
+--
+--   :A35 — admin activado (el que actúa).
+--   :X35 — otro admin activado (objetivo que las RPCs rechazan, Paso 4).
+--   :N35 — admin creado pero SIN activar (`activado_at` NULL).
+--   :S35 — usuario del marketplace, no admin.
+--   :K35 — admin cuya cuenta se borra en (k).
+--   :L35 — admin al que se revoca en (l).
+--
+-- Los rechazos se comparan como `sqlstate:mensaje` (`rechazo_aal`): todas las
+-- guardas comparten 42501 y solo el mensaje dice cuál rechazó. `exigir_admin()`
+-- se llama como `postgres` con los claims puestos (está revocada a
+-- authenticated); `admin.sesion()`, como authenticated.
+--
+-- CONTROLES NEGATIVOS: ver la tabla de CLAUDE.md §3 ("Y a … con las de T35").
+
+\set A35 '''35353535-0000-0000-0000-0000000035a0'''
+\set X35 '''35353535-0000-0000-0000-0000000035b0'''
+\set N35 '''35353535-0000-0000-0000-0000000035c0'''
+\set S35 '''35353535-0000-0000-0000-0000000035d0'''
+\set K35 '''35353535-0000-0000-0000-0000000035e0'''
+\set L35 '''35353535-0000-0000-0000-0000000035f0'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:A35, 'rls-t35-a@rls-t35.mx'), (:X35, 'rls-t35-x@rls-t35.mx'),
+               (:N35, 'rls-t35-n@rls-t35.mx'), (:S35, 'rls-t35-s@rls-t35.mx'),
+               (:K35, 'rls-t35-k@rls-t35.mx'), (:L35, 'rls-t35-l@rls-t35.mx')) as v(u, e);
+
+insert into private.admins (user_id, nombre, activado_at)
+values (:A35::uuid, 'Admin T35', now()),
+       (:X35::uuid, 'Otro admin T35', now()),
+       (:N35::uuid, 'Admin sin activar T35', null),
+       (:K35::uuid, 'Admin borrado T35', now()),
+       (:L35::uuid, 'Admin revocado T35', now());
+
+select pg_temp.assert(
+  (select count(*) from public.users where id in
+     (:A35::uuid, :X35::uuid, :N35::uuid, :S35::uuid, :K35::uuid, :L35::uuid)) = 6
+  and (select count(*) from private.admins where user_id in
+     (:A35::uuid, :X35::uuid, :N35::uuid, :K35::uuid, :L35::uuid)) = 5,
+  'precondición T35: las 6 cuentas tienen perfil y 5 son admins');
+
+-- (b0) El camino feliz. Sin esta, un `is_admin()` que rechace SIEMPRE pasaría
+-- todas las aserciones de rechazo de abajo.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select private.exigir_admin()', true, false) = 'ok'
+  and pg_temp.as_aal_text(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select (admin.sesion()->>''es_admin'')') = 'true',
+  '(b0) admin activado, aal2 y TOTP de hace 1 h → pasa, y sesion() dice es_admin');
+
+-- (a0) Un usuario que no es admin, aunque tuviera aal2 con TOTP, recibe no_admin.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:S35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select private.exigir_admin()', true, false) = '42501:no_admin',
+  '(a0) un no-admin recibe no_admin');
+
+-- (b) aal1 (solo contraseña) → mfa_requerido.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal1',
+    '[{"method":"password","timestamp":0}]'::jsonb
+      || jsonb_build_array(jsonb_build_object('method', 'password',
+           'timestamp', extract(epoch from now())::bigint)),
+    'select private.exigir_admin()', true, false) = '42501:mfa_requerido'
+  and pg_temp.as_aal_text(:A35::uuid, 'aal1', pg_temp.amr_totp(1),
+    'select (admin.sesion()->>''es_admin'')') = 'false',
+  '(b) aal1 recibe mfa_requerido, y sesion() no lo da por admin');
+
+-- (c) Admin sin activar, con aal2 y TOTP recientes → no_admin. Es la ventana
+-- entre crear la cuenta y el paso `activar` de crear-admin.mjs.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:N35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select private.exigir_admin()', true, false) = '42501:no_admin'
+  and pg_temp.as_aal_text(:N35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select (admin.sesion()->>''es_admin'')') = 'false',
+  '(c) admin con activado_at nulo recibe no_admin');
+
+-- (d) TOTP de hace 13 h → totp_vencido (la ventana es de 12 h, D16).
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(13),
+    'select private.exigir_admin()', true, false) = '42501:totp_vencido'
+  and pg_temp.as_aal_text(:A35::uuid, 'aal2', pg_temp.amr_totp(13),
+    'select (admin.sesion()->>''totp_reciente'')') = 'false',
+  '(d) TOTP de hace 13 h recibe totp_vencido');
+
+-- (d2) D18: token SIN la clave `amr`, y con `"amr": null`. Rechazo LIMPIO
+-- (42501 totp_vencido), no el `22023 cannot extract elements from a scalar`
+-- que daría la forma con `coalesce`.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', null,
+    'select private.exigir_admin()', false, false) = '42501:totp_vencido'
+  and pg_temp.rechazo_aal(:A35::uuid, 'aal2', null,
+    'select private.exigir_admin()', true, false) = '42501:totp_vencido'
+  and pg_temp.rechazo_aal(:A35::uuid, 'aal2', null,
+    'select admin.sesion()', true, true) = 'ok',
+  '(d2) sin amr y con amr: null → rechazo limpio 42501, no 22023');
+
+-- (d3) Nota heredada: `amr` con timestamp basura, y con strings en vez de
+-- objetos. Rechazo limpio, no el `22P02` del cast.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2',
+    '[{"method":"totp","timestamp":"abc"}]'::jsonb,
+    'select private.exigir_admin()', true, false) = '42501:totp_vencido'
+  and pg_temp.rechazo_aal(:A35::uuid, 'aal2', '["totp"]'::jsonb,
+    'select private.exigir_admin()', true, false) = '42501:totp_vencido',
+  '(d3) amr con timestamp basura o con strings → rechazo limpio');
+
+-- (i) APPEND-ONLY: UPDATE, DELETE y TRUNCATE sobre la auditoría lanzan, incluso
+-- como `postgres`. Una fila sembrada a mano (la escritura normal es por
+-- `private.auditar()`, que se prueba en el Paso 4).
+insert into private.admin_acciones
+  (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+values (:A35::uuid, 'rls-t35-a@rls-t35.mx', 'suspender_usuario', 'usuario', :S35,
+        '{"estado":"activo"}', '{"estado":"suspendido"}', 'fila de prueba T35');
+
+-- Cada acción en su propia sentencia (`\gset`), no dentro del `assert`: un
+-- TRUNCATE en la misma sentencia que el `count(*)` de abajo choca con la tabla
+-- abierta (55006) antes de llegar al trigger, y la aserción mediría eso.
+select pg_temp.rechazo_de(null, format(
+  'update private.admin_acciones set motivo = ''otro'' where objetivo_id = %L', :S35))
+  as t35_i_update \gset
+select pg_temp.rechazo_de(null, format(
+  'delete from private.admin_acciones where objetivo_id = %L', :S35))
+  as t35_i_delete \gset
+select pg_temp.rechazo_de(null, 'truncate private.admin_acciones') as t35_i_truncate \gset
+
+select pg_temp.assert(
+  :'t35_i_update' = '42501' and :'t35_i_delete' = '42501' and :'t35_i_truncate' = '42501'
+  and (select count(*) from private.admin_acciones where objetivo_id = :S35) = 1,
+  '(i) UPDATE, DELETE y TRUNCATE sobre admin_acciones lanzan, incluso como postgres');
+
+-- (j) Lo que NO puede ir en `antes`/`despues` (D20): un correo, un valor
+-- anidado y una clave permitida en OTRO tipo (`nombre` es de `universidad`).
+-- Y el control positivo: la clave válida del tipo pasa.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format($f$
+    insert into private.admin_acciones
+      (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, motivo)
+    values (%L, 'x', 'suspender_usuario', 'usuario', 'x', '{"correo":"a@b.mx"}', 'abc')$f$,
+    :A35)) = '23514:admin_acciones_claves_ok'
+  and pg_temp.rechazo_de(null, format($f$
+    insert into private.admin_acciones
+      (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, despues, motivo)
+    values (%L, 'x', 'suspender_usuario', 'usuario', 'x', '{"estado":{"correo":"a@b.mx"}}', 'abc')$f$,
+    :A35)) = '23514:admin_acciones_claves_ok'
+  and pg_temp.rechazo_de(null, format($f$
+    insert into private.admin_acciones
+      (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, despues, motivo)
+    values (%L, 'x', 'suspender_usuario', 'usuario', 'x', '{"nombre":"Juan"}', 'abc')$f$,
+    :A35)) = '23514:admin_acciones_claves_ok'
+  and pg_temp.rechazo_de(null, format($f$
+    insert into private.admin_acciones
+      (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, despues, motivo)
+    values (%L, 'x', 'suspender_usuario', 'usuario', 'x',
+            '{"estado":"suspendido","publicaciones_pausadas":2}', 'abc')$f$,
+    :A35)) = 'ok',
+  '(j) correo, valor anidado o clave de otro tipo en la auditoría → 23514; la válida pasa');
+
+-- (j2) El motivo de la auditoría: 3-500 caracteres tras btrim, la misma regla
+-- que las RPCs y que `users_suspension_motivo_valido`.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format($f$
+    insert into private.admin_acciones
+      (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, motivo)
+    values (%L, 'x', 'suspender_usuario', 'usuario', 'x', '    ')$f$,
+    :A35)) = '23514:admin_acciones_motivo_valido'
+  and pg_temp.rechazo_de(null, format($f$
+    insert into private.admin_acciones
+      (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, motivo)
+    values (%L, 'x', 'suspender_usuario', 'usuario', 'x', %L)$f$,
+    :A35, repeat('m', 501))) = '23514:admin_acciones_motivo_valido'
+  and pg_temp.rechazo_de(null, format($f$
+    insert into private.admin_acciones
+      (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, motivo)
+    values (%L, 'x', 'suspender_usuario', 'usuario', 'x', %L)$f$,
+    :A35, '  ' || repeat('m', 500) || '  ')) = 'ok',
+  '(j2) motivo en blanco o de 501 → 23514; 500 con espacios alrededor pasa');
+
+-- (k) Borrar la cuenta de un admin: su fila de `private.admins` se va (cascade
+-- desde auth.users), su auditoría SE QUEDA (`admin_id` no lleva FK).
+insert into private.admin_acciones
+  (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+values (:K35::uuid, 'rls-t35-k@rls-t35.mx', 'reactivar_usuario', 'usuario', :S35,
+        '{"estado":"suspendido"}', '{"estado":"activo"}', 'fila de prueba T35 (k)');
+
+select pg_temp.rechazo_de(null, format('delete from auth.users where id = %L', :K35))
+  as t35_borrar_k \gset
+
+select pg_temp.assert(
+  :'t35_borrar_k' = 'ok'
+  and not exists (select 1 from private.admins where user_id = :K35::uuid)
+  and (select count(*) from private.admin_acciones where admin_id = :K35::uuid) = 1,
+  '(k) borrar al admin de auth.users conserva su fila de auditoría');
+
+-- (l) Revocar a un admin es BORRAR su fila, y surte efecto en la llamada
+-- siguiente: con el MISMO token (aal2, TOTP reciente), antes pasa y después no.
+select pg_temp.rechazo_aal(:L35::uuid, 'aal2', pg_temp.amr_totp(1),
+  'select private.exigir_admin()', true, false) as t35_l_antes \gset
+delete from private.admins where user_id = :L35::uuid;
+select pg_temp.rechazo_aal(:L35::uuid, 'aal2', pg_temp.amr_totp(1),
+  'select private.exigir_admin()', true, false) as t35_l_despues \gset
+
+select pg_temp.assert(
+  :'t35_l_antes' = 'ok'
+  and :'t35_l_despues' = '42501:no_admin'
+  and pg_temp.as_aal_text(:L35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select (admin.sesion()->>''es_admin'')') = 'false',
+  '(l) revocar (borrar la fila) surte efecto en la llamada siguiente con el mismo token');
 
 \echo ''
 \echo '== T36 — resolver el reporte de una cuenta eliminada (RF-17, Ola 0) =='
