@@ -4658,6 +4658,8 @@ select pg_temp.assert(
 --   :S35 — usuario del marketplace, no admin.
 --   :K35 — admin cuya cuenta se borra en (k).
 --   :L35 — admin al que se revoca en (l).
+--   :U35 — usuario activo: objetivo de las guardas de motivo y de estado.
+--   :V35 — vendedor activo: la publicación ajena que `:S35` contacta en (m).
 --
 -- Los rechazos se comparan como `sqlstate:mensaje` (`rechazo_aal`): todas las
 -- guardas comparten 42501 y solo el mensaje dice cuál rechazó. `exigir_admin()`
@@ -4672,13 +4674,27 @@ select pg_temp.assert(
 \set S35 '''35353535-0000-0000-0000-0000000035d0'''
 \set K35 '''35353535-0000-0000-0000-0000000035e0'''
 \set L35 '''35353535-0000-0000-0000-0000000035f0'''
+\set U35 '''35353535-0000-0000-0000-000000003510'''
+\set V35 '''35353535-0000-0000-0000-000000003520'''
+
+-- Universidad y dominio propios ANTES de las cuentas: `handle_new_user()` les
+-- asigna la universidad desde el dominio, y sin ella `:S35`/`:V35` no podrían
+-- tener publicaciones (FK publicación ↔ dueño, 20260924000466).
+insert into public.universidades (nombre) values ('RLS T35 Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t35.mx', id from public.universidades where nombre = 'RLS T35 Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T35 Campus', 'Ciudad T35' from public.universidades
+ where nombre = 'RLS T35 Universidad';
+
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
                         email_confirmed_at, created_at, updated_at)
 select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
        e, '', now(), now(), now()
   from (values (:A35, 'rls-t35-a@rls-t35.mx'), (:X35, 'rls-t35-x@rls-t35.mx'),
                (:N35, 'rls-t35-n@rls-t35.mx'), (:S35, 'rls-t35-s@rls-t35.mx'),
-               (:K35, 'rls-t35-k@rls-t35.mx'), (:L35, 'rls-t35-l@rls-t35.mx')) as v(u, e);
+               (:K35, 'rls-t35-k@rls-t35.mx'), (:L35, 'rls-t35-l@rls-t35.mx'),
+               (:U35, 'rls-t35-u@rls-t35.mx'), (:V35, 'rls-t35-v@rls-t35.mx')) as v(u, e);
 
 insert into private.admins (user_id, nombre, activado_at)
 values (:A35::uuid, 'Admin T35', now()),
@@ -4689,10 +4705,13 @@ values (:A35::uuid, 'Admin T35', now()),
 
 select pg_temp.assert(
   (select count(*) from public.users where id in
-     (:A35::uuid, :X35::uuid, :N35::uuid, :S35::uuid, :K35::uuid, :L35::uuid)) = 6
+     (:A35::uuid, :X35::uuid, :N35::uuid, :S35::uuid, :K35::uuid, :L35::uuid,
+      :U35::uuid, :V35::uuid)
+     and universidad_id = (select id from public.universidades
+                            where nombre = 'RLS T35 Universidad')) = 8
   and (select count(*) from private.admins where user_id in
      (:A35::uuid, :X35::uuid, :N35::uuid, :K35::uuid, :L35::uuid)) = 5,
-  'precondición T35: las 6 cuentas tienen perfil y 5 son admins');
+  'precondición T35: las 8 cuentas tienen perfil con la universidad de T35 y 5 son admins');
 
 -- (b0) El camino feliz. Sin esta, un `is_admin()` que rechace SIEMPRE pasaría
 -- todas las aserciones de rechazo de abajo.
@@ -4860,6 +4879,329 @@ select pg_temp.assert(
   and pg_temp.as_aal_text(:L35::uuid, 'aal2', pg_temp.amr_totp(1),
     'select (admin.sesion()->>''es_admin'')') = 'false',
   '(l) revocar (borrar la fila) surte efecto en la llamada siguiente con el mismo token');
+
+-- ---------------------------------------------------------------------------
+-- T35, segunda mitad: suspender / reactivar (20260930000478)
+-- ---------------------------------------------------------------------------
+--
+-- Publicaciones de `:S35`, una por estado que importa, más la ajena de `:V35`
+-- que `:S35` contacta en (m). Sembradas como postgres (la escritura normal
+-- pasa por moderación; aquí interesa el estado de partida).
+
+create temp table t35_l as
+with ins as (
+  insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                               titulo, precio, condicion, estado, updated_at)
+  select v.dueno::uuid, 1, u.universidad_id,
+         (select c.id from public.campus c where c.nombre = 'RLS T35 Campus'),
+         v.titulo, 100, 'usado', v.estado::public.listing_status,
+         now() - interval '3 days'
+    from (values (:S35, 'RLS T35 activa con foto', 'activa'),
+                 (:S35, 'RLS T35 activa sin foto', 'activa'),
+                 (:S35, 'RLS T35 pausada previa',  'pausada'),
+                 (:S35, 'RLS T35 vendida',         'vendida'),
+                 (:S35, 'RLS T35 pendiente',       'pendiente'),
+                 (:S35, 'RLS T35 bloqueada',       'bloqueada'),
+                 (:V35, 'RLS T35 ajena de V',      'activa')) as v(dueno, titulo, estado)
+    join public.users u on u.id = v.dueno::uuid
+  returning id, titulo, estado, updated_at
+)
+select * from ins;
+
+insert into public.listing_photos (listing_id, storage_path, orden)
+select id, id || '/t35.jpg', 0 from t35_l where titulo = 'RLS T35 activa con foto';
+
+select pg_temp.assert(
+  (select count(*) from t35_l) = 7,
+  'precondición T35 (suspensión): las 7 publicaciones sembradas');
+
+-- (a) Un no-admin, aun con aal2 y TOTP recientes, recibe `no_admin` en CADA una
+-- de las 4 RPCs de la Ola 1 (G1). Una por RPC: el control quita G1 de una sola.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:S35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select * from admin.buscar_usuarios(''x'')') = '42501:no_admin'
+  and pg_temp.rechazo_aal(:S35::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.detalle_usuario(%L)', :U35)) = '42501:no_admin'
+  and pg_temp.rechazo_aal(:S35::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.suspender_usuario(%L, ''motivo válido'')', :U35)) = '42501:no_admin'
+  and pg_temp.rechazo_aal(:S35::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.reactivar_usuario(%L, ''motivo válido'')', :U35)) = '42501:no_admin',
+  '(a)/(r1) un no-admin recibe no_admin en buscar, detalle, suspender y reactivar');
+
+-- (m), primera mitad: "JWT vivo". Con ESTOS claims (aal1, solo contraseña:
+-- los de la app móvil), `:S35` todavía activo inserta un contacto y una
+-- publicación `pendiente`. La segunda mitad, con los MISMOS claims, va
+-- después de suspenderlo.
+select pg_temp.rechazo_aal(:S35::uuid, 'aal1',
+  jsonb_build_array(jsonb_build_object('method', 'password',
+                    'timestamp', extract(epoch from now())::bigint)),
+  format('insert into public.listing_contacts (user_id, listing_id) values (%L, %s)',
+         :S35, (select id from t35_l where titulo = 'RLS T35 ajena de V')))
+  as t35_m_contacto_antes \gset
+select pg_temp.rechazo_aal(:S35::uuid, 'aal1',
+  jsonb_build_array(jsonb_build_object('method', 'password',
+                    'timestamp', extract(epoch from now())::bigint)),
+  format($f$insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                                         titulo, precio, condicion, estado)
+            select %L, 1, universidad_id, (select id from public.campus
+                                            where nombre = 'RLS T35 Campus'),
+                   'RLS T35 JWT vivo antes', 10, 'usado', 'pendiente'
+              from public.users where id = %L$f$, :S35, :S35))
+  as t35_m_publica_antes \gset
+
+select pg_temp.assert(
+  :'t35_m_contacto_antes' = 'ok' and :'t35_m_publica_antes' = 'ok',
+  '(m) antes de suspender, los mismos claims contactan y publican');
+
+-- (g0) Coherencia en los DOS sentidos, como postgres (lo que haría Studio):
+-- suspendido sin fecha, y activo con un motivo colgando.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format($f$update public.users set estado = 'suspendido',
+      suspension_motivo = 'motivo válido' where id = %L$f$, :U35))
+    = '23514:users_suspension_coherente'
+  and pg_temp.rechazo_de(null, format($f$update public.users
+      set suspension_motivo = 'motivo válido' where id = %L$f$, :U35))
+    = '23514:users_suspension_coherente',
+  '(g0) suspendido sin suspendido_at, o activo con motivo → 23514 users_suspension_coherente');
+
+-- (g1) Motivo en blanco por la RPC → lo rechaza G2 de la función, ANTES de
+-- tocar la fila (22023, no el 23514 del CHECK).
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.suspender_usuario(%L, ''   '')', :U35)) = '22023:motivo_invalido',
+  '(g1) suspender con motivo en blanco → 22023 motivo_invalido (la función)');
+
+-- (g2) El mismo motivo por UPDATE directo como postgres → el CHECK de la tabla.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format($f$update public.users set estado = 'suspendido',
+      suspendido_at = now(), suspension_motivo = '   ' where id = %L$f$, :U35))
+    = '23514:users_suspension_motivo_valido',
+  '(g2) motivo en blanco por UPDATE directo → 23514 users_suspension_motivo_valido');
+
+-- (g3) 501 caracteres, por las dos vías.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.suspender_usuario(%L, %L)', :U35, repeat('m', 501)))
+    = '22023:motivo_invalido'
+  and pg_temp.rechazo_de(null, format($f$update public.users set estado = 'suspendido',
+      suspendido_at = now(), suspension_motivo = %L where id = %L$f$, repeat('m', 501), :U35))
+    = '23514:users_suspension_motivo_valido',
+  '(g3) motivo de 501 caracteres → rechazado por la función y por el CHECK');
+
+-- (h1) Un admin no se suspende a sí mismo. `:A35` también es admin, así que G4
+-- lo rechazaría igual: por eso se compara el MENSAJE, no solo el SQLSTATE.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.suspender_usuario(%L, ''motivo válido'')', :A35))
+    = '42501:no_sobre_si_mismo',
+  '(h1) suspenderse a sí mismo → no_sobre_si_mismo');
+
+-- (h2) Ni a otro admin: desde el panel, un admin no suspende a otro (revocar
+-- es borrar su fila de private.admins).
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.suspender_usuario(%L, ''motivo válido'')', :X35))
+    = '42501:objetivo_es_admin'
+  and (select estado from public.users where id = :X35::uuid) = 'activo',
+  '(h2) suspender a otro admin → objetivo_es_admin');
+
+-- (e) Suspender de verdad. La acción en su propia sentencia y la comprobación
+-- en otra (lección de T28).
+select count(*) as t35_aud_antes from private.admin_acciones
+ where accion = 'suspender_usuario' and objetivo_id = :S35 \gset
+
+select pg_temp.as_aal_text(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.suspender_usuario(%L, ''  Spam reiterado en el catálogo  '')', :S35))
+  as t35_pausadas \gset
+
+select pg_temp.assert(
+  :'t35_pausadas' = '2'
+  and (select estado from public.users where id = :S35::uuid) = 'suspendido'
+  and (select suspendido_at is not null from public.users where id = :S35::uuid)
+  and (select suspension_motivo from public.users where id = :S35::uuid)
+      = 'Spam reiterado en el catálogo'
+  and (select count(*) from public.listings l join t35_l t on t.id = l.id
+        where t.titulo in ('RLS T35 activa con foto', 'RLS T35 activa sin foto')
+          and l.estado = 'pausada') = 2
+  and (select l.estado from public.listings l join t35_l t on t.id = l.id
+        where t.titulo = 'RLS T35 vendida') = 'vendida'
+  and (select l.estado from public.listings l join t35_l t on t.id = l.id
+        where t.titulo = 'RLS T35 pendiente') = 'pendiente'
+  and (select l.estado from public.listings l join t35_l t on t.id = l.id
+        where t.titulo = 'RLS T35 bloqueada') = 'bloqueada'
+  and (select l.updated_at = t.updated_at from public.listings l join t35_l t on t.id = l.id
+        where t.titulo = 'RLS T35 pausada previa'),
+  '(e) suspender: estado, fecha y motivo (con btrim); devuelve las 2 que pasaron de activa a pausada; vendida, pendiente, bloqueada y la pausada previa intactas');
+
+-- (e2) Suspender a quien ya está suspendido → el CAS no escribe y LANZA.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.suspender_usuario(%L, ''otra vez'')', :S35))
+    = '55000:estado_inesperado',
+  '(e2) suspender a un suspendido → 55000 estado_inesperado');
+
+-- (f) La auditoría, exacta: una fila más, del actor real, con solo las claves
+-- permitidas y los valores de ESTA acción.
+select pg_temp.assert(
+  (select count(*) from private.admin_acciones
+    where accion = 'suspender_usuario' and objetivo_id = :S35) = :t35_aud_antes + 1
+  and (select jsonb_build_array(admin_id, admin_correo, objetivo_tipo, antes,
+                                despues - 'suspendido_at', motivo)
+         from private.admin_acciones
+        where accion = 'suspender_usuario' and objetivo_id = :S35
+        order by id desc limit 1)
+      = jsonb_build_array(:A35::uuid, 'rls-t35-a@rls-t35.mx', 'usuario',
+                          '{"estado":"activo"}'::jsonb,
+                          '{"estado":"suspendido","publicaciones_pausadas":2}'::jsonb,
+                          'Spam reiterado en el catálogo')
+  and (select (despues->>'suspendido_at')::timestamptz from private.admin_acciones
+        where accion = 'suspender_usuario' and objetivo_id = :S35
+        order by id desc limit 1)
+      = (select suspendido_at from public.users where id = :S35::uuid),
+  '(f) la auditoría de suspender trae actor, antes y despues exactos');
+
+-- (m), segunda mitad: los MISMOS claims de antes, ya suspendido. El JWT sigue
+-- vivo, pero `is_active_user()` lee `users.estado` en cada request.
+select pg_temp.rechazo_aal(:S35::uuid, 'aal1',
+  jsonb_build_array(jsonb_build_object('method', 'password',
+                    'timestamp', extract(epoch from now())::bigint)),
+  format('insert into public.listing_contacts (user_id, listing_id) values (%L, %s)',
+         :S35, (select id from t35_l where titulo = 'RLS T35 ajena de V')))
+  as t35_m_contacto_despues \gset
+select pg_temp.rechazo_aal(:S35::uuid, 'aal1',
+  jsonb_build_array(jsonb_build_object('method', 'password',
+                    'timestamp', extract(epoch from now())::bigint)),
+  format($f$insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                                         titulo, precio, condicion, estado)
+            select %L, 1, universidad_id, (select id from public.campus
+                                            where nombre = 'RLS T35 Campus'),
+                   'RLS T35 JWT vivo después', 10, 'usado', 'pendiente'
+              from public.users where id = %L$f$, :S35, :S35))
+  as t35_m_publica_despues \gset
+
+select pg_temp.assert(
+  :'t35_m_contacto_despues' like '42501:new row violates row-level security policy%'
+  and :'t35_m_publica_despues' like '42501:new row violates row-level security policy%',
+  '(m) JWT vivo: después de suspender, los mismos claims ya no contactan ni publican');
+
+-- (o), (o2), (o3) Los conteos de `detalle_usuario`, con publicaciones
+-- sembradas DESPUÉS de suspender (el camino de la deuda `dueno_no_activo`,
+-- Ola 4: algo que se activa con el dueño ya suspendido).
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+select :S35::uuid, 1, u.universidad_id,
+       (select c.id from public.campus c where c.nombre = 'RLS T35 Campus'),
+       v.t, 100, 'usado', 'activa'
+  from public.users u,
+       (values ('RLS T35 activa tardía con foto'), ('RLS T35 activa tardía sin foto')) as v(t)
+ where u.id = :S35::uuid;
+insert into public.listing_photos (listing_id, storage_path, orden)
+select id, id || '/t35.jpg', 0 from public.listings
+ where titulo = 'RLS T35 activa tardía con foto';
+
+select pg_temp.as_aal_text(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.detalle_usuario(%L)::text', :S35)) as t35_detalle \gset
+
+select pg_temp.assert(
+  (:'t35_detalle'::jsonb->>'publicaciones_activas')::int = 2
+  and (:'t35_detalle'::jsonb->>'estado') = 'suspendido'
+  and (:'t35_detalle'::jsonb->>'correo') = 'rls-t35-s@rls-t35.mx',
+  '(o) detalle_usuario cuenta solo las activas (2, sembradas tras suspender) y trae el correo (D8)');
+
+select pg_temp.assert(
+  (:'t35_detalle'::jsonb->>'activas_sin_foto')::int = 1,
+  '(o2) activas_sin_foto cuenta solo las activas sin fila en listing_photos');
+
+select pg_temp.assert(
+  (:'t35_detalle'::jsonb->>'publicaciones_pendientes')::int = 2,
+  '(o3) publicaciones_pendientes cuenta solo las pendiente (la sembrada y la de (m)), no las bloqueadas');
+
+select pg_temp.assert(
+  jsonb_array_length(:'t35_detalle'::jsonb->'auditoria') >= 1
+  and (:'t35_detalle'::jsonb->'auditoria'->0->>'accion') = 'suspender_usuario',
+  '(o4) detalle_usuario trae la auditoría del usuario, la más reciente primero');
+
+-- (p) buscar_usuarios: encuentra por correo, lo trae, y un `%` tecleado es un
+-- CARÁCTER, no un comodín (gotcha del comodín de búsqueda, CLAUDE.md §9).
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select string_agg(correo, '','') from admin.buscar_usuarios(''rls-t35-s@'')')
+    = 'rls-t35-s@rls-t35.mx'
+  and pg_temp.as_aal_text(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select count(*)::text from admin.buscar_usuarios(''%'')') = '0'
+  and pg_temp.as_aal_text(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select count(*)::text from admin.buscar_usuarios(''rls_t35'')') = '0',
+  '(p) buscar_usuarios encuentra por correo, y % y _ tecleados no son comodines');
+
+-- (r2) Reactivar con motivo en blanco → G2 (22023), antes de tocar la fila.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.reactivar_usuario(%L, ''  '')', :S35)) = '22023:motivo_invalido'
+  and (select estado from public.users where id = :S35::uuid) = 'suspendido',
+  '(r2) reactivar con motivo en blanco → 22023 motivo_invalido');
+
+-- (n) Reactivar: `activo`, las dos columnas en NULL, y NO despausa (decisión de
+-- 20260917000457: la base no distingue quién pausó).
+select pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.reactivar_usuario(%L, ''Apelación aceptada'')', :S35))
+  as t35_reactivar \gset
+
+select pg_temp.assert(
+  :'t35_reactivar' = 'ok'
+  and (select estado from public.users where id = :S35::uuid) = 'activo'
+  and (select suspendido_at is null and suspension_motivo is null
+         from public.users where id = :S35::uuid)
+  and (select count(*) from public.listings l join t35_l t on t.id = l.id
+        where t.titulo in ('RLS T35 activa con foto', 'RLS T35 activa sin foto')
+          and l.estado = 'pausada') = 2
+  and (select despues from private.admin_acciones
+        where accion = 'reactivar_usuario' and objetivo_id = :S35
+          and admin_id = :A35::uuid
+        order by id desc limit 1) = '{"estado":"activo"}'::jsonb,
+  '(n) reactivar pone activo, limpia las dos columnas, audita, y NO despausa');
+
+-- (r3) Un admin suspendido por otra vía (Studio) no se reactiva a sí mismo.
+-- Suspender no lo revoca (is_admin no mira users.estado), así que pasa G1 y es
+-- G3 quien lo frena.
+update public.users set estado = 'suspendido', suspendido_at = now(),
+       suspension_motivo = 'suspendido desde Studio' where id = :A35::uuid;
+select pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.reactivar_usuario(%L, ''me reactivo'')', :A35)) as t35_r3 \gset
+select estado::text as t35_r3_estado from public.users where id = :A35::uuid \gset
+update public.users set estado = 'activo', suspendido_at = null, suspension_motivo = null
+ where id = :A35::uuid;
+
+select pg_temp.assert(
+  :'t35_r3' = '42501:no_sobre_si_mismo' and :'t35_r3_estado' = 'suspendido',
+  '(r3) un admin suspendido desde Studio no se reactiva a sí mismo');
+
+-- (r4) Pero OTRO admin sí lo reactiva: reactivar no lleva G4.
+update public.users set estado = 'suspendido', suspendido_at = now(),
+       suspension_motivo = 'suspendido desde Studio' where id = :X35::uuid;
+select pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.reactivar_usuario(%L, ''error de Studio'')', :X35)) as t35_r4 \gset
+
+select pg_temp.assert(
+  :'t35_r4' = 'ok'
+  and (select estado from public.users where id = :X35::uuid) = 'activo',
+  '(r4) un admin reactiva a otro admin suspendido por otra vía');
+
+-- (r5) Reactivar a quien está activo → el CAS no escribe y LANZA.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.reactivar_usuario(%L, ''motivo válido'')', :U35))
+    = '55000:estado_inesperado',
+  '(r5) reactivar a un activo → 55000 estado_inesperado');
+
+-- (r6) Un uuid que no existe → P0002, en las dos RPCs (no el 55000 del CAS).
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select admin.reactivar_usuario(''00000000-0000-0000-0000-0000000035ff'', ''motivo válido'')')
+    = 'P0002:usuario_no_existe'
+  and pg_temp.rechazo_aal(:A35::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select admin.suspender_usuario(''00000000-0000-0000-0000-0000000035ff'', ''motivo válido'')')
+    = 'P0002:usuario_no_existe',
+  '(r6) un uuid inexistente → P0002 usuario_no_existe al suspender y al reactivar');
 
 \echo ''
 \echo '== T36 — resolver el reporte de una cuenta eliminada (RF-17, Ola 0) =='
