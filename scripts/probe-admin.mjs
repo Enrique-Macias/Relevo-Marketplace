@@ -1,0 +1,276 @@
+#!/usr/bin/env node
+// Probe del panel de admin (RF-17, Ola 1) contra el stack LOCAL + Mailpit.
+//
+//   node scripts/probe-admin.mjs
+//
+// Cubre lo que `supabase/tests/rls.sql` (T35) no puede ver, porque allá los
+// claims se fabrican: que GoTrue emita de verdad el `aal`/`amr` que
+// `private.is_admin()` espera, que el alta de un admin funcione pese al Auth
+// Hook de dominios, y que PostgREST exponga el schema `admin`.
+//
+// Importa la implementación REAL de `scripts/crear-admin.mjs` (crear y
+// activar), no la transcribe. Necesita TOTP encendido en `config.toml`
+// (`[auth.mfa.totp]`) y `admin` en `[api] schemas`; imprime al arrancar
+// contra qué estado corre.
+//
+// Casos:
+//   1. El alta de un admin: `/invite` SÍ pasa por el hook (403) y
+//      `/admin/users` no (200): por eso `crear` usa el segundo.
+//   2. Código de recuperación → contraseña → TOTP → aal2; antes de `activar`,
+//      `admin.sesion()` dice es_admin=false y `activar` exige el TOTP.
+//   3. `amr` tras password, tras TOTP, tras refresh (CONSERVA el timestamp del
+//      TOTP) y tras re-verificar (lo RENUEVA): es lo que hace cumplible D16.
+//   4. Una RPC con aal2 pasa; con una sesión aal1, 42501 `mfa_requerido`.
+//   5. "Olvidé mi contraseña" de un admin activado: el código da aal1 y hay
+//      que pedir TOTP para volver a aal2. 5b: el de una cuenta que nunca fijó
+//      contraseña también funciona.
+//   6. Un nombre con comilla simple (O'Brien) llega intacto a
+//      `private.admins`, y `crear-admin.mjs` no contiene ningún dollar-quote.
+//
+// Limpia lo suyo al final (sus cuentas; la auditoría es append-only y se
+// queda, como en cualquier borrado de cuenta de admin).
+
+import { execFileSync } from 'node:child_process';
+import { createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { createClient } from '@supabase/supabase-js';
+import { crear, activar } from './crear-admin.mjs';
+
+const DB = 'supabase_db_relevo-marketplace';
+const MAIL = 'http://127.0.0.1:54324';
+const RUN = Date.now().toString(36);
+const PASS = 'Probe-admin-1234!';
+
+let pasadas = 0;
+const fallos = [];
+function ok(nombre, cond, detalle) {
+  if (cond) { pasadas++; console.log(`  ok — ${nombre}${detalle ? ` (${detalle})` : ''}`); }
+  else { fallos.push(nombre); console.log(`  FALLÓ — ${nombre}${detalle ? ` (${detalle})` : ''}`); }
+}
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+const sql = (q) => execFileSync('docker', ['exec', DB, 'psql', '-U', 'postgres', '-d', 'postgres',
+  '-v', 'ON_ERROR_STOP=1', '-Atc', q], { encoding: 'utf8' }).trim();
+
+function env() {
+  const raw = execFileSync('supabase', ['status', '-o', 'env'], { encoding: 'utf8' });
+  const out = {};
+  for (const line of raw.split('\n')) {
+    const i = line.indexOf('=');
+    if (i > 0) out[line.slice(0, i)] = line.slice(i + 1).replace(/^"|"$/g, '');
+  }
+  return out;
+}
+
+const jwt = (t) => JSON.parse(Buffer.from(t.split('.')[1], 'base64url').toString());
+const tsDe = (claims, metodo) => claims.amr?.find((e) => e.method === metodo)?.timestamp;
+
+// RFC 6238, lo mismo que hace una app autenticadora.
+function base32(s) {
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const ch of s.replace(/=+$/, '').toUpperCase()) bits += A.indexOf(ch).toString(2).padStart(5, '0');
+  const out = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) out.push(parseInt(bits.slice(i, i + 8), 2));
+  return Buffer.from(out);
+}
+function totp(secret) {
+  const c = Buffer.alloc(8);
+  c.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+  const h = createHmac('sha1', base32(secret)).update(c).digest();
+  const o = h[h.length - 1] & 15;
+  return String((h.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, '0');
+}
+/** Espera a la siguiente ventana de 30 s: el mismo código no se re-verifica. */
+const siguienteVentana = () => esperar(30000 - (Date.now() % 30000) + 1500);
+
+async function correos(to) {
+  const r = await fetch(`${MAIL}/api/v1/search?query=${encodeURIComponent(`to:${to}`)}`);
+  return (await r.json()).messages ?? [];
+}
+async function codigoNuevo(to, previos) {
+  for (let i = 0; i < 40; i++) {
+    const l = await correos(to);
+    if (l.length > previos) {
+      const m = await (await fetch(`${MAIL}/api/v1/message/${l[0].ID}`)).json();
+      return (m.Text ?? '').match(/\b\d{6}\b/)?.[0];
+    }
+    await esperar(150);
+  }
+  return undefined;
+}
+
+async function main() {
+  const E = env();
+  const cli = () => createClient(E.API_URL, E.PUBLISHABLE_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false } });
+  const creadas = [];
+  // Se registra ANTES de crear: si `crear()` revienta a la mitad (ya existe
+  // la cuenta pero falló el insert), el `finally` igual la borra. Y el fallo
+  // sale como FALLÓ con nombre, no como un error crudo que corta el probe.
+  const crearProbe = async (correo, nombre) => {
+    creadas.push(correo);
+    try { await crear(correo, nombre); return null; } catch (e) { return e.message; }
+  };
+
+  console.log('Estado del stack:');
+  const gotrue = execFileSync('docker', ['exec', 'supabase_auth_relevo-marketplace', 'env'],
+    { encoding: 'utf8' }).split('\n').filter((l) => /MFA_TOTP|HOOK_BEFORE_USER_CREATED_ENABLED/.test(l));
+  console.log(`  ${gotrue.join(' ')}`);
+  console.log(`  dominios del hook: ${sql('select string_agg(dominio, \',\') from public.universidad_dominios')}`);
+  console.log(`  funciones de admin.*: ${sql("select string_agg(proname, ',' order by proname) from pg_proc where pronamespace = 'admin'::regnamespace")}`);
+
+  try {
+    // -------------------------------------------------------------------
+    console.log('\n== 1. /invite pasa por el hook; /admin/users no ==');
+    const inv = await fetch(`${E.API_URL}/auth/v1/invite`, {
+      method: 'POST',
+      headers: { apikey: E.SECRET_KEY, Authorization: `Bearer ${E.SECRET_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: `probe-admin-inv-${RUN}@rlvo.com.mx` }),
+    });
+    const invJson = await inv.json();
+    ok('/invite de @rlvo.com.mx → 403 dominio_no_participante', inv.status === 403 && invJson.msg === 'dominio_no_participante',
+      `${inv.status} ${invJson.msg}`);
+
+    const A = `probe-admin-a-${RUN}@rlvo.com.mx`;
+    const errA = await crearProbe(A, 'Admin Probe');
+    ok('crear() termina sin error', !errA, errA?.slice(0, 120));
+    if (errA) throw new Error('sin la cuenta A no se puede seguir');
+    ok('crear() por /admin/users → la cuenta existe', sql(`select count(*) from auth.users where email = '${A}'`) === '1');
+    ok('…con fila en private.admins SIN activar',
+      sql(`select (activado_at is null)::text from private.admins a join auth.users u on u.id = a.user_id where u.email = '${A}'`) === 'true');
+
+    // -------------------------------------------------------------------
+    console.log('\n== 2. código → contraseña → TOTP → aal2, y activar ==');
+    const cod = await codigoNuevo(A, 0);
+    ok('crear() mandó el código de recuperación', Boolean(cod));
+    const cA = cli();
+    const ver = await cA.auth.verifyOtp({ type: 'recovery', email: A, token: cod });
+    ok('verifyOtp(recovery) → sesión', !ver.error && Boolean(ver.data.session), ver.error?.message);
+    const up = await cA.auth.updateUser({ password: PASS });
+    ok('updateUser(password) → ok', !up.error, up.error?.message);
+
+    let fallo = null;
+    try { await activar(A, { confirmado: true }); } catch (e) { fallo = e.message; }
+    ok('activar ANTES de enrolar TOTP → rechazado', Boolean(fallo), fallo?.slice(0, 80));
+
+    const cL = cli();
+    const lg = await cL.auth.signInWithPassword({ email: A, password: PASS });
+    ok('login con contraseña', !lg.error, lg.error?.message);
+    const c0 = jwt(lg.data.session.access_token);
+    const en = await cL.auth.mfa.enroll({ factorType: 'totp' });
+    ok('mfa.enroll(totp)', !en.error, en.error?.message);
+    const secret = en.data.totp.secret;
+    const fid = en.data.id;
+    const v1 = await cL.auth.mfa.challengeAndVerify({ factorId: fid, code: totp(secret) });
+    ok('challengeAndVerify → sin error', !v1.error, v1.error?.message);
+    const c1 = jwt((await cL.auth.getSession()).data.session.access_token);
+    ok('tras TOTP: aal2', c1.aal === 'aal2', c1.aal);
+
+    const s0 = await cL.schema('admin').rpc('sesion');
+    ok('antes de activar: admin.sesion() → es_admin=false, admin_activado=false',
+      !s0.error && s0.data.es_admin === false && s0.data.admin_activado === false,
+      JSON.stringify(s0.data ?? s0.error));
+
+    await activar(A, { confirmado: true });
+    const s1 = await cL.schema('admin').rpc('sesion');
+    ok('después de activar: admin.sesion() → es_admin=true (misma sesión)',
+      !s1.error && s1.data.es_admin === true, JSON.stringify(s1.data ?? s1.error));
+    ok('activar quedó auditado como activar_admin con el centinela',
+      sql(`select count(*) from private.admin_acciones a join auth.users u on u.id::text = a.objetivo_id
+            where u.email = '${A}' and a.accion = 'activar_admin'
+              and a.admin_id = '00000000-0000-0000-0000-000000000000'
+              and a.admin_correo = 'script:crear-admin.mjs'`) === '1');
+
+    // -------------------------------------------------------------------
+    console.log('\n== 3. amr: refresh conserva el TOTP, re-verificar lo renueva ==');
+    console.log(`  tras password: aal=${c0.aal} amr=${JSON.stringify(c0.amr)}`);
+    console.log(`  tras TOTP:     aal=${c1.aal} amr=${JSON.stringify(c1.amr)}`);
+    await esperar(1500);
+    const rf = await cL.auth.refreshSession();
+    const c2 = jwt(rf.data.session.access_token);
+    console.log(`  tras refresh:  aal=${c2.aal} amr=${JSON.stringify(c2.amr)}`);
+    ok('refresh: iat nuevo, timestamp del totp IGUAL', c2.iat > c1.iat && tsDe(c2, 'totp') === tsDe(c1, 'totp'));
+    await siguienteVentana();
+    const v2 = await cL.auth.mfa.challengeAndVerify({ factorId: fid, code: totp(secret) });
+    const c3 = jwt((await cL.auth.getSession()).data.session.access_token);
+    console.log(`  re-verificar:  aal=${c3.aal} amr=${JSON.stringify(c3.amr)}`);
+    ok('re-verificar el TOTP RENUEVA su timestamp (D16 cumplible)',
+      !v2.error && tsDe(c3, 'totp') > tsDe(c1, 'totp'), `${tsDe(c1, 'totp')} → ${tsDe(c3, 'totp')}`);
+
+    // -------------------------------------------------------------------
+    console.log('\n== 4. RPC con aal2 pasa; con aal1, mfa_requerido ==');
+    const b2 = await cL.schema('admin').rpc('buscar_usuarios', { p_q: A });
+    ok('buscar_usuarios con aal2 → encuentra la cuenta, con correo',
+      !b2.error && b2.data.length === 1 && b2.data[0].correo === A, b2.error?.message);
+    const cAal1 = cli();
+    await cAal1.auth.signInWithPassword({ email: A, password: PASS });
+    const b1 = await cAal1.schema('admin').rpc('buscar_usuarios', { p_q: A });
+    ok('buscar_usuarios con aal1 → 42501 mfa_requerido',
+      b1.error?.code === '42501' && b1.error?.message === 'mfa_requerido', `${b1.error?.code} ${b1.error?.message}`);
+    const anon = await cli().schema('admin').rpc('sesion');
+    ok('anon → rechazado (sin USAGE en admin)', Boolean(anon.error), anon.error?.message);
+
+    // -------------------------------------------------------------------
+    console.log('\n== 5. olvidé mi contraseña de un admin activado ==');
+    await siguienteVentana();
+    const previos = (await correos(A)).length;
+    const r5 = await cli().auth.resetPasswordForEmail(A);
+    ok('resetPasswordForEmail → ok', !r5.error, r5.error?.message);
+    const cod5 = await codigoNuevo(A, previos);
+    const c5 = cli();
+    const v5 = await c5.auth.verifyOtp({ type: 'recovery', email: A, token: cod5 });
+    const j5 = jwt(v5.data.session.access_token);
+    ok('el código da sesión aal1 (amr otp), no aal2', j5.aal === 'aal1', `${j5.aal} ${JSON.stringify(j5.amr)}`);
+    const r5a = await c5.schema('admin').rpc('buscar_usuarios', { p_q: A });
+    ok('…y el panel pide TOTP (mfa_requerido)', r5a.error?.message === 'mfa_requerido', r5a.error?.message);
+    const v5t = await c5.auth.mfa.challengeAndVerify({ factorId: fid, code: totp(secret) });
+    const r5b = await c5.schema('admin').rpc('buscar_usuarios', { p_q: A });
+    ok('…con el TOTP vuelve a aal2 y pasa', !v5t.error && !r5b.error, v5t.error?.message ?? r5b.error?.message);
+
+    console.log('\n== 5b. una cuenta que nunca fijó contraseña ==');
+    const B = `probe-admin-b-${RUN}@rlvo.com.mx`;
+    const errB = await crearProbe(B, 'Admin Sin Clave');
+    ok('crear() de B termina sin error', !errB, errB?.slice(0, 120));
+    const codB0 = await codigoNuevo(B, 0);
+    ok('crear() le mandó su código', Boolean(codB0));
+    await esperar(1200); // max_frequency de [auth.email]
+    const prevB = (await correos(B)).length;
+    const rB = await cli().auth.resetPasswordForEmail(B);
+    const codB = await codigoNuevo(B, prevB);
+    const vB = await cli().auth.verifyOtp({ type: 'recovery', email: B, token: codB });
+    ok('pedir otro código y verificarlo → sesión', !rB.error && !vB.error && Boolean(vB.data.session),
+      rB.error?.message ?? vB.error?.message);
+
+    // -------------------------------------------------------------------
+    console.log("\n== 6. O'Brien: nada se interpola ==");
+    const OB = `o'brien.probe-${RUN}@rlvo.com.mx`;
+    const errOB = await crearProbe(OB, "O'Brien");
+    ok("crear() con un nombre con comilla simple termina sin error", !errOB, errOB?.slice(0, 120));
+    ok("private.admins.nombre = O'Brien exacto",
+      sql(`select nombre from private.admins a join auth.users u on u.id = a.user_id where u.email = '${OB.replace(/'/g, "''")}'`) === "O'Brien");
+    const fuente = readFileSync(new URL('./crear-admin.mjs', import.meta.url), 'utf8');
+    ok('crear-admin.mjs no contiene ningún dollar-quote', !fuente.includes('$' + '$'));
+    let rechazo = null;
+    try { await crear('otro@gmail.com', 'Nombre'); } catch (e) { rechazo = e.message; }
+    ok('crear() rechaza un correo fuera de @rlvo.com.mx antes de tocar nada', Boolean(rechazo) &&
+      sql("select count(*) from auth.users where email = 'otro@gmail.com'") === '0');
+    rechazo = null;
+    try { await crear(`probe-admin-x-${RUN}@rlvo.com.mx`, 'Juan\n; drop table x'); } catch (e) { rechazo = e.message; }
+    ok('crear() rechaza un nombre con salto de línea', Boolean(rechazo));
+  } finally {
+    for (const c of creadas) {
+      sql(`delete from auth.users where email = '${c.replace(/'/g, "''")}'`);
+    }
+  }
+
+  console.log('');
+  if (fallos.length) {
+    console.log(`FALLARON ${fallos.length}: ${fallos.join(' | ')}`);
+    process.exit(1);
+  }
+  console.log('===========================================');
+  console.log(`   LAS ${pasadas} PRUEBAS PASARON`);
+  console.log('===========================================');
+}
+
+await main();
