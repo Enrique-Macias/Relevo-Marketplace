@@ -200,6 +200,13 @@ es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). E
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
 
+**Repo y remoto: 40 y 40 (medido el 2026-09-29) — a la par.** `ls
+supabase/migrations | wc -l` da **40**; `mcp__supabase__list_migrations`
+también da **40**, con `20260930000476` incluida, y `pg_get_triggerdef` de
+`reports_notify_resolved` en remoto trae `(new.reporter_id IS NOT NULL)` en su
+`WHEN`. El runbook de la Ola 0 de RF-17 (§8, pendiente 0k) ya corrió. La
+historia de antes, tal como estaba:
+
 **Repo y remoto: 40 y 39 (medido el 2026-09-29).** `ls supabase/migrations |
 wc -l` da **40**; `select count(*), max(version) from
 supabase_migrations.schema_migrations` en remoto da **39** y `20260930000475`.
@@ -3374,19 +3381,18 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
    IMMUTABLE con lista de claves POR tipo de objetivo (D20); cuentas de admin
    sin datos personales en `antes`/`despues`. **D5 (cómo borra el dueño una
    `bloqueada` cuando ya no ve sus fotos) se decide al entrar a la Ola 4.**
-   - **Ola 0 — HECHA EN LOCAL, sin pushear** (`7574b01`, migración
-     `20260930000476` + T36): resolver el reporte de una cuenta eliminada ya no
-     aborta (§3, "Resolver el reporte…"). **Runbook, tuyo:** `supabase db push`;
-     `list_migrations` debe dar 40; `pg_get_triggerdef` de
-     `reports_notify_resolved` en remoto debe traer `reporter_id IS NOT NULL`;
-     `gen:types` no cambia (es un trigger). Hasta entonces la Ola 0 no cuenta
-     como hecha en producción.
+   - **Ola 0 — EN PRODUCCIÓN** (`7574b01`, migración `20260930000476` + T36):
+     resolver el reporte de una cuenta eliminada ya no aborta (§3, "Resolver el
+     reporte…"). Remedido el 2026-09-29, no dado por bueno: `list_migrations`
+     en remoto da **40** con `20260930000476`, y `pg_get_triggerdef` de
+     `reports_notify_resolved` en remoto trae `(new.reporter_id IS NOT NULL)`.
+     `gen:types` no cambia (es un trigger).
    - **Ola 1:** login con MFA, aceptar invitación y fijar contraseña, y
      suspender/reactivar de punta a punta con auditoría (migraciones `…477` y
-     `…478`, T35). **Bloqueada por dos cosas tuyas:** confirmar en el Dashboard
-     que TOTP está incluido en el plan gratuito (el comentario de
-     `config.toml:360` dice "Pro plan", pero es la plantilla del CLI), y que
-     `@rlvo.com.mx` reciba correo real (ya lo hace, Google Workspace).
+     `…478`, T35). **Desbloqueada:** el usuario confirmó en el Dashboard que
+     TOTP está incluido en el plan (2026-09-29; el comentario de
+     `config.toml:361` que dice "Pro plan" es la plantilla del CLI), y
+     `@rlvo.com.mx` ya recibe correo real (Google Workspace).
    - **Ola 2:** reportes. **Orden fijo: primero los frames de
      `design/admin-panel.html`, luego tu aprobación del diseño y solo después la
      migración `…479`.** `bloquear_listing` entra en esta ola con su propia
@@ -3408,8 +3414,8 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
    - Ola 1, `admin/CLAUDE.md`: el `DETAIL` de un rechazo del CHECK de
      `admin_acciones` imprime la fila completa (con el `motivo`, texto libre) y
      puede llegar a logs. **No pegarlo en chats ni en tickets.**
-   Pendientes tuyos, además del push: confirmar TOTP en el Dashboard, agregar el
-   schema `admin` cuando toque y la fila de `prueba-2b` (pendiente 0c).
+   Pendientes tuyos: agregar el schema `admin` cuando toque (Ola 3) y la fila
+   de `prueba-2b` (pendiente 0c).
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que

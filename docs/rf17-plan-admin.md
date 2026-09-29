@@ -1,7 +1,9 @@
 # RF-17 — Plataforma web de administración: plan de arquitectura
 
-**Estado (2026-09-29):** plan v2 + v2.1 APROBADO. **Ola 0 hecha en local, sin
-pushear a remoto** (`7574b01`); el panel todavía no existe. Este archivo es la
+**Estado (2026-09-29):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
+(`7574b01`; remoto remedido: 40 migraciones con `20260930000476` y el `WHEN` de
+`reports_notify_resolved` con `reporter_id IS NOT NULL`); el panel todavía no
+existe. Este archivo es la
 consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
 chocan, prevalece v2.1** (`is_admin()` con `jsonb_typeof`, la lista de claves de
 auditoría por tipo, el orden de las olas). El resumen operativo vive en
@@ -56,7 +58,8 @@ app (tarea aparte que depende de esta).
 - `listing_moderacion`: 23 filas.
 - 5 universidades (ids 1, 3, 4, 5, 6) y 13 campus.
 - `auth.mfa_factors`: 0.
-- Migraciones: 39 en remoto (última `20260930000475`), 40 en el repo.
+- Migraciones: 39 en remoto (última `20260930000475`), 40 en el repo. *(Después
+  del push de la Ola 0, remoto da 40; ver "Ola 0".)*
 - `[api] schemas` en local: `["public", "graphql_public"]`
   (`supabase/config.toml:13`). En remoto es un ajuste del Dashboard.
 
@@ -962,7 +965,7 @@ rechazado" (control: la rama sin el chequeo de existencia).
 
 | Ola | Contenido | Estado |
 |---|---|---|
-| 0 | Sin panel: fix del trigger de reportes y documentación | **Hecha en local, sin pushear a remoto** |
+| 0 | Sin panel: fix del trigger de reportes y documentación | **En producción** (remedido el 2026-09-29) |
 | 1 | Login con MFA, aceptar invitación y suspender/reactivar de punta a punta con auditoría | Pendiente |
 | 2 | Reportes (con `detalle_listing`, la policy de Storage del admin y `bloquear_listing` adelantados, D19) | Pendiente |
 | 3 | Despliegue (Cloudflare Pages) + `admin-reset-mfa` | Pendiente |
@@ -970,7 +973,7 @@ rechazado" (control: la rama sin el chequeo de existencia).
 | 5 | Catálogo institucional | Pendiente |
 | 6 | Métricas y `actividad_diaria` | Pendiente |
 
-### Ola 0 — sin panel (HECHA en local, sin pushear)
+### Ola 0 — sin panel (EN PRODUCCIÓN)
 
 **Objetivo:** cerrar el bug preexistente y dejar la documentación diciendo la
 verdad antes de construir.
@@ -998,8 +1001,8 @@ verdad antes de construir.
    `gen:types` no cambia (es un trigger).
 
 **Dependencias externas, del usuario:**
-- Confirmar en el Dashboard que TOTP está incluido en el plan gratuito
-  (**bloqueante para la Ola 1**).
+- ~~Confirmar en el Dashboard que TOTP está incluido en el plan gratuito
+  (**bloqueante para la Ola 1**).~~ **Confirmado por el usuario (2026-09-29).**
 - Agregar el schema `admin` a los exposed schemas del Dashboard cuando toque
   (Ola 3).
 - La limpieza de `prueba-2b@example.com` (pendiente 0c).
