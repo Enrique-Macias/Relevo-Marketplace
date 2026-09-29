@@ -40,7 +40,7 @@ export const URL_TERMINOS = 'https://enriquemacias.dev/';
 export const URL_APP_STORE = 'https://apps.apple.com/mx/app/relevo/id1501683637';
 export const URL_GOOGLE_PLAY = 'https://play.google.com/store/apps/details?id=com.enriquemacias.relevo';
 
-export const CORREO_CONTACTO = 'noreply@enriquemacias.dev';
+export const CORREO_CONTACTO = 'contacto@rlvo.com.mx';
 
 export function filaVisible(fila: FilaConfiguracion): boolean {
   if (VISTA_PREVIA_TODAS_LAS_FILAS) return true;
