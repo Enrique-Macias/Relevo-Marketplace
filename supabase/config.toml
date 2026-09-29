@@ -364,9 +364,12 @@ auth_token = "env(SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN)"
 max_enrolled_factors = 10
 
 # Control MFA via App Authenticator (TOTP)
+# Encendido para el panel de admin (RF-17, Ola 1): `private.is_admin()` exige
+# aal2 con un TOTP de las últimas 12 h. La app móvil no enrola factores. En
+# remoto, TOTP se confirmó activo en el Dashboard (2026-09-29).
 [auth.mfa.totp]
-enroll_enabled = false
-verify_enabled = false
+enroll_enabled = true
+verify_enabled = true
 
 # Configure MFA via Phone Messaging
 [auth.mfa.phone]
