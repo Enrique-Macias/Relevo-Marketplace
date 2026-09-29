@@ -904,23 +904,29 @@ WhatsApp y Correo. Fase 0 de soporte: no hay bot.
   (`useSafeAreaInsets`, con precedente dentro de `Modal` en `CampusBottomSheet`
   y `PaisBottomSheet`). Con el 24 fijo que copié de `HojaAccionesListing`, el
   indicador de inicio de iOS se encimaba con la dirección (visto en iPhone).
-- **Estado de verificación: botón de WhatsApp implementado y verificado en
-  iPhone con WhatsApp instalado; no verificado sin WhatsApp instalado ni en
-  Android.** `NUMERO_SOPORTE` sigue vacío en el árbol (la prueba se hizo con un
-  número puesto en local, sin comitear).
-- **Observado en iOS (con WhatsApp instalado), no es un problema**: `wa.me` no
-  abre WhatsApp directo: pasa primero por Safari (la redirección a
-  `api.whatsapp.com`), que muestra el diálogo "¿Abrir esta página en WhatsApp?"
-  antes de abrir la app. Es el comportamiento de un universal link de `https://`.
+- **Verificado en iPhone** (con un número puesto en local, sin comitear;
+  `NUMERO_SOPORTE` sigue vacío en el árbol): la hoja con solo Correo y con
+  WhatsApp; el mailto con asunto y cuerpo; WhatsApp instalado (pasa por Safari,
+  `api.whatsapp.com`, con el diálogo "¿Abrir esta página en WhatsApp?"
+  antes de abrir la app); WhatsApp sin instalar (`wa.me` cae al navegador, no
+  rechaza); pulsación larga sobre la dirección sin abrir el correo; safe area;
+  cierre por tap fuera y por ✕; cuenta suspendida, con la fila y el botón de
+  Correo.
+- **No verificado**: Android completo (pulsación larga sobre la dirección,
+  inset contra la barra de navegación, botón atrás, WhatsApp instalado y sin
+  instalar); correo sin app (el `catch` de `abrirCorreo()` y el `Notice`);
+  WhatsApp con cuenta suspendida; la hoja con texto grande del sistema (iOS y
+  Android): no se verificó cómo queda. Aparte, en Perfil el texto se corta con
+  texto grande: deuda general, fuera de esta tarea.
+- **Observado en iOS, no es un problema**: `wa.me` no abre WhatsApp directo:
+  pasa primero por Safari (la redirección a `api.whatsapp.com`), que muestra
+  el diálogo "¿Abrir esta página en WhatsApp?" antes de abrir la app. Es el
+  comportamiento de un universal link de `https://`.
 - **wa.me y try/catch**: los dos usos anteriores (`detalle/[id].tsx:421`,
-  `perfil-publico/[id].tsx:160`) llaman `Linking.openURL` sin try/catch. Con
-  WhatsApp instalado en iPhone no rechazó; sin WhatsApp instalado sigue sin
-  confirmarse (se espera que caiga al navegador). La hoja lleva try/catch de
-  todos modos.
-- **Pendiente en dispositivo (tuyo)**: WhatsApp sin instalar, Android (WhatsApp
-  y pulsación larga sobre la dirección), sin app de correo, cuenta suspendida
-  y cierre con tap fuera y con botón atrás. La pulsación larga sobre la
-  dirección y el nuevo `paddingBottom` en iPhone, tras este ajuste.
+  `perfil-publico/[id].tsx:160`) llaman `Linking.openURL` sin try/catch.
+  **Confirmado en iOS: `wa.me` no rechaza sin WhatsApp instalado** (cae al
+  navegador); pendiente en Android. El try/catch de `HojaSoporte` se conserva
+  como cobertura defensiva, no porque se haya visto rechazar.
 
 **"Cerrar sesión" NO vive aquí: se mudó en `3752e7b` y se REVIRTIÓ a Perfil,
 que volvió a sus 5 filas.** El motivo no es de diseño, es el guard de sesión.
