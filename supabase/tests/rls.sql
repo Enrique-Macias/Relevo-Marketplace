@@ -4666,7 +4666,7 @@ select pg_temp.assert(
 -- se llama como `postgres` con los claims puestos (está revocada a
 -- authenticated); `admin.sesion()`, como authenticated.
 --
--- CONTROLES NEGATIVOS: ver la tabla de CLAUDE.md §3 ("Y a … con las de T35").
+-- CONTROLES NEGATIVOS: ver la tabla de CLAUDE.md §3 ("Y a 406 con la Ola 1 de RF-17").
 
 \set A35 '''35353535-0000-0000-0000-0000000035a0'''
 \set X35 '''35353535-0000-0000-0000-0000000035b0'''

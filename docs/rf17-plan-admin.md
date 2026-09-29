@@ -2,12 +2,61 @@
 
 **Estado (2026-09-29):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
 (`7574b01`; remoto remedido: 40 migraciones con `20260930000476` y el `WHEN` de
-`reports_notify_resolved` con `reporter_id IS NOT NULL`); el panel todavía no
-existe. Este archivo es la
+`reports_notify_resolved` con `reporter_id IS NOT NULL`). **Ola 1 hecha en
+LOCAL, sin pushear** (`6278a0a` a `b058e67`; ver la sección siguiente, que gana
+sobre el texto viejo de abajo). Este archivo es la
 consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
 chocan, prevalece v2.1** (`is_admin()` con `jsonb_typeof`, la lista de claves de
 auditoría por tipo, el orden de las olas). El resumen operativo vive en
 `CLAUDE.md` §8, pendiente 0k; el detalle, aquí.
+
+## Ola 1: lo que cambió al implementarla (gana sobre el resto del archivo)
+
+Medido o decidido el 2026-09-29, en el orden en que apareció:
+
+1. **`inviteUserByEmail` SÍ pasa por el Auth Hook** (Paso 0, medido):
+   `POST /auth/v1/invite` de `@rlvo.com.mx` → 403 `dominio_no_participante`;
+   `POST /auth/v1/admin/users` → 200. **Decisión del usuario (opción A):** D4
+   pasa de "invitadas" a **creadas por `/admin/users`, con la primera
+   contraseña fijada por el código de recuperación**. No hay plantilla
+   `invite` ni redirect a `localhost:5173` (el código se teclea). El script
+   es `crear-admin.mjs crear` (no `invitar`); `activar` exige un TOTP
+   verificado creado después del ALTA.
+2. **Re-verificar el TOTP RENUEVA el timestamp de `totp` en `amr`** y un
+   refresh lo conserva (medido; `probe-admin.mjs` caso 3). D16 es cumplible.
+3. **El reset de contraseña de un admin funciona** (activado o sin
+   contraseña): da aal1 con `amr: otp` y hay que pedir TOTP. El plan B del
+   hook no hace falta.
+4. **Exponer `admin` antes de crearlo tumba TODO el API** (PostgREST 503,
+   3F000; medido). `admin` entra a `config.toml:13` en el MISMO commit que
+   `20260930000477`, y en remoto el Dashboard va DESPUÉS del push.
+5. **Metro no toca `admin/`** (medido: 0 de 1662 fuentes del bundle de iOS
+   con `admin/node_modules` instalado): sin `metro.config.js`.
+6. **`users_suspension_coherente` va en los DOS sentidos**, más estricta que
+   la forma de §7 (que dejaba pasar un `activo` con una sola columna puesta),
+   y rompía 5 fixtures que suspendían sin motivo (T10, T22, T23, T33 y
+   `probe-registro.mjs` caso 9); se corrigieron en el mismo commit.
+7. **Motivo: 3-500 caracteres tras `btrim`** (decisión del usuario, opción A),
+   literal en la función, en `users_suspension_motivo_valido` y en
+   `admin_acciones_motivo_valido`.
+8. **Guardas con nombre y SQLSTATE** (G1-G6, `20260930000478`).
+   `reactivar_usuario` recibe motivo y NO lleva G4: otro admin puede
+   reactivar a un admin suspendido por Studio. **`is_admin()` no mira
+   `users.estado`** (decisión E del usuario): suspender no revoca; revocar es
+   borrar la fila.
+9. **`admin.sesion()` no llama a `exigir_admin()`**: es la excepción a la
+   plantilla de §4 (su fila de la tabla ya lo pedía).
+10. **Forma de D18 con un cambio:** el cast del timestamp va dentro de un
+    `CASE` (Postgres no garantiza el orden de un `AND` en un `WHERE`), en
+    `private.totp_timestamp()`, la única copia del parseo.
+11. **Citas corridas:** el hook vivo está en
+    `20260929000474_eliminar_cuenta.sql:226` (no en `…465:81-100`); en
+    `tsconfig.json` el exclude está en `:20-22`; en `config.toml`, TOTP en
+    `:368-369` y "Pro plan" en `:361`. En remoto hay **20** publicaciones
+    `activa` sin foto, no 26.
+12. **T12 usa listas fijas**: la función append-only entró a la de revocadas
+    (19). Se sumaron dos preventivas sobre `public.users` (ni en Realtime ni
+    devuelta entera por una función): medido, hoy ninguna vía lo hace.
 
 Reglas de lectura:
 - Todo lo que afirma sobre el repo se verificó el 2026-09-29 y cita
@@ -186,7 +235,8 @@ cascade, nombre text, created_at, created_by uuid, activado_at timestamptz)`.
 - `private.handle_new_user()` (`20260924000466:48-65`) inserta en `public.users`
   con la `universidad_id` del dominio, o NULL si no casa.
 - El Auth Hook rechaza `@rlvo.com.mx` en `/otp`
-  (`20260923000465:81-100`). El admin API con la secret key no pasa por el hook:
+  (`20260923000465:81-100`; la versión viva está en `20260929000474:226`). El
+  admin API con la secret key no pasa por el hook:
   está medido para `POST /admin/users` (`CLAUDE.md` §9, caso 7 de
   `probe-registro.mjs`). **Para `inviteUserByEmail` falta medirlo** (caso 1 de
   `probe-admin.mjs`); medirlo en el endpoint que se usa es regla del repo.
@@ -584,7 +634,6 @@ Grep de "RF-17" sobre `CLAUDE.md`, `.claude/rules/`, `supabase/migrations/` y
 | El copy de "no fue aprobada" no dice el motivo | `src/app/(publicar)/no-aprobada.tsx`, `20260928000473:90-91`, `detalle/[id].tsx` | **Se prepara el dato, no la UI.** El motivo del admin vive **una sola vez**, en `admin_acciones.motivo`. La fila de `listing_moderacion` que escribe el admin lleva `detalle = {origen:'admin', accion_id}` **sin el texto**. No es columna de `listings` (tiene `select` de TABLA, sería público; mismo argumento que `listing_sales`, `CLAUDE.md` §3). Mostrarlo necesita frame y una RPC del dueño: tarea aparte |
 | Copy por caso en "Respuesta a tu reporte" | `20260911000451:146-150` | No: sigue genérico; un copy por caso exigiría frame primero |
 | `vendida` terminal por policy para que Studio corrija ventas | `20260913000454:43` | No: el panel no corrige ventas en la fase 1 |
-| Opción "(ii) triggers apagados hasta RF-17" | `moderacion.md` | Obsoleta; solo se borra la mención |
 | El soporte como único canal de apelación del suspendido | `cuenta-perfil.md` | Insumo de la tarea del aviso de suspensión, no de esta |
 
 **El fix de la primera fila (Ola 4), en este orden (C1, C3):**
@@ -929,7 +978,7 @@ por cada estado de origen permitido de `bloquear_listing` (`pendiente`, `activa`
 
 | Caso | Qué mide |
 |---|---|
-| 1 | `inviteUserByEmail` de `@rlvo.com.mx` **no pasa por el hook** (200, llega el correo) |
+| 1 | ~~`inviteUserByEmail` no pasa por el hook~~ **Medido: SÍ pasa (403)**; `/admin/users` no. El caso quedó como "/invite 403 y `crear()` por `/admin/users`" |
 | 2 | aceptar → contraseña → enrolar → aal2; antes de `activar`, `admin.sesion()` da `es_admin = false` |
 | 3 | `amr` y `aal` impresos **tras password, tras TOTP, tras `refreshSession()` y tras re-verificar TOTP**. Lo último confirma que el modal de la UI renueva el timestamp; si no lo renueva, D16 no se puede cumplir y se reporta |
 | 4 | RPC con aal2 → OK; con sesión aal1 → `mfa_requerido` |
@@ -966,7 +1015,7 @@ rechazado" (control: la rama sin el chequeo de existencia).
 | Ola | Contenido | Estado |
 |---|---|---|
 | 0 | Sin panel: fix del trigger de reportes y documentación | **En producción** (remedido el 2026-09-29) |
-| 1 | Login con MFA, aceptar invitación y suspender/reactivar de punta a punta con auditoría | Pendiente |
+| 1 | Login con MFA, alta de admins y suspender/reactivar de punta a punta con auditoría | **Hecha en local, sin pushear** |
 | 2 | Reportes (con `detalle_listing`, la policy de Storage del admin y `bloquear_listing` adelantados, D19) | Pendiente |
 | 3 | Despliegue (Cloudflare Pages) + `admin-reset-mfa` | Pendiente |
 | 4 | Moderación (cola, aprobar, trigger de dueño activo, policy del dueño) | Pendiente; D5 se decide al entrar |
@@ -1125,7 +1174,7 @@ queda **después** (D11).
 | D1 | `admin/` en este repo con `package.json` propio, sin workspaces, más la línea en §0 del `CLAUDE.md` raíz | Aprobada |
 | D2 | SPA Vite + React + TS y no Next.js | Aprobada |
 | D3 | Schema `admin` expuesto y no RPCs en `public` (paso manual en el Dashboard) | Aprobada |
-| D4 | Cuentas separadas `@rlvo.com.mx`, invitadas por script y activadas en dos pasos; no son usuarios del marketplace; identidad en `private.admins`, no en `app_metadata` | Aprobada |
+| D4 | Cuentas separadas `@rlvo.com.mx`, ~~invitadas~~ **creadas por `/admin/users`** por script y activadas en dos pasos; no son usuarios del marketplace; identidad en `private.admins`, no en `app_metadata` | Aprobada; **modificada en la Ola 1** (la invitación pasa por el hook, medido) |
 | D5 | Cómo borra el dueño una `bloqueada` cuando ya no ve sus fotos: Edge Function (recomendada), prohibirlo o aceptar huérfanos y purgar. "Eliminar cuenta" no necesita cambios | **Pendiente: se decide al entrar a la Ola 4**, junto con su frame. No bloquea las Olas 0-3 |
 | D6 | `bloquear_listing` también desde `activa`, `pausada` y `vendida` | Aprobada |
 | D7 | La auditoría conserva `objetivo_id` y el motivo después de que se elimina una cuenta, sin datos personales en `antes`/`despues`; excepción documentada a T33 (h) | Aprobada |

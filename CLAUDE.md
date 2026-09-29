@@ -75,6 +75,10 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
    base — no en un `if` de React. Ver sección 3 para el porqué esto ya mordió
    una vez (pg_default_acl, sección 9).
 
+`admin/` no está bajo las reglas 1-4 ni 6; sus reglas viven en `admin/CLAUDE.md`
+(D1 de `docs/rf17-plan-admin.md`: el panel de RF-17 tiene su propia fuente de
+diseño, `design/admin-panel.html`, desde la Ola 2).
+
 ---
 
 ## 1. Stack tecnológico
@@ -87,7 +91,7 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Moderación de imagen | Google Cloud Vision (SafeSearch + OCR) **+ Amazon Rekognition** (`DetectModerationLabels`) | Dos proveedores porque cubren cosas distintas: SafeSearch no mira drogas/alcohol/gambling y Rekognition no hace OCR. Rekognition **no batchea** (una llamada por imagen) y acepta **solo JPEG/PNG**, al revés de Vision — ver §3 |
-| Admin / moderación | Supabase Studio **hoy**; panel web propio en `admin/` (RF-17) **en construcción** | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **Mientras no esté desplegado, la moderación sigue en Studio** |
+| Admin / moderación | Supabase Studio **hoy**; panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **en construcción**: la Ola 1 (login con MFA, alta de admins y suspender/reactivar) está hecha en LOCAL | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **Mientras no esté desplegado, la moderación sigue en Studio** |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Nomenclatura de API keys (Supabase renombró su sistema en 2026):** usamos las
@@ -183,8 +187,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 40 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-09-29; decía "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
+Definido en 42 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-09-29; decía "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
@@ -199,6 +203,13 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 42 y 40 (medido el 2026-09-29).** `ls supabase/migrations |
+wc -l` da **42**; `mcp__supabase__list_migrations` da **40**. Las que faltan en
+remoto son `20260930000477` (admins, MFA y auditoría) y `20260930000478`
+(suspender/reactivar), la Ola 1 de RF-17, que no se pushean en su propia tarea:
+van en el runbook de la Ola 3 (§8, pendiente 0k), con un paso 0 bloqueante. La
+historia de antes, tal como estaba:
 
 **Repo y remoto: 40 y 40 (medido el 2026-09-29) — a la par.** `ls
 supabase/migrations | wc -l` da **40**; `mcp__supabase__list_migrations`
@@ -633,6 +644,22 @@ solas (ver el bloque del trigger más abajo). Casi todo vía el helper
 `private.is_active_user()` — las excepciones son "ni ser contactado" y ese
 pausado automático, que no pueden usarlo y se explican abajo.
 
+**Tres escrituras que un suspendido CONSERVA, decididas como "permitido,
+inofensivo"** (medidas en local el 2026-09-29 con `pg_policies` y `pg_proc`,
+al planear la Ola 1 de RF-17; antes no tenían decisión escrita): sumar vistas a
+publicaciones ajenas (`public.increment_listing_view`, definer, no mira
+`is_active_user()`), registrar o borrar sus `push_tokens`, y marcar como
+leídas sus notificaciones (`notifications.leida_at`). Ninguna afecta a otra
+persona ni a lo que ve el catálogo.
+
+**Suspender exige motivo, también desde Studio** (`20260930000478`, D15):
+`users.suspendido_at` y `users.suspension_motivo` (3-500 caracteres tras
+`btrim`) van juntas con `estado = 'suspendido'` y en NULL con `'activo'`
+(`users_suspension_coherente`, en los dos sentidos). Un UPDATE a mano que no las
+escriba falla con **23514**. El panel lo hace con `admin.suspender_usuario`, que
+además audita. Ninguna de las dos es legible por el cliente (T12). El detalle,
+en el bloque del panel de admin, más abajo.
+
 Las tres primeras **sí tienen policy real detrás**, por si alguien lo duda:
 `listings_insert_own`, `listings_update_own` y `listings_delete_own`
 (`20260906000439:61-74`) llevan `is_active_user()` en su `with check` / `using`,
@@ -726,8 +753,8 @@ cuenta en la misma transacción que la suspensión.
   (inofensivo por sí solo — esa fila aún no puede tener publicaciones), pero una
   publicación creada `activa` para una cuenta YA suspendida se queda `activa`.
   Deuda consciente documentada en la migración, con su disparador y su fix.
-- **Consecuencia de segundo orden, medida:** en remoto hay **26** publicaciones
-  `activa` sin una sola foto (filas viejas, anteriores a que existiera la
+- **Consecuencia de segundo orden, medida:** en remoto hay **20** publicaciones
+  (medido el 2026-09-29, de 2 dueños; decía "26") `activa` sin una sola foto (filas viejas, anteriores a que existiera la
   subida). Hoy nadie las valida, porque `listings_enforce_activation_has_photos`
   solo mira la TRANSICIÓN hacia `activa`. En cuanto una de ellas se pause por
   suspensión, su dueño no podrá reactivarla sin subirle una foto primero. Es el
@@ -1159,11 +1186,13 @@ algún día hay una cuarta, revisa primero si de verdad la invoca el cliente o s
 va en `private`). **`public.buscar_listings` y `public.recomendar_listings` NO son la
 cuarta**: también son RPC de `public`, pero INVOKER a propósito (sus bloques,
 más arriba), y volverlas definer sería una fuga. `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
-acotado a las TRES que se invocan desde policies — `is_active_user()`,
-`can_rate()` y `listing_id_from_object_name()` — mientras las **18** que solo
+acotado a las CUATRO que se invocan desde policies — `is_active_user()`,
+`can_rate()`, `listing_id_from_object_name()` y, desde `20260930000477`,
+`is_admin()` (la usará la policy de Storage del admin en la Ola 2 de RF-17, y
+lleva el workaround del SIGSEGV desde que existe) — mientras las **19** que solo
 disparan por trigger siguen revocadas (decía "las otras cinco", un número de la
-Fase 2 que nadie actualizó, y después 12 y 16; medido con `pg_trigger` ⋈ `pg_proc`
-en local el 2026-09-26: **22** funciones de `private` cuelgan de un trigger. Las
+Fase 2 que nadie actualizó, y después 12, 16 y 18; medido con `pg_trigger` ⋈ `pg_proc`
+en local el 2026-09-29: **23** funciones de `private` cuelgan de un trigger. Las
 cuatro que no están revocadas son INVOKER y solo reescriben NEW:
 `set_updated_at()`, `limpia_veredicto_en_pantalla()`, `anonimiza_rating()` y
 `anonimiza_report()`, que conservan su `EXECUTE` porque Postgres lo verifica al
@@ -1555,8 +1584,54 @@ Lo que no se ve en la tabla:
   desde `listings`, que el borrado se lleva. Detalle de la función (auth,
   reautenticación por `amr`, idempotencia) en §8 y en §9.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 362 aserciones (medido con el
-`grep` de §8 el 2026-09-29; antes decía 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Panel de admin, Ola 1 de RF-17 (`20260930000477` + `20260930000478`,
+hechas en LOCAL, sin pushear).** Plan en `docs/rf17-plan-admin.md`; las reglas
+del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
+
+- **Quién es admin: `private.admins`**, una fila con `activado_at` puesto. No
+  `app_metadata`: viaja en el JWT y revocar no surtiría efecto hasta el `exp`.
+  **Revocar es BORRAR la fila**, con efecto en la request siguiente. Suspender a
+  un admin en `users` NO lo revoca: `is_admin()` no mira `users.estado`.
+- **`private.is_admin()`** (sql, definer, EXECUTE para `authenticated` por el
+  SIGSEGV) exige, a la vez: la fila activada, `aal = aal2` y un TOTP de las
+  últimas 12 h en `amr`. El parseo de `amr` vive UNA vez, en
+  `private.totp_timestamp()`, con la forma de D18 (`jsonb_typeof`, no
+  `coalesce`) y el cast dentro de un `CASE` (Postgres no garantiza el orden de
+  un `AND` en un `WHERE`). Medido contra GoTrue: un refresh CONSERVA el
+  timestamp del TOTP y re-verificarlo lo RENUEVA.
+- **`private.exigir_admin()`**, primera línea de toda RPC de `admin.*` que
+  actúa: 42501 con `no_admin`, `mfa_requerido` o `totp_vencido`. Solo esos tres
+  mensajes cambian la sesión del panel (`admin/src/lib/rechazos.ts`).
+- **`private.admin_acciones`**: auditoría append-only (triggers de fila y de
+  TRUNCATE), sin FK en `admin_id` (sobrevive al borrado del admin), con CHECK
+  de claves permitidas POR TIPO de objetivo (`private.claves_auditoria_ok`,
+  D20) y de motivo (3-500 tras btrim). Se escribe solo por
+  `private.auditar()`, que saca el actor de `auth.uid()`.
+- **Schema `admin`** (D3): USAGE solo para `authenticated`; sus funciones son
+  definer con `search_path` fijo y sin EXECUTE para `anon`/PUBLIC. No cuentan
+  entre "las TRES definer de `public`": viven en otro schema. Hoy son 5:
+  `sesion` (la única que no lanza: gating de UX), `buscar_usuarios`,
+  `detalle_usuario`, `suspender_usuario` y `reactivar_usuario`.
+- **Guardas de suspender/reactivar, en orden, cada una con su mensaje**: G1
+  `exigir_admin`; G2 motivo 3-500 (`22023 motivo_invalido`); G3 no sobre sí
+  mismo; G4 el objetivo no es admin (SOLO al suspender: otro admin puede
+  reactivar a uno que Studio suspendió); G5 existe (`P0002`); G6 CAS sobre
+  `estado` (`55000 estado_inesperado`). Suspender devuelve y audita SOLO las
+  publicaciones que esa acción pasó de `activa` a `pausada`. **Reactivar NO
+  despausa** (decisión de `20260917000457`).
+- **Las cuentas de admin se crean con `scripts/crear-admin.mjs`, no con
+  `inviteUserByEmail`**: medido, `/invite` pasa por el Auth Hook de dominios y
+  `@rlvo.com.mx` sale 403 (ver §9). Nacen por `admin/users`, fijan contraseña
+  con el código de recuperación y se activan en un segundo paso que exige un
+  TOTP verificado y confirmación por otro canal.
+- **Deuda que el panel vuelve más alcanzable**: una `pendiente` de un dueño ya
+  suspendido se puede activar (camino de usuario de `moderar-contenido`, o
+  Studio). `detalle_usuario` la hace visible y el fix es la Ola 4 (trigger
+  `dueno_no_activo`); antes del push de la Ola 3 hay que decidir si se acepta
+  la ventana (`cuenta-perfil.md`).
+
+**Regresión de RLS:** `supabase/tests/rls.sql`, 406 aserciones (medido con el
+`grep` de §8 el 2026-09-29; antes decía 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2227,6 +2302,40 @@ caza T18 primero, o sea que sin (a2) T36 dejaría pasar `when (false)` en cuanto
 alguien sacara T18 o la reordenara. (a) sola no la distingue: el fix "correcto"
 y `when (false)` dan las dos `ok` y sin aviso.
 
+Y a **406** con la Ola 1 de RF-17 (`20260930000477`/`478`): 7 en T12 y 37
+de T35. T35 es autocontenida, con su propia universidad `rls-t35.mx`, ocho
+cuentas de prueba (cinco admins, uno sin activar) y siete publicaciones de `:S35`. Estrena dos
+helpers: `pg_temp.claims_aal()`, que fabrica claims con `aal` y `amr` (la
+clave ausente, JSON `null` o un arreglo), y `pg_temp.rechazo_aal()`, que
+devuelve `sqlstate:mensaje`, porque todas las guardas comparten 42501 y solo el
+mensaje dice cuál rechazó. **Los 47 controles se corrieron uno a la vez**
+(`begin; <variante>; <suite>; rollback`, imprimiendo antes el hash de `prosrc`
+o la constraint viva), contra la suite completa **y** contra T35 aislada. Cada
+uno cayó en su aserción; los de T12, como se espera, dan verde en T35 aislada.
+Los que merecen nota:
+
+| Variante rota | Suite | T35 aislada |
+|---|---|---|
+| la forma con `coalesce` (D18) | (d2), con 22023 | (d2) |
+| sin el regex del timestamp | (d3), con 22P02 | (d3) |
+| `users_suspension_coherente` con la forma del plan (un solo sentido) | (g0) | (g0) |
+| quitar G2 de la función | (g1), porque llega 23514 | (g1) |
+| quitar G3 al suspender | (h1), porque llega `objetivo_es_admin` | (h1) |
+| contar TODAS las pausadas en vez de las de esta acción | (e) | (e) |
+| quitar `is_active_user()` de `listings_insert_own` | **T10** | (m) |
+| quitar `is_active_user()` de `listing_contacts_insert_own` | (m) | (m) |
+| reactivar CON G4 | (r4) | (r4) |
+| `admin_id` con FK en cascade | (k) | (k) |
+
+Dos lecciones de la sección. **Un TRUNCATE en la misma sentencia que un
+`count(*)` de la misma tabla no llega al trigger**: choca con la tabla abierta
+(55006). La primera versión de (i) lo hacía y caía por eso; ahora cada acción va
+en su sentencia (`\gset`), la lección de T28 otra vez. **Y los cinco fixtures
+que suspendían sin motivo** (T10, T22, T23 y T33 en `rls.sql`, el caso 9 de
+`probe-registro.mjs`) escriben ahora `suspendido_at` y un motivo; sus
+controles se re-corrieron (T22 (e), los siete de T23 y T33 (k)) y caen donde
+caían.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -2789,8 +2898,9 @@ en "Verificación (correo no participante)".
   quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son DIEZ pasos, no uno (decía "NUEVE" antes de
-  eliminar cuenta, y "SIETE" con ocho en la lista):
+  `postgres`/superusuario. Son ONCE pasos, no uno (decía "DIEZ" antes del
+  panel de admin, "NUEVE" antes de eliminar cuenta, y "SIETE" con ocho en la
+  lista):
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
      **`psql` puede no estar instalado en la máquina** (no lo está en la de
      desarrollo actual, aunque este comando lo dé por supuesto). El contenedor
@@ -2914,7 +3024,19 @@ en "Verificación (correo no participante)".
      intacto, y que reintentar da 200. Sus cuatro controles (sin chequeo de
      `amr`, uid del body, sin Storage, 404 como error) caen cada uno en su caso.
      No repite la semántica de la base: eso es T33.
-  Los probes 2, 3, 6, 7, 9 y 10 necesitan el stack local arriba y limpian lo suyo (el
+  11. `node scripts/probe-admin.mjs`: el panel de admin (RF-17) contra GoTrue,
+     PostgREST y Mailpit locales. Lo que T35 no puede ver porque allá los claims
+     se fabrican: el `aal`/`amr` REAL que emite GoTrue (el refresh conserva el
+     timestamp del TOTP y re-verificar lo renueva), que `/invite` pasa por el
+     hook y `/admin/users` no, el alta y la activación de `crear-admin.mjs`
+     (importado REAL), el reset de contraseña de un admin, que `admin` esté
+     expuesto por PostgREST, y el amarre del clasificador de rechazos del
+     panel (`admin/src/lib/rechazos.ts`) con los mensajes de la base. Necesita
+     TOTP encendido y `admin` en `[api] schemas`. Tarda ~1.5 min por las
+     esperas de ventana TOTP. Del lado del código, `npm run check:admin` hace
+     el typecheck y el lint del panel, que el `tsc` y el `lint` de la raíz no
+     miran.
+  Los probes 2, 3, 6, 7, 9, 10 y 11 necesitan el stack local arriba y limpian lo suyo (el
   9, con un rollback); si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4, 5 y 8 no necesitan nada: ni stack, ni red, ni credenciales.
 
@@ -3387,12 +3509,38 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      en remoto da **40** con `20260930000476`, y `pg_get_triggerdef` de
      `reports_notify_resolved` en remoto trae `(new.reporter_id IS NOT NULL)`.
      `gen:types` no cambia (es un trigger).
-   - **Ola 1:** login con MFA, aceptar invitación y fijar contraseña, y
-     suspender/reactivar de punta a punta con auditoría (migraciones `…477` y
-     `…478`, T35). **Desbloqueada:** el usuario confirmó en el Dashboard que
-     TOTP está incluido en el plan (2026-09-29; el comentario de
-     `config.toml:361` que dice "Pro plan" es la plantilla del CLI), y
-     `@rlvo.com.mx` ya recibe correo real (Google Workspace).
+   - **Ola 1 — HECHA EN LOCAL, sin pushear** (commits `6278a0a` a `b058e67`):
+     migraciones `20260930000477` (admins, MFA, auditoría, schema `admin`) y
+     `…478` (suspender/reactivar); T12 y T35 (rls.sql en 406);
+     `scripts/crear-admin.mjs` y `scripts/probe-admin.mjs` (46 pruebas); el
+     panel `admin/` sin frame (D14). **Cambió respecto al plan:** las cuentas
+     no se INVITAN, se CREAN por `/admin/users` y fijan contraseña con el
+     código de recuperación, porque medido `/invite` pasa por el Auth Hook y
+     rechaza `@rlvo.com.mx` (§9). Decisión del usuario, 2026-09-29. **Falta,
+     tuyo:** la prueba manual en local, en navegador, con un TOTP real
+     (`admin/CLAUDE.md`, "Desarrollo local").
+   - **Runbook de la Ola 3 para `…477`/`…478`, en este orden** (se suma a lo
+     de abajo):
+     0. **Bloqueante:** `select count(*) from public.users where estado =
+        'suspendido'` en remoto debe dar 0 (el 2026-09-29 dio 0 de 7). Si no,
+        NO se hace push: se trae como decisión (backfill con motivo, o
+        `NOT VALID` + `VALIDATE`), porque `users_suspension_coherente` entra
+        validado.
+     1. **Decisión explícita antes del push:** aceptar la ventana "`pendiente`
+        de un dueño suspendido se puede activar" hasta la Ola 4, o adelantar
+        `dueno_no_activo` (`…480` + el cambio a `moderar-contenido`).
+     2. `supabase db push`; `list_migrations` con las dos.
+     3. **DESPUÉS del push, nunca antes:** agregar `admin` a los exposed
+        schemas del Dashboard (con el schema inexistente, TODO el API da 503;
+        §9).
+     4. Verificar en remoto: `has_function_privilege`, `prosecdef` y
+        `proconfig` de `admin.*` y de las funciones de `private` (las mismas
+        invariantes de T12).
+     5. Desde ese push, **suspender por Studio exige `suspendido_at` y
+        `suspension_motivo`** (3-500 tras btrim) o falla con 23514 (D15).
+     6. Decidir cómo corre `crear-admin.mjs` contra remoto (hoy se niega: solo
+        local).
+     7. `npm --prefix admin run gen:types` contra remoto, y comparar.
    - **Ola 2:** reportes. **Orden fijo: primero los frames de
      `design/admin-panel.html`, luego tu aprobación del diseño y solo después la
      migración `…479`.** `bloquear_listing` entra en esta ola con su propia
@@ -3408,12 +3556,10 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      forma en el mismo cambio. `moderar-contenido` se despliega ANTES, con el
      manejo del rechazo.
    - **Ola 5:** catálogo. **Ola 6:** métricas y `actividad_diaria`.
-   **Notas que las olas heredan (no se implementan todavía):**
-   - Ola 1, T35 (d2): sumar el caso "timestamp basura" en `amr` con su control
-     (quitar el regex de `is_admin()`).
-   - Ola 1, `admin/CLAUDE.md`: el `DETAIL` de un rechazo del CHECK de
-     `admin_acciones` imprime la fila completa (con el `motivo`, texto libre) y
-     puede llegar a logs. **No pegarlo en chats ni en tickets.**
+   **Notas que las olas heredan:** las dos de la Ola 1 ya están hechas (T35
+   (d3), "timestamp basura", con su control; y el aviso del `DETAIL` del CHECK
+   de `admin_acciones` en `admin/CLAUDE.md`). Siguen las de las Olas 2, 4 y 6
+   de `docs/rf17-plan-admin.md`.
    Pendientes tuyos: agregar el schema `admin` cuando toque (Ola 3) y la fila
    de `prueba-2b` (pendiente 0c).
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
@@ -3427,6 +3573,12 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      un correo de soporte (`CORREO_CONTACTO`) para quien ya no la tenga.
    - **El aviso de privacidad tiene contenido pendiente**: la lista vive en la
      auditoría, §6.
+   - **`.easignore` existe desde la Ola 1 de RF-17** (para dejar fuera
+     `admin/`), y en cuanto existe EAS deja de leer `.gitignore`. Es copia
+     literal de `.gitignore` (verificado con `diff`), pero **no se ha
+     verificado contra el tarball de un build real**: antes del primer build
+     de EAS, confirmar que no sube `.env.local` ni `admin/`. Si `.gitignore`
+     cambia, `.easignore` también.
 1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
@@ -3526,6 +3678,8 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - El cursor de "Recomendados para ti" es un puntaje: quitar un favorito o un contacto a media lista puede saltar tarjetas hasta el siguiente refresh → `explorar.md`
 - "Recomendados para ti" ordena TODO el alcance por puntaje en cada página (sin índice posible; 21 ms en "todo" con 80k) → `explorar.md`
 - Un favorito o contacto sobre una publicación ajena hoy oculta no da señal al ranking (efecto de ser INVOKER) → CLAUDE.md §3, "Intereses y recomendados"
+- Una `pendiente` de un dueño ya suspendido se puede activar (camino de usuario de `moderar-contenido`, o Studio); el panel la hace visible y el fix es `dueno_no_activo` (Ola 4 de RF-17) → `cuenta-perfil.md`
+- `.easignore` es copia literal de `.gitignore` y no se ha verificado contra el tarball de un build real de EAS → CLAUDE.md §8, pendiente 0i
 
 **Inventario de componentes reutilizables (`src/components/`) — no los
 reconstruyas.** El porqué de cada uno vive en la regla de su feature; lo que es
@@ -4022,9 +4176,20 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 
   **El Auth Hook "Before User Created" sigue el MISMO corte por llave** (medido,
   `probe-registro.mjs` caso 7): `POST /admin/users` con la secret key crea una
-  cuenta `@gmail.com` aunque el hook rechace ese dominio en `/otp`. Todo lo que
-  pasa por la secret key (Studio, `service_role`, los `probe-*.mjs`) queda fuera
-  de las reglas de alta de GoTrue: la de fortaleza de contraseña y la de dominio.
+  cuenta `@gmail.com` aunque el hook rechace ese dominio en `/otp`. Studio,
+  `service_role` y los `probe-*.mjs` que crean usuarios por `/admin/users` quedan
+  fuera de las reglas de alta de GoTrue: la de fortaleza de contraseña y la de
+  dominio.
+
+  **Pero NO todo lo que usa la secret key salta el hook: `/invite` NO lo salta.**
+  Medido el 2026-09-29 (Paso 0 de la Ola 1 de RF-17), con la misma secret key:
+  `POST /auth/v1/invite` (`auth.admin.inviteUserByEmail`) de `@rlvo.com.mx` →
+  **403 `dominio_no_participante`**, sin fila ni correo; de `@tec.mx` → 200;
+  `POST /auth/v1/admin/users` de `@rlvo.com.mx` → 200. O sea que el corte no es
+  "secret key sí o no" sino **por endpoint**, y la invitación cuenta como alta.
+  Por eso las cuentas de admin nacen por `/admin/users` y fijan su contraseña
+  con el código de recuperación (`scripts/crear-admin.mjs`). Antes de asumir que
+  un endpoint de admin salta el hook, se mide ESE endpoint.
 - **Un Auth Hook de Postgres que lanza una excepción le manda su TEXTO al
   cliente.** Medido con un `raise exception 'CONTROL ROTO'`: GoTrue responde
   `500` y `msg: "CONTROL ROTO"`, y auth-js lo pone en `error.message`. Nada que
@@ -4334,3 +4499,27 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   curso", y que lo resetee también al ABRIR el modal. Sin eso, un fallo real,
   o un valor que Fast Refresh preserva, deja el modal sin ninguna salida en
   cuanto el botón de escape también queda deshabilitado.
+
+- **Exponer en `[api] schemas` un schema que todavía no existe tumba TODO el
+  API, no solo ese schema.** Medido el 2026-09-29 en local (Paso 0 de la Ola 1
+  de RF-17): con `admin` en `schemas` y sin `create schema admin`, PostgREST no
+  carga el schema cache (`3F000 schema "admin" does not exist`), reintenta en
+  bucle, `supabase start` aborta por health check (503) y `/rest/v1/` de
+  `public` tampoco responde. **Regla:** el schema se crea (migración) ANTES de
+  exponerlo. En local van en el mismo commit, en ese orden (`db reset`, después
+  `stop && start`); en remoto, el Dashboard (Settings → API → Exposed schemas)
+  se toca DESPUÉS del `db push`, nunca antes: al revés deja caída la app en
+  producción.
+- **`psql -At` imprime también la etiqueta del comando, y un script que lea su
+  salida la confunde con un resultado.** Con `insert … returning` que afecta 0
+  filas, la salida no es vacía: es `INSERT 0 0`. Así `scripts/crear-admin.mjs
+  activar` daba por activada una cuenta sin TOTP (lo cazó `probe-admin.mjs`,
+  caso 2, en su primera corrida). **Fix:** `-q` (quiet), que suprime las
+  etiquetas. Es la familia de "lo que no falla ruidosamente": un 0 filas que se
+  lee como éxito.
+- **psql NO sustituye `:'var'` dentro de un dollar-quote.** Un `DO` (o el cuerpo
+  de una función) que use `:'nombre'` lo recibe literal, como texto `:'nombre'`
+  o como error de sintaxis. Para pasar valores del usuario a psql sin
+  interpolar, las sentencias van planas (un CTE en vez de un bloque `DO`), con
+  `-v var=valor` por `execFileSync` y sin shell (`scripts/crear-admin.mjs`, y
+  su control en el caso 6 de `probe-admin.mjs`).

@@ -1656,8 +1656,7 @@ gratis en `probe-storage.mjs` y la escalada end-to-end en
 
   **Se optó por (i): encenderlos y aceptar el costo N-fold como deuda de §9
   con su disparador (debounce o mover el trigger)** — ejecutado 2026-09-19, ver
-  arriba. La otra salida que se había planteado ("(ii)" dejarlos apagados hasta
-  RF-17) queda registrada por si algún día hay que revertir, no como pendiente.
+  arriba.
 
   **Y una tercera cosa a saber antes de encender, sin relación con el costo:**
   verificar el fix destapó un bug de manejo de errores, no del fix en sí —
