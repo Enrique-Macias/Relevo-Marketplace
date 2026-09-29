@@ -4485,6 +4485,92 @@ select pg_temp.assert(
   '(k) borrar la cuenta borra sus intereses');
 
 \echo ''
+\echo '== T36 — resolver el reporte de una cuenta eliminada (RF-17, Ola 0) =='
+-- 20260930000476. Autocontenida: sus propias tres cuentas y sus dos reportes.
+-- (T35 está reservada para la Ola 1 de RF-17, identidad y MFA del panel; T36
+-- abre con esta corrección y la Ola 2 le suma el resto de los reportes.)
+--
+--   :R36 — reportó a :T36 y después ELIMINÓ su cuenta (reporter_id queda NULL).
+--   :V36 — reportó a :T36 y sigue viva.
+--   :T36 — el reportado.
+--
+-- El bug: `notify_report_resolved()` insertaba `new.reporter_id` en
+-- `notifications.user_id` (NOT NULL), así que resolver el reporte de una cuenta
+-- eliminada abortaba con 23502. Se mide corriendo el UPDATE COMO `postgres`
+-- (lo que hará el panel a través de una RPC definer) y capturando el rechazo
+-- con `rechazo_de(null, …)`: con un UPDATE suelto, la variante rota moriría con
+-- el error crudo en vez de con el texto de la aserción (mismo recurso que
+-- `:Z2` en T28). La acción y la comprobación van en sentencias distintas
+-- (`\gset`), por la lección de T28.
+--
+-- CONTROLES NEGATIVOS, uno a la vez contra la suite completa y contra T36
+-- aislada: ver la tabla de CLAUDE.md §3 ("Y a 362 con las de T36").
+
+\set R36 '''36363636-0000-0000-0000-0000000036a0'''
+\set V36 '''36363636-0000-0000-0000-0000000036b0'''
+\set T36 '''36363636-0000-0000-0000-0000000036c0'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:R36, 'rls-t36-r@rls-t36.mx'), (:V36, 'rls-t36-v@rls-t36.mx'),
+               (:T36, 'rls-t36-t@rls-t36.mx')) as v(u, e);
+
+insert into public.reports (reporter_id, reported_user_id, motivo)
+values (:R36::uuid, :T36::uuid, 'spam_publicidad'),
+       (:V36::uuid, :T36::uuid, 'spam_publicidad');
+
+create temp table t36 as
+select (select id from public.reports where reporter_id = :R36::uuid) as rep_borrada,
+       (select id from public.reports where reporter_id = :V36::uuid) as rep_viva;
+
+-- Precondición: el reporte existe y su reportante todavía no se borró.
+select pg_temp.assert(
+  (select count(*) from public.reports where reported_user_id = :T36::uuid) = 2
+  and (select count(*) from public.reports where reporter_id = :R36::uuid) = 1,
+  'T36: fixtures — dos reportes contra :T36, uno de :R36 aún con reportante');
+
+delete from auth.users where id = :R36::uuid;
+
+select pg_temp.assert(
+  (select reporter_id from public.reports where id = (select rep_borrada from t36)) is null,
+  'T36: fixtures — al borrar la cuenta el reporte se conserva con reporter_id NULL');
+
+select count(*) as t36_avisos_antes
+  from public.notifications where tipo = 'reporte_resuelto' \gset
+
+-- (a) Resolver el reporte de la cuenta eliminada funciona, y no genera aviso.
+select pg_temp.rechazo_de(null, format(
+  'update public.reports set estado = ''resuelto'' where id = %s',
+  (select rep_borrada from t36))) as t36_r_borrada \gset
+select estado::text as t36_est_borrada
+  from public.reports where id = (select rep_borrada from t36) \gset
+select count(*) as t36_avisos_despues_a
+  from public.notifications where tipo = 'reporte_resuelto' \gset
+
+select pg_temp.assert(
+  :'t36_r_borrada' = 'ok'
+  and :'t36_est_borrada' = 'resuelto'
+  and :t36_avisos_despues_a = :t36_avisos_antes,
+  '(a) resolver el reporte de una cuenta eliminada funciona y no avisa a nadie');
+
+-- (a2) El reporte de una cuenta VIVA sigue avisando (control de que el fix no
+-- apagó el trigger entero: sin esta aserción, `when (false)` pasaría (a)).
+select pg_temp.rechazo_de(null, format(
+  'update public.reports set estado = ''descartado'' where id = %s',
+  (select rep_viva from t36))) as t36_r_viva \gset
+
+select pg_temp.assert(
+  :'t36_r_viva' = 'ok'
+  and (select count(*) from public.notifications
+        where user_id = :V36::uuid and tipo = 'reporte_resuelto') = 1
+  and (select cuerpo from public.notifications
+        where user_id = :V36::uuid and tipo = 'reporte_resuelto')
+        like '%No encontramos motivo para tomar acción.',
+  '(a2) el reporte de una cuenta viva SÍ avisa (descartado → copy de descartado)');
+
+\echo ''
 \echo '==========================================='
 \echo '   TODAS LAS PRUEBAS PASARON'
 \echo '==========================================='
