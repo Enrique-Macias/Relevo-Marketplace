@@ -290,7 +290,7 @@ async function main() {
     const vetada = `probe-reg-vetada-${RUN}@tec.mx`;
     const altaVetada = await crearConAdmin(E, vetada, PASS);
     if (altaVetada.status !== 200) throw new Error(`no se pudo sembrar la cuenta vetada: ${altaVetada.status}`);
-    sql(`update public.users set estado = 'suspendido' where id = '${altaVetada.id}'`);
+    sql(`update public.users set estado = 'suspendido', suspendido_at = now(), suspension_motivo = 'probe de registro' where id = '${altaVetada.id}'`);
     const borrado = await fetch(`${E.API_URL}/auth/v1/admin/users/${altaVetada.id}`, {
       method: 'DELETE',
       headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },

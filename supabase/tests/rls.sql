@@ -450,7 +450,9 @@ select pg_temp.expect_error(:B::uuid,
 -- ---------------------------------------------------------------------------
 \echo ''
 \echo '== T10 — usuario suspendido =='
-update public.users set estado = 'suspendido' where id = :B::uuid;
+-- Desde 20260930000478, suspender exige `suspendido_at` y un motivo
+-- (`users_suspension_coherente`), también como postgres (D15).
+update public.users set estado = 'suspendido', suspendido_at = now(), suspension_motivo = 'fixture de prueba' where id = :B::uuid;
 
 select pg_temp.assert(
   pg_temp.as_user_int(:B::uuid,
@@ -1724,7 +1726,8 @@ values
   (:P::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
    'rls-p@tec.mx', '', now(), now(), now());
 update public.users set nombre = 'Olivia'  where id = :O::uuid;
-update public.users set nombre = 'Pablo', estado = 'suspendido' where id = :P::uuid;
+update public.users set nombre = 'Pablo', estado = 'suspendido', suspendido_at = now(), suspension_motivo = 'fixture de prueba'
+ where id = :P::uuid;
 
 -- El bucket es una fila, no esquema: ninguna migración lo crea. Mismo apaño que
 -- T14, para que la suite corra en una base que venga de otro lado.
@@ -1904,7 +1907,7 @@ values ((select activa  from t_susp), 'susp-activa.jpg',  0),
 -- EL HECHO QUE DISPARA TODO. Va directo y no vía as_user porque `estado` no
 -- está en el grant de update de authenticated (20260906000438:110): la única vía
 -- real es service_role/Studio, y postgres es su equivalente aquí.
-update public.users set estado = 'suspendido' where id = :Q::uuid;
+update public.users set estado = 'suspendido', suspendido_at = now(), suspension_motivo = 'fixture de prueba' where id = :Q::uuid;
 
 -- (a) El camino feliz, y la razón de ser de la migración: lo que el comprador
 -- veía en el feed de una cuenta que ya no puede contactar.
@@ -1985,7 +1988,8 @@ select pg_temp.assert(
 
 -- Reactivar la cuenta. Las DOS aserciones que siguen miran filas distintas a
 -- propósito, y hasta medirlo eran una sola que pasaba por la razón equivocada.
-update public.users set estado = 'activo' where id = :Q::uuid;
+update public.users set estado = 'activo', suspendido_at = null, suspension_motivo = null
+ where id = :Q::uuid;
 
 -- (f) LA DECISIÓN DE PRODUCTO, escrita como aserción: reactivar NO despausa
 -- nada. El vendedor las reactiva a mano desde "Mis publicaciones", que ya exige
@@ -2760,6 +2764,20 @@ select pg_temp.assert(
                          from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
                         where a.grantee = 0))),
   'toda función de admin.* es definer, con search_path fijo y EXECUTE solo para authenticated');
+
+-- RF-17, Ola 1 (20260930000478): la suspensión y su motivo. Ni el propio
+-- usuario los lee por aquí (lo hará por una RPC de la tarea del aviso de
+-- suspensión), y nadie del cliente los escribe: si pudiera, se levantaría la
+-- suspensión a sí mismo o se inventaría el motivo. `users` tiene grants por
+-- lista de columnas, así que nacen sin privilegios; esto lo vigila.
+select pg_temp.assert(
+  not has_column_privilege('authenticated', 'public.users', 'suspendido_at', 'select')
+  and not has_column_privilege('authenticated', 'public.users', 'suspendido_at', 'insert')
+  and not has_column_privilege('authenticated', 'public.users', 'suspendido_at', 'update')
+  and not has_column_privilege('authenticated', 'public.users', 'suspension_motivo', 'select')
+  and not has_column_privilege('authenticated', 'public.users', 'suspension_motivo', 'insert')
+  and not has_column_privilege('authenticated', 'public.users', 'suspension_motivo', 'update'),
+  'authenticated no tiene SELECT, INSERT ni UPDATE sobre users.suspendido_at ni suspension_motivo');
 
 -- Dos candados PREVENTIVOS sobre `public.users` (medido en local y en remoto
 -- el 2026-09-29: hoy ninguna vía devuelve su fila entera). Con columnas que no
@@ -4250,7 +4268,7 @@ select pg_temp.assert(
 -- correo; una ACTIVA no. El hook rechaza ese correo (normalizado igual que el
 -- dominio) y sigue aceptando otro del mismo dominio. La otra mitad —que GoTrue
 -- lo aplique con la policy de supabase_auth_admin— vive en probe-registro.mjs.
-update public.users set estado = 'suspendido' where id = :S33::uuid;
+update public.users set estado = 'suspendido', suspendido_at = now(), suspension_motivo = 'fixture de prueba' where id = :S33::uuid;
 delete from auth.users where id in (:S33::uuid, :A33::uuid);
 
 select pg_temp.assert(
@@ -4654,7 +4672,6 @@ select pg_temp.assert(
 \set S35 '''35353535-0000-0000-0000-0000000035d0'''
 \set K35 '''35353535-0000-0000-0000-0000000035e0'''
 \set L35 '''35353535-0000-0000-0000-0000000035f0'''
-
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
                         email_confirmed_at, created_at, updated_at)
 select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
