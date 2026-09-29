@@ -71,6 +71,12 @@ de operación. El amarre con la base es el caso 7 de `probe-admin.mjs`.
 - `antes`/`despues` solo llevan las claves permitidas POR TIPO de objetivo
   (`private.claves_auditoria_ok`, D20): nunca correo, nombre, teléfono, título
   ni comentario.
+- **Una fila con `admin_id = 00000000-0000-0000-0000-000000000000` y
+  `admin_correo = 'script:crear-admin.mjs'` es del SCRIPT, no un error ni un
+  admin borrado**: la escribe `crear-admin.mjs activar`, que corre con la
+  secret key y sin JWT de ningún admin. Al pintar la auditoría, se lee como
+  "script". (Un admin borrado conserva su uuid y su correo reales: `admin_id`
+  no lleva FK.)
 - El `motivo` es texto libre (3-500 caracteres): el panel pide no escribir
   datos personales, pero la base no lo puede hacer cumplir.
 - **El `DETAIL` de un rechazo de cualquier CHECK de `admin_acciones` imprime la

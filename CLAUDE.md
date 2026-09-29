@@ -3495,8 +3495,9 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
    RF-17). Decisiones ya tomadas: `admin/` en este repo con `package.json` propio
    y sin workspaces (D1); SPA Vite + React + TS, sin servidor (D2); schema
    `admin` con RPCs `security definer`, cada una con `exigir_admin()` adentro y
-   auditoría (D3); admins con cuentas separadas `@rlvo.com.mx` invitadas por
-   script y activadas en dos pasos, identidad en `private.admins` y no en
+   auditoría (D3); admins con cuentas separadas `@rlvo.com.mx` creadas por
+   `/admin/users`, primera contraseña fijada con el código de recuperación
+   (opción A: `/invite` pasa por el Auth Hook, medido) y activadas en dos pasos, identidad en `private.admins` y no en
    `app_metadata` (D4); una sola `is_admin()` que exige aal2 y un TOTP de las
    últimas 12 h leído de `amr`, forma con `jsonb_typeof(...) = 'array'` porque
    `coalesce` no atrapa un `"amr": null` (D16, D18); `claves_auditoria_ok()`
@@ -3509,7 +3510,7 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      en remoto da **40** con `20260930000476`, y `pg_get_triggerdef` de
      `reports_notify_resolved` en remoto trae `(new.reporter_id IS NOT NULL)`.
      `gen:types` no cambia (es un trigger).
-   - **Ola 1 — HECHA EN LOCAL, sin pushear** (commits `6278a0a` a `b058e67`):
+   - **Ola 1 — HECHA EN LOCAL, sin pushear** (commits `6278a0a` a `b11865c`):
      migraciones `20260930000477` (admins, MFA, auditoría, schema `admin`) y
      `…478` (suspender/reactivar); T12 y T35 (rls.sql en 406);
      `scripts/crear-admin.mjs` y `scripts/probe-admin.mjs` (46 pruebas); el

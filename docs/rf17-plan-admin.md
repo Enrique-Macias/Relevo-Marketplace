@@ -3,7 +3,7 @@
 **Estado (2026-09-29):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
 (`7574b01`; remoto remedido: 40 migraciones con `20260930000476` y el `WHEN` de
 `reports_notify_resolved` con `reporter_id IS NOT NULL`). **Ola 1 hecha en
-LOCAL, sin pushear** (`6278a0a` a `b058e67`; ver la sección siguiente, que gana
+LOCAL, sin pushear** (`6278a0a` a `b11865c`; ver la sección siguiente, que gana
 sobre el texto viejo de abajo). Este archivo es la
 consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
 chocan, prevalece v2.1** (`is_admin()` con `jsonb_typeof`, la lista de claves de
@@ -314,6 +314,7 @@ exists (
 - **`private.exigir_admin()`** llama a `is_admin()` y lanza `42501` con **tres
   mensajes distintos**, para que la UI sepa qué pedir: `no_admin`,
   `mfa_requerido` (aal1) y `totp_vencido`.
+- **OBSOLETO (Ola 1): TOTP ya está encendido en local (`7897b5e`), en `config.toml:368-369`, no en `:367-368`.**
 - **Local:** TOTP está apagado (`config.toml:367-368`, `enroll_enabled` y
   `verify_enabled` en `false`); hay que encenderlo.
 - **Remoto, bloqueante para la Ola 1 (RNF-09), tarea del usuario:** confirmar en
@@ -778,6 +779,7 @@ create table public.actividad_diaria (
   `{{ .ConfirmationURL }}`; se revisa en el Dashboard (la de magic link está puesta
   a mano). **Nunca `supabase config push`** (`CLAUDE.md` §9): empuja el
   `config.toml` entero y puede tumbar el correo de producción.
+- **OBSOLETO (Ola 1, punto 1 de "lo que cambió"): no hay plantilla `invite`; las cuentas se crean por `/admin/users`.**
 - La plantilla `invite` local apunta al panel con `token_hash`. En remoto se edita
   en el Dashboard.
 
@@ -1070,6 +1072,7 @@ verdad antes de construir.
 - `.easignore`: copia literal de `.gitignore` más `admin/` y
   `admin/node_modules/`.
 - Medir que el bundle de Metro no toque `admin/`.
+- **OBSOLETO (Ola 1, punto 1 de "lo que cambió"): sin plantilla `invite` ni redirect `:200`; TOTP estaba en `:368-369`, no en `:367-368`.**
 - `config.toml`: `:13` agregar `admin` a `schemas`; `:200` agregar
   `http://localhost:5173/**`; `:367-368` encender TOTP; plantilla `invite` local
   apuntando al panel con `token_hash`. En remoto, la plantilla de invitación se
@@ -1078,6 +1081,7 @@ verdad antes de construir.
 
 **`admin/`** (Vite + React + TS, CSP, publishable key). Pantallas funcionales
 mínimas, **sin frame todavía** (excepción aprobada, D14):
+   **OBSOLETO (Ola 1, punto 1 de "lo que cambió"): no hay "Aceptar invitación" ni `verifyOtp({type:'invite'})`; la primera contraseña se fija con el código de recuperación (pantalla "Primera vez u olvidé mi contraseña").**
 1. **Aceptar invitación:** toma el `token_hash` del link y hace
    `verifyOtp({type:'invite'})`. Link vencido o usado → mensaje y "pide otra
    invitación".
