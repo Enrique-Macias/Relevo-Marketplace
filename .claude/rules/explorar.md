@@ -946,9 +946,12 @@ delete from auth.users where email = 'prueba-2b@example.com';
 delete from public.campus where universidad_id = (select id from public.universidades where nombre = 'Universidad de Prueba 2B');
 delete from public.universidades where nombre = 'Universidad de Prueba 2B';
 commit;
--- Verificar: debe dar 0 | 0 | 51 (si nadie publicó nada más)
+-- Verificar: debe dar 0 | 0 | 0 | 0. Ninguna cifra depende de cuántas
+-- publicaciones activas haya hoy (la versión anterior esperaba un total de 51
+-- que ya no era cierto: remoto tenía 24 activas el 2026-09-29).
 select (select count(*) from public.universidades where nombre like '%Prueba 2B%'),
+       (select count(*) from public.campus where nombre ilike '%prueba 2B%'),
        (select count(*) from auth.users where email = 'prueba-2b@example.com'),
-       (select count(*) from public.listings where estado = 'activa');
+       (select count(*) from public.users where correo = 'prueba-2b@example.com');
 ```
 Cuando se borren, se quita esta sección y el pendiente 0c de CLAUDE.md §8.

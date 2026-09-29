@@ -3360,7 +3360,8 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
 `CLAUDE.md` §3 y `explorar.md`.)**
 0k. **RF-17: panel de administración web (`admin/`), por olas.** Plan aprobado
    el 2026-09-29 tras dos rondas de revisión (D1-D20). **El plan completo vive en
-   la sesión, no en el repo**; lo que sigue es lo esencial para no perderlo.
+   `docs/rf17-plan-admin.md`** (consolida v2 y v2.1; donde chocan, gana v2.1);
+   lo que sigue es el resumen operativo.
    Somos 3 admins y 2 no pueden usar Studio ni SQL (`docs/product-spec.md`,
    RF-17). Decisiones ya tomadas: `admin/` en este repo con `package.json` propio
    y sin workspaces (D1); SPA Vite + React + TS, sin servidor (D2); schema

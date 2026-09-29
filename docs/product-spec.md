@@ -256,8 +256,8 @@ vez validado.
   auditoría; el panel nunca escribe directo y la `service_role` key nunca llega
   al navegador.
   **⏳ Estado: en construcción por olas — `CLAUDE.md` §8, pendiente 0k.** La
-  Ola 0 (una corrección previa de un trigger) está hecha; el panel todavía no
-  existe.
+  Ola 0 (una corrección previa de un trigger) está hecha en local, sin
+  pushear a remoto; el panel todavía no existe.
 - **RF-18** Moderación automática de contenido antes de publicarse: fotos de
   publicaciones y de perfil analizadas con Google Cloud Vision (SafeSearch +
   detección de texto en imagen); título y descripción analizados con OpenAI
