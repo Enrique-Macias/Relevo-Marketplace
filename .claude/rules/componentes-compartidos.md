@@ -46,6 +46,36 @@ DESPUÉS de cada acción (optimista+rollback y filtrar un array en la lista;
 refetch silencioso o `router.back()` en Detalle), no en cuál fila se ofrece
 — ver `confianza-ventas.md`.
 
+**`HojaSoporte`** (`src/components/HojaSoporte.tsx`) es la hoja de "Ayuda y
+soporte" de Perfil (WhatsApp y Correo). `Modal` de RN con el mismo cascarón que
+`HojaAccionesListing` (backdrop, tarjeta, handle, header, tap fuera y botón
+atrás), pero NO es un consumidor suyo: no comparte nada de su lógica de
+estado/venta. Está encapsulada: recibe solo `visible`, `onCerrar` y
+`correoUsuario`, y maneja adentro los handlers, el aviso de correo fallido y el
+toast de WhatsApp, para que un segundo consumidor (el aviso de suspensión) la
+monte sin duplicar lógica. **Deuda menor:** el cascarón de hoja (backdrop,
+tarjeta, handle, header) ya está escrito en tres sitios (`HojaAccionesListing`,
+`HojaSoporte` y, con otra forma, `CampusBottomSheet`); extraer un `HojaBase` es
+una decisión aparte, porque tocaría los consumidores existentes.
+
+**Deuda: `HojaAccionesListing` no suma el inset inferior.** Su `statusSection`
+lleva `paddingBottom: 24` fijo (`HojaAccionesListing.tsx`, sin
+`useSafeAreaInsets`), y `HojaSoporte` heredó el mismo defecto hasta que en
+iPhone el indicador de inicio se encimó con la dirección; `HojaSoporte` ya usa
+`insets.bottom + 24`. Por lectura del código `HojaAccionesListing` tiene el
+mismo problema con su última fila ("Eliminar publicación"), sin medirlo en
+dispositivo. **Revisar cuando:** alguien lo reporte, o se extraiga un
+`HojaBase`. **Fix:** `useSafeAreaInsets` + `insets.bottom + 24`, como
+`HojaSoporte`.
+
+**`StatusRow` ganó `sub` opcional (`HojaSoporte`).** Segunda línea bajo el
+label, como `Text selectable` HERMANO del `Pressable` (dentro del mismo borde
+inferior, fuera del área de toque). **Sin `sub`, el render es idéntico al de
+siempre**, así que los otros 15 usos no cambian: `configuracion.tsx` (8),
+`(publicar)/editar/[id].tsx` (3) y `HojaAccionesListing.tsx` (4). Con `sub`
+hay dos rutas de render (una `View` raíz lleva el borde). Hoy solo lo usa la
+fila de Correo de `HojaSoporte`.
+
 **`Field` tiene `error` (nombre válido, `20260927000469`).** Pinta
 `.field-error` bajo el campo y el borde en `--brick` (`.text-field.is-invalid`),
 con el rol `Typography.fieldError`. Ese rol tiene los MISMOS valores que

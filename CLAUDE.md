@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 70 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 73 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -2350,7 +2350,7 @@ mandado a `pendiente` al editar fotos, auto-aprobándose sin Studio.
 
 ---
 
-## 4. Inventario completo de pantallas (70)
+## 4. Inventario completo de pantallas (73)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
@@ -2509,10 +2509,18 @@ contrario —reintentar es la salida—, así que `esDeterminista()` **no cambi�
 el motivo nuevo vive en `falloGeneral`. Son **tres motivos y dos baldes**; el
 párrafo viejo hacía leer que eran tres baldes.
 
-### Cuenta (11)
-Perfil · Editar perfil · **Selector de país** · Perfil público · Favoritos ·
-Favoritos vacío · Mis publicaciones · Mis publicaciones vacío ·
-Mis publicaciones (acciones) · **Configuración** · **Editar intereses**
+### Cuenta (12)
+Perfil · **Perfil (ayuda y soporte)** · Editar perfil · **Selector de país** ·
+Perfil público · Favoritos · Favoritos vacío · Mis publicaciones ·
+Mis publicaciones vacío · Mis publicaciones (acciones) · **Configuración** ·
+**Editar intereses**
+
+**"Perfil (ayuda y soporte)" es la hoja de la fila "Ayuda y soporte"**: 73 en
+total, 12 de Cuenta, medido con el mismo `grep | uniq -c`. Es Perfil atenuado
+con un `.sheet-card` encima (mismo cascarón que "Mis publicaciones (acciones)"):
+WhatsApp y Correo, con la dirección de correo como texto debajo de la fila.
+Lleva dos variantes etiquetadas que no cuentan aparte, "un solo canal" y
+"correo sin app". Detalle en `cuenta-perfil.md`.
 
 **"Intereses" (Onboarding) y "Editar intereses" (Cuenta) llegaron con
 `20260930000475`**: 72 en total, 17 de Onboarding y 11 de Cuenta, medido con el
@@ -2709,7 +2717,7 @@ en "Verificación (correo no participante)".
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 70 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 73 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -3443,6 +3451,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `ErrorState` | `ErrorState` | Estado de fallo con "Reintentar" (label hardcodeado — ver deuda) |
 | `Field` | `Field`, `PhoneField`, `SelectField`, `FixedField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio. `FixedField` = valor que se muestra y no se elige (sin chevron, no es botón). `PhoneField` recibe `pais`/`onPaisPress`/`error` (el país es un botón). `Field` tiene `error` (`.field-error` + borde `--brick`), copy persistente: frame primero |
 | `HojaAccionesListing` | `HojaAccionesListing` | Hoja de acciones de una publicación (pausar/reactivar, editar, marcar vendida/cambiar comprador, eliminar). `Modal` de RN, no `SheetScreen` — mismo criterio que `CampusBottomSheet`. Calcula internamente `puedeAlternarPausa()`/`puedeEditarListing()`/`accionVenta()`; consumida por "Mis publicaciones" y por el kebab de Detalle (vista vendedor) |
+| `HojaSoporte` | `HojaSoporte` | Hoja de "Ayuda y soporte" de Perfil (WhatsApp y Correo). `Modal` de RN con el cascarón de `HojaAccionesListing`, sin ser su consumidor. Encapsulada: recibe solo `visible`, `onCerrar` y `correoUsuario`. Hoy es el único componente de `src/components` que llama `useToast` |
 | `ListRow` | `FormHeader`, `SearchField`, `ListRow`, `RadioCircle` | Fila de lista, header de formulario y el radio que reusan 3 pantallas |
 | `ListingFormFields` | `ListingFormFields` | EL formulario de publicación, compartido por Publicar y Editar |
 | `ListingPhoto` | `ListingPhoto` | Punto ÚNICO de contacto con el bucket privado (header `Authorization`) |
@@ -3463,7 +3472,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `SheetScreen` | `SheetScreen` | Hoja de Stack `transparentModal` **declarada en el Stack raíz** |
 | `Skeleton` | `SkeletonPiece`, `SkeletonGrid`, `SkeletonCatGrid`, `SkeletonRows`, `SkeletonNotifRows`, `SkeletonPerfilForm`, `SkeletonPerfil` | Un esqueleto por FORMA de lo que viene |
 | `StarRating` | `StarRating` | Estrellas de Calificar |
-| `StatusRow` | `StatusRow` | La `.status-section` fuera de Editar publicación |
+| `StatusRow` | `StatusRow` | La `.status-section` fuera de Editar publicación. `sub` opcional: segunda línea seleccionable, hermana del `Pressable` (la usa `HojaSoporte`); sin `sub`, render idéntico |
 | `Toast` | `ToastProvider`, `useToast` | Avisos efímeros; montado en el `_layout.tsx` raíz |
 | `icons/` | `index.tsx`, `categories.tsx` | Todos los íconos del set |
 

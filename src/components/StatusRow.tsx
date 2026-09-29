@@ -16,6 +16,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Typography } from '@/constants/theme';
 
+// `.status-row-icon{width:34px}` y `.status-row-label{gap:11px}`. `sub` se alinea
+// con el label sumando las dos, así que sigue a estas constantes.
+const ICONO_ANCHO = 34;
+const LABEL_GAP = 11;
+
 type StatusRowProps = {
   icon: React.ReactNode;
   label: string;
@@ -27,6 +32,14 @@ type StatusRowProps = {
   danger?: boolean;
   /** `.status-row:last-child{border-bottom:none;}` */
   last?: boolean;
+  /**
+   * Segunda línea bajo el label (dirección de correo de `HojaSoporte`). Va
+   * como `Text selectable` HERMANO del `Pressable`, no hijo: así la pulsación
+   * larga que selecciona el texto no compite con el `onPress` de la fila. Queda
+   * dentro del mismo borde inferior, pero no es área de toque. Sin `sub`, el
+   * render es el de siempre (el `Pressable` es la raíz y lleva el borde).
+   */
+  sub?: string;
 };
 
 export function StatusRow({
@@ -36,14 +49,10 @@ export function StatusRow({
   onPress,
   danger = false,
   last = false,
+  sub,
 }: StatusRowProps) {
-  return (
-    <Pressable
-      style={[styles.row, last && styles.rowLast]}
-      onPress={onPress}
-      disabled={!onPress}
-      accessibilityRole="button"
-    >
+  const contenido = (
+    <>
       <View style={styles.label}>
         {/* .status-row-icon lleva `color:var(--brick)` inline en la fila de
             eliminar; aquí el color va en el ícono, que es quien lo pinta. */}
@@ -51,7 +60,36 @@ export function StatusRow({
         <Text style={[styles.text, danger && styles.textDanger]}>{label}</Text>
       </View>
       {trailing}
-    </Pressable>
+    </>
+  );
+
+  if (!sub) {
+    return (
+      <Pressable
+        style={[styles.row, last && styles.rowLast]}
+        onPress={onPress}
+        disabled={!onPress}
+        accessibilityRole="button"
+      >
+        {contenido}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={[styles.wrap, last && styles.rowLast]}>
+      <Pressable
+        style={styles.rowConSub}
+        onPress={onPress}
+        disabled={!onPress}
+        accessibilityRole="button"
+      >
+        {contenido}
+      </Pressable>
+      <Text selectable style={styles.sub}>
+        {sub}
+      </Text>
+    </View>
   );
 }
 
@@ -65,6 +103,27 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.line,
   },
+  // Con `sub`: el borde lo lleva la View raíz y la fila solo el padding de arriba.
+  wrap: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.line,
+  },
+  rowConSub: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 13,
+  },
+  // .auth-link (12.5px, --ink-soft) con `flex-basis:100%; padding-left:45px;
+  // margin-top:2px` en el frame. El padding es ICONO_ANCHO + LABEL_GAP (34 + 11
+  // = 45): el frame lo escribe como 45, el código lo deriva.
+  sub: {
+    ...Typography.meta,
+    color: Colors.inkSoft,
+    paddingLeft: ICONO_ANCHO + LABEL_GAP,
+    marginTop: 2,
+    paddingBottom: 13,
+  },
   // .status-row:last-child{border-bottom:none;}
   rowLast: {
     borderBottomWidth: 0,
@@ -73,11 +132,11 @@ const styles = StyleSheet.create({
   label: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
+    gap: LABEL_GAP,
   },
   // .status-row-icon{width:34px; height:34px; border-radius:10px; background:var(--paper);}
   icon: {
-    width: 34,
+    width: ICONO_ANCHO,
     height: 34,
     // El 10px que CLAUDE.md §2 anota como el radio que quedó fuera de `Radii`.
     borderRadius: 10,

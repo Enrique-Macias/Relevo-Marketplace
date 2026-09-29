@@ -485,9 +485,10 @@ Seis cosas que no se ven en el diff:
   "Configuración", más abajo). La fila, el `ConfirmModal` y el import son los
   de antes de la mudanza, restaurados con un reverse-apply parcial de ese
   commit. Solo cambió el handler, que ganó `try/catch` y el reset al abrir.
-  "Verificación" y "Ayuda y soporte" —sin pantalla propia en el inventario de
-  54 ni en `product-spec.md`— y el engrane de `.profile-top` (ajustes) quedan
-  inertes con el mismo patrón ya usado en Detalle para Compartir/Reportar:
+  "Verificación" —sin pantalla propia en el inventario de 54 ni en
+  `product-spec.md`— queda inerte (el engrane de `.profile-top` ya tiene
+  destino, `router.push('/configuracion')` en `(tabs)/perfil.tsx`, y "Ayuda y soporte" abre `HojaSoporte`, ver
+  más abajo) con el mismo patrón ya usado en Detalle para Compartir/Reportar:
   `onPress={() => {}}` con un comentario de una línea, no un `View` sin
   `accessibilityRole` — esa fila SÍ es un control que algún día podría hacer
   algo, a diferencia del círculo de foto de "Editar perfil"/"Completar perfil".
@@ -861,8 +862,65 @@ Lo que no se ve en el diff:
 inerte desde que existe "Perfil".** Vive en `src/app/(cuenta)/configuracion.tsx`,
 con `src/lib/configuracion.ts` como el único lugar que decide qué fila se
 pinta hoy (`filaVisible()`). El comentario "Ajustes: sin pantalla..." sobre el
-engrane ya no aplica; solo sigue aplicando a "Verificación"/"Ayuda y soporte",
-que siguen sin destino.
+engrane ya no aplica; solo sigue aplicando a "Verificación", que sigue sin
+destino ("Ayuda y soporte" ya abre `HojaSoporte`, bloque siguiente).
+
+**"Ayuda y soporte" (fila de `.menu-list` de Perfil) abre `HojaSoporte`**
+(`src/components/HojaSoporte.tsx`), una hoja inferior con dos canales humanos:
+WhatsApp y Correo. Fase 0 de soporte: no hay bot.
+- **Constantes en `src/lib/configuracion.ts`**: `NUMERO_SOPORTE` (E.164 con `+`;
+  hoy vacío, así que la hoja solo pinta el Correo) y `CORREO_SOPORTE`
+  (`soporte@rlvo.com.mx`). Dos buzones con propósitos distintos, y así se
+  quedan: `CORREO_SOPORTE` = ayuda con la cuenta desde Perfil;
+  `CORREO_CONTACTO` = la fila "Contacto" de Configuración.
+- **La fila de Perfil es SIEMPRE visible; lo que se oculta es el botón de
+  WhatsApp**, con `whatsappSoporteDisponible()`, que a propósito NO pasa por
+  `VISTA_PREVIA_TODAS_LAS_FILAS`: con la constante vacía, ese bypass pintaría el
+  botón en dev y abriría `wa.me/` roto. Con un solo canal la hoja se muestra
+  igual (frame: variante "un solo canal"), en vez de saltar al `mailto:`: el
+  comportamiento de la fila no cambia según una constante y la dirección queda
+  a la vista.
+- **Nada depende de `profile.estado`**: es el único canal de apelación de una
+  cuenta suspendida. Ni la fila ni ningún botón de la hoja se gatean por estado.
+- **Mensaje prellenado**: `textosSoporte()` es el único sitio que interpola el
+  nombre de la app (`MARCA`, no exportada; para el rebranding se cambia esa
+  línea) y arma asunto y cuerpo, que WhatsApp y el mailto comparten. El cuerpo
+  lleva el correo de la sesión, que el usuario ve y puede borrar antes de
+  enviar. El mailto usa `encodeURIComponent` (espacio → `%20`, salto → `%0A`) y
+  no `URLSearchParams`, que codifica el espacio como `+`.
+- **Correo sin app**: la hoja NO se cierra ni usa toast, porque `Modal` abre una
+  ventana nativa por encima del `ToastProvider` (`_layout.tsx:62`) y el toast
+  quedaría tapado. Se queda abierta con un `Notice` ("No encontramos una app de
+  correo. Mantén presionada la dirección para copiarla.") y la dirección como
+  `<Text selectable>`, la segunda línea de la fila de Correo. Es el `sub` de
+  `StatusRow` (componente compartido, ver `componentes-compartidos.md`): va como
+  HERMANO del `Pressable`, no hijo, así que la pulsación larga que selecciona
+  la dirección no compite con el `onPress` de la fila (no se pudo verificar
+  leyendo código que un `selectable` dentro de un `Pressable` no dispare el
+  `onPress`; por eso no se depende de ello). Consecuencia: tocar la dirección no
+  abre el correo. No hay `expo-clipboard` (módulo nativo). El fallo de WhatsApp
+  sí es toast, disparado DESPUÉS de cerrar la hoja.
+- **Safe area**: el `paddingBottom` de la hoja es `insets.bottom + 24`
+  (`useSafeAreaInsets`, con precedente dentro de `Modal` en `CampusBottomSheet`
+  y `PaisBottomSheet`). Con el 24 fijo que copié de `HojaAccionesListing`, el
+  indicador de inicio de iOS se encimaba con la dirección (visto en iPhone).
+- **Estado de verificación: botón de WhatsApp implementado y verificado en
+  iPhone con WhatsApp instalado; no verificado sin WhatsApp instalado ni en
+  Android.** `NUMERO_SOPORTE` sigue vacío en el árbol (la prueba se hizo con un
+  número puesto en local, sin comitear).
+- **Observado en iOS (con WhatsApp instalado), no es un problema**: `wa.me` no
+  abre WhatsApp directo: pasa primero por Safari (la redirección a
+  `api.whatsapp.com`), que muestra el diálogo "¿Abrir esta página en WhatsApp?"
+  antes de abrir la app. Es el comportamiento de un universal link de `https://`.
+- **wa.me y try/catch**: los dos usos anteriores (`detalle/[id].tsx:421`,
+  `perfil-publico/[id].tsx:160`) llaman `Linking.openURL` sin try/catch. Con
+  WhatsApp instalado en iPhone no rechazó; sin WhatsApp instalado sigue sin
+  confirmarse (se espera que caiga al navegador). La hoja lleva try/catch de
+  todos modos.
+- **Pendiente en dispositivo (tuyo)**: WhatsApp sin instalar, Android (WhatsApp
+  y pulsación larga sobre la dirección), sin app de correo, cuenta suspendida
+  y cierre con tap fuera y con botón atrás. La pulsación larga sobre la
+  dirección y el nuevo `paddingBottom` en iPhone, tras este ajuste.
 
 **"Cerrar sesión" NO vive aquí: se mudó en `3752e7b` y se REVIRTIÓ a Perfil,
 que volvió a sus 5 filas.** El motivo no es de diseño, es el guard de sesión.

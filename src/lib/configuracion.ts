@@ -6,6 +6,7 @@
 
 import { Platform } from 'react-native';
 
+import { urlWhatsapp } from '@/lib/perfil';
 import { pushDisponible } from '@/lib/push';
 
 export type FilaConfiguracion =
@@ -40,7 +41,49 @@ export const URL_TERMINOS = 'https://enriquemacias.dev/';
 export const URL_APP_STORE = 'https://apps.apple.com/mx/app/relevo/id1501683637';
 export const URL_GOOGLE_PLAY = 'https://play.google.com/store/apps/details?id=com.enriquemacias.relevo';
 
+// Dos buzones con propósitos distintos: `CORREO_SOPORTE` = ayuda con la cuenta,
+// desde "Ayuda y soporte" de Perfil (`HojaSoporte`); `CORREO_CONTACTO` = la fila
+// "Contacto" de Configuración.
 export const CORREO_CONTACTO = 'contacto@rlvo.com.mx';
+export const CORREO_SOPORTE = 'soporte@rlvo.com.mx';
+
+// WhatsApp de soporte, en E.164 con `+`. Vacío = la hoja de soporte no pinta el
+// botón de WhatsApp (queda solo el correo).
+export const NUMERO_SOPORTE = '';
+
+/**
+ * Botón de WhatsApp de `HojaSoporte`. NO pasa por `VISTA_PREVIA_TODAS_LAS_FILAS`
+ * a propósito: con la constante vacía, el bypass de `filaVisible` lo pintaría en
+ * dev y abriría `wa.me/` roto.
+ */
+export function whatsappSoporteDisponible(): boolean {
+  return NUMERO_SOPORTE !== '';
+}
+
+// El nombre de la app en los textos de soporte sale SOLO de aquí (rebranding).
+const MARCA = 'Relevo';
+
+/**
+ * Asunto y cuerpo prellenados de soporte, para WhatsApp y para el correo. El
+ * único sitio que interpola `MARCA`. El correo es el de la propia sesión del
+ * usuario: lo ve y lo puede borrar antes de enviar.
+ */
+export function textosSoporte(correo?: string | null): { asunto: string; cuerpo: string } {
+  const lineas = [`Hola, necesito ayuda con mi cuenta de ${MARCA}.`];
+  if (correo) lineas.push(`Mi correo: ${correo}`);
+  return { asunto: `Ayuda con mi cuenta de ${MARCA}`, cuerpo: lineas.join('\n') };
+}
+
+export function urlSoporteWhatsapp(correo?: string | null): string {
+  return urlWhatsapp(NUMERO_SOPORTE, textosSoporte(correo).cuerpo);
+}
+
+// `encodeURIComponent` y no `URLSearchParams`: éste codifica el espacio como
+// `+`, que varios clientes de correo muestran literal en asunto y cuerpo.
+export function urlSoporteCorreo(correo?: string | null): string {
+  const { asunto, cuerpo } = textosSoporte(correo);
+  return `mailto:${CORREO_SOPORTE}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+}
 
 export function filaVisible(fila: FilaConfiguracion): boolean {
   if (VISTA_PREVIA_TODAS_LAS_FILAS) return true;

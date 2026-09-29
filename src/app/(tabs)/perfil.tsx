@@ -24,6 +24,7 @@ import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ErrorState } from '@/components/ErrorState';
+import { HojaSoporte } from '@/components/HojaSoporte';
 import {
   IconCheck,
   IconCheckCircle,
@@ -258,6 +259,7 @@ export default function PerfilScreen() {
     errorPara === userId ? 'error' : cargadoPara === userId ? 'ready' : 'loading';
 
   const [confirmando, setConfirmando] = useState(false);
+  const [soporteAbierto, setSoporteAbierto] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
 
   /**
@@ -430,11 +432,13 @@ export default function PerfilScreen() {
                 label="Verificación"
                 onPress={() => {}}
               />
-              {/* Ayuda y soporte: idem. */}
+              {/* Ayuda y soporte: abre `HojaSoporte`. SIEMPRE visible y sin gate
+                  por `profile.estado`: es el único canal de apelación de una
+                  cuenta suspendida. */}
               <MenuRow
                 icon={<IconHelpCircle size={16} color={Colors.inkSoft} />}
                 label="Ayuda y soporte"
-                onPress={() => {}}
+                onPress={() => setSoporteAbierto(true)}
               />
               <MenuRow
                 icon={<IconLogout size={16} color={Colors.inkSoft} />}
@@ -455,6 +459,12 @@ export default function PerfilScreen() {
           Perfil.
         */}
       </Screen>
+
+      <HojaSoporte
+        visible={soporteAbierto}
+        onCerrar={() => setSoporteAbierto(false)}
+        correoUsuario={session?.user.email}
+      />
 
       <ConfirmModal
         visible={confirmando}
