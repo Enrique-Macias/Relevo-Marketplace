@@ -65,7 +65,8 @@
     "web": "expo start --web",
     "lint": "expo lint src supabase/functions",
     "gen:types": "supabase gen types typescript --linked --schema public > src/lib/database.types.ts",
-    "check:functions": "tsc --noEmit -p supabase/functions/tsconfig.json"
+    "check:functions": "tsc --noEmit -p supabase/functions/tsconfig.json",
+    "check:admin": "npm --prefix admin run typecheck && npm --prefix admin run lint"
   },
   "private": true
 }

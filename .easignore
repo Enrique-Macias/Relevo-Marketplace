@@ -1,0 +1,53 @@
+# .easignore — EXISTE, EAS deja de leer .gitignore (rf17-plan-admin.md §1, C8).
+# Por eso esto es una COPIA LITERAL de .gitignore más el panel de admin.
+# Si cambias .gitignore, cambia esto también: si no, el build de EAS sube lo
+# que git ignora (.env.local incluido).
+
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+example
+
+# generated native folders
+/ios
+/android
+
+# Panel de admin (RF-17): no es parte de la app móvil.
+admin/
+admin/node_modules/
