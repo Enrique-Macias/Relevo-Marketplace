@@ -628,7 +628,9 @@ mismo criterio que `campusChip`/`buttonWhatsapp`).
   la misma persona que está moderando. **Revisar cuando:** exista la plataforma
   de admin de RF-17, que es donde alguien podría dar de alta publicaciones fuera
   del flujo de la app, o cuando aparezca un segundo escritor de `listings` que no
-  sea el cliente. **Fix:** el mismo `when` sobre un `before insert` de
+  sea el cliente. **Ya está planeado cerrarla en la Ola 4 de RF-17** (`CLAUDE.md`
+  §8, pendiente 0k), porque `aprobar_listing` y `moderar-contenido` la abren por
+  una vía que esta entrada no preveía: las `pendiente` de una cuenta suspendida. **Fix:** el mismo `when` sobre un `before insert` de
   `listings`, o un `check` que niegue `estado = 'activa'` cuando el dueño no esté
   activo — y ojo, es el mismo tipo de cambio que su gemela, así que si algún día
   se cierran, se cierran juntas y con las fixtures de la suite en la mano.

@@ -191,7 +191,12 @@ Componentes nuevos: `NotifRow`, `SkeletonNotifRows`, `IconMail`, y dos roles de
   para nadie. **Revisar cuando:** se trabaje la moderación de RF-17, que es
   donde "¿cuándo se resolvió esto?" empieza a ser una pregunta real. **Fix:** un
   `before update` con el mismo `when` que `reports_notify_resolved`, modelado
-  sobre `private.set_updated_at()` (`20260906000439:33-46`).
+  sobre `private.set_updated_at()` (`20260906000439:33-46`). **Ojo al copiar ese
+  `when`:** desde `20260930000476` lleva además `new.reporter_id is not null`, y
+  esa cláusula NO se copia — `resolved_at` tiene que escribirse también para un
+  reporte sin reportante, que es justo el caso que esa cláusula deja sin aviso.
+  **Esta deuda se activa con la Ola 2 de RF-17** (`resolver_reporte` la escribe,
+  `CLAUDE.md` §8, pendiente 0k).
 - **Sin receipts de Expo.** `send-push` maneja los errores a nivel *ticket*, que
   es donde llega `DeviceNotRegistered` para un token inválido, pero no hace el
   segundo round-trip a `/push/getReceipts` — donde Expo reporta fallos que solo

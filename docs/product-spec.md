@@ -212,7 +212,8 @@ vez validado.
   leído), que es lo que hace que un aviso sobreviva a un push que no llegó.
   "Respuesta a un reporte" NO necesitó un campo de texto nuevo: el copy del
   diseño es genérico y se deriva de `reports.estado`, y un campo libre no
-  tendría quién lo escribiera (RF-17 pone la moderación en Studio).
+  tendría quién lo escribiera (la moderación vive en Studio hoy y en el panel
+  de RF-17 después: un campo libre no tendría quién lo escribiera en ninguno).
   **✅ Tanda 2 (2026-09-24): SIETE disparadores en total**, cuatro nuevos que
   van al inbox:
   - el veredicto de moderación de tu publicación (RF-18), cuando no lo viste en
@@ -234,9 +235,29 @@ vez validado.
   prueba en un teléfono real. Ver `CLAUDE.md` §8.
 
 ### Administración
-- **RF-17** Panel interno para revisar reportes, suspender
-  usuarios/publicaciones y ver métricas básicas de uso. (Vive en Supabase
-  Studio — no requiere pantallas propias en la app móvil.)
+- **RF-17** Panel de administración web propio para revisar reportes,
+  moderar publicaciones, suspender usuarios y ver métricas básicas de uso. Lo
+  usan 3 admins y dos no son técnicos, así que no puede exigir Supabase Studio
+  ni SQL. (Antes decía "vive en Supabase Studio"; sigue siendo así hasta que el
+  panel esté desplegado.) **Fase 1:**
+  (a) reportes: listar, ver el objetivo (publicación o usuario) y resolver o
+  descartar; (b) cola de moderación: publicaciones en `pendiente` con sus
+  fotos y el veredicto de moderación, aprobar o bloquear — bloquear también
+  aplica a publicaciones ya activas, pausadas o vendidas, porque un reporte
+  puede apuntar a cualquiera; (c) usuarios: buscar, suspender y reactivar con
+  motivo; (d) catálogo institucional: dominios de correo, universidades y
+  campus (con latitud y longitud) — alcance nuevo, antes solo por Studio; (e)
+  métricas básicas de RNF-10.
+  **Fuera de la fase 1:** logs y errores (irán en Sentry), un chatbot de
+  soporte, borrar cuentas desde el panel y el aviso de suspensión dentro de la
+  app (tarea aparte que depende de esta).
+  **Cómo se hace cumplir:** toda acción de admin es una RPC con el chequeo de
+  admin adentro y MFA (aal2) exigido en la base, y deja fila en una tabla de
+  auditoría; el panel nunca escribe directo y la `service_role` key nunca llega
+  al navegador.
+  **⏳ Estado: en construcción por olas — `CLAUDE.md` §8, pendiente 0k.** La
+  Ola 0 (una corrección previa de un trigger) está hecha; el panel todavía no
+  existe.
 - **RF-18** Moderación automática de contenido antes de publicarse: fotos de
   publicaciones y de perfil analizadas con Google Cloud Vision (SafeSearch +
   detección de texto en imagen); título y descripción analizados con OpenAI
@@ -347,7 +368,7 @@ generosa.
 | App móvil | React Native + Expo | Un solo código Android/iOS, builds sin Mac (EAS Build) |
 | Backend/BD | Supabase (Postgres) | Auth + BD relacional + Storage + RLS incluidos |
 | Notificaciones | Expo Notifications | Integración directa, sin servicio adicional |
-| Admin | Supabase Studio | Cero desarrollo adicional para arrancar |
+| Admin | Supabase Studio hoy; panel web propio (RF-17) en construcción | Studio: cero desarrollo para arrancar. El panel existe porque 2 de los 3 admins no pueden usar Studio ni SQL |
 | Distribución | EAS Build/Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Alternativas consideradas y descartadas:**
@@ -378,7 +399,7 @@ React Native + Expo · iOS / Android
 Expo Push Notification Service
 
 Contacto comprador ↔ vendedor: deep link wa.me — fuera del backend
-Moderación: Supabase Studio, uso directo del equipo
+Moderación: Supabase Studio hoy (uso directo del equipo); panel web propio (RF-17) en construcción
 ```
 
 ### Modelo de datos — entidades principales

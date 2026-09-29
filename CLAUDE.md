@@ -87,7 +87,7 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Moderación de imagen | Google Cloud Vision (SafeSearch + OCR) **+ Amazon Rekognition** (`DetectModerationLabels`) | Dos proveedores porque cubren cosas distintas: SafeSearch no mira drogas/alcohol/gambling y Rekognition no hace OCR. Rekognition **no batchea** (una llamada por imagen) y acepta **solo JPEG/PNG**, al revés de Vision — ver §3 |
-| Admin / moderación | Supabase Studio | Panel de reportes y suspensión de usuarios/publicaciones, sin desarrollo adicional |
+| Admin / moderación | Supabase Studio **hoy**; panel web propio en `admin/` (RF-17) **en construcción** | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **Mientras no esté desplegado, la moderación sigue en Studio** |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Nomenclatura de API keys (Supabase renombró su sistema en 2026):** usamos las
@@ -183,8 +183,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 39 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-09-27; decía "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
+Definido en 40 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-09-29; decía "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
@@ -199,6 +199,13 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 40 y 39 (medido el 2026-09-29).** `ls supabase/migrations |
+wc -l` da **40**; `select count(*), max(version) from
+supabase_migrations.schema_migrations` en remoto da **39** y `20260930000475`.
+La que falta en remoto es `20260930000476` (reportes de cuentas eliminadas), que
+no se pushea en su propia tarea: es el runbook de la Ola 0 de RF-17, pendiente
+0k de §8. La historia de antes, tal como estaba:
 
 **Repo y remoto: 39 y 39 (medido el 2026-09-27) — a la par.** `ls
 supabase/migrations | wc -l` da **39**; `mcp__supabase__list_migrations`
@@ -1211,9 +1218,16 @@ RF-16 dice "hay respuesta a un reporte" y `reports` no tiene ningún campo de
 texto para eso. No hace falta: el copy del diseño
 (`design/relevo-app.html`, fila "Respuesta a tu reporte") es genérico y se
 deriva entero de `estado`. Y un campo de texto libre **no tendría quién lo
-escribiera** — RF-17 pone la moderación en Studio, que es un editor de celdas.
-Si algún día el copy debe ser por caso, el orden correcto es un frame primero
-(§0 regla 4).
+escribiera** — hoy la moderación vive en Studio, que es un editor de celdas, y
+el panel de RF-17 (§8, pendiente 0k) tampoco lo cambia. Si algún día el copy
+debe ser por caso, el orden correcto es un frame primero (§0 regla 4).
+
+**Resolver el reporte de una cuenta ya eliminada no avisa a nadie, y ya no
+aborta** (`20260930000476`). Desde `20260929000474`, `reports.reporter_id` puede
+ser NULL, pero `notify_report_resolved()` lo insertaba en `notifications.user_id`
+(NOT NULL): el UPDATE moría con 23502 (medido en local antes de corregir). El
+trigger `reports_notify_resolved` lleva ahora `and new.reporter_id is not null`
+en su `WHEN`; la función no cambió. Lo vigilan T36 (a) y (a2).
 
 **El webhook es UNO, sobre `notifications`, no uno por tabla de origen.** Como
 el inbox del diseño exige que la fila exista de todos modos, esa tabla es
@@ -1534,8 +1548,8 @@ Lo que no se ve en la tabla:
   desde `listings`, que el borrado se lleva. Detalle de la función (auth,
   reautenticación por `amr`, idempotencia) en §8 y en §9.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 358 aserciones (medido con el
-`grep` de §8 el 2026-09-27; antes decía 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 362 aserciones (medido con el
+`grep` de §8 el 2026-09-29; antes decía 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2184,6 +2198,28 @@ asigna los ids en el orden del `values`, porque el join reordena. T1-T3
 salieron al revés, así que (e2) esperaba un orden que no existía. Ahora va
 `order by v.n`, y la precondición de T34 verifica los ids.
 
+Y a **362** con las 4 de T36 (resolver el reporte de una cuenta eliminada,
+`20260930000476`): 2 precondiciones de fixtures y 2 de comportamiento,
+autocontenida con sus propios `:R36`/`:V36`/`:T36`. **T35 queda reservada** para
+la Ola 1 de RF-17 (identidad y MFA del panel), y T36 se abrió antes a propósito
+para no mezclar esta corrección con el panel. Nada en T12: la migración no crea
+funciones ni toca grants, solo el `WHEN` de un trigger. El UPDATE corre como
+`postgres` (lo que hará una RPC definer del panel) y su rechazo se captura con
+`rechazo_de(null, …)`, en sentencia aparte de la comprobación (`\gset`,
+lección de T28). Los dos controles se corrieron uno a la vez dentro de la misma
+transacción que la suite (`begin; <variante>; <suite>; rollback`), imprimiendo
+antes el trigger vivo, contra la suite completa **y** contra T36 aislada:
+
+| Variante rota | Suite | T36 aislada |
+|---|---|---|
+| el `WHEN` de antes (sin `reporter_id is not null`) | (a), con `23502` | (a) |
+| `when (false)` (apaga el aviso también para cuentas vivas) | **T18** "resolver un reporte notifica a quien lo levantó" | (a2) |
+
+**La segunda fila es la razón de (a2).** En la suite completa esa variante la
+caza T18 primero, o sea que sin (a2) T36 dejaría pasar `when (false)` en cuanto
+alguien sacara T18 o la reordenara. (a) sola no la distingue: el fix "correcto"
+y `when (false)` dan las dos `ok` y sin aviso.
+
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
 correr esta suite antes de comitear.
@@ -2286,11 +2322,11 @@ sigan viviendo solo en una conversación:
   resolver antes que borrar contenido legítimo sin poder revertirlo. Cuando sí
   borra, borra el objeto y pone `foto_url` en null: el usuario vuelve a sus
   iniciales.
-- **Mientras no exista RF-17 (panel de administración), la cola de
-  `pendiente` la revisa el desarrollador único vía Supabase Studio.** No hay
-  otro mecanismo todavía — ni notificación a un equipo de moderación (no
-  existe ese equipo), ni SLA, ni flujo automatizado de aprobación/rechazo. Es
-  manual, por diseño, hasta que RF-17 exista. Y **"la cola" no es una tabla
+- **Hoy —y hasta que el panel de RF-17 esté desplegado (§8, pendiente
+  0k)— la cola de `pendiente` la revisa el desarrollador único vía Supabase
+  Studio.** No hay otro mecanismo todavía — ni notificación a un equipo de
+  moderación, ni SLA, ni flujo automatizado de aprobación/rechazo. Es manual,
+  por diseño, hasta que el panel exista. Y **"la cola" no es una tabla
   nueva ni un mecanismo aparte: es literalmente el filtro
   `estado = 'pendiente'` sobre `listings`** — el mismo enum, la misma RLS, sin
   infraestructura adicional.
@@ -3215,12 +3251,15 @@ de los route groups).
    así que no hay urgencia. **Revisar cuando:** el hook haga algo más que una
    búsqueda por PK, o los logs de Auth muestren `request_timeout` en `/otp`.
 0c. **Borrar de remoto los datos de prueba de la fase 2B antes de que entren
-   usuarios reales.** Son "Universidad de Prueba 2B" (id 2), sus campus "Campus
-   Norte (prueba 2B)" (id 3, con 3 publicaciones) y "Campus Sur (prueba 2B)" (id
-   4, vacío), más la cuenta `prueba-2b@example.com`, que no tiene contraseña.
-   Existen para probar a mano la navegación entre universidades. Los nombres
-   exactos, los ids y el SQL de limpieza en orden están en `explorar.md`, sección
-   "Datos de prueba en remoto".
+   usuarios reales — HECHO A MEDIAS, falta una fila.** Medido en remoto el
+   2026-09-29 (`select`, solo lectura): la universidad "Prueba 2B", sus dos
+   campus y `public.users` ya no existen (0, 0 y 0 filas), y sus publicaciones
+   tampoco. **Queda `auth.users` `7f50bc00-68de-4c01-bdd6-a68362653b1a`
+   (`prueba-2b@example.com`, sin contraseña ni identidades):** el `delete from
+   auth.users` del SQL de `explorar.md` (sección "Datos de prueba en remoto") no
+   se corrió, o se corrió el resto sin él. Sigue siendo suyo por hacer. Mientras
+   tanto, `auth.users` tiene una fila más que `public.users` (8 contra 7), así
+   que **ninguna métrica del panel de RF-17 cuenta sobre `auth.users`**.
 0d. **Fase 2C ("Detectar campus más cercano"): la migración YA está en
    remoto; faltan los pasos 2-4.** Requiere, en este orden:
    1. ~~`supabase db push` de `20260925000467_campus_coordenadas.sql`~~
@@ -3319,6 +3358,57 @@ ahora apuntan a "Hecho".)**
 se cerró completo el 2026-09-27, los 6 pasos. Evidencia en "Hecho", arriba. Se
 deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
 `CLAUDE.md` §3 y `explorar.md`.)**
+0k. **RF-17: panel de administración web (`admin/`), por olas.** Plan aprobado
+   el 2026-09-29 tras dos rondas de revisión (D1-D20). **El plan completo vive en
+   la sesión, no en el repo**; lo que sigue es lo esencial para no perderlo.
+   Somos 3 admins y 2 no pueden usar Studio ni SQL (`docs/product-spec.md`,
+   RF-17). Decisiones ya tomadas: `admin/` en este repo con `package.json` propio
+   y sin workspaces (D1); SPA Vite + React + TS, sin servidor (D2); schema
+   `admin` con RPCs `security definer`, cada una con `exigir_admin()` adentro y
+   auditoría (D3); admins con cuentas separadas `@rlvo.com.mx` invitadas por
+   script y activadas en dos pasos, identidad en `private.admins` y no en
+   `app_metadata` (D4); una sola `is_admin()` que exige aal2 y un TOTP de las
+   últimas 12 h leído de `amr`, forma con `jsonb_typeof(...) = 'array'` porque
+   `coalesce` no atrapa un `"amr": null` (D16, D18); `claves_auditoria_ok()`
+   IMMUTABLE con lista de claves POR tipo de objetivo (D20); cuentas de admin
+   sin datos personales en `antes`/`despues`. **D5 (cómo borra el dueño una
+   `bloqueada` cuando ya no ve sus fotos) se decide al entrar a la Ola 4.**
+   - **Ola 0 — HECHA EN LOCAL, sin pushear** (`7574b01`, migración
+     `20260930000476` + T36): resolver el reporte de una cuenta eliminada ya no
+     aborta (§3, "Resolver el reporte…"). **Runbook, tuyo:** `supabase db push`;
+     `list_migrations` debe dar 40; `pg_get_triggerdef` de
+     `reports_notify_resolved` en remoto debe traer `reporter_id IS NOT NULL`;
+     `gen:types` no cambia (es un trigger). Hasta entonces la Ola 0 no cuenta
+     como hecha en producción.
+   - **Ola 1:** login con MFA, aceptar invitación y fijar contraseña, y
+     suspender/reactivar de punta a punta con auditoría (migraciones `…477` y
+     `…478`, T35). **Bloqueada por dos cosas tuyas:** confirmar en el Dashboard
+     que TOTP está incluido en el plan gratuito (el comentario de
+     `config.toml:360` dice "Pro plan", pero es la plantilla del CLI), y que
+     `@rlvo.com.mx` reciba correo real (ya lo hace, Google Workspace).
+   - **Ola 2:** reportes. **Orden fijo: primero los frames de
+     `design/admin-panel.html`, luego tu aprobación del diseño y solo después la
+     migración `…479`.** `bloquear_listing` entra en esta ola con su propia
+     aserción y control (no-admin rechazado, CAS, auditoría con solo `estado`).
+   - **Ola 3:** despliegue (Cloudflare Pages en `admin.rlvo.com.mx`) y
+     `admin-reset-mfa`. Tú agregas el schema `admin` a los exposed schemas del
+     Dashboard.
+   - **Ola 4:** moderación, incluido el trigger "una publicación no pasa a
+     `activa` si su dueño no está activo" (`cuenta-perfil.md`, deuda del pausado
+     al suspender). Medido en local antes de escribirlo: cae en **4 fixtures**
+     de `rls.sql` (T11b, T13, T14 y T23), no en aserciones, y todas siembran una
+     publicación `activa` de un dueño suspendido; hay que sembrarlas de otra
+     forma en el mismo cambio. `moderar-contenido` se despliega ANTES, con el
+     manejo del rechazo.
+   - **Ola 5:** catálogo. **Ola 6:** métricas y `actividad_diaria`.
+   **Notas que las olas heredan (no se implementan todavía):**
+   - Ola 1, T35 (d2): sumar el caso "timestamp basura" en `amr` con su control
+     (quitar el regex de `is_admin()`).
+   - Ola 1, `admin/CLAUDE.md`: el `DETAIL` de un rechazo del CHECK de
+     `admin_acciones` imprime la fila completa (con el `motivo`, texto libre) y
+     puede llegar a logs. **No pegarlo en chats ni en tickets.**
+   Pendientes tuyos, además del push: confirmar TOTP en el Dashboard, agregar el
+   schema `admin` cuando toque y la fila de `prueba-2b` (pendiente 0c).
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que

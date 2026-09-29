@@ -903,6 +903,15 @@ por caso. Se conservan como la lista a repetir si el flujo cambia:
 
 ## Datos de prueba en remoto — BORRAR antes de usuarios reales
 
+**ACTUALIZACIÓN 2026-09-29 (medido en remoto con `select`, solo lectura): la
+limpieza está hecha a medias.** La universidad "Prueba 2B", sus dos campus, la
+fila de `public.users` y las publicaciones ya no existen (0 filas en cada una).
+**Solo queda `auth.users` `7f50bc00-68de-4c01-bdd6-a68362653b1a`**
+(`prueba-2b@example.com`, sin identidades). Lo que falta es solo el primer
+`delete` del bloque de limpieza de abajo; el resto ya corrió. La tabla y el SQL
+completo se dejan como estaban, como registro de lo que se sembró. Ver
+`CLAUDE.md` §8, pendiente 0c.
+
 Sembrados el 2026-09-23 por `execute_sql`, para probar a mano la fase 2B en
 producción, que solo tiene una universidad real:
 
