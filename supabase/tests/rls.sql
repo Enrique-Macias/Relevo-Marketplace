@@ -4964,6 +4964,17 @@ select pg_temp.assert(
     = '23514:users_suspension_coherente',
   '(g0) suspendido sin suspendido_at, o activo con motivo → 23514 users_suspension_coherente');
 
+-- (g0b) La otra variante de "activo con UNA sola columna": solo
+-- `suspendido_at`, sin motivo. La forma del plan en un solo sentido
+-- (`(estado = 'suspendido') = (… and …)`) la deja pasar: `false = false`.
+-- (g0) solo cubre la variante con el motivo; sin esta, esa forma débil pasaba
+-- la suite con esta mitad abierta.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format($f$update public.users
+      set suspendido_at = now() where id = %L$f$, :U35))
+    = '23514:users_suspension_coherente',
+  '(g0b) activo con solo suspendido_at → 23514 users_suspension_coherente');
+
 -- (g1) Motivo en blanco por la RPC → lo rechaza G2 de la función, ANTES de
 -- tocar la fila (22023, no el 23514 del CHECK).
 select pg_temp.assert(
