@@ -79,6 +79,35 @@ Reglas para cualquier IA o desarrollador que trabaje en este repo:
 (D1 de `docs/rf17-plan-admin.md`: el panel de RF-17 tiene su propia fuente de
 diseño, `design/admin-panel.html`, desde la Ola 2).
 
+### Privacidad, datos y requisitos legales del producto
+
+Para cualquier trabajo relacionado con privacidad, datos personales,
+moderación, eliminación de cuenta, retención de datos, contenido,
+proveedores externos o requisitos de lanzamiento, consulta también:
+
+- `/docs/LEGAL_FACTS.md`
+- `/docs/PRIVACY_SPEC.md`
+- `/docs/TERMS_SPEC.md`
+- `/docs/ACCOUNT_DELETION.md`
+- `/docs/CONTENT_POLICY.md`
+- `/docs/DATA_RETENTION.md`
+- `/docs/LEGAL_LAUNCH_CHECKLIST.md`
+
+`/docs/LEGAL_FACTS.md` es la fuente factual principal para el
+comportamiento esperado en estas áreas.
+
+Estos documentos describen comportamiento esperado y requisitos del
+producto. Su existencia NO demuestra que dicho comportamiento esté
+implementado.
+
+Cuando código y documentación discrepen:
+
+1. No asumas que la documentación refleja la implementación real.
+2. Verifica la implementación en código, migraciones, RLS, Storage,
+   Edge Functions y configuración relevante.
+3. Reporta explícitamente la discrepancia.
+4. No cambies silenciosamente código o documentación para hacerlos coincidir.
+
 ---
 
 ## 1. Stack tecnológico
