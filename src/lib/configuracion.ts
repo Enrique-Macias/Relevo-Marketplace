@@ -34,8 +34,8 @@ const VISTA_PREVIA_TODAS_LAS_FILAS = __DEV__ && true;
 const APP_PUBLICADA = false;
 
 // URLs reales cuando exista el aviso/términos publicados.
-export const URL_PRIVACIDAD = 'https://enriquemacias.dev/';
-export const URL_TERMINOS = 'https://enriquemacias.dev/';
+export const URL_PRIVACIDAD = 'https://www.rlvo.com.mx/privacidad';
+export const URL_TERMINOS = 'https://www.rlvo.com.mx/terminos';
 
 // Links reales cuando exista la ficha de cada tienda.
 export const URL_APP_STORE = 'https://apps.apple.com/mx/app/relevo/id1501683637';
@@ -98,9 +98,9 @@ export function filaVisible(fila: FilaConfiguracion): boolean {
       // No depende de ninguna URL de tienda: es texto plano, sin link.
       return APP_PUBLICADA;
     case 'privacidad':
-      return URL_PRIVACIDAD !== 'https://enriquemacias.dev/';
+      return URL_PRIVACIDAD !== 'https://www.rlvo.com.mx/privacidad';
     case 'terminos':
-      return URL_TERMINOS !== 'https://enriquemacias.dev/';
+      return URL_TERMINOS !== 'https://www.rlvo.com.mx/terminos';
     case 'eliminar_cuenta':
       // Siempre: Apple (5.1.1(v)) y Google Play exigen poder borrar la cuenta
       // desde la app. El flujo es el modal de `configuracion.tsx` + la Edge
