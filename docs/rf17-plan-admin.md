@@ -263,6 +263,7 @@ El link de invitación es una credencial al portador hasta que se usa: quien lo
 intercepte puede fijar contraseña y enrolar **su propio** TOTP. Mitigación:
 `scripts/crear-admin.mjs` activa en dos pasos.
 
+   **OBSOLETO (Ola 1, punto 1 de "lo que cambió"): no es `invitar` con `inviteUserByEmail` (pasa por el Auth Hook, 403); es `crear`, por `/admin/users` más el código de recuperación.**
 1. `invitar <correo> <nombre>`: `auth.admin.inviteUserByEmail` más una fila en
    `private.admins` con `activado_at = null`. Así `is_admin()` sigue en false
    aunque ya exista aal2.
@@ -580,10 +581,14 @@ bloquea las Olas 0-3.**
   publicaciones que pasaron a `pausada`, medido antes y después.
 
 **Columnas nuevas en `users`:** `suspendido_at timestamptz` y `suspension_motivo
-text`, con el check `users_suspension_coherente`:
-`(estado = 'suspendido') = (suspendido_at is not null and suspension_motivo is
-not null)`. **D15:** esto vuelve obligatorio el motivo también al suspender desde
-Studio. Los 7 usuarios de remoto están `activo`, así que no hace falta backfill.
+text`, con el check `users_suspension_coherente` **tal como quedó en
+`20260930000478`, en los dos sentidos**:
+`(estado = 'suspendido' and suspendido_at is not null and suspension_motivo is
+not null) or (estado = 'activo' and suspendido_at is null and suspension_motivo
+is null)`. La forma de este plan, `(estado = 'suspendido') = (… and …)`, dejaba
+pasar un `activo` con una sola columna puesta (T35 (g0) y (g0b)). **D15:** esto
+vuelve obligatorio el motivo también al suspender desde Studio, y **reactivar a
+mano desde Studio exige dejar las dos columnas en NULL**. Los 7 usuarios de remoto están `activo`, así que no hace falta backfill.
 La historia completa vive en `admin_acciones`.
 
 **Quién lee el motivo:**
@@ -682,7 +687,7 @@ mismo cambio que el trigger:
   T11b, T13, T14 y T23 por separado, para confirmar que ninguna aserción quedó
   pasando por la razón equivocada.
 
-**Bug preexistente encontrado al planear (Ola 0, HECHO en local, sin pushear):**
+**Bug preexistente encontrado al planear (Ola 0, EN PRODUCCIÓN desde el 2026-09-29):**
 `private.notify_report_resolved()` insertaba `new.reporter_id` en
 `notifications.user_id` (NOT NULL); desde `20260929000474` `reporter_id` puede ser
 NULL, así que resolver el reporte de una cuenta eliminada abortaba con `23502`
@@ -840,7 +845,7 @@ consecutivo** (`CLAUDE.md` §6). El orden de v2.1 con los adelantos de D19:
 
 | # | Archivo | Ola | Contenido |
 |---|---|---|---|
-| 1 | `20260930000476_notify_report_resolved_sin_reportante.sql` | 0 — **HECHA en local, sin pushear** | `WHEN` de `reports_notify_resolved` con `and new.reporter_id is not null` |
+| 1 | `20260930000476_notify_report_resolved_sin_reportante.sql` | 0 — **en producción** (remedido el 2026-09-29) | `WHEN` de `reports_notify_resolved` con `and new.reporter_id is not null` |
 | 2 | `20260930000477_admins_y_auditoria.sql` | 1 | `private.admins`, `private.claves_auditoria_ok`, `private.admin_acciones` (CHECK + triggers append-only), `private.is_admin`, `private.exigir_admin`, schema `admin` con su `grant usage`, `admin.sesion()` |
 | 3 | `20260930000478_users_suspension.sql` | 1 | `users.suspendido_at`/`suspension_motivo` + `users_suspension_coherente`; `admin.buscar_usuarios`, `admin.detalle_usuario`, `admin.suspender_usuario`, `admin.reactivar_usuario` |
 | 4 | `20260930000479_admin_reportes.sql` | 2 | `admin.listar_reportes`, `admin.resolver_reporte`, y **adelantadas por D19:** `admin.detalle_listing`, `admin.bloquear_listing` y la policy `listing_photos_objects_select_admin` |

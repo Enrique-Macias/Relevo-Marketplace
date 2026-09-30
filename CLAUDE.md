@@ -655,8 +655,9 @@ persona ni a lo que ve el catálogo.
 **Suspender exige motivo, también desde Studio** (`20260930000478`, D15):
 `users.suspendido_at` y `users.suspension_motivo` (3-500 caracteres tras
 `btrim`) van juntas con `estado = 'suspendido'` y en NULL con `'activo'`
-(`users_suspension_coherente`, en los dos sentidos). Un UPDATE a mano que no las
-escriba falla con **23514**. El panel lo hace con `admin.suspender_usuario`, que
+(`users_suspension_coherente`, en los dos sentidos). Así que desde Studio,
+**suspender** exige escribir las dos, y **reactivar** exige dejar las dos en
+NULL; un UPDATE a mano que no lo haga falla con **23514**. El panel lo hace con `admin.suspender_usuario`, que
 además audita. Ninguna de las dos es legible por el cliente (T12). El detalle,
 en el bloque del panel de admin, más abajo.
 
@@ -1630,8 +1631,8 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `dueno_no_activo`); antes del push de la Ola 3 hay que decidir si se acepta
   la ventana (`cuenta-perfil.md`).
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 406 aserciones (medido con el
-`grep` de §8 el 2026-09-29; antes decía 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 407 aserciones (medido con el
+`grep` de §8 el 2026-09-29; antes decía 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2308,7 +2309,7 @@ cuentas de prueba (cinco admins, uno sin activar) y siete publicaciones de `:S35
 helpers: `pg_temp.claims_aal()`, que fabrica claims con `aal` y `amr` (la
 clave ausente, JSON `null` o un arreglo), y `pg_temp.rechazo_aal()`, que
 devuelve `sqlstate:mensaje`, porque todas las guardas comparten 42501 y solo el
-mensaje dice cuál rechazó. **Los 47 controles se corrieron uno a la vez**
+mensaje dice cuál rechazó. **Los 48 controles se corrieron uno a la vez** (19 de identidad y auditoría, 28 de suspender/reactivar y 1 de (g0b); decía 47 antes de (g0b))
 (`begin; <variante>; <suite>; rollback`, imprimiendo antes el hash de `prosrc`
 o la constraint viva), contra la suite completa **y** contra T35 aislada. Cada
 uno cayó en su aserción; los de T12, como se espera, dan verde en T35 aislada.
@@ -2335,6 +2336,26 @@ que suspendían sin motivo** (T10, T22, T23 y T33 en `rls.sql`, el caso 9 de
 `probe-registro.mjs`) escriben ahora `suspendido_at` y un motivo; sus
 controles se re-corrieron (T22 (e), los siete de T23 y T33 (k)) y caen donde
 caían.
+
+Y a **407** con (g0b) (T35 pasa a 38; T12 sigue en 38, medidos con el mismo
+`grep` acotado a cada sección), que cierra un hueco medido: "activo con UNA sola
+columna" tiene dos variantes y (g0) solo cubría la del motivo. La de
+`suspendido_at` sin motivo no la probaba nadie. Hay dos controles, y su diferencia es
+la lección:
+
+| Variante rota | Suite | T35 aislada |
+|---|---|---|
+| la forma del plan en un solo sentido | **(g0)** | **(g0)** |
+| rama `activo` sin la condición de `suspendido_at` | (g0b) | (g0b) |
+
+La forma del plan rompe LAS DOS mitades, así que la caza (g0), que corre
+primero. Ningún orden de las aserciones haría que esa variante cayera solo en
+(g0b). La que abre únicamente la mitad de `suspendido_at` cae solo en (g0b), y
+eso es lo que prueba que (g0b) es la red de su mitad.
+
+**Gotcha: la suite espera 3 usuarios en local.** Una cuenta de prueba (la del
+admin de la prueba manual del panel) la rompe en T1; se arregla con
+`supabase db reset`.
 
 Incluye controles negativos (el esquema se rompió a propósito para confirmar
 que la suite sí falla cuando debe). Cualquier cambio a policies/grants debe
@@ -3512,7 +3533,7 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      `gen:types` no cambia (es un trigger).
    - **Ola 1 — HECHA EN LOCAL, sin pushear** (commits `6278a0a` a `b11865c`):
      migraciones `20260930000477` (admins, MFA, auditoría, schema `admin`) y
-     `…478` (suspender/reactivar); T12 y T35 (rls.sql en 406);
+     `…478` (suspender/reactivar); T12 y T35 (rls.sql en 407, con (g0b));
      `scripts/crear-admin.mjs` y `scripts/probe-admin.mjs` (46 pruebas); el
      panel `admin/` sin frame (D14). **Cambió respecto al plan:** las cuentas
      no se INVITAN, se CREAN por `/admin/users` y fijan contraseña con el
