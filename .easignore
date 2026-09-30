@@ -51,3 +51,4 @@ example
 # Panel de admin (RF-17): no es parte de la app móvil.
 admin/
 admin/node_modules/
+/admin/
