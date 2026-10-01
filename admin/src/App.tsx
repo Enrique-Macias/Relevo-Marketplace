@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from './lib/supabase.ts';
+import { pedirTotp, registrarModal } from './lib/puerta-totp.ts';
 import { Login } from './pantallas/Login.tsx';
 import { FijarContrasena } from './pantallas/FijarContrasena.tsx';
 import { EnrolarTotp } from './pantallas/EnrolarTotp.tsx';
@@ -27,6 +28,7 @@ export function App() {
   const [correo, setCorreo] = useState<string>('');
   const modoFijar = useRef(false);
   // El modal de TOTP que pide el panel ante `mfa_requerido`/`totp_vencido`.
+  // App es su ÚNICO dueño (`lib/puerta-totp.ts`); nadie más lo abre.
   const [pideTotp, setPideTotp] = useState<((ok: boolean) => void) | null>(null);
 
   const evaluar = useCallback(async () => {
@@ -62,8 +64,12 @@ export function App() {
     await supabase.auth.signOut();
   };
 
-  const pedirTotp = useCallback(
-    () => new Promise<boolean>((resolve) => setPideTotp(() => resolve)),
+  // Antes esto era el `pedirTotp` que pasaba a Panel, y guardaba un solo
+  // `resolve`: dos llamadas concurrentes pisaban la primera, que se quedaba
+  // colgada para siempre (reproducido en scripts/probe-puerta-totp.mjs). Ahora
+  // la puerta comparte UNA promesa entre todas, y solo abre el modal una vez.
+  useEffect(
+    () => registrarModal(() => new Promise<boolean>((resolve) => setPideTotp(() => resolve))),
     [],
   );
 
