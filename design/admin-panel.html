@@ -1,0 +1,1490 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
+<title>Relevo — Panel de administración</title>
+<style>
+  /*
+    Fuente de verdad del diseño del panel de administración (RF-17), desde la
+    Ola 2. Mismo método que `relevo-app.html`: frames estáticos primero, la
+    aprobación del usuario después y solo entonces el código (`admin/CLAUDE.md`).
+
+    Lo ÚNICO que se reusa de `relevo-app.html` son los TOKENS de color y
+    tipografía: el bloque `:root` de abajo es copia literal de sus líneas 9-26,
+    sin un token nuevo. Los tamaños y componentes son de escritorio, no de
+    teléfono. Las fuentes salen de Google Fonts solo en ESTE prototipo; el panel
+    real las autoaloja (decisión D-A1 de la Ola 2).
+
+    Cada frame es un `.desk-block` con `data-cat`, el mismo agrupador que usa la
+    barra de filtros. Lo que va en `.variante-doc` (borde punteado) es
+    documentación de un estado alternativo del MISMO frame, no una pantalla
+    aparte.
+  */
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+
+  :root{
+    --ink:#221F1C;
+    --ink-soft:#6B6660;
+    --paper:#F3F0EA;
+    --card:#FFFFFF;
+    --line: rgba(34,31,28,0.10);
+    --brick:#C1440E;
+    --brick-dark: color-mix(in srgb, var(--brick) 70%, black);
+    --brick-tint: color-mix(in srgb, var(--brick) 15%, white);
+    --forest:#2F6B4F;
+    --forest-tint: color-mix(in srgb, var(--forest) 15%, white);
+    --gold:#D9A441;
+    --gold-tint:#F7ECD6;
+    --slate:#5B6B78;
+    --slate-tint:#E3E9EC;
+    --font-display: 'Fraunces';
+    --font-body: 'Inter';
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:#DAD5CB;
+    font-family:'Inter', sans-serif;
+    color:var(--ink);
+    min-height:100vh;
+    padding:48px 20px;
+  }
+
+  /* ---------- Cromo del prototipo (no es parte del panel) ---------- */
+  .filter-bar-wrap{
+    position:sticky; top:0; z-index:50;
+    background:rgba(218,213,203,0.92);
+    backdrop-filter:blur(10px);
+    padding:14px 0 16px;
+    margin:-48px -20px 32px;
+  }
+  .filter-bar{display:flex; gap:8px; flex-wrap:wrap; max-width:1280px; margin:0 auto; padding:0 20px;}
+  .filter-chip{
+    padding:9px 16px; border-radius:20px;
+    font-size:12.5px; font-weight:600;
+    background:#fff; color:#57534E;
+    border:1px solid rgba(0,0,0,0.1);
+    cursor:pointer;
+  }
+  .filter-chip.active{background:#221F1C; color:#F3F0EA; border-color:#221F1C;}
+  .filter-count{font-size:12px; color:#8A8680; font-weight:500; display:flex; align-items:center; padding-left:4px;}
+
+  .desks{display:flex; flex-direction:column; align-items:center; gap:56px; overflow-x:auto;}
+  .desk-block{display:flex; flex-direction:column; align-items:flex-start; gap:12px; width:1280px;}
+  .desk-label{font-size:12.5px; font-weight:600; color:#8A8680; text-transform:uppercase; letter-spacing:0.04em;}
+  .desk{
+    position:relative;
+    width:1280px; height:800px; overflow:hidden;
+    background:var(--paper); border-radius:14px;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.35);
+    display:flex; flex-direction:column;
+  }
+  .variante-doc{
+    width:1280px; padding-top:14px; border-top:1.5px dashed var(--line);
+    display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start;
+  }
+  .variante-doc-titulo{
+    width:100%;
+    font-size:10px; font-weight:600; color:var(--ink-soft);
+    text-transform:uppercase; letter-spacing:0.04em;
+  }
+  .variante-caja{background:var(--paper); border-radius:14px; padding:20px; width:400px;}
+  .variante-caja.ancha{width:620px;}
+
+  /* ---------- Cáscara del panel ---------- */
+  .barra{
+    flex-shrink:0; height:60px;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 28px; background:var(--card); border-bottom:1px solid var(--line);
+  }
+  .marca{font-family:var(--font-display), serif; font-weight:600; font-size:20px; color:var(--ink);}
+  .marca small{font-family:var(--font-body), sans-serif; font-weight:500; font-size:12px; color:var(--ink-soft); margin-left:10px;}
+  .barra-sesion{display:flex; align-items:center; gap:14px; font-size:13px; color:var(--ink-soft);}
+
+  .cuerpo{flex:1; display:flex; min-height:0;}
+  .lateral{
+    width:220px; flex-shrink:0; background:var(--card); border-right:1px solid var(--line);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+  }
+  .nav-item{
+    display:flex; align-items:center; gap:11px;
+    padding:10px 12px; border-radius:12px;
+    font-size:13.5px; font-weight:500; color:var(--ink-soft);
+  }
+  .nav-item svg{flex-shrink:0;}
+  .nav-item.active{background:var(--paper); color:var(--ink); font-weight:600;}
+  .nav-cuenta{margin-left:auto; font-size:11.5px; font-weight:600; color:var(--brick); background:var(--brick-tint); border-radius:9999px; padding:1px 8px;}
+
+  .contenido{flex:1; overflow:auto; padding:28px 36px 40px;}
+  .contenido.estrecho > *{max-width:980px;}
+
+  /* ---------- Tipografía ---------- */
+  .titulo-pagina{font-family:var(--font-display), serif; font-weight:500; font-size:26px; color:var(--ink); margin-bottom:6px; display:flex; align-items:center; gap:12px;}
+  .sub-pagina{font-size:13px; color:var(--ink-soft); margin-bottom:22px;}
+  .titulo-seccion{font-size:14px; font-weight:600; color:var(--ink); margin:26px 0 12px;}
+  .titulo-seccion:first-child{margin-top:0;}
+  .texto{font-size:13px; color:var(--ink); line-height:1.55;}
+  .texto-suave{font-size:12.5px; color:var(--ink-soft); line-height:1.5;}
+  .volver{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:var(--brick); margin-bottom:14px;}
+
+  /* ---------- Superficies ---------- */
+  .tarjeta{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px 24px; margin-bottom:18px;}
+  .rejilla{display:grid; grid-template-columns:repeat(4, 1fr); gap:14px 24px;}
+  .rejilla.tres{grid-template-columns:repeat(3, 1fr);}
+  .rejilla.dos{grid-template-columns:repeat(2, 1fr);}
+  .dato dt{font-size:11.5px; color:var(--ink-soft); margin-bottom:3px;}
+  .dato dd{font-size:13.5px; color:var(--ink); font-weight:500;}
+  .dos-columnas{display:grid; grid-template-columns:minmax(0, 1.35fr) minmax(0, 1fr); gap:20px; align-items:start;}
+
+  /* ---------- Chips de estado ----------
+     Mismo criterio que `.mine-state` de relevo-app: --forest es "ok",
+     --brick lo que pide atención, y apagado (--ink-soft) ES el significado de
+     lo que ya no está en juego. Nada de --gold: es acento de categorías. */
+  .estado{font-family:var(--font-body), sans-serif; display:inline-flex; align-items:center; border-radius:9999px; padding:3px 10px; font-size:11.5px; font-weight:600; white-space:nowrap;}
+  .estado.ok{background:var(--forest-tint); color:var(--forest);}
+  .estado.atencion{background:var(--brick-tint); color:var(--brick);}
+  .estado.apagado{background:var(--paper); color:var(--ink-soft);}
+  .estado.admin{background:var(--slate-tint); color:var(--slate);}
+  .estado.fuerte{background:var(--ink); color:var(--paper);}
+  .objetivo-tipo{display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:var(--ink-soft);}
+  .objetivo-tipo.eliminado{border:1px dashed var(--line); border-radius:9999px; padding:2px 9px;}
+
+  .chips{display:flex; gap:8px; margin-bottom:18px;}
+  .chip{padding:8px 15px; border-radius:20px; font-size:13px; font-weight:500; border:1px solid var(--line); background:var(--card); color:var(--ink-soft); white-space:nowrap;}
+  .chip.active{background:var(--ink); color:var(--paper); border-color:var(--ink);}
+
+  /* ---------- Tablas ---------- */
+  .tabla{width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden;}
+  .tabla th{text-align:left; font-size:11px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--card);}
+  .tabla td{font-size:13px; color:var(--ink); padding:13px 16px; border-bottom:1px solid var(--line); vertical-align:top;}
+  .tabla tr:last-child td{border-bottom:none;}
+  .tabla tr.seleccionable:hover td{background:var(--paper);}
+  .tabla tr.seleccionada td{background:var(--paper);}
+  .tabla .suave{color:var(--ink-soft);}
+  .tabla .num{text-align:right; font-variant-numeric:tabular-nums;}
+  .celda-titulo{font-weight:600;}
+  .celda-sub{font-size:11.5px; color:var(--ink-soft); margin-top:3px;}
+  .pie-tabla{display:flex; align-items:center; justify-content:space-between; margin-top:14px; font-size:12.5px; color:var(--ink-soft);}
+
+  /* ---------- Formularios ---------- */
+  .field{width:100%; margin-bottom:16px;}
+  .field-label{font-size:12.5px; font-weight:600; color:var(--ink); margin-bottom:7px; display:block;}
+  .field-label-row{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:7px;}
+  .field-label-row .field-label{margin-bottom:0;}
+  .contador{font-size:11.5px; color:var(--ink-soft); font-variant-numeric:tabular-nums;}
+  .text-field{width:100%; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 14px; font-size:14px; color:var(--ink); font-family:inherit;}
+  .text-field.placeholder{color:#A8A29A;}
+  .text-field.area{min-height:92px; line-height:1.5;}
+  .text-field.is-invalid{border-color:var(--brick);}
+  .field-error{font-size:11px; line-height:1.5; color:var(--brick); margin-top:6px;}
+  .field-help{font-size:11px; line-height:1.5; color:var(--ink-soft); margin-top:6px;}
+  .buscador{display:flex; gap:10px; align-items:stretch;}
+  .buscador .text-field{flex:1; display:flex; align-items:center; gap:10px;}
+
+  /* ---------- Botones ---------- */
+  .acciones{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+  .btn{border:none; border-radius:14px; padding:12px 20px; font-size:13.5px; font-weight:600; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space:nowrap;}
+  .primary-btn{background:var(--brick); color:var(--paper);}
+  .ghost-btn{background:var(--card); border:1px solid var(--line); color:var(--ink);}
+  .danger-btn{background:var(--brick); color:var(--paper);}
+  .forest-btn{background:var(--forest); color:var(--paper);}
+  .btn.disabled{opacity:0.45;}
+  .btn.ancho{width:100%; padding:15px 0; font-size:14.5px;}
+  .enlace{font-size:12.5px; font-weight:600; color:var(--brick);}
+
+  /* ---------- Avisos persistentes (.notice de relevo-app) ---------- */
+  .notice{
+    width:100%;
+    background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:12px 14px;
+    display:flex; align-items:center; gap:10px;
+    margin-bottom:16px;
+  }
+  .notice-icon{width:20px; height:20px; border-radius:50%; flex-shrink:0; background:var(--brick); display:flex; align-items:center; justify-content:center;}
+  .notice.is-info .notice-icon{background:var(--forest);}
+  .notice.is-neutro .notice-icon{background:var(--slate);}
+  .notice-text{font-size:12.5px; color:var(--ink-soft); line-height:1.45;}
+  .notice-text b{color:var(--ink); font-weight:600;}
+
+  /* ---------- Acceso ---------- */
+  .acceso{flex:1; display:flex; align-items:center; justify-content:center;}
+  .auth-card{width:400px; background:var(--card); border:1px solid var(--line); border-radius:20px; padding:36px 34px 30px; display:flex; flex-direction:column; align-items:center; text-align:center;}
+  .auth-card .field{text-align:left;}
+  .auth-logo{width:52px; height:52px; border-radius:16px; background:var(--ink); display:flex; align-items:center; justify-content:center; margin-bottom:22px;}
+  .auth-logo span{font-family:var(--font-display), serif; font-weight:600; font-size:22px; color:var(--paper);}
+  .auth-logo.recuperacion{background:var(--forest);}
+  .auth-headline{font-family:var(--font-display), serif; font-weight:500; font-size:22px; color:var(--ink); margin-bottom:9px;}
+  .auth-sub{font-size:13px; color:var(--ink-soft); line-height:1.55; margin-bottom:24px; max-width:300px;}
+  .auth-link{font-size:12.5px; color:var(--ink-soft); margin-top:20px;}
+  .auth-link b{color:var(--brick); font-weight:600;}
+  .otp{display:flex; gap:8px; justify-content:center; margin-bottom:18px;}
+  .otp span{width:44px; height:52px; border-radius:12px; border:1px solid var(--line); background:var(--card); display:flex; align-items:center; justify-content:center; font-family:var(--font-display), serif; font-weight:600; font-size:22px; color:var(--ink);}
+  .otp span.vacio{color:transparent;}
+  .qr{width:168px; height:168px; border-radius:14px; border:1px solid var(--line); margin-bottom:14px; padding:12px; background:var(--card);}
+  .secreto{font-family:ui-monospace, Menlo, monospace; font-size:12px; color:var(--ink); background:var(--paper); border-radius:8px; padding:6px 10px; letter-spacing:0.08em; margin-bottom:20px; display:inline-block;}
+
+  /* ---------- Objetivo del reporte ---------- */
+  .objetivo{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px 22px;}
+  .objetivo.eliminado{border-style:dashed; background:transparent;}
+  .objetivo-cabeza{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .persona{display:flex; align-items:center; gap:12px; margin-bottom:14px;}
+  .avatar{width:44px; height:44px; border-radius:50%; background:var(--slate-tint); color:var(--slate); display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; flex-shrink:0;}
+  .avatar.vacio{background:var(--paper); color:var(--ink-soft);}
+  .persona-nombre{font-size:14px; font-weight:600; color:var(--ink);}
+  .persona-sub{font-size:12px; color:var(--ink-soft); margin-top:2px;}
+  .precio{font-family:var(--font-display), serif; font-weight:600; font-size:22px; color:var(--ink); line-height:1;}
+  .precio.grande{font-size:30px;}
+
+  /* Fotos: el bucket es privado y el panel las pinta como blob (D-A2). Aquí
+     son rellenos con los tintes existentes, no imágenes reales. */
+  .fotos{display:flex; gap:10px; margin-bottom:16px;}
+  .foto{width:84px; height:84px; border-radius:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:var(--ink-soft);}
+  .foto.t1{background:var(--slate-tint);} .foto.t2{background:var(--gold-tint);} .foto.t3{background:var(--forest-tint);} .foto.t4{background:var(--brick-tint);}
+  .galeria{display:grid; grid-template-columns:2fr 1fr 1fr; grid-template-rows:150px 150px; gap:10px; margin-bottom:18px;}
+  .galeria .foto{width:auto; height:auto;}
+  .galeria .foto.principal{grid-row:span 2;}
+  .foto.no-disponible{background:var(--card); border:1.5px dashed var(--line); flex-direction:column; gap:8px; color:var(--ink-soft); font-size:11.5px; font-weight:500; text-align:center; padding:10px;}
+  .foto.no-disponible .btn{padding:6px 12px; font-size:11.5px; border-radius:10px;}
+
+  /* Historial de moderación */
+  .veredicto{font-weight:600;}
+  .veredicto.limpio{color:var(--forest);}
+  .veredicto.revisar, .veredicto.bloquear{color:var(--brick);}
+  .razones{display:flex; flex-direction:column; gap:3px;}
+  .razon{font-size:12px; color:var(--ink-soft);}
+  .razon b{color:var(--ink); font-weight:600;}
+
+  /* ---------- Vacío, error y carga ---------- */
+  .empty-state{display:flex; flex-direction:column; align-items:center; text-align:center; padding:72px 30px;}
+  .empty-icon{width:72px; height:72px; border-radius:50%; background:var(--card); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; margin-bottom:22px; color:var(--ink-soft);}
+  .empty-icon.error{background:var(--brick-tint); border-color:transparent; color:var(--brick);}
+  .empty-title{font-family:var(--font-display), serif; font-weight:500; font-size:19px; color:var(--ink); margin-bottom:9px;}
+  .empty-sub{font-size:13px; color:var(--ink-soft); line-height:1.55; max-width:360px; margin-bottom:20px;}
+
+  .skeleton{background:linear-gradient(90deg, var(--line) 25%, rgba(0,0,0,0.05) 37%, var(--line) 63%); background-size:400% 100%; animation:skeleton-pulse 1.4s ease infinite; border-radius:8px;}
+  @keyframes skeleton-pulse{0%{background-position:100% 50%;} 100%{background-position:0 50%;}}
+  .sk-line{height:11px; border-radius:4px;}
+  .sk-fila{display:grid; grid-template-columns:60px 120px 1.6fr 1fr 80px 100px; gap:20px; align-items:center; padding:17px 16px; border-bottom:1px solid var(--line);}
+  .sk-fila:last-child{border-bottom:none;}
+  .sk-tabla{background:var(--card); border:1px solid var(--line); border-radius:16px;}
+
+  /* ---------- Modal ---------- */
+  .modal-backdrop{position:absolute; inset:0; z-index:10; background:rgba(34,31,28,0.55); display:flex; align-items:center; justify-content:center;}
+  .modal-card{width:440px; background:var(--card); border-radius:20px; padding:26px 26px 22px;}
+  .modal-icon{width:50px; height:50px; border-radius:50%; background:var(--brick-tint); color:var(--brick); display:flex; align-items:center; justify-content:center; margin-bottom:16px;}
+  .modal-icon.neutro{background:var(--paper); color:var(--ink);}
+  .modal-title{font-family:var(--font-display), serif; font-weight:500; font-size:19px; color:var(--ink); margin-bottom:8px;}
+  .modal-sub{font-size:12.5px; color:var(--ink-soft); line-height:1.55; margin-bottom:18px;}
+  .modal-actions{display:flex; gap:10px; justify-content:flex-end; margin-top:4px;}
+
+  .splash-dots{display:flex; gap:6px;}
+  .splash-dot{width:6px; height:6px; border-radius:50%; background:rgba(243,240,234,0.5); animation:splash-blink 1.2s infinite ease-in-out;}
+  .splash-dot:nth-child(2){animation-delay:0.2s;}
+  .splash-dot:nth-child(3){animation-delay:0.4s;}
+  @keyframes splash-blink{0%,80%,100%{opacity:0.3;} 40%{opacity:1;}}
+
+  .oculto{display:none !important;}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" class="oculto" aria-hidden="true">
+  <defs>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/></g></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></g></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/></g></symbol>
+    <symbol id="i-ban" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></g></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 16l5-5 4 4 3-3 6 6"/></g></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v6"/><path d="M12 17h.01"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M6 12.5l4 4 8-9"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/></g></symbol>
+    <symbol id="i-wifi" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 9a12 12 0 0 1 16 0"/><path d="M7 12.5a7.5 7.5 0 0 1 10 0"/><path d="M10 16a3 3 0 0 1 4 0"/><path d="M12 19.5h.01"/></g></symbol>
+  </defs>
+</svg>
+
+<div class="filter-bar-wrap">
+  <div class="filter-bar">
+    <div class="filter-chip active" data-filter="all">Todas</div>
+    <div class="filter-chip" data-filter="acceso">Acceso</div>
+    <div class="filter-chip" data-filter="reportes">Reportes</div>
+    <div class="filter-chip" data-filter="publicacion">Publicación</div>
+    <div class="filter-chip" data-filter="usuarios">Usuarios</div>
+    <div class="filter-chip" data-filter="sistema">Sistema</div>
+    <div class="filter-count" id="filter-count"></div>
+  </div>
+</div>
+
+<div class="desks">
+
+<!-- =====================================================================
+     ACCESO
+     La identidad visual la marca el FLUJO, igual que en la app: login y TOTP
+     llevan la "R" en --ink; "Primera vez u olvidé mi contraseña" lleva el
+     candado en --forest en sus dos pasos.
+     ===================================================================== -->
+
+<div class="desk-block" data-cat="acceso">
+  <div class="desk-label">Iniciar sesión</div>
+  <div class="desk">
+    <header class="barra"><span class="marca">Relevo<small>Panel de administración</small></span></header>
+    <div class="acceso">
+      <div class="auth-card">
+        <div class="auth-logo"><span>R</span></div>
+        <div class="auth-headline">Iniciar sesión</div>
+        <div class="auth-sub">Entra con tu cuenta @rlvo.com.mx. Después te pediremos el código de tu app autenticadora.</div>
+        <div class="field">
+          <span class="field-label">Correo</span>
+          <div class="text-field">ana@rlvo.com.mx</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Contraseña</span>
+          <div class="text-field">••••••••••••</div>
+        </div>
+        <div class="btn primary-btn ancho">Entrar</div>
+        <div class="auth-link"><b>Primera vez u olvidé mi contraseña</b></div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variante (doc, no es parte del flujo): credenciales incorrectas. Mensaje único a propósito: no confirma si el correo existe</div>
+    <div class="variante-caja">
+      <div class="field">
+        <span class="field-label">Contraseña</span>
+        <div class="text-field is-invalid">••••••••</div>
+        <div class="field-error">Correo o contraseña incorrectos.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="acceso">
+  <div class="desk-label">Código de verificación (TOTP)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="acceso">
+      <div class="auth-card">
+        <div class="auth-logo"><span>R</span></div>
+        <div class="auth-headline">Código de verificación</div>
+        <div class="auth-sub">Escribe el código de 6 dígitos de tu app autenticadora.</div>
+        <div class="otp"><span>4</span><span>8</span><span>1</span><span class="vacio">0</span><span class="vacio">0</span><span class="vacio">0</span></div>
+        <div class="btn primary-btn ancho">Confirmar</div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variante (doc): código no válido</div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">El código no es válido. Intenta con el siguiente.</div></div>
+    </div>
+    <div class="variante-caja">
+      <div class="texto-suave">La misma pantalla aparece cuando la sesión es aal1 y cuando el TOTP tiene más de 12 h (D16). El copy no cambia: en los dos casos lo que falta es el código.</div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="acceso">
+  <div class="desk-label">Primera vez u olvidé mi contraseña — correo</div>
+  <div class="desk">
+    <header class="barra"><span class="marca">Relevo<small>Panel de administración</small></span></header>
+    <div class="acceso">
+      <div class="auth-card">
+        <div class="auth-logo recuperacion"><svg width="24" height="24" color="#fff"><use href="#i-lock"/></svg></div>
+        <div class="auth-headline">Fijar contraseña</div>
+        <div class="auth-sub">Te enviaremos un código a tu correo @rlvo.com.mx.</div>
+        <div class="field">
+          <span class="field-label">Correo</span>
+          <div class="text-field">ana@rlvo.com.mx</div>
+        </div>
+        <div class="btn primary-btn ancho">Enviar código</div>
+        <div class="auth-link"><b>Volver</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="acceso">
+  <div class="desk-label">Primera vez u olvidé mi contraseña — código y contraseña nueva</div>
+  <div class="desk">
+    <header class="barra"><span class="marca">Relevo<small>Panel de administración</small></span></header>
+    <div class="acceso">
+      <div class="auth-card">
+        <div class="auth-logo recuperacion"><svg width="24" height="24" color="#fff"><use href="#i-lock"/></svg></div>
+        <div class="auth-headline">Nueva contraseña</div>
+        <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Si la cuenta existe, te enviamos un código de 6 dígitos.</div></div>
+        <div class="field">
+          <span class="field-label">Código</span>
+          <div class="text-field">527 194</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Contraseña nueva</span>
+          <div class="text-field">••••••••••••</div>
+          <div class="field-help">Al menos 8 caracteres.</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Repite la contraseña</span>
+          <div class="text-field">••••••••••••</div>
+        </div>
+        <div class="btn primary-btn ancho">Guardar contraseña</div>
+        <div class="auth-link"><b>Volver</b></div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): las contraseñas no coinciden · código vencido o usado</div>
+    <div class="variante-caja">
+      <div class="field">
+        <span class="field-label">Repite la contraseña</span>
+        <div class="text-field is-invalid">••••••••••</div>
+        <div class="field-error">Las contraseñas no coinciden.</div>
+      </div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">El código no es válido o ya venció. Pide uno nuevo con «Volver».</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="acceso">
+  <div class="desk-label">App autenticadora (enrolar TOTP)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="acceso">
+      <div class="auth-card">
+        <div class="auth-headline">App autenticadora</div>
+        <div class="auth-sub">Escanea el código con tu app autenticadora (Google Authenticator, 1Password…) y escribe el código de 6 dígitos que muestra.</div>
+        <svg class="qr" viewBox="0 0 21 21" shape-rendering="crispEdges" aria-label="Código QR de ejemplo">
+          <g fill="var(--ink)">
+            <rect x="0" y="0" width="7" height="7"/><rect x="1" y="1" width="5" height="5" fill="#fff"/><rect x="2" y="2" width="3" height="3"/>
+            <rect x="14" y="0" width="7" height="7"/><rect x="15" y="1" width="5" height="5" fill="#fff"/><rect x="16" y="2" width="3" height="3"/>
+            <rect x="0" y="14" width="7" height="7"/><rect x="1" y="15" width="5" height="5" fill="#fff"/><rect x="2" y="16" width="3" height="3"/>
+            <rect x="8" y="1" width="1" height="2"/><rect x="10" y="0" width="2" height="1"/><rect x="9" y="4" width="3" height="1"/><rect x="8" y="8" width="2" height="2"/>
+            <rect x="11" y="9" width="3" height="1"/><rect x="15" y="8" width="2" height="2"/><rect x="18" y="9" width="3" height="1"/><rect x="9" y="12" width="1" height="3"/>
+            <rect x="12" y="12" width="2" height="2"/><rect x="16" y="12" width="3" height="1"/><rect x="14" y="15" width="1" height="3"/><rect x="17" y="16" width="2" height="2"/>
+            <rect x="10" y="17" width="3" height="1"/><rect x="8" y="19" width="2" height="2"/><rect x="19" y="19" width="2" height="2"/><rect x="1" y="9" width="3" height="1"/><rect x="5" y="11" width="1" height="2"/>
+          </g>
+        </svg>
+        <div class="texto-suave">¿No puedes escanear? Escribe esta clave:</div>
+        <div class="secreto">JBSW Y3DP EHPK 3PXP</div>
+        <div class="field">
+          <span class="field-label">Código</span>
+          <div class="text-field placeholder">6 dígitos</div>
+        </div>
+        <div class="btn primary-btn ancho">Confirmar</div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variante (doc): código no válido al enrolar</div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">El código no es válido. Revisa la hora de tu teléfono e intenta con el siguiente.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="acceso">
+  <div class="desk-label">Espera de activación</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="acceso">
+      <div class="auth-card">
+        <div class="auth-logo recuperacion"><svg width="24" height="24" color="#fff"><use href="#i-shield"/></svg></div>
+        <div class="auth-headline">Casi listo</div>
+        <div class="auth-sub">Tu cuenta y tu app autenticadora quedaron configuradas. El admin técnico te contactará para confirmar que fuiste tú y activar tu acceso.</div>
+        <div class="btn ghost-btn ancho">Ya me confirmaron</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     REPORTES
+     Nunca se oculta un reporte: los 4 `objetivo_tipo` (publicacion, usuario,
+     publicacion_eliminada, cuenta_eliminada) se pintan siempre, con etiqueta.
+     ===================================================================== -->
+
+<div class="desk-block" data-cat="reportes">
+  <div class="desk-label">Reportes — lista (pendientes)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Reportes</div>
+        <div class="sub-pagina">Lo que reportaron los estudiantes, del más reciente al más antiguo.</div>
+        <div class="chips">
+          <span class="chip active">Pendientes</span><span class="chip">Resueltos</span><span class="chip">Descartados</span><span class="chip">Todos</span>
+        </div>
+        <table class="tabla">
+          <thead><tr><th>#</th><th>Fecha</th><th>Objetivo</th><th>Motivo</th><th>Reportó</th><th class="num">Reportes del objetivo</th><th>Estado</th></tr></thead>
+          <tbody>
+            <tr class="seleccionable">
+              <td class="suave">131</td><td class="suave">30 sep, 18:42</td>
+              <td><div class="celda-titulo">Calculadora TI-84 Plus</div><div class="celda-sub"><span class="objetivo-tipo"><svg width="13" height="13"><use href="#i-tag"/></svg>Publicación · activa</span></div></td>
+              <td>Sospecho que es fraude</td><td>Diego Ramírez</td><td class="num">3</td><td><span class="estado atencion">Pendiente</span></td>
+            </tr>
+            <tr class="seleccionable">
+              <td class="suave">130</td><td class="suave">30 sep, 11:05</td>
+              <td><div class="celda-titulo">Mariana López</div><div class="celda-sub"><span class="objetivo-tipo"><svg width="13" height="13"><use href="#i-user"/></svg>Cuenta · activa</span></div></td>
+              <td>No es un estudiante</td><td>Sofía Treviño</td><td class="num">1</td><td><span class="estado atencion">Pendiente</span></td>
+            </tr>
+            <tr class="seleccionable">
+              <td class="suave">127</td><td class="suave">29 sep, 20:17</td>
+              <td><div class="celda-titulo">Silla gamer</div><div class="celda-sub"><span class="objetivo-tipo eliminado">Publicación eliminada</span></div></td>
+              <td>Contenido inapropiado</td><td>Luis Garza</td><td class="num suave">—</td><td><span class="estado atencion">Pendiente</span></td>
+            </tr>
+            <tr class="seleccionable">
+              <td class="suave">124</td><td class="suave">28 sep, 09:30</td>
+              <td><div class="celda-titulo suave">Sin identidad</div><div class="celda-sub"><span class="objetivo-tipo eliminado">Cuenta eliminada</span></div></td>
+              <td>Es spam o publicidad</td><td>Andrea Salinas</td><td class="num suave">—</td><td><span class="estado atencion">Pendiente</span></td>
+            </tr>
+            <tr class="seleccionable">
+              <td class="suave">122</td><td class="suave">27 sep, 16:48</td>
+              <td><div class="celda-titulo">Bicicleta de montaña R26</div><div class="celda-sub"><span class="objetivo-tipo"><svg width="13" height="13"><use href="#i-tag"/></svg>Publicación · vendida</span></div></td>
+              <td>Otro motivo</td><td class="suave">Cuenta eliminada</td><td class="num">1</td><td><span class="estado atencion">Pendiente</span></td>
+            </tr>
+            <tr class="seleccionable">
+              <td class="suave">119</td><td class="suave">26 sep, 13:12</td>
+              <td><div class="celda-titulo">Libro Cálculo de Larson</div><div class="celda-sub"><span class="objetivo-tipo"><svg width="13" height="13"><use href="#i-tag"/></svg>Publicación · pendiente</span></div></td>
+              <td>Contenido inapropiado</td><td>Diego Ramírez</td><td class="num">2</td><td><span class="estado atencion">Pendiente</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="pie-tabla"><span>Mostrando 6 reportes</span><span class="btn ghost-btn">Cargar más</span></div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variante (doc): filtro «Todos», con cada estado en su chip</div>
+    <div class="variante-caja ancha">
+      <table class="tabla">
+        <tbody>
+          <tr><td class="suave">118</td><td>Tenis Nike Air</td><td><span class="estado ok">Resuelto</span></td></tr>
+          <tr><td class="suave">117</td><td>Pedro Villarreal</td><td><span class="estado apagado">Descartado</span></td></tr>
+          <tr><td class="suave">116</td><td>Lámpara de escritorio</td><td><span class="estado atencion">Pendiente</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="reportes">
+  <div class="desk-label">Reportes — lista vacía</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Reportes</div>
+        <div class="sub-pagina">Lo que reportaron los estudiantes, del más reciente al más antiguo.</div>
+        <div class="chips">
+          <span class="chip active">Pendientes</span><span class="chip">Resueltos</span><span class="chip">Descartados</span><span class="chip">Todos</span>
+        </div>
+        <div class="empty-state">
+          <div class="empty-icon"><svg width="30" height="30"><use href="#i-inbox"/></svg></div>
+          <div class="empty-title">No hay reportes pendientes</div>
+          <div class="empty-sub">Cuando alguien reporte una publicación o una cuenta, aparecerá aquí.</div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="reportes">
+  <div class="desk-label">Reporte — objetivo: publicación</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
+        <div class="titulo-pagina">Reporte #131 <span class="estado atencion">Pendiente</span></div>
+        <div class="sub-pagina">Recibido el 30 sep 2026, 18:42</div>
+        <div class="dos-columnas">
+          <div>
+            <div class="tarjeta">
+              <dl class="rejilla tres">
+                <div class="dato"><dt>Motivo</dt><dd>Sospecho que es fraude</dd></div>
+                <div class="dato"><dt>Reportó</dt><dd>Diego Ramírez</dd></div>
+                <div class="dato"><dt>Reportes de este objetivo</dt><dd>3</dd></div>
+              </dl>
+              <div class="titulo-seccion">Comentario de quien reportó</div>
+              <div class="texto">Pide que le transfieran antes de verse y el precio es muy bajo para una TI-84 nueva.</div>
+            </div>
+            <div class="tarjeta">
+              <div class="titulo-seccion">Resolver</div>
+              <div class="field">
+                <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">58/500</span></div>
+                <div class="text-field area">Se revisó la publicación y se bloqueó por intento de fraude.</div>
+                <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+              </div>
+              <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Quien reportó recibirá un aviso en la app.</div></div>
+              <div class="acciones">
+                <span class="btn primary-btn">Resolver</span>
+                <span class="btn ghost-btn">Descartar</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="objetivo">
+              <div class="objetivo-cabeza"><span class="objetivo-tipo"><svg width="13" height="13"><use href="#i-tag"/></svg>Publicación</span><span class="estado ok">Activa</span></div>
+              <div class="fotos">
+                <div class="foto t1"><svg width="22" height="22"><use href="#i-image"/></svg></div>
+                <div class="foto t2"><svg width="22" height="22"><use href="#i-image"/></svg></div>
+                <div class="foto t3"><svg width="22" height="22"><use href="#i-image"/></svg></div>
+              </div>
+              <div class="precio">$1,200</div>
+              <div class="celda-titulo texto">Calculadora TI-84 Plus</div>
+              <div class="texto-suave">Tec de Monterrey · Campus Monterrey</div>
+              <div class="titulo-seccion">Dueño</div>
+              <div class="persona">
+                <div class="avatar">MV</div>
+                <div><div class="persona-nombre">Martín Villarreal</div><div class="persona-sub">Activo · 2 reportes en contra</div></div>
+              </div>
+              <div class="acciones">
+                <span class="btn ghost-btn">Ver publicación</span>
+                <span class="btn ghost-btn">Ver cuenta del dueño</span>
+              </div>
+              <div class="titulo-seccion">Acción sobre la publicación</div>
+              <span class="btn danger-btn">Bloquear publicación</span>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variante (doc): quien reportó eliminó su cuenta. El aviso del trigger exige reportante, así que no se promete</div>
+    <div class="variante-caja ancha">
+      <dl class="rejilla tres">
+        <div class="dato"><dt>Reportó</dt><dd class="suave">Cuenta eliminada</dd></div>
+      </dl>
+      <br>
+      <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">La cuenta que reportó se eliminó: nadie recibe aviso al resolverlo.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="reportes">
+  <div class="desk-label">Reporte — objetivo: usuario</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
+        <div class="titulo-pagina">Reporte #130 <span class="estado atencion">Pendiente</span></div>
+        <div class="sub-pagina">Recibido el 30 sep 2026, 11:05</div>
+        <div class="dos-columnas">
+          <div>
+            <div class="tarjeta">
+              <dl class="rejilla tres">
+                <div class="dato"><dt>Motivo</dt><dd>No es un estudiante</dd></div>
+                <div class="dato"><dt>Reportó</dt><dd>Sofía Treviño</dd></div>
+                <div class="dato"><dt>Reportes de este objetivo</dt><dd>1</dd></div>
+              </dl>
+              <div class="titulo-seccion">Comentario de quien reportó</div>
+              <div class="texto-suave">Sin comentario.</div>
+            </div>
+            <div class="tarjeta">
+              <div class="titulo-seccion">Resolver</div>
+              <div class="field">
+                <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+                <div class="text-field area placeholder">Qué revisaste y qué decidiste</div>
+                <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+              </div>
+              <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Quien reportó recibirá un aviso en la app.</div></div>
+              <div class="acciones">
+                <span class="btn primary-btn disabled">Resolver</span>
+                <span class="btn ghost-btn disabled">Descartar</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="objetivo">
+              <div class="objetivo-cabeza"><span class="objetivo-tipo"><svg width="13" height="13"><use href="#i-user"/></svg>Cuenta</span><span class="estado ok">Activa</span></div>
+              <div class="persona">
+                <div class="avatar">ML</div>
+                <div><div class="persona-nombre">Mariana López</div><div class="persona-sub">mariana.lopez@tec.mx</div></div>
+              </div>
+              <dl class="rejilla dos">
+                <div class="dato"><dt>Universidad</dt><dd>Tec de Monterrey</dd></div>
+                <div class="dato"><dt>Campus</dt><dd>Monterrey</dd></div>
+                <div class="dato"><dt>Publicaciones</dt><dd>5</dd></div>
+                <div class="dato"><dt>Reportes en contra</dt><dd>1</dd></div>
+              </dl>
+              <div class="titulo-seccion">Acción sobre la cuenta</div>
+              <span class="btn ghost-btn">Ver cuenta</span>
+              <div class="field-help">Para suspenderla, ábrela: la suspensión lleva su propio motivo y queda en su auditoría.</div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="reportes">
+  <div class="desk-label">Reporte — objetivo: publicación eliminada</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
+        <div class="titulo-pagina">Reporte #127 <span class="estado atencion">Pendiente</span></div>
+        <div class="sub-pagina">Recibido el 29 sep 2026, 20:17</div>
+        <div class="dos-columnas">
+          <div>
+            <div class="tarjeta">
+              <dl class="rejilla tres">
+                <div class="dato"><dt>Motivo</dt><dd>Contenido inapropiado</dd></div>
+                <div class="dato"><dt>Reportó</dt><dd>Luis Garza</dd></div>
+                <div class="dato"><dt>Reportes de este objetivo</dt><dd class="suave">—</dd></div>
+              </dl>
+              <div class="titulo-seccion">Comentario de quien reportó</div>
+              <div class="texto">La foto principal no tiene nada que ver con una silla.</div>
+            </div>
+            <div class="tarjeta">
+              <div class="titulo-seccion">Resolver</div>
+              <div class="field">
+                <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+                <div class="text-field area placeholder">Qué revisaste y qué decidiste</div>
+                <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+              </div>
+              <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Quien reportó recibirá un aviso en la app.</div></div>
+              <div class="acciones">
+                <span class="btn primary-btn disabled">Resolver</span>
+                <span class="btn ghost-btn disabled">Descartar</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="objetivo eliminado">
+              <div class="objetivo-cabeza"><span class="objetivo-tipo eliminado">Publicación eliminada</span></div>
+              <div class="dato"><dt>Título cuando se reportó</dt><dd>Silla gamer</dd></div>
+              <br>
+              <div class="texto-suave">La publicación ya no existe. El reporte se conserva para moderación, con el título que tenía cuando se reportó. No hay fotos ni dueño que mostrar.</div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="reportes">
+  <div class="desk-label">Reporte — objetivo: cuenta eliminada</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
+        <div class="titulo-pagina">Reporte #124 <span class="estado atencion">Pendiente</span></div>
+        <div class="sub-pagina">Recibido el 28 sep 2026, 09:30</div>
+        <div class="dos-columnas">
+          <div>
+            <div class="tarjeta">
+              <dl class="rejilla tres">
+                <div class="dato"><dt>Motivo</dt><dd>Es spam o publicidad</dd></div>
+                <div class="dato"><dt>Reportó</dt><dd>Andrea Salinas</dd></div>
+                <div class="dato"><dt>Reportes de este objetivo</dt><dd class="suave">—</dd></div>
+              </dl>
+              <div class="titulo-seccion">Comentario de quien reportó</div>
+              <div class="texto">Manda mensajes ofreciendo cursos a todos los que publican.</div>
+            </div>
+            <div class="tarjeta">
+              <div class="titulo-seccion">Resolver</div>
+              <div class="field">
+                <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+                <div class="text-field area placeholder">Qué revisaste y qué decidiste</div>
+                <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+              </div>
+              <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Quien reportó recibirá un aviso en la app.</div></div>
+              <div class="acciones">
+                <span class="btn primary-btn disabled">Resolver</span>
+                <span class="btn ghost-btn disabled">Descartar</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="objetivo eliminado">
+              <div class="objetivo-cabeza"><span class="objetivo-tipo eliminado">Cuenta eliminada</span></div>
+              <div class="persona">
+                <div class="avatar vacio"><svg width="20" height="20"><use href="#i-user"/></svg></div>
+                <div><div class="persona-nombre">Sin identidad</div><div class="persona-sub">Ni nombre ni correo</div></div>
+              </div>
+              <div class="texto-suave">La cuenta reportada se eliminó. El reporte se conserva para moderación, sin su identidad.</div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="reportes">
+  <div class="desk-label">Reporte resuelto (solo lectura)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
+        <div class="titulo-pagina">Reporte #118 <span class="estado ok">Resuelto</span></div>
+        <div class="sub-pagina">Recibido el 25 sep 2026, 10:21</div>
+        <div class="dos-columnas">
+          <div>
+            <div class="tarjeta">
+              <dl class="rejilla tres">
+                <div class="dato"><dt>Motivo</dt><dd>Contenido inapropiado</dd></div>
+                <div class="dato"><dt>Reportó</dt><dd>Sofía Treviño</dd></div>
+                <div class="dato"><dt>Resuelto</dt><dd>26 sep 2026, 14:02</dd></div>
+              </dl>
+              <div class="titulo-seccion">Comentario de quien reportó</div>
+              <div class="texto">Las fotos son de otra marca.</div>
+            </div>
+            <div class="titulo-seccion">Auditoría</div>
+            <table class="tabla">
+              <thead><tr><th>Fecha</th><th>Acción</th><th>Admin</th><th>Motivo</th><th>Cambio</th></tr></thead>
+              <tbody>
+                <tr><td class="suave">26 sep, 14:02</td><td>Resolver reporte</td><td>ana@rlvo.com.mx</td><td>Se pidió al vendedor cambiar las fotos.</td><td class="suave">Pendiente → Resuelto</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <div class="objetivo">
+              <div class="objetivo-cabeza"><span class="objetivo-tipo"><svg width="13" height="13"><use href="#i-tag"/></svg>Publicación</span><span class="estado ok">Activa</span></div>
+              <div class="fotos">
+                <div class="foto t2"><svg width="22" height="22"><use href="#i-image"/></svg></div>
+                <div class="foto t4"><svg width="22" height="22"><use href="#i-image"/></svg></div>
+              </div>
+              <div class="precio">$900</div>
+              <div class="celda-titulo texto">Tenis Nike Air</div>
+              <div class="texto-suave">Tec de Monterrey · Campus Monterrey</div>
+              <br>
+              <span class="btn ghost-btn">Ver publicación</span>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variante (doc): resuelto antes de que se registrara la fecha (resolved_at NULL, como el reporte que hoy está en remoto)</div>
+    <div class="variante-caja">
+      <dl class="rejilla tres">
+        <div class="dato"><dt>Resuelto</dt><dd class="suave">—</dd></div>
+      </dl>
+    </div>
+    <div class="variante-caja">
+      <div class="texto-suave">Un reporte descartado se ve igual, con el chip <span class="estado apagado">Descartado</span> y la fila «Descartado» en lugar de «Resuelto».</div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="reportes">
+  <div class="desk-label">Bloquear publicación (modal)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
+        <div class="titulo-pagina">Reporte #131 <span class="estado atencion">Pendiente</span></div>
+        <div class="sub-pagina">Recibido el 30 sep 2026, 18:42</div>
+        <div class="tarjeta"><div class="sk-line skeleton"></div></div>
+      </main>
+    </div>
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-icon"><svg width="24" height="24"><use href="#i-ban"/></svg></div>
+        <div class="modal-title">Bloquear publicación</div>
+        <div class="modal-sub">«Calculadora TI-84 Plus» deja de aparecer en el catálogo. Desde el panel no se puede desbloquear. El dueño recibirá un aviso en la app.</div>
+        <div class="field">
+          <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">41/500</span></div>
+          <div class="text-field area">Intento de fraude confirmado por 3 reportes.</div>
+          <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+        </div>
+        <div class="modal-actions">
+          <span class="btn ghost-btn">Cancelar</span>
+          <span class="btn danger-btn">Bloquear</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): bloqueando · la publicación cambió de estado mientras tanto</div>
+    <div class="variante-caja">
+      <div class="modal-actions">
+        <span class="btn ghost-btn disabled">Cancelar</span>
+        <span class="btn danger-btn"><span class="splash-dots"><span class="splash-dot"></span><span class="splash-dot"></span><span class="splash-dot"></span></span>Bloqueando</span>
+      </div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">La publicación cambió de estado mientras tanto. Recarga el detalle.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     PUBLICACIÓN
+     ===================================================================== -->
+
+<div class="desk-block" data-cat="publicacion">
+  <div class="desk-label">Detalle de publicación</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reporte #131</div>
+        <div class="titulo-pagina">Calculadora TI-84 Plus <span class="estado ok">Activa</span></div>
+        <div class="sub-pagina">Publicación #2047 · creada el 21 sep 2026 · modificada el 28 sep 2026</div>
+        <div class="dos-columnas">
+          <div>
+            <div class="galeria">
+              <div class="foto t1 principal"><svg width="36" height="36"><use href="#i-image"/></svg></div>
+              <div class="foto t2"><svg width="24" height="24"><use href="#i-image"/></svg></div>
+              <div class="foto t3"><svg width="24" height="24"><use href="#i-image"/></svg></div>
+              <div class="foto t4"><svg width="24" height="24"><use href="#i-image"/></svg></div>
+              <div class="foto no-disponible"><svg width="20" height="20"><use href="#i-image"/></svg>La foto no está disponible<span class="btn ghost-btn">Reintentar</span></div>
+            </div>
+            <div class="titulo-seccion">Historial de moderación</div>
+            <table class="tabla">
+              <thead><tr><th>Fecha</th><th>Veredicto</th><th>Quedó en</th><th>Por qué</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="suave">28 sep, 17:20</td><td><span class="veredicto revisar">Revisar</span></td><td>Pendiente</td>
+                  <td><div class="razones"><span class="razon"><b>Imagen (Rekognition):</b> Alcohol 95.7</span><span class="razon"><b>Texto:</b> sin coincidencias</span></div></td>
+                </tr>
+                <tr>
+                  <td class="suave">21 sep, 12:04</td><td><span class="veredicto limpio">Limpio</span></td><td>Activa</td>
+                  <td><div class="razones"><span class="razon">Ningún eje marcó nada</span></div></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="titulo-seccion">Reportes (3)</div>
+            <table class="tabla">
+              <tbody>
+                <tr><td class="suave">131</td><td>Sospecho que es fraude</td><td>Diego Ramírez</td><td><span class="estado atencion">Pendiente</span></td></tr>
+                <tr><td class="suave">126</td><td>Sospecho que es fraude</td><td>Sofía Treviño</td><td><span class="estado atencion">Pendiente</span></td></tr>
+                <tr><td class="suave">101</td><td>Es spam o publicidad</td><td class="suave">Cuenta eliminada</td><td><span class="estado apagado">Descartado</span></td></tr>
+              </tbody>
+            </table>
+            <div class="titulo-seccion">Auditoría</div>
+            <div class="texto-suave">Sin acciones registradas.</div>
+          </div>
+          <div>
+            <div class="tarjeta">
+              <div class="precio grande">$1,200</div>
+              <br>
+              <dl class="rejilla dos">
+                <div class="dato"><dt>Categoría</dt><dd>Electrónica</dd></div>
+                <div class="dato"><dt>Condición</dt><dd>Como nuevo</dd></div>
+                <div class="dato"><dt>Universidad</dt><dd>Tec de Monterrey</dd></div>
+                <div class="dato"><dt>Campus</dt><dd>Monterrey</dd></div>
+              </dl>
+              <div class="titulo-seccion">Descripción</div>
+              <div class="texto">Casi sin uso, con funda y cable. La entrego en el campus.</div>
+            </div>
+            <div class="tarjeta">
+              <div class="titulo-seccion">Dueño</div>
+              <div class="persona">
+                <div class="avatar">MV</div>
+                <div><div class="persona-nombre">Martín Villarreal</div><div class="persona-sub">Activo · 2 reportes en contra</div></div>
+              </div>
+              <span class="btn ghost-btn">Ver cuenta</span>
+            </div>
+            <div class="tarjeta">
+              <div class="titulo-seccion">Bloquear</div>
+              <div class="texto-suave">Deja de aparecer en el catálogo y desde el panel no se puede desbloquear. El dueño recibe un aviso en la app.</div>
+              <br>
+              <span class="btn danger-btn">Bloquear publicación</span>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): publicación bloqueada (sin acción) · foto que no se pudo cargar</div>
+    <div class="variante-caja">
+      <div class="titulo-pagina">Calculadora TI-84 Plus <span class="estado fuerte">Bloqueada</span></div>
+      <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-ban"/></svg></div><div class="notice-text">Esta publicación está bloqueada: no aparece en el catálogo y desde el panel no se puede desbloquear.</div></div>
+    </div>
+    <div class="variante-caja">
+      <div class="fotos">
+        <div class="foto no-disponible"><svg width="20" height="20"><use href="#i-image"/></svg>No disponible<span class="btn ghost-btn">Reintentar</span></div>
+      </div>
+      <div class="texto-suave">Si el código de la app autenticadora venció, el panel lo pide UNA vez para todas las fotos y vuelve a intentarlo solo. Si lo cancelas, las fotos se quedan así hasta que toques «Reintentar».</div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     USUARIOS (las pantallas de la Ola 1, alineadas aquí)
+     ===================================================================== -->
+
+<div class="desk-block" data-cat="usuarios">
+  <div class="desk-label">Usuarios — buscar (con resultados)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Usuarios</div>
+        <div class="sub-pagina">Busca por correo o por nombre. Sin texto, las cuentas más recientes.</div>
+        <div class="buscador">
+          <div class="text-field"><svg width="16" height="16" color="var(--ink-soft)"><use href="#i-search"/></svg>lopez</div>
+          <span class="btn primary-btn">Buscar</span>
+        </div>
+        <br>
+        <table class="tabla">
+          <thead><tr><th>Nombre</th><th>Correo</th><th>Universidad</th><th>Estado</th><th class="num">Publicaciones</th><th class="num">Reportes</th></tr></thead>
+          <tbody>
+            <tr class="seleccionable"><td class="celda-titulo">Mariana López</td><td>mariana.lopez@tec.mx</td><td>Tec de Monterrey</td><td><span class="estado ok">Activa</span></td><td class="num">5</td><td class="num">1</td></tr>
+            <tr class="seleccionable"><td class="celda-titulo">Jorge López Cantú</td><td>jorge.lopez@exatec.tec.mx</td><td>Tec de Monterrey</td><td><span class="estado atencion">Suspendida</span></td><td class="num">3</td><td class="num">4</td></tr>
+            <tr class="seleccionable"><td class="celda-titulo">Ana López <span class="estado admin">Admin</span></td><td>ana@rlvo.com.mx</td><td class="suave">—</td><td><span class="estado ok">Activa</span></td><td class="num">0</td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="usuarios">
+  <div class="desk-label">Usuarios — sin resultados</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Usuarios</div>
+        <div class="sub-pagina">Busca por correo o por nombre. Sin texto, las cuentas más recientes.</div>
+        <div class="buscador">
+          <div class="text-field"><svg width="16" height="16" color="var(--ink-soft)"><use href="#i-search"/></svg>zzz@tec.mx</div>
+          <span class="btn primary-btn">Buscar</span>
+        </div>
+        <div class="empty-state">
+          <div class="empty-icon"><svg width="30" height="30"><use href="#i-search"/></svg></div>
+          <div class="empty-title">No encontramos cuentas</div>
+          <div class="empty-sub">Prueba con otro correo o con parte del nombre.</div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="usuarios">
+  <div class="desk-label">Usuario — detalle activo (suspender)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
+        <div class="titulo-pagina">Mariana López <span class="estado ok">Activa</span></div>
+        <div class="sub-pagina">mariana.lopez@tec.mx</div>
+        <div class="dos-columnas">
+          <div>
+            <div class="tarjeta">
+              <dl class="rejilla tres">
+                <div class="dato"><dt>Universidad</dt><dd>Tec de Monterrey</dd></div>
+                <div class="dato"><dt>Campus</dt><dd>Monterrey</dd></div>
+                <div class="dato"><dt>Alta</dt><dd>12 sep 2026</dd></div>
+                <div class="dato"><dt>Reportes en contra</dt><dd>1</dd></div>
+                <div class="dato"><dt>Publicaciones activas</dt><dd>4</dd></div>
+                <div class="dato"><dt>En revisión</dt><dd>1</dd></div>
+              </dl>
+            </div>
+            <div class="titulo-seccion">Auditoría</div>
+            <div class="texto-suave">Sin acciones registradas.</div>
+          </div>
+          <div class="tarjeta">
+            <div class="titulo-seccion">Suspender</div>
+            <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Tiene <b>1 publicación en revisión</b>: podría activarse aun con la cuenta suspendida.</div></div>
+            <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text"><b>2 publicaciones activas</b> no tienen foto: al reactivarla, tendrá que subir una foto a cada una.</div></div>
+            <div class="texto-suave">Sus 4 publicaciones activas pasarán a pausadas.</div>
+            <br>
+            <div class="field">
+              <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+              <div class="text-field area placeholder">Por qué suspendes esta cuenta</div>
+              <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+            </div>
+            <span class="btn danger-btn disabled">Suspender cuenta</span>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): motivo demasiado corto · suspendida con éxito</div>
+    <div class="variante-caja">
+      <div class="field">
+        <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">2/500</span></div>
+        <div class="text-field area is-invalid">ok</div>
+        <div class="field-error">El motivo debe tener entre 3 y 500 caracteres.</div>
+      </div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Cuenta suspendida. Publicaciones pausadas: 4.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="usuarios">
+  <div class="desk-label">Usuario — detalle suspendido (reactivar) y auditoría</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
+        <div class="titulo-pagina">Jorge López Cantú <span class="estado atencion">Suspendida</span></div>
+        <div class="sub-pagina">jorge.lopez@exatec.tec.mx</div>
+        <div class="dos-columnas">
+          <div>
+            <div class="tarjeta">
+              <dl class="rejilla tres">
+                <div class="dato"><dt>Universidad</dt><dd>Tec de Monterrey</dd></div>
+                <div class="dato"><dt>Campus</dt><dd>Monterrey</dd></div>
+                <div class="dato"><dt>Alta</dt><dd>3 sep 2026</dd></div>
+                <div class="dato"><dt>Reportes en contra</dt><dd>4</dd></div>
+                <div class="dato"><dt>Suspendida desde</dt><dd>29 sep 2026, 10:14</dd></div>
+                <div class="dato"><dt>Publicaciones activas</dt><dd>0</dd></div>
+              </dl>
+              <div class="titulo-seccion">Motivo de la suspensión</div>
+              <div class="texto">Cuatro reportes de fraude confirmados en publicaciones de electrónica.</div>
+            </div>
+            <div class="titulo-seccion">Auditoría</div>
+            <table class="tabla">
+              <thead><tr><th>Fecha</th><th>Acción</th><th>Admin</th><th>Motivo</th><th>Cambio</th></tr></thead>
+              <tbody>
+                <tr><td class="suave">29 sep, 10:14</td><td>Suspender cuenta</td><td>ana@rlvo.com.mx</td><td>Cuatro reportes de fraude confirmados en publicaciones de electrónica.</td><td class="suave">Activa → Suspendida · 3 pausadas</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="tarjeta">
+            <div class="titulo-seccion">Reactivar</div>
+            <div class="texto-suave">Sus publicaciones seguirán pausadas; el usuario las reactiva él mismo.</div>
+            <br>
+            <div class="field">
+              <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">31/500</span></div>
+              <div class="text-field area">Apelación aceptada tras revisión.</div>
+              <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+            </div>
+            <span class="btn forest-btn">Reactivar cuenta</span>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): algo la activó estando suspendida · la cuenta cambió de estado mientras tanto</div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Tiene 1 publicación activa estando suspendida. Algo la activó después de la suspensión.</div></div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">La cuenta cambió de estado mientras tanto. Recarga el detalle.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="usuarios">
+  <div class="desk-label">Usuario — cuenta de admin</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
+        <div class="titulo-pagina">Carlos Méndez <span class="estado ok">Activa</span> <span class="estado admin">Admin</span></div>
+        <div class="sub-pagina">carlos@rlvo.com.mx</div>
+        <div class="dos-columnas">
+          <div class="tarjeta">
+            <dl class="rejilla">
+              <div class="dato"><dt>Universidad</dt><dd class="suave">—</dd></div>
+              <div class="dato"><dt>Campus</dt><dd class="suave">—</dd></div>
+              <div class="dato"><dt>Alta</dt><dd>29 sep 2026</dd></div>
+              <div class="dato"><dt>Reportes en contra</dt><dd>0</dd></div>
+            </dl>
+          </div>
+          <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-shield"/></svg></div><div class="notice-text">Es una cuenta de admin: no se suspende desde aquí. Para quitarle el acceso, se borra su fila de admins.</div></div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     SISTEMA
+     ===================================================================== -->
+
+<div class="desk-block" data-cat="sistema">
+  <div class="desk-label">Código de verificación (modal, a media acción)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Reportes</div>
+        <div class="sub-pagina">Lo que reportaron los estudiantes, del más reciente al más antiguo.</div>
+      </main>
+    </div>
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-icon neutro"><svg width="24" height="24"><use href="#i-lock"/></svg></div>
+        <div class="modal-title">Código de verificación</div>
+        <div class="modal-sub">Tu código de la app autenticadora venció. Confírmalo otra vez y seguimos donde estabas.</div>
+        <div class="otp"><span>3</span><span>0</span><span>9</span><span>1</span><span class="vacio">0</span><span class="vacio">0</span></div>
+        <div class="modal-actions">
+          <span class="btn ghost-btn">Cancelar</span>
+          <span class="btn primary-btn">Confirmar</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): mfa_requerido · código no válido · se canceló</div>
+    <div class="variante-caja">
+      <div class="modal-sub">Falta confirmar tu código de la app autenticadora.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">El código no es válido. Intenta con el siguiente.</div></div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Tu código de la app autenticadora venció. Confírmalo otra vez.</div></div>
+      <div class="texto-suave">Si se cancela, la acción no se hace y se muestra este aviso. Sale UN solo modal aunque fallen varias llamadas a la vez.</div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="sistema">
+  <div class="desk-label">Error de carga</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Reportes</div>
+        <div class="empty-state">
+          <div class="empty-icon error"><svg width="30" height="30"><use href="#i-wifi"/></svg></div>
+          <div class="empty-title">No pudimos cargar los reportes</div>
+          <div class="empty-sub">Revisa tu conexión e inténtalo otra vez.</div>
+          <span class="btn primary-btn">Reintentar</span>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variante (doc): un rechazo que no es de sesión se muestra tal cual, sin cerrar la sesión</div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">No se pudo completar la acción (42501).</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="sistema">
+  <div class="desk-label">Cargando</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Reportes</div>
+        <div class="sub-pagina">Lo que reportaron los estudiantes, del más reciente al más antiguo.</div>
+        <div class="chips">
+          <span class="chip active">Pendientes</span><span class="chip">Resueltos</span><span class="chip">Descartados</span><span class="chip">Todos</span>
+        </div>
+        <div class="sk-tabla">
+          <div class="sk-fila"><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div></div>
+          <div class="sk-fila"><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div></div>
+          <div class="sk-fila"><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div></div>
+          <div class="sk-fila"><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div></div>
+          <div class="sk-fila"><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div><div class="sk-line skeleton"></div></div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="sistema">
+  <div class="desk-label">Aviso de éxito</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
+        <div class="titulo-pagina">Reporte #131 <span class="estado ok">Resuelto</span></div>
+        <div class="sub-pagina">Recibido el 30 sep 2026, 18:42</div>
+        <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Reporte resuelto. Quien reportó recibirá un aviso en la app.</div></div>
+        <div class="tarjeta">
+          <dl class="rejilla tres">
+            <div class="dato"><dt>Motivo</dt><dd>Sospecho que es fraude</dd></div>
+            <div class="dato"><dt>Reportó</dt><dd>Diego Ramírez</dd></div>
+            <div class="dato"><dt>Resuelto</dt><dd>1 oct 2026, 09:12</dd></div>
+          </dl>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): los otros avisos de éxito, todos sobre la misma superficie</div>
+    <div class="variante-caja">
+      <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Reporte descartado.</div></div>
+      <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Publicación bloqueada. El dueño recibirá un aviso en la app.</div></div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Cuenta reactivada. Sus publicaciones siguen pausadas.</div></div>
+      <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Reporte resuelto. La cuenta que reportó se eliminó: nadie recibe aviso.</div></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+  (function(){
+    var bloques = document.querySelectorAll('.desk-block');
+    var chips = document.querySelectorAll('.filter-chip');
+    var contador = document.getElementById('filter-count');
+    function aplicar(cat){
+      var n = 0;
+      bloques.forEach(function(b){
+        var ver = cat === 'all' || b.getAttribute('data-cat') === cat;
+        b.classList.toggle('oculto', !ver);
+        if (ver) n++;
+      });
+      chips.forEach(function(c){ c.classList.toggle('active', c.getAttribute('data-filter') === cat); });
+      contador.textContent = n + (n === 1 ? ' pantalla' : ' pantallas');
+    }
+    chips.forEach(function(c){ c.addEventListener('click', function(){ aplicar(c.getAttribute('data-filter')); }); });
+    aplicar('all');
+  })();
+</script>
+</body>
+</html>
