@@ -2397,6 +2397,45 @@ select pg_temp.assert(
   and has_function_privilege('authenticated', 'private.is_admin()', 'execute'),
   'authenticated puede ejecutar las 4 funciones invocadas desde policies');
 
+-- RF-17, Ola 2 (D-B3): la MISMA invariante, pero genérica. La lista de arriba
+-- es fija; una policy nueva que llame a otra función de `private` sin EXECUTE
+-- para authenticated no la tocaría y reabriría el SIGSEGV. `pg_depend` registra
+-- cada función que una policy referencia (classid pg_policy → pg_proc), así
+-- que esto cubre las policies de `public` y de `storage.objects` sin listarlas.
+-- ALCANCE: solo dependencias DIRECTAS. Lo que una función llama por dentro
+-- (`is_admin()` → `totp_timestamp()`, revocada) no aparece, y no hace falta:
+-- corre como el dueño de la definer.
+select pg_temp.assert(
+  not exists (
+    select 1
+      from pg_depend d
+      join pg_policy pol on pol.oid = d.objid
+      join pg_proc p on p.oid = d.refobjid
+      join pg_namespace n on n.oid = p.pronamespace
+     where d.classid = 'pg_policy'::regclass and d.refclassid = 'pg_proc'::regclass
+       and n.nspname = 'private'
+       and not has_function_privilege('authenticated', p.oid, 'execute')),
+  'toda función de private que invoca una policy es ejecutable por authenticated (pg_depend)');
+
+-- Y la invariante de arriba no puede pasar VACÍA: tiene que ver al menos las 4
+-- funciones de la lista fija, incluida `is_admin()` ligada a la policy de
+-- Storage del admin (20260930000479). Si esa policy se borra o deja de llamar
+-- a `is_admin()`, cae aquí.
+select pg_temp.assert(
+  exists (select 1
+            from pg_depend d join pg_policy pol on pol.oid = d.objid
+           where d.classid = 'pg_policy'::regclass and d.refclassid = 'pg_proc'::regclass
+             and pol.polrelid = 'storage.objects'::regclass
+             and pol.polname = 'listing_photos_objects_select_admin'
+             and d.refobjid = 'private.is_admin()'::regprocedure)
+  and (select count(distinct d.refobjid)
+         from pg_depend d
+         join pg_proc p on p.oid = d.refobjid
+         join pg_namespace n on n.oid = p.pronamespace
+        where d.classid = 'pg_policy'::regclass and d.refclassid = 'pg_proc'::regclass
+          and n.nspname = 'private') >= 4,
+  'listing_photos_objects_select_admin depende de private.is_admin() y la invariante pg_depend no está vacía');
+
 -- Estas sí son de seguridad: solo disparan por trigger y nadie debe poder
 -- invocarlas. Postgres verifica EXECUTE al crear el trigger, no al dispararlo.
 -- Cuatro importan más que el resto: `claim_push_token`, que invocable a mano
@@ -2437,8 +2476,14 @@ select pg_temp.assert(
         'private.bloquea_correo_suspendido()', 'execute')
   -- RF-17 (20260930000477): el append-only de la auditoría del panel.
   and not has_function_privilege('authenticated',
-        'private.admin_acciones_inmutable()', 'execute'),
-  'las 19 funciones que solo disparan por trigger siguen revocadas');
+        'private.admin_acciones_inmutable()', 'execute')
+  -- RF-17, Ola 2 (20260930000479): sella `reports.resolved_at`. Es la primera
+  -- INVOKER de esta lista: solo reescribe NEW (como las 4 de la aserción
+  -- siguiente), pero se revoca igual por decisión del usuario, porque no hay
+  -- motivo para que nadie la invoque.
+  and not has_function_privilege('authenticated', 'private.sella_resolved_at()', 'execute')
+  and not (select prosecdef from pg_proc where oid = 'private.sella_resolved_at()'::regprocedure),
+  'las 20 funciones que solo disparan por trigger siguen revocadas');
 
 -- Las DOS funciones de trigger que NO están en la lista de arriba, a
 -- propósito: `set_updated_at()` y `limpia_veredicto_en_pantalla()` son
@@ -5299,6 +5344,547 @@ select pg_temp.assert(
         where user_id = :V36::uuid and tipo = 'reporte_resuelto')
         like '%No encontramos motivo para tomar acción.',
   '(a2) el reporte de una cuenta viva SÍ avisa (descartado → copy de descartado)');
+
+\echo '== T35c — Storage: el admin lee las fotos de una publicación ajena (RF-17, Ola 2) =='
+-- 20260930000479, sección 4: `listing_photos_objects_select_admin`. Autocontenida:
+-- su propia universidad, su admin `:A35c` y el dueño `:S35c`, con una publicación
+-- `pendiente` (invisible para cualquiera que no sea su dueño por
+-- `listings_select`) y su objeto insertado como `postgres`, igual que T14.
+--
+-- QUÉ CUBRE Y QUÉ NO: las policies, con claims fabricados por `claims_aal`.
+-- Que el servicio de Storage propague `aal`/`amr` por HTTP lo prueba
+-- `scripts/probe-storage.mjs`.
+--
+-- Las (c)-(f) del plan (la policy del DUEÑO sobre una `bloqueada`) son de la
+-- Ola 4 y no están aquí.
+
+\set A35c '''35c35c35-0000-0000-0000-00000000a35c'''
+\set S35c '''35c35c35-0000-0000-0000-00000000535c'''
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('listing-photos', 'listing-photos', false, 5242880,
+        array['image/jpeg','image/png','image/webp'])
+on conflict (id) do nothing;
+insert into storage.buckets (id, name, public)
+values ('otro-bucket', 'otro-bucket', false)
+on conflict (id) do nothing;
+
+insert into public.universidades (nombre) values ('RLS T35c Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t35c.mx', id from public.universidades where nombre = 'RLS T35c Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T35c Campus', 'Ciudad T35c' from public.universidades
+ where nombre = 'RLS T35c Universidad';
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:A35c, 'rls-t35c-a@rls-t35c.mx'), (:S35c, 'rls-t35c-s@rls-t35c.mx')) as v(u, e);
+
+insert into private.admins (user_id, nombre, activado_at)
+values (:A35c::uuid, 'Admin T35c', now());
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+select u.id, 1, u.universidad_id, c.id, 'RLS T35c pendiente', 50, 'nuevo', 'pendiente'
+  from public.users u join public.campus c on c.universidad_id = u.universidad_id
+ where u.id = :S35c::uuid;
+
+select id || '/t35c.jpg' as t35c_obj
+  from public.listings where titulo = 'RLS T35c pendiente' \gset
+
+insert into storage.objects (bucket_id, name)
+values ('listing-photos', :'t35c_obj'), ('otro-bucket', :'t35c_obj');
+
+select pg_temp.assert(
+  (select count(*) from storage.objects where name = :'t35c_obj') = 2
+  and (select count(*) from private.admins where user_id = :A35c::uuid and activado_at is not null) = 1,
+  'precondición T35c: el objeto existe en los dos buckets y :A35c es admin activado');
+
+-- (a) El camino feliz: admin aal2 con TOTP de hace 1 h ve el objeto de una
+-- `pendiente` ajena. Sin la policy de admin, `listing_photos_objects_select`
+-- lo esconde (el `exists` sobre `listings` pasa por `listings_select`).
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A35c::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select count(*) from storage.objects where bucket_id = %L and name = %L',
+    'listing-photos', :'t35c_obj')) = '1',
+  'T35c (a) un admin aal2 con TOTP reciente ve la foto de una pendiente ajena');
+
+-- (a2) TOTP de hace 13 h: `is_admin()` exige uno de las últimas 12.
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A35c::uuid, 'aal2', pg_temp.amr_totp(13), format(
+    'select count(*) from storage.objects where bucket_id = %L and name = %L',
+    'listing-photos', :'t35c_obj')) = '0',
+  'T35c (a2) con el TOTP vencido (13 h) el admin ya no ve la foto');
+
+-- (b) aal1 con el MISMO amr reciente: aísla la cláusula `aal`.
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A35c::uuid, 'aal1', pg_temp.amr_totp(1), format(
+    'select count(*) from storage.objects where bucket_id = %L and name = %L',
+    'listing-photos', :'t35c_obj')) = '0',
+  'T35c (b) con aal1 el admin no ve la foto');
+
+-- (b2) La MISMA ruta en otro bucket privado: la policy de admin está acotada a
+-- `listing-photos`. Sin el guard `bucket_id`, un admin leería cualquier bucket
+-- que se agregue después.
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A35c::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select count(*) from storage.objects where bucket_id = %L and name = %L',
+    'otro-bucket', :'t35c_obj')) = '0',
+  'T35c (b2) la policy de admin no abre otros buckets privados');
+
+\echo '== T36 (Ola 2) — reportes y bloqueo desde el panel (RF-17) =='
+-- 20260930000479, secciones 1-3. Autocontenida: universidad `rls-t36b.mx` y
+-- sus propias cuentas; no reutiliza los fixtures de la primera mitad de T36.
+--
+--   :A36 — admin activado (actúa). También es dueño de una publicación y parte
+--          de dos reportes: las guardas D-B2 de las dos RPCs que escriben.
+--   :X36 — otro admin, dueño de una publicación (G4 de bloquear).
+--   :S36 — vendedor (no admin): dueño de las publicaciones que se bloquean.
+--   :P36, :O36 — reportantes vivos. :Q36 — reportante que ELIMINA su cuenta.
+--   :U36 — usuario reportado. :D36 — reportado que ELIMINA su cuenta.
+--   :C36 — comprador de la `vendida`.
+--
+-- Las acciones van como `authenticated` con claims aal2 + TOTP de hace 1 h
+-- (`rechazo_aal`, que devuelve `sqlstate:mensaje`), y la comprobación del
+-- estado en una sentencia aparte (`\gset`), por la lección de T28.
+--
+-- CONTROLES NEGATIVOS, uno a la vez contra la suite completa y contra esta
+-- sección aislada: ver la tabla de CLAUDE.md §3.
+
+\set A36 '''36b36b36-0000-0000-0000-00000000a036'''
+\set X36 '''36b36b36-0000-0000-0000-00000000b036'''
+\set S36 '''36b36b36-0000-0000-0000-00000000c036'''
+\set P36 '''36b36b36-0000-0000-0000-00000000d036'''
+\set O36 '''36b36b36-0000-0000-0000-00000000e036'''
+\set Q36 '''36b36b36-0000-0000-0000-00000000f036'''
+\set U36 '''36b36b36-0000-0000-0000-000000001036'''
+\set D36 '''36b36b36-0000-0000-0000-000000002036'''
+\set C36 '''36b36b36-0000-0000-0000-000000003036'''
+\set MOT36 '''Revisado por la suite T36'''
+
+insert into public.universidades (nombre) values ('RLS T36b Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t36b.mx', id from public.universidades where nombre = 'RLS T36b Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T36b Campus', 'Ciudad T36b' from public.universidades
+ where nombre = 'RLS T36b Universidad';
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:A36, 'rls-t36b-a@rls-t36b.mx'), (:X36, 'rls-t36b-x@rls-t36b.mx'),
+               (:S36, 'rls-t36b-s@rls-t36b.mx'), (:P36, 'rls-t36b-p@rls-t36b.mx'),
+               (:O36, 'rls-t36b-o@rls-t36b.mx'), (:Q36, 'rls-t36b-q@rls-t36b.mx'),
+               (:U36, 'rls-t36b-u@rls-t36b.mx'), (:D36, 'rls-t36b-d@rls-t36b.mx'),
+               (:C36, 'rls-t36b-c@rls-t36b.mx')) as v(u, e);
+
+insert into private.admins (user_id, nombre, activado_at)
+values (:A36::uuid, 'Admin T36b', now()),
+       (:X36::uuid, 'Otro admin T36b', now());
+
+-- El relleno va PRIMERO: así sus reportes tienen ids menores y la primera
+-- página de `listar_reportes` (orden `id desc`, tope 100) trae los de la
+-- sección. 101 reportes bastan para que (e) pida 10000 y deba recibir 100.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+select u.id, 1, u.universidad_id, c.id, 'RLS T36b relleno ' || g, 10, 'nuevo', 'activa'
+  from public.users u join public.campus c on c.universidad_id = u.universidad_id
+ cross join generate_series(1, 101) g
+ where u.id = :S36::uuid;
+
+insert into public.reports (reporter_id, listing_id, motivo)
+select :P36::uuid, l.id, 'otro'
+  from public.listings l where l.titulo like 'RLS T36b relleno %';
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+select v.uid, 1, u.universidad_id, c.id, v.titulo, 100, 'nuevo', v.estado::public.listing_status
+  from (values (:S36::uuid, 'T36b pub',     'activa'),
+               (:S36::uuid, 'T36b del',     'activa'),
+               (:S36::uuid, 'T36b pend',    'pendiente'),
+               (:S36::uuid, 'T36b act',     'activa'),
+               (:S36::uuid, 'T36b paus',    'pausada'),
+               (:S36::uuid, 'T36b vend',    'vendida'),
+               (:S36::uuid, 'T36b bloq',    'bloqueada'),
+               (:S36::uuid, 'T36b studio1', 'activa'),
+               (:S36::uuid, 'T36b studio2', 'activa'),
+               (:A36::uuid, 'T36b de A',    'activa'),
+               (:X36::uuid, 'T36b de X',    'activa')) as v(uid, titulo, estado)
+  join public.users u on u.id = v.uid
+  join public.campus c on c.universidad_id = u.universidad_id;
+
+create temp table t36b_l as
+select (select id from public.listings where titulo = 'T36b pub')     as pub,
+       (select id from public.listings where titulo = 'T36b del')     as del,
+       (select id from public.listings where titulo = 'T36b pend')    as pend,
+       (select id from public.listings where titulo = 'T36b act')     as act,
+       (select id from public.listings where titulo = 'T36b paus')    as paus,
+       (select id from public.listings where titulo = 'T36b vend')    as vend,
+       (select id from public.listings where titulo = 'T36b bloq')    as bloq,
+       (select id from public.listings where titulo = 'T36b studio1') as studio1,
+       (select id from public.listings where titulo = 'T36b studio2') as studio2,
+       (select id from public.listings where titulo = 'T36b de A')    as de_a,
+       (select id from public.listings where titulo = 'T36b de X')    as de_x;
+
+-- La `pendiente` se marca con `veredicto_en_pantalla = true` A PROPÓSITO:
+-- `listings_limpia_veredicto_en_pantalla` la baja a false (compuerta medida en
+-- B0), y es esa limpieza la que deja pasar la rama 1 del aviso de bloqueo. Sin
+-- esta línea, (j1) pasaría aunque la limpieza no existiera. No se afirma aquí:
+-- el control "sin la limpieza" tiene que caer en (j1), no en una precondición.
+update public.listings set veredicto_en_pantalla = true where titulo = 'T36b pend';
+
+-- La venta de la `vendida`: contacto primero (la regla de listing_sales).
+insert into public.listing_contacts (user_id, listing_id)
+select :C36::uuid, vend from t36b_l;
+insert into public.listing_sales (listing_id, comprador_id)
+select vend, :C36::uuid from t36b_l;
+
+-- Dos fotos fuera de orden y dos evaluaciones para `detalle_listing` (k).
+insert into public.listing_photos (listing_id, storage_path, orden)
+select pub, pub || '/segunda.jpg', 1 from t36b_l
+union all
+select pub, pub || '/primera.jpg', 0 from t36b_l;
+insert into public.listing_moderacion (listing_id, veredicto, estado_resultante, detalle, created_at)
+select pub, 'limpio', 'activa'::public.listing_status, '{}'::jsonb, now() - interval '2 days' from t36b_l
+union all
+select pub, 'revisar', 'pendiente'::public.listing_status, '{}'::jsonb, now() - interval '1 day' from t36b_l;
+
+insert into public.reports (reporter_id, listing_id, reported_user_id, motivo)
+select v.rep, v.lid, v.uid, 'otro'
+  from t36b_l l,
+       lateral (values (:P36::uuid, l.pub,     null::uuid),
+                       (:O36::uuid, l.pub,     null::uuid),
+                       (:P36::uuid, null,      :U36::uuid),
+                       (:O36::uuid, null,      :U36::uuid),
+                       (:A36::uuid, null,      :U36::uuid),
+                       (:Q36::uuid, null,      :U36::uuid),
+                       (:P36::uuid, l.del,     null::uuid),
+                       (:P36::uuid, null,      :D36::uuid),
+                       (:P36::uuid, null,      :A36::uuid),
+                       (:P36::uuid, l.studio1, null::uuid),
+                       (:Q36::uuid, l.studio2, null::uuid)) as v(rep, lid, uid);
+
+create temp table t36b_r as
+select (select id from public.reports where reporter_id = :P36::uuid and listing_id = (select pub from t36b_l)) as r_pub,
+       (select id from public.reports where reporter_id = :P36::uuid and reported_user_id = :U36::uuid) as r_usr,
+       (select id from public.reports where reporter_id = :Q36::uuid and reported_user_id = :U36::uuid) as r_sinrep,
+       (select id from public.reports where reporter_id = :A36::uuid and reported_user_id = :U36::uuid) as r_de_admin,
+       (select id from public.reports where reporter_id = :P36::uuid and reported_user_id = :A36::uuid) as r_contra_admin,
+       (select id from public.reports where reporter_id = :P36::uuid and listing_id = (select del from t36b_l)) as r_ldel,
+       (select id from public.reports where reporter_id = :P36::uuid and reported_user_id = :D36::uuid) as r_udel,
+       (select id from public.reports where reporter_id = :P36::uuid and listing_id = (select studio1 from t36b_l)) as r_studio1,
+       (select id from public.reports where reporter_id = :Q36::uuid and listing_id = (select studio2 from t36b_l)) as r_studio2;
+
+-- Los dos objetivos eliminados y el reportante eliminado, por los caminos
+-- reales: borrar la publicación y borrar las cuentas.
+delete from public.listings where id = (select del from t36b_l);
+delete from auth.users where id in (:D36::uuid, :Q36::uuid);
+
+select r_pub, r_usr, r_sinrep, r_de_admin, r_contra_admin, r_ldel, r_udel, r_studio1, r_studio2
+  from t36b_r \gset
+select pub, pend, act, paus, vend, bloq, de_a, de_x from t36b_l \gset
+
+select pg_temp.assert(
+  (select count(*) from public.reports
+    where id in (:r_pub, :r_usr, :r_sinrep, :r_de_admin, :r_contra_admin,
+                 :r_ldel, :r_udel, :r_studio1, :r_studio2)) = 9
+  and (select listing_id is null and listing_titulo = 'T36b del' from public.reports where id = :r_ldel)
+  and (select reported_user_id is null and reported_user_correo is null from public.reports where id = :r_udel)
+  and (select reporter_id is null from public.reports where id = :r_sinrep)
+  and (select reporter_id is null from public.reports where id = :r_studio2)
+  and (select count(*) from public.reports where estado = 'pendiente') >= 101
+  and (select count(*) from public.listing_sales where listing_id = :vend and comprador_id = :C36::uuid) = 1,
+  'precondición T36 (Ola 2): los 9 reportes, los dos objetivos eliminados, el reportante eliminado, el relleno y la venta');
+
+-- --- listar_reportes -----------------------------------------------------------
+
+-- (b) Los 4 `objetivo_tipo`, ninguno escondido, más el reporte sin reportante.
+-- Con `p_estado` NULL = todos.
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select string_agg(objetivo_tipo, '','' order by array_position(array[%s, %s, %s, %s, %s]::bigint[], id))
+       from admin.listar_reportes(null, null, 100) where id in (%s, %s, %s, %s, %s)',
+    :r_pub, :r_usr, :r_sinrep, :r_ldel, :r_udel, :r_pub, :r_usr, :r_sinrep, :r_ldel, :r_udel))
+  = 'publicacion,usuario,usuario,publicacion_eliminada,cuenta_eliminada',
+  'T36 (b) listar_reportes devuelve los 4 objetivo_tipo y el reporte sin reportante');
+
+-- (b2) `reportes_mismo_objetivo`: 2 sobre la publicación, 4 sobre :U36 (uno de
+-- ellos de una cuenta eliminada) y NULL en los dos objetivos eliminados.
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select string_agg(coalesce(reportes_mismo_objetivo::text, ''null''), '','' order by array_position(array[%s, %s, %s, %s]::bigint[], id))
+       from admin.listar_reportes(null, null, 100) where id in (%s, %s, %s, %s)',
+    :r_pub, :r_usr, :r_ldel, :r_udel, :r_pub, :r_usr, :r_ldel, :r_udel))
+  = '2,4,null,null',
+  'T36 (b2) reportes_mismo_objetivo cuenta por objetivo y es NULL en los eliminados');
+
+-- (b5) `p_estado` fuera de la lista → 22023, también en la lectura.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select count(*) from admin.listar_reportes(''abierto'')') = '22023:estado_invalido',
+  'T36 (b5) listar_reportes rechaza un p_estado fuera de {pendiente, resuelto, descartado}');
+
+-- (e) Tope: pedir 10000 devuelve 100. (e2) El cursor no repite ni salta.
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A36::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select count(*) from admin.listar_reportes(null, null, 10000)') = '100',
+  'T36 (e) p_limit = 10000 devuelve como máximo 100');
+
+select pg_temp.as_aal_text(:A36::uuid, 'aal2', pg_temp.amr_totp(1),
+  'select min(id) from admin.listar_reportes(null, null, 100)') as t36_min1 \gset
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select (max(id) < %s and count(*) > 0)::text from admin.listar_reportes(null, %s, 100)',
+    :t36_min1, :t36_min1)) = 'true',
+  'T36 (e2) la segunda página empieza justo debajo de la primera');
+
+-- --- resolver_reporte ----------------------------------------------------------
+
+-- (gr) Un no-admin con aal2 y TOTP reciente: G1.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:S36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.resolver_reporte(%s, %L, %L)', :r_pub, 'resuelto', :MOT36)) = '42501:no_admin',
+  'T36 (gr) un no-admin no resuelve reportes');
+
+-- (d6) Motivo de 2 caracteres tras btrim: G2.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.resolver_reporte(%s, %L, %L)', :r_pub, 'resuelto', '  ab  ')) = '22023:motivo_invalido',
+  'T36 (d6) resolver exige un motivo de 3 a 500 caracteres tras btrim');
+
+-- (d2) `p_estado = 'pendiente'` y (d3) `p_estado` NULL: G2b, null-safe.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.resolver_reporte(%s, %L, %L)', :r_pub, 'pendiente', :MOT36)) = '22023:estado_invalido',
+  'T36 (d2) resolver rechaza p_estado = pendiente');
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.resolver_reporte(%s, null, %L)', :r_pub, :MOT36)) = '22023:estado_invalido',
+  'T36 (d3) resolver rechaza p_estado NULL (la validación es null-safe)');
+
+-- (d5) Un reporte que no existe: G5.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.resolver_reporte(%s, %L, %L)', 999999999, 'resuelto', :MOT36)) = 'P0002:reporte_no_existe',
+  'T36 (d5) resolver un reporte inexistente → reporte_no_existe');
+
+-- (g3r) El admin es parte del reporte, de los dos lados: G3.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.resolver_reporte(%s, %L, %L)', :r_de_admin, 'resuelto', :MOT36)) = '42501:no_sobre_si_mismo'
+  and pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.resolver_reporte(%s, %L, %L)', :r_contra_admin, 'resuelto', :MOT36)) = '42501:no_sobre_si_mismo',
+  'T36 (g3r) un admin no resuelve un reporte que hizo ni uno en su contra');
+
+-- (c1) Por la RPC, con reportante: la RPC no escribe `resolved_at`, la sella
+-- el trigger.
+select pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+  'select admin.resolver_reporte(%s, %L, %L)', :r_usr, 'resuelto', :MOT36)) as t36_c1 \gset
+select (resolved_at is not null)::text as t36_c1_sellado, estado::text as t36_c1_estado
+  from public.reports where id = :r_usr \gset
+select pg_temp.assert(
+  :'t36_c1' = 'ok' and :'t36_c1_estado' = 'resuelto' and :'t36_c1_sellado' = 'true',
+  'T36 (c1) resolver por la RPC sella resolved_at');
+
+-- (c2) Por la RPC, SIN reportante (cuenta eliminada): también se sella. Es la
+-- cláusula `reporter_id is not null` del aviso, que el trigger NO copia.
+select pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+  'select admin.resolver_reporte(%s, %L, %L)', :r_sinrep, 'descartado', :MOT36)) as t36_c2 \gset
+select (resolved_at is not null)::text as t36_c2_sellado
+  from public.reports where id = :r_sinrep \gset
+select pg_temp.assert(
+  :'t36_c2' = 'ok' and :'t36_c2_sellado' = 'true',
+  'T36 (c2) resolver por la RPC un reporte sin reportante también sella resolved_at');
+
+-- (c1b) Por UPDATE directo como `postgres` (la ruta de Studio), con reportante.
+select set_config('role', 'postgres', true) as t36_rol \gset
+update public.reports set estado = 'resuelto' where id = :r_studio1;
+select (resolved_at is not null)::text as t36_c1b_sellado
+  from public.reports where id = :r_studio1 \gset
+select pg_temp.assert(
+  :'t36_c1b_sellado' = 'true',
+  'T36 (c1b) resolver por UPDATE directo (Studio) también sella resolved_at');
+
+-- (c2b) Por UPDATE directo, SIN reportante.
+update public.reports set estado = 'resuelto' where id = :r_studio2;
+select (resolved_at is not null)::text as t36_c2b_sellado
+  from public.reports where id = :r_studio2 \gset
+select pg_temp.assert(
+  :'t36_c2b_sellado' = 'true',
+  'T36 (c2b) resolver por UPDATE directo un reporte sin reportante también sella resolved_at');
+
+-- (c3) Volver a `pendiente` (solo Studio) limpia `resolved_at`.
+update public.reports set estado = 'pendiente' where id = :r_studio1;
+select (resolved_at is null)::text as t36_c3_limpio
+  from public.reports where id = :r_studio1 \gset
+select pg_temp.assert(
+  :'t36_c3_limpio' = 'true',
+  'T36 (c3) volver a pendiente deja resolved_at en NULL');
+
+-- (d) Resolver lo ya resuelto: el CAS desde `pendiente` lanza.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.resolver_reporte(%s, %L, %L)', :r_usr, 'descartado', :MOT36)) = '55000:estado_inesperado',
+  'T36 (d) resolver un reporte ya resuelto → estado_inesperado');
+
+-- (b4) Sin `p_estado`, la lista es la de pendientes: el resuelto ya no sale.
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select count(*) from admin.listar_reportes() where id = %s', :r_usr)) = '0'
+  and pg_temp.as_aal_text(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select count(*) from admin.listar_reportes() where id = %s', :r_pub)) = '1',
+  'T36 (b4) listar_reportes sin argumentos trae solo los pendientes');
+
+-- (f) La auditoría de resolver: `antes` = {estado}, `despues` = {estado,
+-- resolved_at}, con el valor que selló el trigger.
+select pg_temp.assert(
+  (select antes = '{"estado": "pendiente"}'::jsonb
+      and (select array_agg(k order by k) from jsonb_object_keys(despues) k) = array['estado', 'resolved_at']
+      and despues->>'estado' = 'resuelto'
+      and (despues->>'resolved_at')::timestamptz = (select resolved_at from public.reports where id = :r_usr)
+      and admin_id = :A36::uuid and motivo = :MOT36
+     from private.admin_acciones
+    where accion = 'resolver_reporte' and objetivo_tipo = 'reporte' and objetivo_id = :r_usr::text),
+  'T36 (f) la auditoría de resolver trae solo estado y resolved_at');
+
+-- --- bloquear_listing ----------------------------------------------------------
+
+-- (g) Un no-admin: G1. (g2) Motivo inválido: G2. (g5) No existe: G5.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:S36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.bloquear_listing(%s, %L)', :act, :MOT36)) = '42501:no_admin',
+  'T36 (g) un no-admin no bloquea publicaciones');
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.bloquear_listing(%s, %L)', :act, '   ')) = '22023:motivo_invalido',
+  'T36 (g2) bloquear exige un motivo de 3 a 500 caracteres tras btrim');
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.bloquear_listing(%s, %L)', 999999999, :MOT36)) = 'P0002:listing_no_existe',
+  'T36 (g5) bloquear una publicación inexistente → listing_no_existe');
+
+-- (g3) Su propia publicación: G3. (g4) La de otro admin: G4.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.bloquear_listing(%s, %L)', :de_a, :MOT36)) = '42501:no_sobre_si_mismo',
+  'T36 (g3) un admin no bloquea su propia publicación');
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.bloquear_listing(%s, %L)', :de_x, :MOT36)) = '42501:objetivo_es_admin',
+  'T36 (g4) un admin no bloquea la publicación de otro admin');
+
+-- (h) Desde `bloqueada`: G6 lanza (D10, no hay desbloquear).
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.bloquear_listing(%s, %L)', :bloq, :MOT36)) = '55000:estado_inesperado',
+  'T36 (h) bloquear una publicación ya bloqueada → estado_inesperado');
+
+-- (h1)-(h4) Desde cada estado de origen permitido. Cada uno en su sentencia y
+-- su comprobación aparte: un solo assert con los cuatro diría "falló" sin
+-- decir CUÁL origen.
+select pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+  'select admin.bloquear_listing(%s, %L)', :pend, :MOT36)) as t36_h1 \gset
+select estado::text as t36_h1_estado from public.listings where id = :pend \gset
+select pg_temp.assert(:'t36_h1' = 'ok' and :'t36_h1_estado' = 'bloqueada',
+  'T36 (h1) bloquear desde pendiente');
+
+select pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+  'select admin.bloquear_listing(%s, %L)', :act, :MOT36)) as t36_h2 \gset
+select estado::text as t36_h2_estado from public.listings where id = :act \gset
+select pg_temp.assert(:'t36_h2' = 'ok' and :'t36_h2_estado' = 'bloqueada',
+  'T36 (h2) bloquear desde activa');
+
+select pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+  'select admin.bloquear_listing(%s, %L)', :paus, :MOT36)) as t36_h3 \gset
+select estado::text as t36_h3_estado from public.listings where id = :paus \gset
+select pg_temp.assert(:'t36_h3' = 'ok' and :'t36_h3_estado' = 'bloqueada',
+  'T36 (h3) bloquear desde pausada');
+
+select pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+  'select admin.bloquear_listing(%s, %L)', :vend, :MOT36)) as t36_h4 \gset
+select estado::text as t36_h4_estado from public.listings where id = :vend \gset
+select pg_temp.assert(:'t36_h4' = 'ok' and :'t36_h4_estado' = 'bloqueada',
+  'T36 (h4) bloquear desde vendida');
+
+-- (h5) Bloquear una vendida NO toca su venta.
+select pg_temp.assert(
+  (select count(*) from public.listing_sales where listing_id = :vend and comprador_id = :C36::uuid) = 1,
+  'T36 (h5) bloquear una vendida conserva su listing_sales');
+
+-- (i) La auditoría de bloquear trae SOLO `estado`, con el origen real.
+select pg_temp.assert(
+  (select antes = '{"estado": "activa"}'::jsonb and despues = '{"estado": "bloqueada"}'::jsonb
+          and admin_id = :A36::uuid
+     from private.admin_acciones
+    where accion = 'bloquear_listing' and objetivo_tipo = 'listing' and objetivo_id = :act::text)
+  and (select antes = '{"estado": "vendida"}'::jsonb
+     from private.admin_acciones
+    where accion = 'bloquear_listing' and objetivo_tipo = 'listing' and objetivo_id = :vend::text),
+  'T36 (i) la auditoría de bloquear trae solo estado, con el origen real');
+
+-- (j1)-(j4) El dueño recibe UN aviso `publicacion_bloqueada` desde cada origen,
+-- con el título y el cuerpo exactos de 20260928000473:88-99. Desde
+-- `pendiente` depende de que `listings_limpia_veredicto_en_pantalla` deje la
+-- columna en false (compuerta medida en B0).
+select pg_temp.assert(
+  (select count(*) = 1
+          and min(titulo) = 'Tu publicación no fue aprobada'
+          and min(cuerpo) = '"T36b pend" no cumple con las reglas de la comunidad, así que no se publicó.'
+     from public.notifications
+    where user_id = :S36::uuid and listing_id = :pend and tipo = 'publicacion_bloqueada'),
+  'T36 (j1) bloquear desde pendiente avisa al dueño: "no fue aprobada"');
+select pg_temp.assert(
+  (select count(*) = 1
+          and min(titulo) = 'Retiramos tu publicación'
+          and min(cuerpo) = '"T36b act" dejó de cumplir con las reglas de la comunidad y ya no es visible.'
+     from public.notifications
+    where user_id = :S36::uuid and listing_id = :act and tipo = 'publicacion_bloqueada'),
+  'T36 (j2) bloquear desde activa avisa al dueño: "Retiramos tu publicación"');
+select pg_temp.assert(
+  (select count(*) = 1
+          and min(titulo) = 'Retiramos tu publicación'
+          and min(cuerpo) = '"T36b paus" dejó de cumplir con las reglas de la comunidad y ya no es visible.'
+     from public.notifications
+    where user_id = :S36::uuid and listing_id = :paus and tipo = 'publicacion_bloqueada'),
+  'T36 (j3) bloquear desde pausada avisa al dueño: "Retiramos tu publicación"');
+select pg_temp.assert(
+  (select count(*) = 1
+          and min(titulo) = 'Retiramos tu publicación'
+          and min(cuerpo) = '"T36b vend" dejó de cumplir con las reglas de la comunidad y ya no es visible.'
+     from public.notifications
+    where user_id = :S36::uuid and listing_id = :vend and tipo = 'publicacion_bloqueada'),
+  'T36 (j4) bloquear desde vendida avisa al dueño: "Retiramos tu publicación"');
+
+-- --- detalle_listing -----------------------------------------------------------
+
+-- (k) Cualquier estado, fotos por `orden`, historial completo con la más
+-- reciente primero, y sus reportes.
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select (d->>''estado'' = ''activa''
+             and d->''dueno''->>''id'' = %L
+             and d->''fotos''->>0 = %L
+             and jsonb_array_length(d->''fotos'') = 2
+             and jsonb_array_length(d->''moderacion'') = 2
+             and d->''moderacion''->0->>''veredicto'' = ''revisar''
+             and jsonb_array_length(d->''reportes'') = 2)::text
+       from admin.detalle_listing(%s) d', :S36, :pub || '/primera.jpg', :pub)) = 'true',
+  'T36 (k) detalle_listing trae la publicación, sus fotos en orden, todo su historial y sus reportes');
+
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select d->>''estado'' from admin.detalle_listing(%s) d', :vend)) = 'bloqueada',
+  'T36 (k1) detalle_listing ve una publicación bloqueada');
+
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:S36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.detalle_listing(%s)', :pub)) = '42501:no_admin'
+  and pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.detalle_listing(%s)', 999999999)) = 'P0002:listing_no_existe',
+  'T36 (k2) detalle_listing rechaza a un no-admin y una publicación inexistente');
 
 \echo ''
 \echo '==========================================='
