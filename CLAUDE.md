@@ -1673,8 +1673,24 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `listing_sales`; el dueño recibe UN aviso desde los 4 orígenes
   (`listings_notify_moderacion`). Las dos llevan las guardas "no sobre sí
   mismo / otro admin" (D-B2), hoy inalcanzables desde el producto pero
-  construibles en la base. `admin_acciones_accion_check` suma
+  construibles en la base. En `resolver_reporte`, "sí mismo" son TRES
+  personas: quien reportó, el reportado y el dueño de la publicación reportada
+  (un reporte de publicación tiene `reported_user_id` NULL). `admin_acciones_accion_check` suma
   `resolver_reporte` y `bloquear_listing`.
+- **Propiedad conocida: Studio SÍ puede sacar una publicación de `bloqueada`,
+  y es a propósito.** `bloqueada` es terminal para la app, el panel y la
+  moderación (medido el 2026-10-01: `decidirListing` devuelve `bloqueada` con
+  los tres veredictos, `decision.ts:346-356`; el dueño recibe `UPDATE 0` por
+  `listings_update_own`; `bloquear_listing` da `estado_inesperado`;
+  `pause_listings_on_suspend` e `increment_listing_view` no la tocan), pero un
+  UPDATE con privilegios elevados la mueve sin ninguna guarda. No se agrega
+  trigger (decisión del usuario): es la vía de recuperación de un bloqueo
+  equivocado, porque el panel no desbloquea (D10). Dos efectos, medidos en
+  `begin … rollback`: **no deja rastro en `admin_acciones`** (ahí solo escribe
+  `private.auditar()`, desde las RPCs de `admin.*`) y **el dueño no recibe
+  aviso** (`listings_notify_moderacion` solo avisa al pasar A `bloqueada`, o al
+  salir de `pendiente`). Y un límite: a `activa` solo pasa si tiene al menos una
+  foto (`listings_enforce_activation_has_photos`); a `pausada`, sin condición.
 - **Las fotos para el admin: policy `listing_photos_objects_select_admin`**
   (`bucket_id = 'listing-photos' and (select private.is_admin())`). El panel
   las baja con `storage.download()` (`/object/{bucket}/…`) y las pinta como
@@ -1709,8 +1725,8 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `dueno_no_activo`); antes del push de la Ola 3 hay que decidir si se acepta
   la ventana (`cuenta-perfil.md`).
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 453 aserciones (medido con el
-`grep` de §8 el 2026-10-01; antes decía 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 454 aserciones (medido con el
+`grep` de §8 el 2026-10-01; antes decía 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2436,7 +2452,9 @@ Y a **453** con la Ola 2 de RF-17 (`20260930000479`): 2 en T12, 5 de T35c y
 invariante genérica por `pg_depend` y su "no vacía" (tiene que ver la policy
 de admin ligada a `is_admin()`), y la lista de funciones solo-trigger revocadas
 pasa de 19 a **20**. T35c y T36 (Ola 2) son autocontenidas, cada una con su
-universidad (`rls-t35c.mx`, `rls-t36b.mx`). Los **49** controles se corrieron
+universidad (`rls-t35c.mx`, `rls-t36b.mx`). Los **48** controles (decía "49":
+el runner tenía 50 bloques, y 2 son la línea base sin variante; contado con
+`grep -c '^### '` sobre su salida) se corrieron
 uno a la vez con un runner que arma cada variante desde el SQL REAL de la
 migración (reemplazo que tiene que machear una vez), imprime el estado vivo
 antes y corre dentro de `begin; <variante>; <suite>` sin commit, contra la
@@ -2466,6 +2484,17 @@ limpieza no existiera. **Y el control del (c1b) no puede ser "la RPC escribe
 cuando el GUC `role` es `authenticated`. Medido en B0: dentro de una RPC
 `security definer` el GUC sigue en `authenticated` (cambia `current_user`, no
 el GUC), y en un UPDATE directo es `postgres` (`none` en una sesión nueva).
+
+Y a **454** con (g3r2): G3 de `resolver_reporte` no cubría al DUEÑO de la
+publicación reportada. `listing_id` y `reported_user_id` son excluyentes
+(`reports_check`, `num_nonnulls(…) <= 1`, `20260906000441:21`), así que un
+reporte de publicación tiene `reported_user_id` NULL y la rama "reportado" de
+G3 nunca lo alcanzaba: un admin podía resolver un reporte sobre su propia
+publicación. G3 suma `exists (… listings l where l.id = v_reporte.listing_id
+and l.user_id = auth.uid())`, corregido en la 479 misma (no estaba en
+remoto). Su control, "G3 sin la rama del dueño", cae solo en (g3r2), en la
+suite y aislada, y el de (g3r) ("sin G3") sigue cayendo en (g3r). Con él son
+**49** controles, y los 49 caen en la suite completa.
 
 **Gotcha: la suite espera 3 usuarios en local.** Una cuenta de prueba (la del
 admin de la prueba manual del panel) la rompe en T1; se arregla con
@@ -3701,12 +3730,16 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
         `resolved_at`.** El reporte `resuelto` que hoy está en remoto con
         `resolved_at` NULL se queda así (sin backfill: decisión del usuario);
         el panel lo pinta "—".
+     9. Si se desbloquea una publicación por Studio (la única vía: D10), deja
+        el motivo anotado fuera de la base —quién, cuándo y por qué— y avísale
+        al dueño por el canal de soporte: Studio no escribe en
+        `admin_acciones` y la base no le manda ningún aviso.
    - **Ola 2 — HECHA EN LOCAL, sin pushear** (frames `5466752`/`2e3ab12`,
      aprobados el 2026-10-01; código `3f49263` a `f7ee579`): 24 frames en
      `design/admin-panel.html`; migración `20260930000479` (`listar_reportes`,
      `resolver_reporte`, `detalle_listing`, `bloquear_listing`, el trigger de
-     `resolved_at` y la policy de Storage del admin); rls.sql en 453 (T12, T35c
-     y T36 Ola 2, con 49 controles); `probe-storage.mjs` en 34 y
+     `resolved_at` y la policy de Storage del admin); rls.sql en 454 (T12, T35c
+     y T36 Ola 2, con 49 controles, incluido el de G3 sobre el dueño); `probe-storage.mjs` en 34 y
      `probe-admin.mjs` en 47; `scripts/totp.mjs` y
      `scripts/probe-puerta-totp.mjs`; el panel con reportes, detalle de
      publicación con fotos (blob) y las pantallas de la Ola 1 alineadas a los

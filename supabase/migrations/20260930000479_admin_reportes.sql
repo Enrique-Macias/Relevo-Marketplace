@@ -183,11 +183,16 @@ grant  execute on function admin.listar_reportes(text, bigint, int) to authentic
 --   G2  motivo de 3 a 500 tras btrim       22023 motivo_invalido
 --   G2b p_estado ∈ {resuelto, descartado}  22023 estado_invalido   (null-safe: NULL lanza)
 --   G5  el reporte existe                  P0002 reporte_no_existe
---   G3  el admin no es parte del reporte   42501 no_sobre_si_mismo (reportante o reportado)
+--   G3  el admin no es parte del reporte   42501 no_sobre_si_mismo (reportante, reportado,
+--                                          o dueño de la publicación reportada)
 --   G6  CAS desde `pendiente`              55000 estado_inesperado
 --
 -- G3 va DESPUÉS de G5 (al revés que en 20260930000478): aquí el parámetro es
 -- el id del reporte, y saber si el admin es parte de él exige leer la fila.
+-- "Parte" son TRES personas, no dos: `listing_id` y `reported_user_id` son
+-- excluyentes (`reports_check`, `num_nonnulls(…) <= 1`), así que un reporte de
+-- PUBLICACIÓN tiene `reported_user_id` NULL y su dueño solo se alcanza por
+-- `listing_id`. Si la publicación ya se borró, ya no hay dueño que comparar.
 --
 -- La RPC NO escribe `resolved_at`: la sella el trigger de arriba (una sola
 -- fuente) y aquí solo se lee con `returning` para auditarla. Resolver dispara
@@ -221,7 +226,10 @@ begin
   end if;
 
   if v_reporte.reporter_id = (select auth.uid())
-     or v_reporte.reported_user_id = (select auth.uid()) then
+     or v_reporte.reported_user_id = (select auth.uid())
+     or exists (select 1 from public.listings l
+                 where l.id = v_reporte.listing_id
+                   and l.user_id = (select auth.uid())) then
     raise exception 'no_sobre_si_mismo' using errcode = '42501';
   end if;
 

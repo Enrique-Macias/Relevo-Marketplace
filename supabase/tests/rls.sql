@@ -5565,7 +5565,8 @@ select v.rep, v.lid, v.uid, 'otro'
                        (:P36::uuid, null,      :D36::uuid),
                        (:P36::uuid, null,      :A36::uuid),
                        (:P36::uuid, l.studio1, null::uuid),
-                       (:Q36::uuid, l.studio2, null::uuid)) as v(rep, lid, uid);
+                       (:Q36::uuid, l.studio2, null::uuid),
+                       (:P36::uuid, l.de_a,    null::uuid)) as v(rep, lid, uid);
 
 create temp table t36b_r as
 select (select id from public.reports where reporter_id = :P36::uuid and listing_id = (select pub from t36b_l)) as r_pub,
@@ -5576,28 +5577,31 @@ select (select id from public.reports where reporter_id = :P36::uuid and listing
        (select id from public.reports where reporter_id = :P36::uuid and listing_id = (select del from t36b_l)) as r_ldel,
        (select id from public.reports where reporter_id = :P36::uuid and reported_user_id = :D36::uuid) as r_udel,
        (select id from public.reports where reporter_id = :P36::uuid and listing_id = (select studio1 from t36b_l)) as r_studio1,
-       (select id from public.reports where reporter_id = :Q36::uuid and listing_id = (select studio2 from t36b_l)) as r_studio2;
+       (select id from public.reports where reporter_id = :Q36::uuid and listing_id = (select studio2 from t36b_l)) as r_studio2,
+       (select id from public.reports where reporter_id = :P36::uuid and listing_id = (select de_a from t36b_l)) as r_pub_de_admin;
 
 -- Los dos objetivos eliminados y el reportante eliminado, por los caminos
 -- reales: borrar la publicación y borrar las cuentas.
 delete from public.listings where id = (select del from t36b_l);
 delete from auth.users where id in (:D36::uuid, :Q36::uuid);
 
-select r_pub, r_usr, r_sinrep, r_de_admin, r_contra_admin, r_ldel, r_udel, r_studio1, r_studio2
+select r_pub, r_usr, r_sinrep, r_de_admin, r_contra_admin, r_ldel, r_udel, r_studio1, r_studio2,
+       r_pub_de_admin
   from t36b_r \gset
 select pub, pend, act, paus, vend, bloq, de_a, de_x from t36b_l \gset
 
 select pg_temp.assert(
   (select count(*) from public.reports
     where id in (:r_pub, :r_usr, :r_sinrep, :r_de_admin, :r_contra_admin,
-                 :r_ldel, :r_udel, :r_studio1, :r_studio2)) = 9
+                 :r_ldel, :r_udel, :r_studio1, :r_studio2, :r_pub_de_admin)) = 10
+  and (select reported_user_id is null from public.reports where id = :r_pub_de_admin)
   and (select listing_id is null and listing_titulo = 'T36b del' from public.reports where id = :r_ldel)
   and (select reported_user_id is null and reported_user_correo is null from public.reports where id = :r_udel)
   and (select reporter_id is null from public.reports where id = :r_sinrep)
   and (select reporter_id is null from public.reports where id = :r_studio2)
   and (select count(*) from public.reports where estado = 'pendiente') >= 101
   and (select count(*) from public.listing_sales where listing_id = :vend and comprador_id = :C36::uuid) = 1,
-  'precondición T36 (Ola 2): los 9 reportes, los dos objetivos eliminados, el reportante eliminado, el relleno y la venta');
+  'precondición T36 (Ola 2): los 10 reportes, los dos objetivos eliminados, el reportante eliminado, el relleno y la venta');
 
 -- --- listar_reportes -----------------------------------------------------------
 
@@ -5678,6 +5682,15 @@ select pg_temp.assert(
   and pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
     'select admin.resolver_reporte(%s, %L, %L)', :r_contra_admin, 'resuelto', :MOT36)) = '42501:no_sobre_si_mismo',
   'T36 (g3r) un admin no resuelve un reporte que hizo ni uno en su contra');
+
+-- (g3r2) Ni uno sobre SU publicación. Es un caso aparte y no una tercera
+-- condición de (g3r): `listing_id` y `reported_user_id` son excluyentes
+-- (`reports_check`), así que el reporte de una publicación del admin tiene
+-- `reported_user_id` NULL y la rama "reportado" de G3 no lo alcanza nunca.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select admin.resolver_reporte(%s, %L, %L)', :r_pub_de_admin, 'resuelto', :MOT36)) = '42501:no_sobre_si_mismo',
+  'T36 (g3r2) un admin no resuelve un reporte sobre su propia publicación');
 
 -- (c1) Por la RPC, con reportante: la RPC no escribe `resolved_at`, la sella
 -- el trigger.

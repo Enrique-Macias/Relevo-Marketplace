@@ -27,7 +27,9 @@ Medido o decidido el 2026-10-01:
    `resolver_reporte`: con el enum, un valor ajeno falla con 22P02 antes de
    entrar a la función. En `listar_reportes`, NULL = todos.
 5. **Guardas D-B2** (no sobre sí mismo / otro admin) en `resolver_reporte` y
-   `bloquear_listing`, con aserción: los fixtures se construyen (B0).
+   `bloquear_listing`, con aserción: los fixtures se construyen (B0). La de
+   `resolver_reporte` cubre también al dueño de la publicación reportada
+   (T36 (g3r2)): `listing_id` y `reported_user_id` son excluyentes.
 6. **Los helpers son `claims_aal`/`rechazo_aal`/`as_aal_text`**
    (`rls.sql:156-215`), no el `as_user_aal` que nombraba este plan.
 7. **Storage no distingue los rechazos** (medido por HTTP en los dos
