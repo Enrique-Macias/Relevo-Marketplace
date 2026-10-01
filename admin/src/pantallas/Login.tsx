@@ -18,21 +18,27 @@ export function Login({ onFijar }: { onFijar: () => void }) {
   };
 
   return (
-    <form className="tarjeta auth" onSubmit={entrar}>
-      <h1>Iniciar sesión</h1>
-      <label htmlFor="correo">Correo</label>
-      <input id="correo" type="email" autoComplete="username" value={correo}
-        onChange={(e) => setCorreo(e.target.value)} required />
-      <label htmlFor="password">Contraseña</label>
-      <input id="password" type="password" autoComplete="current-password" value={password}
-        onChange={(e) => setPassword(e.target.value)} required />
-      {error && <div className="notice">{error}</div>}
-      <div className="fila">
-        <button className="primario" type="submit" disabled={enviando}>Entrar</button>
-        <button className="enlace" type="button" onClick={onFijar}>
-          Primera vez u olvidé mi contraseña
-        </button>
-      </div>
-    </form>
+    <div className="acceso">
+      <form className="auth-card" onSubmit={entrar}>
+        <div className="auth-logo"><span>R</span></div>
+        <h1 className="auth-headline">Iniciar sesión</h1>
+        <div className="auth-sub">Entra con tu cuenta @rlvo.com.mx. Después te pediremos el código de tu app autenticadora.</div>
+        <div className="field">
+          <label className="field-label" htmlFor="correo">Correo</label>
+          <input id="correo" className="text-field" type="email" autoComplete="username" value={correo}
+            onChange={(e) => setCorreo(e.target.value)} required />
+        </div>
+        <div className="field">
+          <label className="field-label" htmlFor="password">Contraseña</label>
+          <input id="password" className={`text-field${error ? ' is-invalid' : ''}`} type="password"
+            autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          {error && <div className="field-error">{error}</div>}
+        </div>
+        <button className="btn primary-btn ancho" type="submit" disabled={enviando}>Entrar</button>
+        <div className="auth-link">
+          <button className="enlace" type="button" onClick={onFijar}><b>Primera vez u olvidé mi contraseña</b></button>
+        </div>
+      </form>
+    </div>
   );
 }

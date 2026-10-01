@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from './lib/supabase.ts';
-import { pedirTotp, registrarModal } from './lib/puerta-totp.ts';
+import { registrarModal, type CausaTotp } from './lib/puerta-totp.ts';
+import { Aviso } from './componentes/Basicos.tsx';
 import { Login } from './pantallas/Login.tsx';
 import { FijarContrasena } from './pantallas/FijarContrasena.tsx';
 import { EnrolarTotp } from './pantallas/EnrolarTotp.tsx';
@@ -29,7 +30,7 @@ export function App() {
   const modoFijar = useRef(false);
   // El modal de TOTP que pide el panel ante `mfa_requerido`/`totp_vencido`.
   // App es su ÚNICO dueño (`lib/puerta-totp.ts`); nadie más lo abre.
-  const [pideTotp, setPideTotp] = useState<((ok: boolean) => void) | null>(null);
+  const [pideTotp, setPideTotp] = useState<{ resolver: (ok: boolean) => void; causa: CausaTotp } | null>(null);
 
   const evaluar = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -69,24 +70,24 @@ export function App() {
   // colgada para siempre (reproducido en scripts/probe-puerta-totp.mjs). Ahora
   // la puerta comparte UNA promesa entre todas, y solo abre el modal una vez.
   useEffect(
-    () => registrarModal(() => new Promise<boolean>((resolve) => setPideTotp(() => resolve))),
+    () => registrarModal((causa) => new Promise<boolean>((resolver) => setPideTotp({ resolver, causa }))),
     [],
   );
 
   return (
-    <>
+    <div className="app">
       <header className="barra">
         <span className="marca">Relevo<small>Panel de administración</small></span>
         {correo && etapa !== 'login' && etapa !== 'fijar' && (
-          <span className="fila">
-            <span className="sub">{correo}</span>
-            <button className="secundario" onClick={salir}>Cerrar sesión</button>
+          <span className="barra-sesion">
+            {correo}
+            <button type="button" className="btn ghost-btn" onClick={() => void salir()}>Cerrar sesión</button>
           </span>
         )}
       </header>
 
-      {etapa === 'cargando' && <p className="contenido sub">Cargando…</p>}
-      {etapa === 'error' && <div className="contenido"><div className="notice">{fallo}</div></div>}
+      {etapa === 'cargando' && <div className="acceso"><span className="texto-suave">Cargando…</span></div>}
+      {etapa === 'error' && <div className="acceso"><div className="auth-card"><Aviso>{fallo}</Aviso></div></div>}
       {etapa === 'login' && (
         <Login onFijar={() => { modoFijar.current = true; setEtapa('fijar'); }} />
       )}
@@ -99,19 +100,20 @@ export function App() {
       {etapa === 'enrolar' && <EnrolarTotp onListo={() => void evaluar()} />}
       {etapa === 'verificar' && <VerificarTotp onListo={() => void evaluar()} />}
       {etapa === 'espera' && <EsperaActivacion onReintentar={() => void evaluar()} />}
-      {etapa === 'panel' && <Panel pedirTotp={pedirTotp} />}
+      {etapa === 'panel' && <Panel />}
 
       {pideTotp && (
-        <div className="modal-fondo">
-          <div className="modal">
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-totp-titulo">
+          <div className="modal-card">
             <VerificarTotp
               enModal
-              onListo={() => { pideTotp(true); setPideTotp(null); }}
-              onCancelar={() => { pideTotp(false); setPideTotp(null); }}
+              causa={pideTotp.causa}
+              onListo={() => { pideTotp.resolver(true); setPideTotp(null); }}
+              onCancelar={() => { pideTotp.resolver(false); setPideTotp(null); }}
             />
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

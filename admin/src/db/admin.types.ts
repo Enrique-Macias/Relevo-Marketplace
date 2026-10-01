@@ -15,6 +15,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      bloquear_listing: {
+        Args: { p_id: number; p_motivo: string }
+        Returns: undefined
+      }
       buscar_usuarios: {
         Args: { p_limit?: number; p_q: string }
         Returns: {
@@ -32,9 +36,46 @@ export type Database = {
           universidad: string
         }[]
       }
+      detalle_listing: { Args: { p_id: number }; Returns: Json }
       detalle_usuario: { Args: { p_user_id: string }; Returns: Json }
+      listar_reportes: {
+        Args: { p_cursor?: number; p_estado?: string; p_limit?: number }
+        Returns: {
+          comentario: string
+          created_at: string
+          estado: "pendiente" | "resuelto" | "descartado"
+          id: number
+          listing_estado:
+            | "activa"
+            | "pausada"
+            | "vendida"
+            | "pendiente"
+            | "bloqueada"
+          listing_id: number
+          listing_titulo: string
+          motivo:
+            | "spam_publicidad"
+            | "sospecha_fraude"
+            | "contenido_inapropiado"
+            | "no_es_estudiante"
+            | "otro"
+          objetivo_tipo: string
+          reported_user_correo: string
+          reported_user_estado: "activo" | "suspendido"
+          reported_user_id: string
+          reported_user_nombre: string
+          reporter_id: string
+          reporter_nombre: string
+          reportes_mismo_objetivo: number
+          resolved_at: string
+        }[]
+      }
       reactivar_usuario: {
         Args: { p_motivo: string; p_user_id: string }
+        Returns: undefined
+      }
+      resolver_reporte: {
+        Args: { p_estado: string; p_id: number; p_motivo: string }
         Returns: undefined
       }
       sesion: { Args: never; Returns: Json }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase.ts';
+import { Aviso } from '../componentes/Basicos.tsx';
 
 interface Enrolamiento { id: string; qr: string; secreto: string }
 
@@ -44,22 +45,25 @@ export function EnrolarTotp({ onListo }: { onListo: () => void }) {
   };
 
   return (
-    <form className="tarjeta auth" onSubmit={verificar}>
-      <h1>App autenticadora</h1>
-      <p className="sub">Escanea el código con tu app autenticadora (Google Authenticator, 1Password…) y escribe el código de 6 dígitos que muestra.</p>
-      {enr ? (
-        <>
-          <img className="qr" src={enr.qr} alt="Código QR para la app autenticadora" />
-          <p className="sub">¿No puedes escanear? Escribe esta clave: <span className="secreto">{enr.secreto}</span></p>
-        </>
-      ) : !error && <p className="sub">Generando…</p>}
-      <label htmlFor="codigo">Código</label>
-      <input id="codigo" inputMode="numeric" autoComplete="one-time-code" value={codigo}
-        onChange={(e) => setCodigo(e.target.value)} required />
-      {error && <div className="notice">{error}</div>}
-      <div className="fila">
-        <button className="primario" type="submit" disabled={enviando || !enr}>Confirmar</button>
-      </div>
-    </form>
+    <div className="acceso">
+      <form className="auth-card" onSubmit={verificar}>
+        <h1 className="auth-headline">App autenticadora</h1>
+        <div className="auth-sub">Escanea el código con tu app autenticadora (Google Authenticator, 1Password…) y escribe el código de 6 dígitos que muestra.</div>
+        {enr ? (
+          <>
+            <img className="qr-img" src={enr.qr} alt="Código QR para la app autenticadora" />
+            <div className="texto-suave">¿No puedes escanear? Escribe esta clave:</div>
+            <div className="secreto">{enr.secreto}</div>
+          </>
+        ) : !error && <div className="texto-suave">Generando…</div>}
+        <div className="field">
+          <label className="field-label" htmlFor="codigo">Código</label>
+          <input id="codigo" className="text-field" inputMode="numeric" autoComplete="one-time-code" value={codigo}
+            placeholder="6 dígitos" onChange={(e) => setCodigo(e.target.value)} required />
+        </div>
+        {error && <Aviso>{error}</Aviso>}
+        <button className="btn primary-btn ancho" type="submit" disabled={enviando || !enr}>Confirmar</button>
+      </form>
+    </div>
   );
 }

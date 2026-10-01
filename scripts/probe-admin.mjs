@@ -40,7 +40,7 @@ import { createClient } from '@supabase/supabase-js';
 import { crear, activar } from './crear-admin.mjs';
 import { totp, siguienteVentana } from './totp.mjs';
 import {
-  clasificarRechazo, NO_ADMIN, MFA_REQUERIDO, TOTP_VENCIDO,
+  clasificarRechazo, NO_ADMIN, MFA_REQUERIDO, TOTP_VENCIDO, tieneTextoDecidido,
 } from '../admin/src/lib/rechazos.ts';
 
 const DB = 'supabase_db_relevo-marketplace';
@@ -282,6 +282,16 @@ async function main() {
     const fuenteExigir = sql("select prosrc from pg_proc where oid = 'private.exigir_admin()'::regprocedure");
     ok('7b las tres constantes del panel están literales en private.exigir_admin()',
       [NO_ADMIN, MFA_REQUERIDO, TOTP_VENCIDO].every((m) => fuenteExigir.includes(`'${m}'`)));
+
+    // 7c: todo mensaje que lanza una RPC de `admin.*` tiene un texto decidido en
+    // el panel (propio, o el genérico a propósito). Se lee del pg_proc VIVO, no
+    // de una lista: una RPC nueva con un `raise` nuevo cae aquí hasta que alguien
+    // decida su copy.
+    const fuenteAdmin = sql("select string_agg(prosrc, ' ') from pg_proc where pronamespace = 'admin'::regnamespace");
+    const lanzados = [...new Set([...fuenteAdmin.matchAll(/raise exception '([a-z_]+)'/g)].map((m) => m[1]))];
+    const sinDecidir = lanzados.filter((m) => !tieneTextoDecidido(m));
+    ok(`7c los ${lanzados.length} mensajes de admin.* tienen un texto decidido en rechazos.ts`,
+      lanzados.length > 0 && sinDecidir.length === 0, sinDecidir.join(', ') || lanzados.join(', '));
   } finally {
     for (const c of creadas) {
       sql(`delete from auth.users where email = '${c.replace(/'/g, "''")}'`);

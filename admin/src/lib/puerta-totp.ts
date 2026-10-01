@@ -16,7 +16,10 @@
  *       se muestra como rechazada, no se queda colgada.
  */
 
-type AbrirModal = () => Promise<boolean>;
+/** Por qué se pide: el modal pinta el texto de cada caso (frame "Código de verificación (modal)"). */
+export type CausaTotp = 'totp_vencido' | 'mfa_requerido';
+
+type AbrirModal = (causa: CausaTotp) => Promise<boolean>;
 
 let abrirModal: AbrirModal | null = null;
 let enVuelo: Promise<boolean> | null = null;
@@ -34,13 +37,14 @@ export function registrarModal(fn: AbrirModal): () => void {
 
 /**
  * Pide el TOTP. Si ya hay un modal abierto, devuelve LA MISMA promesa: todas
- * las llamadas concurrentes terminan juntas con el mismo resultado.
+ * las llamadas concurrentes terminan juntas con el mismo resultado (y con la
+ * causa de la primera, que es la que se ve en el modal).
  */
-export function pedirTotp(): Promise<boolean> {
+export function pedirTotp(causa: CausaTotp = 'totp_vencido'): Promise<boolean> {
   if (enVuelo) return enVuelo;
   const abrir = abrirModal;
   if (!abrir) return Promise.resolve(false);
-  enVuelo = abrir()
+  enVuelo = abrir(causa)
     .catch(() => false)
     .finally(() => {
       enVuelo = null;

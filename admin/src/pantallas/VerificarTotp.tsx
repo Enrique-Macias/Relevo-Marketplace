@@ -1,5 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase.ts';
+import type { CausaTotp } from '../lib/puerta-totp.ts';
+import { Aviso, CampoOtp } from '../componentes/Basicos.tsx';
+import { IconLock } from '../componentes/Iconos.tsx';
 
 /**
  * Pide el código de la app autenticadora. Como pantalla (aal1, o TOTP de hace
@@ -8,8 +11,8 @@ import { supabase } from '../lib/supabase.ts';
  * el timestamp del `totp` en `amr` (medido, probe-admin.mjs caso 3), que es
  * lo que reabre la ventana de 12 h de `is_admin()`.
  */
-export function VerificarTotp({ onListo, onCancelar, enModal }: {
-  onListo: () => void; onCancelar?: () => void; enModal?: boolean;
+export function VerificarTotp({ onListo, onCancelar, enModal, causa = 'totp_vencido' }: {
+  onListo: () => void; onCancelar?: () => void; enModal?: boolean; causa?: CausaTotp;
 }) {
   const [codigo, setCodigo] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -29,18 +32,33 @@ export function VerificarTotp({ onListo, onCancelar, enModal }: {
     onListo();
   };
 
+  if (enModal) {
+    return (
+      <form onSubmit={verificar}>
+        <div className="modal-icon neutro"><IconLock /></div>
+        <div className="modal-title" id="modal-totp-titulo">Código de verificación</div>
+        <div className="modal-sub">{causa === 'mfa_requerido'
+          ? 'Falta confirmar tu código de la app autenticadora.'
+          : 'Tu código de la app autenticadora venció. Confírmalo otra vez y seguimos donde estabas.'}</div>
+        <CampoOtp id="totp" valor={codigo} onCambio={setCodigo} autoFocus />
+        {error && <Aviso>{error}</Aviso>}
+        <div className="modal-actions">
+          {onCancelar && <button className="btn ghost-btn" type="button" disabled={enviando} onClick={onCancelar}>Cancelar</button>}
+          <button className="btn primary-btn" type="submit" disabled={enviando || codigo.length !== 6}>Confirmar</button>
+        </div>
+      </form>
+    );
+  }
   return (
-    <form className={enModal ? '' : 'tarjeta auth'} onSubmit={verificar}>
-      <h2>Código de verificación</h2>
-      <p className="sub">Escribe el código de 6 dígitos de tu app autenticadora.</p>
-      <label htmlFor="totp">Código</label>
-      <input id="totp" inputMode="numeric" autoComplete="one-time-code" value={codigo}
-        onChange={(e) => setCodigo(e.target.value)} required autoFocus />
-      {error && <div className="notice">{error}</div>}
-      <div className="fila">
-        <button className="primario" type="submit" disabled={enviando}>Confirmar</button>
-        {onCancelar && <button className="secundario" type="button" onClick={onCancelar}>Cancelar</button>}
-      </div>
-    </form>
+    <div className="acceso">
+      <form className="auth-card" onSubmit={verificar}>
+        <div className="auth-logo"><span>R</span></div>
+        <h1 className="auth-headline">Código de verificación</h1>
+        <div className="auth-sub">Escribe el código de 6 dígitos de tu app autenticadora.</div>
+        <CampoOtp id="totp" valor={codigo} onCambio={setCodigo} autoFocus />
+        {error && <Aviso>{error}</Aviso>}
+        <button className="btn primary-btn ancho" type="submit" disabled={enviando || codigo.length !== 6}>Confirmar</button>
+      </form>
+    </div>
   );
 }

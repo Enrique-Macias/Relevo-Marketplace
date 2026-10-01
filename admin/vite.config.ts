@@ -9,10 +9,13 @@ function csp(supabaseUrl: string): Plugin {
   const politica = [
     "default-src 'self'",
     "script-src 'self'",
-    "style-src 'self' https://fonts.googleapis.com",
-    'font-src https://fonts.gstatic.com',
-    // El QR del enrolamiento TOTP llega como data URI SVG (mfa.enroll).
-    "img-src 'self' data:",
+    "style-src 'self'",
+    // Fuentes autoalojadas en public/fonts (D-A1 de la Ola 2): sin terceros.
+    "font-src 'self'",
+    // `data:` — el QR del enrolamiento TOTP llega como data URI SVG (mfa.enroll).
+    // `blob:` — las fotos del bucket privado: se descargan con el token de la
+    // sesión (`storage.download()`) y se pintan como object URL (FotoListing).
+    "img-src 'self' data: blob:",
     `connect-src 'self' ${supabaseUrl}`,
     "base-uri 'none'",
     "form-action 'none'",

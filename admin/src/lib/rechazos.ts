@@ -29,7 +29,11 @@ export function clasificarRechazo(err: ErrorRpc | null | undefined): AccionRecha
   return 'mostrar';
 }
 
-/** Texto para el admin. Los códigos los fija 20260930000478 (guardas G1-G6). */
+/**
+ * Texto para el admin. Los códigos los fijan 20260930000478 (guardas G1-G6) y
+ * 20260930000479 (reportes y bloqueo). Es copy PERSISTENTE (un `.notice`), así
+ * que cada texto está dibujado en `design/admin-panel.html`.
+ */
 const TEXTOS: Record<string, string> = {
   motivo_invalido: 'El motivo debe tener entre 3 y 500 caracteres.',
   no_sobre_si_mismo: 'No puedes aplicar esta acción sobre tu propia cuenta.',
@@ -41,7 +45,29 @@ const TEXTOS: Record<string, string> = {
   [TOTP_VENCIDO]: 'Tu código de la app autenticadora venció. Confírmalo otra vez.',
 };
 
-export function textoDeRechazo(err: ErrorRpc | null | undefined): string {
+/**
+ * Mensajes de `admin.*` que se muestran con el texto GENÉRICO a propósito: el
+ * panel nunca los provoca (valida antes, o el objeto lo trae la propia lista), y
+ * su copy no está en los frames. El caso 7c de `scripts/probe-admin.mjs` exige
+ * que todo `raise` de `admin.*` esté en TEXTOS o aquí: un mensaje nuevo obliga
+ * a decidir cuál.
+ */
+export const SIN_TEXTO_PROPIO: readonly string[] = [
+  'estado_invalido', 'reporte_no_existe', 'listing_no_existe', 'auditoria_sin_actor',
+];
+
+export function tieneTextoDecidido(mensaje: string): boolean {
+  return mensaje in TEXTOS || SIN_TEXTO_PROPIO.includes(mensaje);
+}
+
+/** `estado_inesperado` cambia de sujeto según qué cambió de estado. */
+const ESTADO_INESPERADO_PUBLICACION = 'La publicación cambió de estado mientras tanto. Recarga el detalle.';
+
+export function textoDeRechazo(
+  err: ErrorRpc | null | undefined,
+  sujeto: 'cuenta' | 'publicacion' = 'cuenta',
+): string {
   const m = err?.message ?? '';
+  if (m === 'estado_inesperado' && sujeto === 'publicacion') return ESTADO_INESPERADO_PUBLICACION;
   return TEXTOS[m] ?? `No se pudo completar la acción (${err?.code ?? 'sin código'}).`;
 }
