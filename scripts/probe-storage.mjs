@@ -55,6 +55,24 @@
 //   `listing_photos_objects_select`. No le busques control negativo: no lo
 //   tiene, y está escrito así a propósito.
 //
+// ADMIN DEL PANEL (RF-17, Ola 2). La policy `listing_photos_objects_select_admin`
+// deja a un admin aal2 con TOTP de las últimas 12 h leer las fotos de cualquier
+// publicación. Esta sección prueba por HTTP que Storage propaga `aal` y `amr` a
+// la policy, en los DOS endpoints de lectura: `/object/{bucket}/…` (el que usa
+// `storage.download()` en el panel, storage-js 2.115.0) y
+// `/object/authenticated/{bucket}/…` (el de la app). Y MIDE qué status y qué
+// cuerpo devuelve Storage al rechazar, que es lo que fija cómo detecta el panel
+// un TOTP vencido: si los rechazos son indistinguibles, el panel tiene que
+// preguntarle a `admin.sesion()`.
+//
+// El caso "TOTP vencido" no se puede producir con GoTrue sin esperar 12 h, así
+// que se FIRMA un token ES256 con la llave local de GoTrue (medido:
+// `GOTRUE_JWT_KEYS` trae una llave EC con `key_ops [sign, verify]`). La llave se
+// lee del contenedor y vive solo en memoria: no se imprime ni se escribe a
+// disco. Por eso el probe se niega a correr si la URL no es localhost,
+// 127.0.0.1 o [::1]. Un control positivo (el mismo forjado con un TOTP
+// reciente → 200) prueba que el rechazo es por el TOTP y no por la firma.
+//
 // Crea sus propios usuarios y publicaciones, con correos únicos por corrida, y
 // limpia en un `finally`. Si una corrida muere de golpe puede dejar basura en la
 // base LOCAL; `supabase db reset` la borra — y para los secretos de Vault, que
@@ -63,6 +81,8 @@
 
 import { execFileSync } from 'node:child_process';
 import http from 'node:http';
+import { createPrivateKey, sign as firmar } from 'node:crypto';
+import { totp } from './totp.mjs';
 
 const BUCKET = 'listing-photos';
 const BUCKET_AVATARS = 'avatars';
@@ -204,6 +224,67 @@ const removeJs = (E, tok, rutas, bucket = BUCKET) =>
 const leerPublico = (E, ruta, bucket) =>
   fetch(`${E.API_URL}/storage/v1/object/public/${bucket}/${ruta}`);
 
+// La lectura por `/object/{bucket}/…`: es la que hace `storage.download()` del
+// panel. La de arriba (`leer`) es `/object/authenticated/…`, la de la app.
+const descargar = (E, tok, ruta, bucket = BUCKET) =>
+  fetch(`${E.API_URL}/storage/v1/object/${bucket}/${ruta}`, {
+    headers: { apikey: E.PUBLISHABLE, Authorization: `Bearer ${tok}` },
+  });
+
+const HOSTS_LOCALES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+const claimsDe = (t) => JSON.parse(Buffer.from(t.split('.')[1], 'base64url').toString());
+
+/** POST a Auth con el bearer de la sesión; lanza con el cuerpo si no es 2xx. */
+async function authPost(E, tok, ruta, body) {
+  const res = await fetch(`${E.API_URL}/auth/v1/${ruta}`, {
+    method: 'POST',
+    headers: { apikey: E.PUBLISHABLE, Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`auth ${ruta}: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+/** Enrola un TOTP real y lo verifica: devuelve el access token aal2. */
+async function tokenAal2(E, tAal1) {
+  const f = await authPost(E, tAal1, 'factors', { factor_type: 'totp', friendly_name: `probe-${RUN}` });
+  const ch = await authPost(E, tAal1, `factors/${f.id}/challenge`, {});
+  const v = await authPost(E, tAal1, `factors/${f.id}/verify`, { challenge_id: ch.id, code: totp(f.totp.secret) });
+  return v.access_token;
+}
+
+/**
+ * Llave de firma de GoTrue LOCAL, leída del entorno del contenedor. Solo en
+ * memoria: ni se imprime ni se escribe a disco.
+ */
+function llaveGotrue() {
+  const env = execFileSync('docker', ['inspect', AUTH_CONTAINER, '--format',
+    '{{range .Config.Env}}{{println .}}{{end}}'], { encoding: 'utf8' });
+  const linea = env.split('\n').find((l) => l.startsWith('GOTRUE_JWT_KEYS='));
+  if (!linea) throw new Error('GOTRUE_JWT_KEYS no está en el contenedor de Auth');
+  const jwk = JSON.parse(linea.slice('GOTRUE_JWT_KEYS='.length))
+    .find((k) => k.kty === 'EC' && k.alg === 'ES256' && (k.key_ops ?? []).includes('sign'));
+  if (!jwk) throw new Error('no hay una llave ES256 de firma en GOTRUE_JWT_KEYS');
+  return { kid: jwk.kid, llave: createPrivateKey({ key: jwk, format: 'jwk' }) };
+}
+
+/** Re-firma los claims de un token real con el `amr` de TOTP movido `horas` atrás. */
+function forjarConTotp(firma, claimsBase, horas) {
+  const ts = Math.floor(Date.now() / 1000) - horas * 3600;
+  const claims = { ...claimsBase, amr: (claimsBase.amr ?? []).map((e) =>
+    e.method === 'totp' ? { ...e, timestamp: ts } : e) };
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const cuerpo = `${b64({ alg: 'ES256', kid: firma.kid, typ: 'JWT' })}.${b64(claims)}`;
+  const s = firmar('sha256', Buffer.from(cuerpo), { key: firma.llave, dsaEncoding: 'ieee-p1363' });
+  return `${cuerpo}.${s.toString('base64url')}`;
+}
+
+/** Status y cuerpo de una respuesta, para imprimir lo que Storage devuelve. */
+async function forma(res) {
+  return `HTTP ${res.status} ${(await res.text()).slice(0, 160)}`;
+}
+
 /** `list` del bucket. Con la publishable a secas se ejecuta como `anon`. */
 const listar = (E, auth, bucket) =>
   fetch(`${E.API_URL}/storage/v1/object/list/${bucket}`, {
@@ -237,6 +318,7 @@ const listar = (E, auth, bucket) =>
 // así que no hay endpoint que llamar. Es la misma vía que el runbook de la
 // suite de RLS (CLAUDE.md §6, paso 1).
 const DB_CONTAINER = 'supabase_db_relevo-marketplace';
+const AUTH_CONTAINER = 'supabase_auth_relevo-marketplace';
 const SECRETO_KEY = 'moderar_contenido_secret_key';
 const SECRETO_URL = 'moderar_contenido_function_url';
 
@@ -342,6 +424,12 @@ async function main() {
   if (!E.API_URL || !E.SECRET) {
     throw new Error('No hay stack local. Corre `supabase start` primero.');
   }
+  // La sección del admin firma tokens con la llave local de GoTrue: solo vale
+  // contra un stack local. Comparación EXACTA del hostname, sin includes.
+  if (!HOSTS_LOCALES.has(new URL(E.API_URL).hostname)) {
+    console.error(`probe-storage solo corre contra un stack local; API_URL=${new URL(E.API_URL).hostname}`);
+    process.exit(1);
+  }
 
   const correoDueno = `probe-dueno-${RUN}@tec.mx`;
   const correoAjeno = `probe-ajeno-${RUN}@tec.mx`;
@@ -351,6 +439,7 @@ async function main() {
   // sección de borrado, y un fixture cuyo estado depende de secciones anteriores
   // es justo la trampa que CLAUDE.md §3 documenta para `rls.sql` (`:C` en T11b).
   let modActiva, modPendiente, modBarrera, mock, previos;
+  let admin, pendienteAdm;
 
   try {
     dueno = await crearUsuario(E, correoDueno);
@@ -391,6 +480,57 @@ async function main() {
       await borrar(E, tAjeno, `${activa}/foto.jpg`));
     permitido('el dueño SÍ puede borrar la foto de su publicación',
       await borrar(E, tDueno, `${activa}/foto.jpg`));
+
+    // -----------------------------------------------------------------------
+    // Admin del panel (RF-17, Ola 2): fotos de una `pendiente` ajena.
+    // Fixtures PROPIOS (la pendiente y su objeto), por la misma razón que los
+    // de moderación: no depender de lo que borraron las secciones de arriba.
+    // -----------------------------------------------------------------------
+    console.log('\n== Admin del panel (policy listing_photos_objects_select_admin) ==');
+
+    // `/admin/users` no pasa por el Auth Hook de dominios (CLAUDE.md §9), así
+    // que la cuenta puede ser @rlvo.com.mx como las de verdad.
+    const correoAdmin = `probe-admin-${RUN}@rlvo.com.mx`;
+    admin = await crearUsuario(E, correoAdmin);
+    sql(`insert into private.admins (user_id, nombre, activado_at) values (${lit(admin)}, 'Probe admin', now())`);
+    const tAdmAal1 = await token(E, correoAdmin);
+    const tAdmAal2 = await tokenAal2(E, tAdmAal1);
+    const cAal2 = claimsDe(tAdmAal2);
+    console.log(`  tokens reales: aal1 alg=${JSON.parse(Buffer.from(tAdmAal1.split('.')[0], 'base64url')).alg}` +
+                ` · aal2 alg=${JSON.parse(Buffer.from(tAdmAal2.split('.')[0], 'base64url')).alg}` +
+                ` amr=${JSON.stringify(cAal2.amr?.map((e) => e.method))}`);
+
+    pendienteAdm = await crearListing(E, dueno, `Probe pendiente admin ${RUN}`, 'pendiente');
+    permitido('el dueño sube la foto de su pendiente', await subir(E, tDueno, `${pendienteAdm}/adm.jpg`));
+    const rutaAdm = `${pendienteAdm}/adm.jpg`;
+
+    const firma = llaveGotrue();
+    const tForjadoReciente = forjarConTotp(firma, cAal2, 1);
+    const tForjadoVencido = forjarConTotp(firma, cAal2, 13);
+
+    for (const [nombre, f] of [['download() /object/', descargar], ['/object/authenticated/', leer]]) {
+      permitido(`[${nombre}] admin aal2 con TOTP real reciente lee la foto de una pendiente ajena`,
+        await f(E, tAdmAal2, rutaAdm));
+      permitido(`[${nombre}] CONTROL: el mismo token re-firmado con TOTP de hace 1 h también lee (la firma forjada vale)`,
+        await f(E, tForjadoReciente, rutaAdm));
+
+      const rAal1 = await f(E, tAdmAal1, rutaAdm);
+      const fAal1 = await forma(rAal1.clone());
+      denegado(`[${nombre}] el mismo admin con un token aal1 NO la lee`, rAal1);
+      const rVenc = await f(E, tForjadoVencido, rutaAdm);
+      const fVenc = await forma(rVenc.clone());
+      denegado(`[${nombre}] el mismo admin con TOTP de hace 13 h NO la lee`, rVenc);
+      const rAjeno = await f(E, tAjeno, rutaAdm);
+      const fAjeno = await forma(rAjeno.clone());
+      denegado(`[${nombre}] un no-admin NO la lee`, rAjeno);
+
+      // La medición que fija la UI: lo que devuelve Storage en cada rechazo.
+      console.log(`    medido [${nombre}] aal1:      ${fAal1}`);
+      console.log(`    medido [${nombre}] vencido:   ${fVenc}`);
+      console.log(`    medido [${nombre}] no-admin:  ${fAjeno}`);
+      ok(`[${nombre}] los tres rechazos son INDISTINGUIBLES (la UI tiene que preguntar a admin.sesion())`,
+        fAal1 === fVenc && fVenc === fAjeno, fAal1);
+    }
 
     // -----------------------------------------------------------------------
     // Avatares (RF-03). Bucket `avatars`, PÚBLICO — al revés que el de arriba.
@@ -549,7 +689,7 @@ async function main() {
       }).catch(() => {});
     }
 
-    for (const [id, ruta] of [[pausada, 'oculta.jpg'], [activa, 'foto.jpg']]) {
+    for (const [id, ruta] of [[pausada, 'oculta.jpg'], [activa, 'foto.jpg'], [pendienteAdm, 'adm.jpg']]) {
       if (id) await fetch(`${E.API_URL}/storage/v1/object/${BUCKET}/${id}/${ruta}`, {
         method: 'DELETE', headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
       }).catch(() => {});
@@ -565,12 +705,14 @@ async function main() {
         body: JSON.stringify({ prefixes: [`${id}/a.jpg`, `${id}/intruso.jpg`, `${id}/robado.jpg`, `${id}/mod.jpg`] }),
       }).catch(() => {});
     }
-    for (const id of [activa, pausada, deAjeno, modActiva, modPendiente, modBarrera]) {
+    for (const id of [activa, pausada, deAjeno, modActiva, modPendiente, modBarrera, pendienteAdm]) {
       if (id) await fetch(`${E.API_URL}/rest/v1/listings?id=eq.${id}`, {
         method: 'DELETE', headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
       }).catch(() => {});
     }
-    for (const id of [dueno, ajeno]) {
+    // El admin: borrar la cuenta se lleva su fila de `private.admins` y su
+    // factor TOTP (los dos en cascada desde auth.users).
+    for (const id of [dueno, ajeno, admin]) {
       if (id) await fetch(`${E.API_URL}/auth/v1/admin/users/${id}`, {
         method: 'DELETE', headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
       }).catch(() => {});

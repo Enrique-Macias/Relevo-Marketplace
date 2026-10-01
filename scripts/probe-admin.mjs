@@ -35,10 +35,10 @@
 // queda, como en cualquier borrado de cuenta de admin).
 
 import { execFileSync } from 'node:child_process';
-import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { crear, activar } from './crear-admin.mjs';
+import { totp, siguienteVentana } from './totp.mjs';
 import {
   clasificarRechazo, NO_ADMIN, MFA_REQUERIDO, TOTP_VENCIDO,
 } from '../admin/src/lib/rechazos.ts';
@@ -71,24 +71,7 @@ function env() {
 const jwt = (t) => JSON.parse(Buffer.from(t.split('.')[1], 'base64url').toString());
 const tsDe = (claims, metodo) => claims.amr?.find((e) => e.method === metodo)?.timestamp;
 
-// RFC 6238, lo mismo que hace una app autenticadora.
-function base32(s) {
-  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let bits = '';
-  for (const ch of s.replace(/=+$/, '').toUpperCase()) bits += A.indexOf(ch).toString(2).padStart(5, '0');
-  const out = [];
-  for (let i = 0; i + 8 <= bits.length; i += 8) out.push(parseInt(bits.slice(i, i + 8), 2));
-  return Buffer.from(out);
-}
-function totp(secret) {
-  const c = Buffer.alloc(8);
-  c.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
-  const h = createHmac('sha1', base32(secret)).update(c).digest();
-  const o = h[h.length - 1] & 15;
-  return String((h.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, '0');
-}
-/** Espera a la siguiente ventana de 30 s: el mismo código no se re-verifica. */
-const siguienteVentana = () => esperar(30000 - (Date.now() % 30000) + 1500);
+// TOTP (RFC 6238): `scripts/totp.mjs`, compartido con probe-storage.mjs.
 
 async function correos(to) {
   const r = await fetch(`${MAIL}/api/v1/search?query=${encodeURIComponent(`to:${to}`)}`);
