@@ -3567,9 +3567,9 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      panel `admin/` sin frame (D14). **Cambió respecto al plan:** las cuentas
      no se INVITAN, se CREAN por `/admin/users` y fijan contraseña con el
      código de recuperación, porque medido `/invite` pasa por el Auth Hook y
-     rechaza `@rlvo.com.mx` (§9). Decisión del usuario, 2026-09-29. **Falta,
-     tuyo:** la prueba manual en local, en navegador, con un TOTP real
-     (`admin/CLAUDE.md`, "Desarrollo local").
+     rechaza `@rlvo.com.mx` (§9). Decisión del usuario, 2026-09-29. **Prueba
+     manual en local, en navegador y con un TOTP real: HECHA por el usuario el
+     2026-10-01, sin hallazgos** (`admin/CLAUDE.md`, "Desarrollo local").
    - **Runbook de la Ola 3 para `…477`/`…478`, en este orden** (se suma a lo
      de abajo):
      0. **Bloqueante:** `select count(*) from public.users where estado =

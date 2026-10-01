@@ -16,7 +16,7 @@ la sesión toca `admin/`.
    que la Ola 2 alineará a esos frames. Solo se reusan los TOKENS de color y
    tipografía de §2 raíz (`src/estilos.css`); nada de tamaños ni componentes
    de teléfono.
-   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 24 frames medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo machea antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
+   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 24 frames medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
 2. **Autorización, siempre en la base** (§0 regla 7 raíz, esta sí aplica).
    Toda acción es una RPC `security definer` de `admin.*` cuya primera línea es
    `perform private.exigir_admin();`, y toda escritura se audita en
