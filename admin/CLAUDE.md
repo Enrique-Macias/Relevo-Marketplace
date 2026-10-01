@@ -51,7 +51,54 @@ la sesión toca `admin/`.
 | cualquier otro (incluidos `no_sobre_si_mismo`, `objetivo_es_admin`, un 42501 de RLS) | lo muestra y ya |
 
 Cerrar la sesión por un 42501 de una guarda echaría al admin por un error suyo
-de operación. El amarre con la base es el caso 7 de `probe-admin.mjs`.
+de operación. El amarre con la base es el caso 7 de `probe-admin.mjs`; el 7c
+exige que todo `raise` de `admin.*` (leído del `pg_proc` vivo) tenga un texto
+decidido: propio en `TEXTOS`, o el genérico a propósito en `SIN_TEXTO_PROPIO`
+(mensajes que el panel nunca provoca y cuyo copy no está en los frames). Un
+mensaje nuevo en una RPC obliga a decidir cuál.
+
+## El modal de TOTP: una sola puerta (`src/lib/puerta-totp.ts`)
+
+App es su ÚNICO dueño (`registrarModal`); todo lo demás pide el TOTP con
+`pedirTotp(causa)`. Una promesa en vuelo compartida: N llamadas concurrentes
+abren UN modal y terminan juntas; se limpia al resolverse (éxito, cancelación o
+error). Antes de la Ola 2, App guardaba un solo `resolve` y dos llamadas
+concurrentes dejaban la primera colgada para siempre: lo reproduce
+`scripts/probe-puerta-totp.mjs`. Toda llamada a `admin.*` pasa por
+`src/lib/llamar.ts`, que usa esta puerta.
+
+## Fotos del bucket privado (`FotoListing`, D-A2 de la Ola 2)
+
+- `<img src>` no manda `Authorization`: la foto se baja con
+  `storage.download()` (el token de la sesión, `/object/{bucket}/…`) y se pinta
+  como object URL. La CSP del build permite `img-src blob:` solo por esto.
+  **Nada de signed URLs**: evalúan la RLS al firmar y seguirían sirviendo la
+  foto después de que venza el TOTP (`CLAUDE.md` §9).
+- El object URL se libera en el cleanup; si el componente se desmonta antes de
+  que termine la descarga, el resultado se ignora (sin object URL huérfano).
+- **Storage no dice por qué rechaza** (medido: aal1, TOTP vencido y no-admin dan
+  el mismo `400 NoSuchKey`). Ante un fallo, `src/lib/fotos.ts` le pregunta a
+  `admin.sesion()` UNA vez para todas las fotos (promesa compartida): si falta
+  el TOTP lo pide por la puerta y cada foto reintenta una sola vez; si se
+  cancela, quedan en "La foto no está disponible" con un "Reintentar" que es
+  acción del usuario, no un bucle.
+
+## Fuentes y CSP (D-A1 de la Ola 2)
+
+Autoalojadas en `public/fonts/`, con su licencia OFL al lado: Fraunces latin
+con ejes wght + opsz (el mismo archivo que carga el diseño) e Inter latin wght,
+de `@fontsource-variable/*` 5.3.0, 115,560 B en total. Sin Google Fonts: la CSP
+del build es `font-src 'self'`, `style-src 'self'`. `estilos.css` se genera del
+CSS de `design/admin-panel.html` sin el cromo del prototipo; si el diseño
+cambia, cambia ahí primero.
+
+## Runbook de moderación: bloquear una `vendida`
+
+Bloquear una publicación `vendida` deja a su COMPRADOR sin camino en la app
+para calificar al vendedor (la base todavía acepta la reseña, pero la app
+la busca por `listings_select`, que esconde la `bloqueada`). Es deuda aceptada
+(`CLAUDE.md` §3, "Panel de admin"); antes de bloquear una vendida con una
+calificación pendiente, avísale al comprador por el canal de soporte.
 
 ## Alta de admins: `scripts/crear-admin.mjs` (solo local hasta la Ola 3)
 

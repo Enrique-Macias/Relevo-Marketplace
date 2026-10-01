@@ -181,6 +181,14 @@ Componentes nuevos: `NotifRow`, `SkeletonNotifRows`, `IconMail`, y dos roles de
     de error del token falso y **borró ese token** (`limpiados: 1`). Lo único que
     falta es un aparato de verdad — ver el pendiente de abajo.
 
+- **[CERRADA por `20260930000479`, en LOCAL]** La sella el trigger BEFORE
+  `reports_sella_resolved_at` (`private.sella_resolved_at()`, INVOKER y
+  revocada): `now()` al salir de `pendiente`, NULL al volver; también sin
+  reportante y desde Studio. `admin.resolver_reporte` NO la escribe, solo la lee
+  con `returning` para auditarla (una sola fuente). Vigilado por T36 (c1)-(c3),
+  con las dos rutas (RPC y UPDATE directo). Sin backfill del reporte `resuelto`
+  que hoy tiene NULL en remoto (decisión del usuario): el panel lo pinta "—".
+  La entrada original, tal como estaba:
 - **`reports.resolved_at` existe y NADIE la escribe.** Está en el esquema desde
   `20260906000441:16` y ningún trigger ni camino de código la llena, así que hoy
   es siempre `null`. Se detectó al construir RF-16 y **se dejó fuera a

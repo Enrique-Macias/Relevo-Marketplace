@@ -120,7 +120,7 @@ Cuando código y documentación discrepen:
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Moderación de imagen | Google Cloud Vision (SafeSearch + OCR) **+ Amazon Rekognition** (`DetectModerationLabels`) | Dos proveedores porque cubren cosas distintas: SafeSearch no mira drogas/alcohol/gambling y Rekognition no hace OCR. Rekognition **no batchea** (una llamada por imagen) y acepta **solo JPEG/PNG**, al revés de Vision — ver §3 |
-| Admin / moderación | Supabase Studio **hoy**; panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **en construcción**: la Ola 1 (login con MFA, alta de admins y suspender/reactivar) está hecha en LOCAL | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **Mientras no esté desplegado, la moderación sigue en Studio** |
+| Admin / moderación | Supabase Studio **hoy**; panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **en construcción**: las Olas 1 (login con MFA, alta de admins y suspender/reactivar) y 2 (reportes, detalle de publicación y bloqueo) están hechas en LOCAL | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **Mientras no esté desplegado, la moderación sigue en Studio** |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Nomenclatura de API keys (Supabase renombró su sistema en 2026):** usamos las
@@ -216,8 +216,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 42 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-09-29; decía "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
+Definido en 43 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-10-01; decía "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
@@ -232,6 +232,12 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 43 y 40 (medido el 2026-10-01).** `ls supabase/migrations |
+wc -l` da **43**; `mcp__supabase__list_migrations` da **40**. Faltan en remoto
+las de la Ola 1 (`…477`, `…478`) y la de la Ola 2 (`20260930000479`, reportes
+y bloqueo); las tres van en el runbook de la Ola 3 (§8, pendiente 0k). La
+historia de antes, tal como estaba:
 
 **Repo y remoto: 42 y 40 (medido el 2026-09-29).** `ls supabase/migrations |
 wc -l` da **42**; `mcp__supabase__list_migrations` da **40**. Las que faltan en
@@ -1219,14 +1225,23 @@ más arriba), y volverlas definer sería una fuga. `authenticated` tiene `USAGE`
 acotado a las CUATRO que se invocan desde policies — `is_active_user()`,
 `can_rate()`, `listing_id_from_object_name()` y, desde `20260930000477`,
 `is_admin()` (la usará la policy de Storage del admin en la Ola 2 de RF-17, y
-lleva el workaround del SIGSEGV desde que existe) — mientras las **19** que solo
+lleva el workaround del SIGSEGV desde que existe; desde `20260930000479` la
+invoca la policy `listing_photos_objects_select_admin`) — mientras las **20** que solo
 disparan por trigger siguen revocadas (decía "las otras cinco", un número de la
-Fase 2 que nadie actualizó, y después 12, 16 y 18; medido con `pg_trigger` ⋈ `pg_proc`
-en local el 2026-09-29: **23** funciones de `private` cuelgan de un trigger. Las
+Fase 2 que nadie actualizó, y después 12, 16, 18 y 19; medido con `pg_trigger` ⋈ `pg_proc`
+en local el 2026-10-01: **24** funciones de `private` cuelgan de un trigger, 20
+sin EXECUTE para `authenticated` y 4 con él. Las
 cuatro que no están revocadas son INVOKER y solo reescriben NEW:
 `set_updated_at()`, `limpia_veredicto_en_pantalla()`, `anonimiza_rating()` y
 `anonimiza_report()`, que conservan su `EXECUTE` porque Postgres lo verifica al
-crear el trigger, no al dispararlo. T12 vigila las dos listas). Ver sección 9 sobre por qué ese `USAGE` existe (no
+crear el trigger, no al dispararlo. **`sella_resolved_at()` (`…479`) es la
+excepción**: también INVOKER y solo reescribe NEW, pero va revocada por
+decisión del usuario, así que cuenta entre las 20. T12 vigila las dos listas, y
+desde la Ola 2 también una invariante GENÉRICA por `pg_depend`: toda función de
+`private` que una policy referencie tiene EXECUTE para `authenticated`.
+**`pg_depend` solo ve dependencias DIRECTAS policy → función**: lo que una
+función llama por dentro (`is_admin()` → `totp_timestamp()`, revocada) no
+aparece, y no hace falta, porque corre como el dueño de la definer). Ver sección 9 sobre por qué ese `USAGE` existe (no
 es lo que originalmente se pensó).
 
 **Una función `SECURITY DEFINER` de `public` llamando a una de `private` no
@@ -1614,7 +1629,8 @@ Lo que no se ve en la tabla:
   desde `listings`, que el borrado se lleva. Detalle de la función (auth,
   reautenticación por `amr`, idempotencia) en §8 y en §9.
 
-**Panel de admin, Ola 1 de RF-17 (`20260930000477` + `20260930000478`,
+**Panel de admin, Olas 1 y 2 de RF-17 (`20260930000477` + `20260930000478`
++ `20260930000479`,
 hechas en LOCAL, sin pushear).** Plan en `docs/rf17-plan-admin.md`; las reglas
 del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
 
@@ -1639,9 +1655,42 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `private.auditar()`, que saca el actor de `auth.uid()`.
 - **Schema `admin`** (D3): USAGE solo para `authenticated`; sus funciones son
   definer con `search_path` fijo y sin EXECUTE para `anon`/PUBLIC. No cuentan
-  entre "las TRES definer de `public`": viven en otro schema. Hoy son 5:
-  `sesion` (la única que no lanza: gating de UX), `buscar_usuarios`,
-  `detalle_usuario`, `suspender_usuario` y `reactivar_usuario`.
+  entre "las TRES definer de `public`": viven en otro schema. Hoy son 9
+  (medido en `pg_proc` el 2026-10-01): `sesion` (la única que no lanza: gating
+  de UX), `buscar_usuarios`, `detalle_usuario`, `suspender_usuario` y
+  `reactivar_usuario` (Ola 1), y `listar_reportes`, `resolver_reporte`,
+  `detalle_listing` y `bloquear_listing` (Ola 2).
+- **Reportes y bloqueo (`20260930000479`, Ola 2).** `listar_reportes` usa solo
+  left joins y nunca esconde un reporte: los 4 `objetivo_tipo`
+  (`publicacion`, `usuario`, `publicacion_eliminada`, `cuenta_eliminada`).
+  `p_estado` es TEXT, null-safe, y NULL = todos; un valor ajeno da
+  `22023 estado_invalido` (con el enum habría dado 22P02 antes de entrar).
+  `resolver_reporte` hace CAS desde `pendiente` y NO escribe `resolved_at`: lo
+  sella el trigger BEFORE `reports_sella_resolved_at`, también para un reporte
+  sin reportante y desde Studio (no copia la cláusula `reporter_id is not null`
+  del aviso). `bloquear_listing` va desde `pendiente`, `activa`, `pausada` o
+  `vendida`, nunca desde `bloqueada`, audita solo `estado` y no toca
+  `listing_sales`; el dueño recibe UN aviso desde los 4 orígenes
+  (`listings_notify_moderacion`). Las dos llevan las guardas "no sobre sí
+  mismo / otro admin" (D-B2), hoy inalcanzables desde el producto pero
+  construibles en la base. `admin_acciones_accion_check` suma
+  `resolver_reporte` y `bloquear_listing`.
+- **Las fotos para el admin: policy `listing_photos_objects_select_admin`**
+  (`bucket_id = 'listing-photos' and (select private.is_admin())`). El panel
+  las baja con `storage.download()` (`/object/{bucket}/…`) y las pinta como
+  object URL. **Medido por HTTP** (`probe-storage.mjs`): un admin aal1, un
+  admin con el TOTP vencido y un no-admin reciben el MISMO rechazo, así que el
+  panel le pregunta a `admin.sesion()` (§9).
+- **Deuda aceptada: bloquear una `vendida` deja a su COMPRADOR sin camino en la
+  UI para calificar.** La base todavía acepta la reseña (`can_rate()` es
+  definer y no mira `estado`), pero el embed de `fetchComprasPendientesDeCalificar`
+  (`src/lib/confianza.ts:267-291`) pasa por `listings_select` y la salta, y el
+  aviso `compra_calificable` abre un Detalle que el comprador ya no ve
+  (`src/lib/notificaciones.ts:62`). Medido en remoto el 2026-10-01: ninguna de
+  las 2 `bloqueada` venía de `vendida`. **Revisar cuando:** el primer bloqueo
+  de una vendida con calificación pendiente. **Fix:** una RPC de solo lectura
+  que le dé al comprador el vendedor de sus compras sin pasar por
+  `listings_select`.
 - **Guardas de suspender/reactivar, en orden, cada una con su mensaje**: G1
   `exigir_admin`; G2 motivo 3-500 (`22023 motivo_invalido`); G3 no sobre sí
   mismo; G4 el objetivo no es admin (SOLO al suspender: otro admin puede
@@ -1660,8 +1709,8 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `dueno_no_activo`); antes del push de la Ola 3 hay que decidir si se acepta
   la ventana (`cuenta-perfil.md`).
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 407 aserciones (medido con el
-`grep` de §8 el 2026-09-29; antes decía 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 453 aserciones (medido con el
+`grep` de §8 el 2026-10-01; antes decía 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2382,6 +2431,42 @@ primero. Ningún orden de las aserciones haría que esa variante cayera solo en
 (g0b). La que abre únicamente la mitad de `suspendido_at` cae solo en (g0b), y
 eso es lo que prueba que (g0b) es la red de su mitad.
 
+Y a **453** con la Ola 2 de RF-17 (`20260930000479`): 2 en T12, 5 de T35c y
+39 de T36 (Ola 2), medidos con el `grep` acotado a cada sección. T12 suma la
+invariante genérica por `pg_depend` y su "no vacía" (tiene que ver la policy
+de admin ligada a `is_admin()`), y la lista de funciones solo-trigger revocadas
+pasa de 19 a **20**. T35c y T36 (Ola 2) son autocontenidas, cada una con su
+universidad (`rls-t35c.mx`, `rls-t36b.mx`). Los **49** controles se corrieron
+uno a la vez con un runner que arma cada variante desde el SQL REAL de la
+migración (reemplazo que tiene que machear una vez), imprime el estado vivo
+antes y corre dentro de `begin; <variante>; <suite>` sin commit, contra la
+suite completa **y** contra la sección aislada. Los que merecen nota:
+
+| Variante rota | Suite | Aislada |
+|---|---|---|
+| sin la policy de admin | **T12** (el enlace a `is_admin()`) | T35c (a) |
+| `is_admin()` sin la cláusula de `amr` | **T35 (d)** | T35c (a2) |
+| `is_admin()` sin la cláusula `aal` | **T35 (b)** | T35c (b) |
+| trigger que solo sella llamadas del panel (`role = authenticated`) | (c1b) | (c1b) |
+| `reporter_id is not null` copiado al trigger | (c2) | (c2) |
+| validación con `not in` a secas (no null-safe) | (d3) | (d3) |
+| `bloquear_listing` restringido a `pendiente` | (h2) | (h2) |
+| auditoría de resolver con `comentario` | **(c1)**: la RPC revienta con 23514 | (c1) |
+| `admin_acciones_accion_check` sin las 2 acciones nuevas | (c1) | (c1) |
+| aviso sin la rama 1 / sin la limpieza de `veredicto_en_pantalla` | **T32** | (j1) |
+
+Tres lecciones de la sección. **La primera versión de la variante "policy de
+admin sin `is_admin()`" abría el bucket a todos** (`using (bucket_id = …)`), y
+la cazaba T14 ("un ajeno NO ve la foto…"), no el enlace: no probaba lo que decía.
+La que sí prueba el enlace no le abre nada a nadie (`… and false`). **(j1)
+depende de la limpieza solo porque su fixture se marca a propósito con
+`veredicto_en_pantalla = true`**: sin esa línea, (j1) pasaría aunque la
+limpieza no existiera. **Y el control del (c1b) no puede ser "la RPC escribe
+`resolved_at`"** (lo prohíbe la decisión D-B1): es un trigger que solo sella
+cuando el GUC `role` es `authenticated`. Medido en B0: dentro de una RPC
+`security definer` el GUC sigue en `authenticated` (cambia `current_user`, no
+el GUC), y en un UPDATE directo es `postgres` (`none` en una sesión nueva).
+
 **Gotcha: la suite espera 3 usuarios en local.** Una cuenta de prueba (la del
 admin de la prueba manual del panel) la rompe en T1; se arregla con
 `supabase db reset`.
@@ -2948,8 +3033,8 @@ en "Verificación (correo no participante)".
   quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son ONCE pasos, no uno (decía "DIEZ" antes del
-  panel de admin, "NUEVE" antes de eliminar cuenta, y "SIETE" con ocho en la
+  `postgres`/superusuario. Son DOCE pasos, no uno (decía "ONCE" antes de la
+  Ola 2 del panel, "DIEZ" antes del panel de admin, "NUEVE" antes de eliminar cuenta, y "SIETE" con ocho en la
   lista):
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
      **`psql` puede no estar instalado en la máquina** (no lo está en la de
@@ -3085,10 +3170,20 @@ en "Verificación (correo no participante)".
      TOTP encendido y `admin` en `[api] schemas`. Tarda ~1.5 min por las
      esperas de ventana TOTP. Del lado del código, `npm run check:admin` hace
      el typecheck y el lint del panel, que el `tsc` y el `lint` de la raíz no
-     miran.
+     miran. **47 pruebas** desde la Ola 2: el caso 7c exige que todo `raise`
+     de `admin.*` (leído del `pg_proc` vivo) tenga un texto decidido en
+     `rechazos.ts`, propio o el genérico a propósito.
+  12. `node scripts/probe-puerta-totp.mjs`: la puerta única del modal de TOTP
+     del panel (`admin/src/lib/puerta-totp.ts`, importada REAL). Reproduce el
+     bug que corrigió (el patrón viejo de `App.tsx`: dos llamadas concurrentes
+     dejaban la primera colgada) y prueba que con la puerta N llamadas abren
+     un modal y terminan todas. No necesita nada. (Y `probe-storage.mjs`, el
+     paso 2, cubre desde la Ola 2 la policy de Storage del admin por HTTP, con
+     un token ES256 forjado con la llave local de GoTrue para el TOTP
+     vencido; por eso se niega a correr fuera de localhost.)
   Los probes 2, 3, 6, 7, 9, 10 y 11 necesitan el stack local arriba y limpian lo suyo (el
   9, con un rollback); si una corrida muere de golpe, `supabase db reset` borra la basura.
-  Los pasos 4, 5 y 8 no necesitan nada: ni stack, ni red, ni credenciales.
+  Los pasos 4, 5, 8 y 12 no necesitan nada: ni stack, ni red, ni credenciales.
 
   **`scripts/probe-moderacion-red.mjs` NO es un séptimo paso rutinario** —
   cubre particionado real (>6 MB), descarga fallida de una foto suelta y el
@@ -3570,7 +3665,7 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      rechaza `@rlvo.com.mx` (§9). Decisión del usuario, 2026-09-29. **Prueba
      manual en local, en navegador y con un TOTP real: HECHA por el usuario el
      2026-10-01, sin hallazgos** (`admin/CLAUDE.md`, "Desarrollo local").
-   - **Runbook de la Ola 3 para `…477`/`…478`, en este orden** (se suma a lo
+   - **Runbook de la Ola 3 para `…477`/`…478`/`…479`, en este orden** (se suma a lo
      de abajo):
      0. **Bloqueante:** `select count(*) from public.users where estado =
         'suspendido'` en remoto debe dar 0 (el 2026-09-29 dio 0 de 7). Si no,
@@ -3579,8 +3674,14 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
         validado.
      1. **Decisión explícita antes del push:** aceptar la ventana "`pendiente`
         de un dueño suspendido se puede activar" hasta la Ola 4, o adelantar
-        `dueno_no_activo` (`…480` + el cambio a `moderar-contenido`).
-     2. `supabase db push`; `list_migrations` con las dos.
+        `dueno_no_activo` (`…480` + el cambio a `moderar-contenido`). Medido
+        el 2026-10-01 para decidirlo: hoy no hay ningún dueño suspendido en
+        remoto, y las 4 `pendiente` llevan 9-10 días esperando Studio
+        (`revisar`), no son transitorias. Opción anotada, sin implementar: un
+        guard de `users.estado` en `moderarListing()` (`moderar-contenido/
+        index.ts:445-455`) que no promueva a `activa` si el dueño no está
+        activo; cubre esa salida, no la de Studio.
+     2. `supabase db push`; `list_migrations` con las tres.
      3. **DESPUÉS del push, nunca antes:** agregar `admin` a los exposed
         schemas del Dashboard (con el schema inexistente, TODO el API da 503;
         §9).
@@ -3592,10 +3693,30 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      6. Decidir cómo corre `crear-admin.mjs` contra remoto (hoy se niega: solo
         local).
      7. `npm --prefix admin run gen:types` contra remoto, y comparar.
-   - **Ola 2:** reportes. **Orden fijo: primero los frames de
-     `design/admin-panel.html`, luego tu aprobación del diseño y solo después la
-     migración `…479`.** `bloquear_listing` entra en esta ola con su propia
-     aserción y control (no-admin rechazado, CAS, auditoría con solo `estado`).
+     8. (`…479`) Verificar en remoto `pg_get_triggerdef` de
+        `reports_sella_resolved_at`, `pg_get_constraintdef` de
+        `admin_acciones_accion_check` (5 acciones) y la policy
+        `listing_photos_objects_select_admin` con `(select private.is_admin())`.
+        **Desde ese push, resolver un reporte desde Studio también sella
+        `resolved_at`.** El reporte `resuelto` que hoy está en remoto con
+        `resolved_at` NULL se queda así (sin backfill: decisión del usuario);
+        el panel lo pinta "—".
+   - **Ola 2 — HECHA EN LOCAL, sin pushear** (frames `5466752`/`2e3ab12`,
+     aprobados el 2026-10-01; código `3f49263` a `f7ee579`): 24 frames en
+     `design/admin-panel.html`; migración `20260930000479` (`listar_reportes`,
+     `resolver_reporte`, `detalle_listing`, `bloquear_listing`, el trigger de
+     `resolved_at` y la policy de Storage del admin); rls.sql en 453 (T12, T35c
+     y T36 Ola 2, con 49 controles); `probe-storage.mjs` en 34 y
+     `probe-admin.mjs` en 47; `scripts/totp.mjs` y
+     `scripts/probe-puerta-totp.mjs`; el panel con reportes, detalle de
+     publicación con fotos (blob) y las pantallas de la Ola 1 alineadas a los
+     frames, con fuentes autoalojadas. **Falta, tuyo:** la prueba manual en
+     local, en navegador, con un TOTP real: lista y detalle de reportes (los 4
+     tipos), resolver y descartar, bloquear desde el reporte y desde la
+     publicación, las fotos, y el modal de TOTP a media acción.
+     **Pendiente de diseño:** el detalle de un reporte resuelto no muestra su
+     auditoría (el frame sí): no hay RPC que la devuelva para el tipo
+     `reporte` hasta `admin.auditoria` (Ola 6).
    - **Ola 3:** despliegue (Cloudflare Pages en `admin.rlvo.com.mx`) y
      `admin-reset-mfa`. Tú agregas el schema `admin` a los exposed schemas del
      Dashboard.
@@ -3683,7 +3804,8 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - No se puede deshacer una venta entera → `confianza-ventas.md`
 - Una recuperación de contraseña abandonada a media deja la sesión abierta con la contraseña VIEJA → `onboarding-auth.md`
 - Compartir comparte solo texto plano, sin ningún link — en LAS DOS pantallas que lo tienen → `compartir-deeplinks.md`
-- `reports.resolved_at` existe y NADIE la escribe → `notificaciones-push.md`
+- ~~`reports.resolved_at` existe y NADIE la escribe~~ **[CERRADA]** por `20260930000479` (trigger `reports_sella_resolved_at`, en LOCAL) → `notificaciones-push.md`
+- Bloquear una `vendida` deja a su comprador sin camino en la UI para calificar (`listings_select` esconde la `bloqueada`) → CLAUDE.md §3, "Panel de admin"
 - Sin receipts de Expo → `notificaciones-push.md`
 - `pg_net` es fire-and-forget → `notificaciones-push.md`
 - El inbox no pagina → `notificaciones-push.md`
@@ -4574,3 +4696,33 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   interpolar, las sentencias van planas (un CTE en vez de un bloque `DO`), con
   `-v var=valor` por `execFileSync` y sin shell (`scripts/crear-admin.mjs`, y
   su control en el caso 6 de `probe-admin.mjs`).
+- **Storage no dice POR QUÉ rechaza una lectura: el rechazo de "no tienes
+  permiso" es idéntico al de "no existe".** Medido el 2026-10-01
+  (`probe-storage.mjs`, Ola 2 de RF-17), en `/object/{bucket}/…` y en
+  `/object/authenticated/{bucket}/…`: un admin aal1, un admin con el TOTP
+  vencido y un no-admin reciben exactamente `HTTP 400
+  {"statusCode":"404","error":"not_found","message":"Object not found","code":"NoSuchKey"}`.
+  O sea que ningún cliente puede decidir por el status si debe pedir otro
+  factor, refrescar la sesión o rendirse: tiene que preguntarle a la base por
+  otro camino (el panel llama a `admin.sesion()`, `admin/src/lib/fotos.ts`).
+  Mismo diseño que el `200 []` de `remove()` (arriba): Storage no filtra la
+  existencia de un objeto que la RLS te esconde.
+- **GoTrue local firma los tokens de usuario con ES256, no con
+  `JWT_SECRET`.** Medido el 2026-10-01: `GOTRUE_JWT_KEYS` del contenedor de
+  Auth trae una llave EC `alg=ES256` con `key_ops [sign, verify]` (y
+  `VALID_METHODS` es `HS256,RS256,ES256`); el header de un access token real
+  dice `alg=ES256`. Para fabricar un token con claims a la medida por HTTP
+  (p. ej. un TOTP de hace 13 h), se firma con ESA llave, leída del entorno del
+  contenedor y solo en memoria, y solo contra un stack local
+  (`probe-storage.mjs` se niega con cualquier otro hostname). Un control
+  positivo (el mismo token re-firmado con claims válidos → 200) es lo que
+  separa "rechazado por los claims" de "rechazado por la firma".
+- **`security definer` cambia `current_user`, NO el GUC `role`.** Medido en
+  `begin … rollback` el 2026-10-01: dentro de una RPC definer llamada como
+  `authenticated` (con `SET LOCAL ROLE` o con `set_config('role', …)`), y en
+  los triggers que esa RPC dispara, `current_user` es `postgres` pero
+  `current_setting('role', true)` sigue en `authenticated`; en un UPDATE
+  directo es `postgres` dentro de la suite y `none` en una sesión nueva. Sirve
+  para distinguir "vino del panel" de "vino de Studio" en un control negativo
+  (T36 (c1b)); **no** lo uses como candado: es un GUC que cualquier sesión
+  puede poner.

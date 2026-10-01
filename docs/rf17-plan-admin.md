@@ -1,14 +1,50 @@
 # RF-17 — Plataforma web de administración: plan de arquitectura
 
-**Estado (2026-09-29):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
+**Estado (2026-10-01):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
 (`7574b01`; remoto remedido: 40 migraciones con `20260930000476` y el `WHEN` de
-`reports_notify_resolved` con `reporter_id IS NOT NULL`). **Ola 1 hecha en
-LOCAL, sin pushear** (`6278a0a` a `b11865c`; ver la sección siguiente, que gana
-sobre el texto viejo de abajo). Este archivo es la
+`reports_notify_resolved` con `reporter_id IS NOT NULL`). **Olas 1 y 2 hechas
+en LOCAL, sin pushear** (Ola 1: `6278a0a` a `b11865c`; Ola 2: frames
+`5466752`/`2e3ab12` y código `3f49263` a `f7ee579`). Las dos secciones
+siguientes ganan sobre el texto viejo de abajo. Este archivo es la
 consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
 chocan, prevalece v2.1** (`is_admin()` con `jsonb_typeof`, la lista de claves de
 auditoría por tipo, el orden de las olas). El resumen operativo vive en
 `CLAUDE.md` §8, pendiente 0k; el detalle, aquí.
+
+## Ola 2: lo que cambió al implementarla (gana sobre el resto del archivo)
+
+Medido o decidido el 2026-10-01:
+
+1. **Frames primero:** `design/admin-panel.html`, 24 frames, aprobados por el
+   usuario en el navegador; `admin/CLAUDE.md` lo da por vigente.
+2. **`resolved_at` lo sella un trigger** (`reports_sella_resolved_at`,
+   decisión D-B1), no la RPC: así también lo sella Studio. La RPC solo lo lee
+   con `returning`. Sin backfill del reporte `resuelto` con NULL de remoto.
+3. **`admin_acciones_accion_check` había que ampliarlo**: admitía solo las 3
+   acciones de la Ola 1 (`…477:213-214`), y la tabla de migraciones de este
+   plan no lo decía.
+4. **`p_estado` es TEXT, null-safe**, en `listar_reportes` y
+   `resolver_reporte`: con el enum, un valor ajeno falla con 22P02 antes de
+   entrar a la función. En `listar_reportes`, NULL = todos.
+5. **Guardas D-B2** (no sobre sí mismo / otro admin) en `resolver_reporte` y
+   `bloquear_listing`, con aserción: los fixtures se construyen (B0).
+6. **Los helpers son `claims_aal`/`rechazo_aal`/`as_aal_text`**
+   (`rls.sql:156-215`), no el `as_user_aal` que nombraba este plan.
+7. **Storage no distingue los rechazos** (medido por HTTP en los dos
+   endpoints): aal1, TOTP vencido y no-admin dan el mismo `400 NoSuchKey`. El
+   panel le pregunta a `admin.sesion()`. **GoTrue local firma en ES256**: el
+   TOTP vencido se forja con esa llave, solo en memoria y solo en localhost.
+8. **Fuentes autoalojadas y CSP sin terceros** (D-A1); **fotos como object
+   URL** desde `storage.download()` (D-A2), con un diagnóstico compartido.
+9. **Fix preexistente, commit propio:** el modal de TOTP guardaba un solo
+   `resolve` (`App.tsx:65-68`); ahora hay una puerta única
+   (`src/lib/puerta-totp.ts`).
+10. **Deuda aceptada:** bloquear una `vendida` deja al comprador sin camino en
+    la UI para calificar (`CLAUDE.md` §3). Ninguna `bloqueada` de remoto venía
+    de `vendida`.
+11. **Pendiente de diseño:** la auditoría de un reporte resuelto está en el
+    frame, pero ninguna RPC la devuelve para el tipo `reporte` hasta
+    `admin.auditoria` (Ola 6).
 
 ## Ola 1: lo que cambió al implementarla (gana sobre el resto del archivo)
 
