@@ -677,6 +677,8 @@ export type Database = {
           id: string
           nombre: string | null
           rating_promedio: number
+          suspendido_at: string | null
+          suspension_motivo: string | null
           telefono: string | null
           tiene_telefono: boolean | null
           universidad_id: number | null
@@ -691,6 +693,8 @@ export type Database = {
           id: string
           nombre?: string | null
           rating_promedio?: number
+          suspendido_at?: string | null
+          suspension_motivo?: string | null
           telefono?: string | null
           tiene_telefono?: boolean | null
           universidad_id?: number | null
@@ -705,6 +709,8 @@ export type Database = {
           id?: string
           nombre?: string | null
           rating_promedio?: number
+          suspendido_at?: string | null
+          suspension_motivo?: string | null
           telefono?: string | null
           tiene_telefono?: boolean | null
           universidad_id?: number | null
