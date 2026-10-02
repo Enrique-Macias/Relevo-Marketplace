@@ -226,7 +226,7 @@ export async function preflight(con, correo, { debeExistir }) {
              coalesce((select position('desactivar_admin' in pg_get_constraintdef(c.oid)) > 0
                          from pg_constraint c
                         where c.conname = 'admin_acciones_accion_check'), false),
-             exists (select 1 from auth.users where email = :'correo');`,
+             exists (select 1 from auth.users where lower(email) = :'correo');`,
     { correo });
   } catch (e) {
     throw new Error(`preflight: no se pudo consultar la base (${String(e.stderr ?? e.message).trim().split('\n')[0]})`);
@@ -310,7 +310,7 @@ async function activar(correoCrudo, { confirmado, con } = {}) {
     select coalesce(string_agg(to_char(f.created_at at time zone 'America/Monterrey',
                                        'YYYY-MM-DD HH24:MI:SS'), ', ' order by f.created_at), 'ninguno')
       from auth.mfa_factors f join auth.users u on u.id = f.user_id
-     where u.email = :'correo' and f.factor_type = 'totp' and f.status = 'verified';`,
+     where lower(u.email) = :'correo' and f.factor_type = 'totp' and f.status = 'verified';`,
   { correo });
   console.log(`Factores TOTP verificados de ${correo} (hora de Monterrey): ${factores}`);
 
@@ -329,7 +329,7 @@ async function activar(correoCrudo, { confirmado, con } = {}) {
       update private.admins ad
          set activado_at = now()
         from auth.users u
-       where u.email = :'correo'
+       where lower(u.email) = :'correo'
          and ad.user_id = u.id
          and ad.activado_at is null
          and (select count(*) from auth.mfa_factors f
@@ -371,7 +371,7 @@ async function activar(correoCrudo, { confirmado, con } = {}) {
                                  and aa.objetivo_id = u.id::text), 'nunca')
                          from auth.users u
                          left join private.admins ad on ad.user_id = u.id
-                        where u.email = :'correo'), 'sin cuenta');`,
+                        where lower(u.email) = :'correo'), 'sin cuenta');`,
     { correo });
     throw new Error(`no se activó (${diag}). Se exige: admin sin activar y exactamente 1 TOTP `
       + 'verificado creado después del alta y de la última desactivación.');
@@ -391,7 +391,7 @@ async function desactivar(correoCrudo, motivoCrudo, { con } = {}) {
     with prev as (
       select ad.user_id, ad.activado_at
         from private.admins ad join auth.users u on u.id = ad.user_id
-       where u.email = :'correo' and ad.activado_at is not null
+       where lower(u.email) = :'correo' and ad.activado_at is not null
          for update of ad
     ), a as (
       update private.admins ad set activado_at = null
@@ -414,7 +414,7 @@ async function desactivar(correoCrudo, motivoCrudo, { con } = {}) {
                         || ' activado=' || (ad.activado_at is not null)
                          from auth.users u
                          left join private.admins ad on ad.user_id = u.id
-                        where u.email = :'correo'), 'sin cuenta');`,
+                        where lower(u.email) = :'correo'), 'sin cuenta');`,
     { correo });
     throw new Error(`no se desactivó (${diag}). Se exige: admin activado.`);
   }

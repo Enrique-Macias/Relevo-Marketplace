@@ -36,15 +36,18 @@
 //      createUser, la compensación borra la cuenta; (d) crear → activar →
 //      desactivar, con su auditoría y `no_admin` en la sesión aal2 vigente;
 //      (e) tras desactivar, el factor viejo no reactiva y uno nuevo sí;
-//      (f) ningún console.* imprime una credencial.
+//      (f) con centinelas: ninguna salida ni objeto de error (util.inspect)
+//      contiene la secret key ni la contraseña; (g) un correo con MAYÚSCULAS
+//      en auth.users lo encuentran las 6 comparaciones (lower).
 //
 // Limpia lo suyo al final (sus cuentas; la auditoría es append-only y se
 // queda, como en cualquier borrado de cuenta de admin).
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { inspect } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
-import { crear, activar, desactivar, conexionPg, conexionRemota } from './crear-admin.mjs';
+import { crear, activar, desactivar, conexionPg, conexionRemota, REF_REMOTO } from './crear-admin.mjs';
 import { totp, siguienteVentana } from './totp.mjs';
 import {
   clasificarRechazo, NO_ADMIN, MFA_REQUERIDO, TOTP_VENCIDO, tieneTextoDecidido,
@@ -349,12 +352,26 @@ async function main() {
       if (q.includes('insert into private.admins')) throw new Error('INSERT forzado a fallar (probe 8c)');
       return conPg.ejecutar(q, v);
     } };
+    // `correos_bloqueados` ENTERA antes y después (conteo + md5 de sus filas):
+    // la compensación borra una cuenta NO suspendida, y el trigger que guarda
+    // el hash solo dispara con `old.estado = 'suspendido'` (…474:217-221).
+    const fotoBloqueados = () => sql(`select count(*) || ':' || coalesce(md5(string_agg(
+      encode(correo_hash, 'hex') || '@' || created_at::text, ',' order by correo_hash)), '-')
+      from public.correos_bloqueados`);
+    const bloqueadosAntes = fotoBloqueados();
     let r8c = null;
     try { await crear(C8c, 'Admin Huerfano', { con: conRota }); } catch (e) { r8c = e.message; }
     ok('8c INSERT fallido → compensación: 0 filas en auth.users y en public.users',
       /compensación/.test(r8c ?? '')
         && sql(`select count(*) from auth.users where email = '${C8c}'`) === '0'
         && sql(`select count(*) from public.users where correo = '${C8c}'`) === '0', r8c?.slice(0, 100));
+    // Misma expresión que el hook (…474:236) y el trigger (…474:209).
+    const bloqueadosDespues = fotoBloqueados();
+    const hash8c = sql(`select count(*) from public.correos_bloqueados
+      where correo_hash = sha256(convert_to(lower(btrim('${C8c}')), 'UTF8'))`);
+    ok('8c …y la compensación NO deja el correo en correos_bloqueados (tabla idéntica, hash ausente)',
+      hash8c === '0' && bloqueadosAntes === bloqueadosDespues,
+      `hash=${hash8c} antes=${bloqueadosAntes} después=${bloqueadosDespues}`);
 
     // 8d. crear → activar → desactivar, todo por PG*.
     const C = `probe-admin-8d-${RUN}@rlvo.com.mx`;
@@ -409,11 +426,99 @@ async function main() {
       !delF.error && !enC2.error && !vC2.error && !r8e2 && sC2.data?.es_admin === true,
       delF.error?.message ?? enC2.error?.message ?? vC2.error?.message ?? r8e2 ?? JSON.stringify(sC2.data));
 
-    // 8f. Ninguna línea que imprime menciona una variable de credencial.
-    const fuenteCA = readFileSync(new URL('./crear-admin.mjs', import.meta.url), 'utf8');
-    const filtran = fuenteCA.split('\n')
-      .filter((l) => /console\.\w+\(/.test(l) && /\b(secretKey|password|PGPASSWORD|publishableKey)\b/.test(l));
-    ok('8f ningún console.* de crear-admin.mjs imprime una credencial', filtran.length === 0, filtran.join(' | '));
+    // 8f. COMPORTAMIENTO, con centinelas: ninguna salida del script (todo
+    // console.*) ni el objeto de error COMPLETO (util.inspect, no solo
+    // .message) contiene la secret key ni la contraseña de la base.
+    const CENT_SEC = `sb_secret_CENTINELA8f${RUN}`;
+    const CENT_PW = `CENTINELA-PW-8f-${RUN}`;
+    const capturado = [];
+    const original = { log: console.log, error: console.error, warn: console.warn, info: console.info };
+    const capturar = async (fn) => {
+      for (const k of Object.keys(original)) {
+        console[k] = (...a) => capturado.push(a.map((x) => (typeof x === 'string' ? x
+          : inspect(x, { depth: null, showHidden: true }))).join(' '));
+      }
+      try { await fn(); return null; } catch (e) {
+        capturado.push(inspect(e, { depth: null, showHidden: true }));
+        return e;
+      } finally { Object.assign(console, original); }
+    };
+    // (i) El camino --remoto entero: prompts → conexión → preflight, que falla
+    // al resolver un pooler INEXISTENTE. Precondición: ese host no resuelve; si
+    // algún día resolviera, se aborta ANTES de intentar un login contra un
+    // pooler real con la contraseña centinela.
+    const HOST_FALSO = 'aws-0-no-existe-probe.pooler.supabase.com';
+    let resuelve = true;
+    try { execFileSync('docker', ['exec', DB, 'getent', 'ahosts', HOST_FALSO], { stdio: 'ignore' }); }
+    catch { resuelve = false; }
+    if (resuelve) throw new Error(`8f: ${HOST_FALSO} resuelve; no se prueba contra un host real`);
+    const respuestas = [REF_REMOTO, CENT_SEC, CENT_PW];
+    const e8fi = await capturar(async () => {
+      const conR = await conexionRemota({ poolerHost: HOST_FALSO, preguntar: async () => respuestas.shift() });
+      await crear(`probe-admin-8f-${RUN}@rlvo.com.mx`, 'Admin Centinela', { con: conR });
+    });
+    // (ii) La llave centinela contra el GoTrue LOCAL: el preflight la rechaza
+    // (listUsers → 401) antes de createUser; y createUser directo con ella
+    // también da 401. Se capturan los dos objetos de error completos.
+    const e8fii = await capturar(() => crear(`probe-admin-8f2-${RUN}@rlvo.com.mx`, 'Admin Centinela',
+      { con: { ...conPg, secretKey: CENT_SEC } }));
+    const cu = await createClient(E.API_URL, CENT_SEC, { auth: { persistSession: false, autoRefreshToken: false } })
+      .auth.admin.createUser({ email: `probe-admin-8f3-${RUN}@rlvo.com.mx`, email_confirm: true });
+    capturado.push(inspect(cu.error, { depth: null, showHidden: true }));
+    const todo = capturado.join('\n');
+    ok('8f (i) --remoto con pooler inexistente falla en el preflight',
+      /^preflight: no se pudo consultar la base/.test(e8fi?.message ?? ''), e8fi?.message?.slice(0, 90));
+    ok('8f (ii) la llave centinela da 401: en el preflight y en createUser directo',
+      /^preflight: la secret key no sirve \(401/.test(e8fii?.message ?? '') && cu.error?.status === 401,
+      `${e8fii?.message?.slice(0, 60)} · createUser ${cu.error?.status}`);
+    ok('8f ninguna salida ni objeto de error contiene la secret key ni la contraseña centinela',
+      capturado.length > 0 && !todo.includes(CENT_SEC) && !todo.includes(CENT_PW)
+        && !todo.includes(`CENTINELA8f${RUN}`),
+      `${capturado.length} capturas, ${todo.length} caracteres`);
+    ok('8f …y no se creó ninguna cuenta', sql(`select count(*) from auth.users where email like 'probe-admin-8f%${RUN}@rlvo.com.mx'`) === '0');
+
+    // 8g. Un correo guardado con MAYÚSCULAS en auth.users (sembrado por SQL):
+    // las 6 comparaciones del script van con lower(u.email) (crear-admin.mjs:
+    // 229 preflight, 313/332 activar, 374 su diagnóstico, 394 desactivar, 417
+    // su diagnóstico). Cada sub-caso es la red de una de ellas.
+    const G_MAYUS = `Probe-Admin-8G-${RUN}@RLVO.com.mx`;
+    const G = G_MAYUS.toLowerCase();
+    creadas.push(G_MAYUS, G);
+    // Las columnas de tokens van en '' y no en NULL: GoTrue las lee como
+    // texto, y una fila con NULL hace que `listUsers` (el preflight) responda
+    // 500 "Database error finding users" (medido en la primera corrida).
+    const idG = sql(`insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+        email_confirmed_at, created_at, updated_at, confirmation_token, recovery_token,
+        email_change, email_change_token_current, email_change_token_new, phone_change,
+        phone_change_token, reauthentication_token)
+      values (gen_random_uuid(), '00000000-0000-0000-0000-000000000000', 'authenticated',
+              'authenticated', '${G_MAYUS}', '', now(), now(), now(), '', '', '', '', '', '', '', '')
+      returning id`).split('\n')[0];
+    sql(`insert into private.admins (user_id, nombre, activado_at) values ('${idG}', 'Admin Mayus', now())`);
+    const antesG = totalAuth();
+    let g1 = null;
+    try { await crear(G, 'Admin Mayus', { con: conPg }); } catch (e) { g1 = e.message; }
+    ok('8g1 (:229) crear en minúsculas sobre una cuenta en MAYÚSCULAS → preflight "ya existe", sin crear otra',
+      /^preflight: .*ya existe/.test(g1 ?? '') && totalAuth() === antesG, g1?.slice(0, 90));
+    let g2 = null;
+    try { await desactivar(G, 'Prueba de mayúsculas (8g)', { con: conPg }); } catch (e) { g2 = e.message; }
+    ok('8g2 (:394) desactivar encuentra la cuenta en MAYÚSCULAS',
+      !g2 && sql(`select (activado_at is null)::text from private.admins where user_id = '${idG}'`) === 'true', g2?.slice(0, 90));
+    let g3 = null;
+    try { await desactivar(G, 'Prueba de mayúsculas (8g)', { con: conPg }); } catch (e) { g3 = e.message; }
+    ok('8g3 (:417) el diagnóstico de desactivar también la encuentra', /admin=true activado=false/.test(g3 ?? ''), g3?.slice(0, 90));
+    sql(`insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, created_at, updated_at)
+         values (gen_random_uuid(), '${idG}', 'probe-8g', 'totp', 'verified', now(), now())`);
+    capturado.length = 0;
+    const g4 = await capturar(() => activar(G, { confirmado: true, con: conPg }));
+    const lineaFactores = capturado.find((l) => l.startsWith('Factores TOTP')) ?? '';
+    ok('8g4 (:313, :332) activar imprime su factor y la activa',
+      !g4 && !/: ninguno$/.test(lineaFactores)
+        && sql(`select (activado_at is not null)::text from private.admins where user_id = '${idG}'`) === 'true',
+      g4?.message?.slice(0, 90) ?? lineaFactores);
+    let g5 = null;
+    try { await activar(G, { confirmado: true, con: conPg }); } catch (e) { g5 = e.message; }
+    ok('8g5 (:374) el diagnóstico de activar también la encuentra', /admin=true activado=true/.test(g5 ?? ''), g5?.slice(0, 90));
   } finally {
     for (const c of creadas) {
       sql(`delete from auth.users where email = '${c.replace(/'/g, "''")}'`);
