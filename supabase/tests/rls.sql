@@ -4894,6 +4894,27 @@ select pg_temp.assert(
     :A35, '  ' || repeat('m', 500) || '  ')) = 'ok',
   '(j2) motivo en blanco o de 501 → 23514; 500 con espacios alrededor pasa');
 
+-- (j3) `desactivar_admin` (20260930000479, sumada en la Ola 3) entra con las
+-- claves del tipo `admin`, como la escribe `crear-admin.mjs desactivar`; una
+-- acción fuera de la lista sigue rechazada. Las dos mitades cazan cosas
+-- distintas: la primera, un CHECK sin la acción nueva; la segunda, un CHECK
+-- que acepte cualquier texto.
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format($f$
+    insert into private.admin_acciones
+      (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+    values ('00000000-0000-0000-0000-000000000000', 'script:crear-admin.mjs',
+            'desactivar_admin', 'admin', %L,
+            '{"activado_at":"2026-10-01T00:00:00Z"}', '{"activado_at":null}',
+            'perdió el teléfono')$f$,
+    :A35)) = 'ok'
+  and pg_temp.rechazo_de(null, format($f$
+    insert into private.admin_acciones
+      (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, motivo)
+    values (%L, 'x', 'desactivar', 'admin', 'x', 'abc')$f$,
+    :A35)) = '23514:admin_acciones_accion_check',
+  '(j3) desactivar_admin se audita; una acción fuera de la lista → 23514');
+
 -- (k) Borrar la cuenta de un admin: su fila de `private.admins` se va (cascade
 -- desde auth.users), su auditoría SE QUEDA (`admin_id` no lleva FK).
 insert into private.admin_acciones

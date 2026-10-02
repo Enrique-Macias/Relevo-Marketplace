@@ -4,8 +4,11 @@
 -- reportes cuyo objetivo ya no existe) y las decisiones D-B1…D-B5 de la Ola 2.
 -- Lo que agrega:
 --
---   1. `admin_acciones_accion_check` admite `resolver_reporte` y
---      `bloquear_listing` (antes solo las 3 acciones de la Ola 1).
+--   1. `admin_acciones_accion_check` admite `resolver_reporte`,
+--      `bloquear_listing` y `desactivar_admin` (antes solo las 3 acciones de
+--      la Ola 1). `desactivar_admin` se sumó antes del push a remoto (Ola 3):
+--      la escribe `scripts/crear-admin.mjs desactivar`, que pone
+--      `activado_at = null` y lo audita en la misma sentencia.
 --   2. `reports.resolved_at` la escribe UN trigger (D-B1), no la RPC: así
 --      también la sella una resolución hecha desde Studio. Sin la cláusula
 --      `reporter_id is not null` del aviso: un reporte de una cuenta eliminada
@@ -34,7 +37,7 @@ alter table private.admin_acciones
 alter table private.admin_acciones
   add constraint admin_acciones_accion_check
   check (accion in ('suspender_usuario', 'reactivar_usuario', 'activar_admin',
-                    'resolver_reporte', 'bloquear_listing'));
+                    'desactivar_admin', 'resolver_reporte', 'bloquear_listing'));
 
 -- ---------------------------------------------------------------------------
 -- 2. reports.resolved_at (D-B1)
