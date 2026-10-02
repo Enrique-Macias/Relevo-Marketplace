@@ -41,12 +41,53 @@ Medido o decidido el 2026-10-01:
 9. **Fix preexistente, commit propio:** el modal de TOTP guardaba un solo
    `resolve` (`App.tsx:65-68`); ahora hay una puerta única
    (`src/lib/puerta-totp.ts`).
-10. **Deuda aceptada:** bloquear una `vendida` deja al comprador sin camino en
-    la UI para calificar (`CLAUDE.md` §3). Ninguna `bloqueada` de remoto venía
-    de `vendida`.
-11. **Pendiente de diseño:** la auditoría de un reporte resuelto está en el
-    frame, pero ninguna RPC la devuelve para el tipo `reporte` hasta
-    `admin.auditoria` (Ola 6).
+10. **Deuda aceptada: bloquear una `vendida` deja al comprador sin camino en
+    la UI para calificar.** La base todavía acepta la reseña (`can_rate()` es
+    definer y no mira `estado`), pero el embed de las compras pendientes
+    (`src/lib/confianza.ts:267-291`) pasa por `listings_select`, que esconde la
+    `bloqueada`, y el aviso `compra_calificable` abre un Detalle que el
+    comprador ya no ve (`src/lib/notificaciones.ts:62`). Decisión del usuario:
+    aceptarlo, sin ajuste en esta ola. **Disparador:** el primer bloqueo de una
+    vendida con calificación pendiente. **Fix:** una RPC de solo lectura que le
+    dé al comprador el vendedor de sus compras sin pasar por `listings_select`.
+    Medido en remoto: ninguna de las 2 `bloqueada` venía de `vendida`.
+11. **Studio puede desbloquear una `bloqueada`, y es a propósito.** `bloqueada`
+    es terminal para la app, el panel y la moderación, pero un UPDATE con
+    privilegios elevados la mueve sin ninguna guarda. No se agrega trigger
+    (decisión del usuario): es la vía de recuperación de un bloqueo
+    equivocado, porque el panel no desbloquea (D10). Efectos medidos: **no deja
+    rastro en `admin_acciones`** y **el dueño no recibe aviso**
+    (`listings_notify_moderacion` solo avisa al pasar A `bloqueada` o al salir de
+    `pendiente`). A `activa` solo pasa con al menos una foto. **Regla del
+    runbook de la Ola 3:** quien lo haga deja el motivo anotado fuera de la
+    base y avisa al dueño por soporte.
+12. **Hueco del dueño suspendido (aceptable hasta la Ola 4, a decidir antes
+    del push).** Una `pendiente` de un dueño suspendido se puede activar:
+    `moderarListing()` escribe con privilegios elevados y no lee `users.estado`
+    (`supabase/functions/moderar-contenido/index.ts:445-455`), mientras que el
+    dueño, como `authenticated`, recibe `UPDATE 0` (`listings_update_own` exige
+    `is_active_user()`). Reproducido en local dentro de `begin … rollback`.
+    `pause_listings_on_suspend` solo pausa `activa` (`…457:86-89`): `pendiente`
+    no existía cuando se escribió (llegó en `…458`) y pausarla abriría un
+    atajo `pausada → activa` que se salta la revisión. Medido en remoto el
+    2026-10-01: ningún dueño suspendido; las 4 `pendiente` (ids 67, 73, 75 y 78)
+    llevan 9-10 días esperando Studio, evaluadas `revisar`, o sea que no son
+    transitorias. **Opción anotada, sin implementar:** un guard de
+    `users.estado` en `moderarListing()` que no promueva a `activa` si el
+    dueño no está activo; cubre esa salida, no la de Studio. El fix completo es
+    el trigger `dueno_no_activo` de la Ola 4.
+13. **`pg_depend` solo ve dependencias DIRECTAS policy → función.** La
+    invariante nueva de T12 (toda función de `private` que una policy invoque
+    tiene EXECUTE para `authenticated`) no ve lo que una función llama por
+    dentro (`is_admin()` → `totp_timestamp()`, revocada). No hace falta: esa
+    llamada corre como el dueño de la definer. La lista fija de T12 y esta
+    invariante se complementan.
+14. **Pendiente de diseño: la auditoría de un reporte resuelto.** El frame
+    "Reporte resuelto (solo lectura)" la muestra, pero el panel no la pinta:
+    ninguna RPC devuelve la auditoría del tipo `reporte` (`detalle_listing`
+    trae la de `listing` y `detalle_usuario` la de `usuario`) hasta
+    `admin.auditoria` (Ola 6). Decidir entonces si se adelanta o se quita del
+    frame.
 
 ## Ola 1: lo que cambió al implementarla (gana sobre el resto del archivo)
 
@@ -996,6 +1037,7 @@ Se abrió en la Ola 0 (T35 quedó reservada para la Ola 1).
 Sugerencia de esta consolidación (no estaba en el plan aprobado): una aserción
 por cada estado de origen permitido de `bloquear_listing` (`pendiente`, `activa`,
 `pausada`, `vendida`, D6), con control "restringirlo a `pendiente`".
+**Hecha en la Ola 2:** T36 (h1)-(h4) y su control.
 
 ### T37 — catálogo (Ola 5)
 
@@ -1061,7 +1103,7 @@ rechazado" (control: la rama sin el chequeo de existencia).
 |---|---|---|
 | 0 | Sin panel: fix del trigger de reportes y documentación | **En producción** (remedido el 2026-09-29) |
 | 1 | Login con MFA, alta de admins y suspender/reactivar de punta a punta con auditoría | **Hecha en local, sin pushear** |
-| 2 | Reportes (con `detalle_listing`, la policy de Storage del admin y `bloquear_listing` adelantados, D19) | Pendiente |
+| 2 | Reportes (con `detalle_listing`, la policy de Storage del admin y `bloquear_listing` adelantados, D19) | **Hecha en local, sin pushear; prueba manual hecha el 2026-10-01** (ver "Ola 2: lo que cambió") |
 | 3 | Despliegue (Cloudflare Pages) + `admin-reset-mfa` | Pendiente |
 | 4 | Moderación (cola, aprobar, trigger de dueño activo, policy del dueño) | Pendiente; D5 se decide al entrar |
 | 5 | Catálogo institucional | Pendiente |
@@ -1254,11 +1296,12 @@ queda **después** (D11).
 - **Ola 2:** `bloquear_listing` entra con su propia aserción y control (no-admin
   rechazado, CAS, auditoría con solo `estado`). El orden es: frames de
   `design/admin-panel.html`, aprobación del diseño del usuario y solo después la
-  migración `…479`.
+  migración `…479`. **Hecho en la Ola 2:** T36 (g)-(i) y el orden se respetó.
 - **Ola 2:** la deuda de `resolved_at` (`notificaciones-push.md`) se activa aquí;
   el `before update` que la escriba **no copia** la cláusula `new.reporter_id is
   not null` del `WHEN` de `reports_notify_resolved`, porque `resolved_at` tiene
-  que escribirse también para un reporte sin reportante.
+  que escribirse también para un reporte sin reportante. **Hecho en la Ola 2:**
+  `reports_sella_resolved_at`, con T36 (c1)-(c3) por la RPC y por UPDATE directo.
 - **Ola 3:** el schema `admin` lo agrega el usuario a los exposed schemas del
   Dashboard.
 - **Ola 4:** el trigger de dueño activo cae en 4 fixtures (T11b, T13, T14, T23):

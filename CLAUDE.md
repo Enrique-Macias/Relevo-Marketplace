@@ -3206,7 +3206,7 @@ en "Verificación (correo no participante)".
      del panel (`admin/src/lib/puerta-totp.ts`, importada REAL). Reproduce el
      bug que corrigió (el patrón viejo de `App.tsx`: dos llamadas concurrentes
      dejaban la primera colgada) y prueba que con la puerta N llamadas abren
-     un modal y terminan todas. No necesita nada. (Y `probe-storage.mjs`, el
+     un modal y terminan todas (11 pruebas). No necesita nada. (Y `probe-storage.mjs`, el
      paso 2, cubre desde la Ola 2 la policy de Storage del admin por HTTP, con
      un token ES256 forjado con la llave local de GoTrue para el TOTP
      vencido; por eso se niega a correr fuera de localhost.)
@@ -3743,10 +3743,11 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      `probe-admin.mjs` en 47; `scripts/totp.mjs` y
      `scripts/probe-puerta-totp.mjs`; el panel con reportes, detalle de
      publicación con fotos (blob) y las pantallas de la Ola 1 alineadas a los
-     frames, con fuentes autoalojadas. **Falta, tuyo:** la prueba manual en
-     local, en navegador, con un TOTP real: lista y detalle de reportes (los 4
-     tipos), resolver y descartar, bloquear desde el reporte y desde la
-     publicación, las fotos, y el modal de TOTP a media acción.
+     frames, con fuentes autoalojadas. **Prueba manual en local, en navegador y
+     con un TOTP real: HECHA por el usuario el 2026-10-01, sin hallazgos** (lista
+     y detalle de reportes, resolver y descartar, bloquear desde el reporte y
+     desde la publicación, las fotos y el modal de TOTP), con datos sembrados
+     por un script local fuera de git, ya borrados.
      **Pendiente de diseño:** el detalle de un reporte resuelto no muestra su
      auditoría (el frame sí): no hay RPC que la devuelva para el tipo
      `reporte` hasta `admin.auditoria` (Ola 6).
@@ -3763,8 +3764,9 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
    - **Ola 5:** catálogo. **Ola 6:** métricas y `actividad_diaria`.
    **Notas que las olas heredan:** las dos de la Ola 1 ya están hechas (T35
    (d3), "timestamp basura", con su control; y el aviso del `DETAIL` del CHECK
-   de `admin_acciones` en `admin/CLAUDE.md`). Siguen las de las Olas 2, 4 y 6
-   de `docs/rf17-plan-admin.md`.
+   de `admin_acciones` en `admin/CLAUDE.md`). Las de la Ola 2 también están
+   hechas (T36 (g)-(i) y el trigger de `resolved_at`). Siguen las de las Olas 4
+   y 6 de `docs/rf17-plan-admin.md`.
    Pendientes tuyos: agregar el schema `admin` cuando toque (Ola 3) y la fila
    de `prueba-2b` (pendiente 0c).
 0i. **Publicación en tiendas: lo que falta para someter la app.** El

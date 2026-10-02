@@ -10,10 +10,10 @@ la sesión toca `admin/`.
 `admin/` no está bajo las reglas 1-4 ni 6 de §0 raíz (D1): esas hablan de
 `design/relevo-app.html` y de la app móvil. Las del panel son:
 
-1. **Diseño.** La fuente de verdad será `design/admin-panel.html`, a partir de
-   la Ola 2: frames primero, aprobación del usuario después y solo entonces el
-   código. **La Ola 1 va sin frame** (D14): son pantallas funcionales mínimas
-   que la Ola 2 alineará a esos frames. Solo se reusan los TOKENS de color y
+1. **Diseño.** La fuente de verdad es `design/admin-panel.html`, desde la
+   Ola 2: frames primero, aprobación del usuario después y solo entonces el
+   código. La Ola 1 se construyó sin frame (D14) y la Ola 2 la alineó a esos
+   frames. Solo se reusan los TOKENS de color y
    tipografía de §2 raíz (`src/estilos.css`); nada de tamaños ni componentes
    de teléfono.
    **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 24 frames medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
@@ -99,6 +99,16 @@ para calificar al vendedor (la base todavía acepta la reseña, pero la app
 la busca por `listings_select`, que esconde la `bloqueada`). Es deuda aceptada
 (`CLAUDE.md` §3, "Panel de admin"); antes de bloquear una vendida con una
 calificación pendiente, avísale al comprador por el canal de soporte.
+
+## Runbook de moderación: desbloquear por Studio
+
+El panel NO desbloquea (D10): `bloqueada` es terminal. Si un bloqueo fue un
+error, la única vía es Studio (un UPDATE de `listings.estado`), a propósito y
+sin trigger que lo impida. Studio **no deja rastro en `admin_acciones`** y **el
+dueño no recibe aviso**, así que quien lo haga deja el motivo anotado fuera de la
+base —quién, cuándo y por qué— y le avisa al dueño por el canal de soporte. A
+`activa` solo pasa con al menos una foto; a `pausada`, sin condición
+(`CLAUDE.md` §3, "Panel de admin").
 
 ## Alta de admins: `scripts/crear-admin.mjs` (solo local hasta la Ola 3)
 
