@@ -3,8 +3,9 @@ import react from '@vitejs/plugin-react';
 
 // CSP estricta SOLO en el build: en dev, el preámbulo de React Refresh es un
 // script inline y `script-src 'self'` lo bloquearía. En producción (Ola 3,
-// Cloudflare Pages) la CSP viaja además como header en `_headers`, junto con
-// `frame-ancestors 'none'`, que una etiqueta <meta> no puede expresar.
+// Cloudflare Pages) la CSP viaja además como header en `dist/_headers`, que
+// este mismo plugin genera, junto con `frame-ancestors 'none'`, que una
+// etiqueta <meta> no puede expresar.
 function csp(supabaseUrl: string): Plugin {
   const politica = [
     "default-src 'self'",
@@ -21,11 +22,28 @@ function csp(supabaseUrl: string): Plugin {
     "form-action 'none'",
     "object-src 'none'",
   ].join('; ');
+  // `_headers` de Cloudflare Pages (Ola 3), generado de la MISMA `politica`
+  // que la <meta>: una sola fuente, así que no pueden divergir. El header
+  // suma lo que una <meta> no puede expresar (`frame-ancestors`) y los
+  // encabezados de transporte y de embebido.
+  const headers = [
+    '/*',
+    `  Content-Security-Policy: ${politica}; frame-ancestors 'none'`,
+    '  Strict-Transport-Security: max-age=31536000; includeSubDomains',
+    '  X-Frame-Options: DENY',
+    '  X-Content-Type-Options: nosniff',
+    '  Referrer-Policy: no-referrer',
+    '  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    '',
+  ].join('\n');
   return {
     name: 'relevo-admin-csp',
     apply: 'build',
     transformIndexHtml: (html) =>
       html.replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${politica}" />`),
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: '_headers', source: headers });
+    },
   };
 }
 
