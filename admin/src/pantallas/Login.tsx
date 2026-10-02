@@ -22,7 +22,7 @@ export function Login({ onFijar }: { onFijar: () => void }) {
       <form className="auth-card" onSubmit={entrar}>
         <div className="auth-logo"><span>R</span></div>
         <h1 className="auth-headline">Iniciar sesión</h1>
-        <div className="auth-sub">Entra con tu cuenta @rlvo.com.mx. Después te pediremos el código de tu app autenticadora.</div>
+        <div className="auth-sub">Entra con tu cuenta de administrador. Después te pediremos el código de tu app autenticadora.</div>
         <div className="field">
           <label className="field-label" htmlFor="correo">Correo</label>
           <input id="correo" className="text-field" type="email" autoComplete="username" value={correo}

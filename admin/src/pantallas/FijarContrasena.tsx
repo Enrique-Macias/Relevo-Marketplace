@@ -55,7 +55,7 @@ export function FijarContrasena({ onListo, onVolver }: { onListo: () => void; on
       <form className="auth-card" onSubmit={pedirCodigo}>
         {logo}
         <h1 className="auth-headline">Fijar contraseña</h1>
-        <div className="auth-sub">Te enviaremos un código a tu correo @rlvo.com.mx.</div>
+        <div className="auth-sub">Te enviaremos un código al correo de tu cuenta de administrador.</div>
         <div className="field">
           <label className="field-label" htmlFor="correo">Correo</label>
           <input id="correo" className="text-field" type="email" autoComplete="username" value={correo}
