@@ -39,6 +39,14 @@
 //      (f) con centinelas: ninguna salida ni objeto de error (util.inspect)
 //      contiene la secret key ni la contraseña; (g) un correo con MAYÚSCULAS
 //      en auth.users lo encuentran las 6 comparaciones (lower).
+//   9. Correos EXTERNOS de admin (`--correo-externo`): (a) sin el flag se
+//      rechaza; (b) con el flag, una confirmación que no coincide no toca
+//      nada; (c) con el flag y la confirmación correcta el flujo completo
+//      funciona y `activar`/`desactivar` aceptan ese correo; (d) un dominio de
+//      `universidad_dominios` se rechaza aun con flag y confirmación; (e) una
+//      cuenta existente (del marketplace) no se convierte en admin; (f) un
+//      correo mal formado se rechaza antes de cualquier llamada; (g) un
+//      @rlvo.com.mx no pide confirmación.
 //
 // Limpia lo suyo al final (sus cuentas; la auditoría es append-only y se
 // queda, como en cualquier borrado de cuenta de admin).
@@ -112,6 +120,7 @@ async function main() {
     try { await crear(correo, nombre); return null; } catch (e) { return e.message; }
   };
 
+  const dominiosAntes9 = sql(`select string_agg(dominio, ',' order by dominio) from public.universidad_dominios`);
   console.log('Estado del stack:');
   const gotrue = execFileSync('docker', ['exec', 'supabase_auth_relevo-marketplace', 'env'],
     { encoding: 'utf8' }).split('\n').filter((l) => /MFA_TOTP|HOOK_BEFORE_USER_CREATED_ENABLED/.test(l));
@@ -252,8 +261,12 @@ async function main() {
     const fuente = readFileSync(new URL('./crear-admin.mjs', import.meta.url), 'utf8');
     ok('crear-admin.mjs no contiene ningún dollar-quote', !fuente.includes('$' + '$'));
     let rechazo = null;
-    try { await crear('otro@gmail.com', 'Nombre'); } catch (e) { rechazo = e.message; }
-    ok('crear() rechaza un correo fuera de @rlvo.com.mx antes de tocar nada', Boolean(rechazo) &&
+    // La confirmación se inyecta y FALLA si se pide: sin el flag nunca debe pedirse
+    // (y así, una regresión cae en una aserción en vez de colgar el probe en un prompt).
+    try {
+      await crear('otro@gmail.com', 'Nombre', { confirmarCorreo: async () => { throw new Error('confirmación pedida SIN --correo-externo'); } });
+    } catch (e) { rechazo = e.message; }
+    ok('crear() rechaza un correo fuera de @rlvo.com.mx SIN --correo-externo, antes de tocar nada', Boolean(rechazo) &&
       sql("select count(*) from auth.users where email = 'otro@gmail.com'") === '0');
     rechazo = null;
     try { await crear(`probe-admin-x-${RUN}@rlvo.com.mx`, 'Juan\n; drop table x'); } catch (e) { rechazo = e.message; }
@@ -519,6 +532,141 @@ async function main() {
     let g5 = null;
     try { await activar(G, { confirmado: true, con: conPg }); } catch (e) { g5 = e.message; }
     ok('8g5 (:374) el diagnóstico de activar también la encuentra', /admin=true activado=true/.test(g5 ?? ''), g5?.slice(0, 90));
+
+    // -------------------------------------------------------------------
+    // 9. Correos EXTERNOS de admin. Todo contra el stack local, por PG*.
+    console.log('\n== 9. crear-admin --correo-externo: flag, confirmación, dominio universitario, cuenta existente ==');
+    const contada = (con) => {
+      let n = 0;
+      return { con: { ...con, ejecutar: (q, v) => { n++; return con.ejecutar(q, v); } }, llamadas: () => n };
+    };
+    const espia = (valor) => { const e = { n: 0, fn: async () => { e.n++; return valor; } }; return e; };
+    const fotoBase = () => `${totalAuth()}|${sql('select count(*) from private.admins')}|${sql('select count(*) from public.users')}`;
+
+    // 9a. Sin el flag, un correo externo se rechaza y el mensaje dice cómo.
+    const E9a = `probe-admin-9a-${RUN}@example.org`;
+    creadas.push(E9a);
+    const base9a = fotoBase();
+    const cnt9a = contada(conPg);
+    const sp9a = espia(E9a);
+    let r9a = null;
+    try { await crear(E9a, 'Admin Externo', { con: cnt9a.con, confirmarCorreo: sp9a.fn }); } catch (e) { r9a = e.message; }
+    ok('9a un correo externo SIN --correo-externo se rechaza (y el mensaje menciona el flag)',
+      /--correo-externo/.test(r9a ?? '') && fotoBase() === base9a && cnt9a.llamadas() === 0 && sp9a.n === 0,
+      `${r9a?.slice(0, 70)} · llamadas a la base=${cnt9a.llamadas()}`);
+
+    // 9b. Con el flag, una confirmación que NO coincide no toca nada: ni la
+    // base ni la red (el preflight no llega a correr).
+    const base9b = fotoBase();
+    const cnt9b = contada(conPg);
+    const sp9b = espia('otro-correo@example.org');
+    let r9b = null;
+    try { await crear(E9a, 'Admin Externo', { con: cnt9b.con, correoExterno: true, confirmarCorreo: sp9b.fn }); }
+    catch (e) { r9b = e.message; }
+    ok('9b --correo-externo con una confirmación distinta → "no coincide", sin llamadas a la base',
+      /confirmación del correo no coincide/.test(r9b ?? '') && sp9b.n === 1 && cnt9b.llamadas() === 0 && fotoBase() === base9b,
+      `${r9b?.slice(0, 70)} · confirmaciones pedidas=${sp9b.n} · llamadas a la base=${cnt9b.llamadas()}`);
+    // …y una confirmación vacía tampoco pasa (un Enter a ciegas).
+    let r9b2 = null;
+    try { await crear(E9a, 'Admin Externo', { con: conPg, correoExterno: true, confirmarCorreo: async () => '' }); }
+    catch (e) { r9b2 = e.message; }
+    ok('9b una confirmación vacía tampoco pasa', /confirmación del correo no coincide/.test(r9b2 ?? '') && fotoBase() === base9b);
+
+    // 9c. Con el flag y la confirmación correcta: flujo completo y
+    // activar/desactivar aceptan el correo externo (sin flag).
+    const sp9c = espia(E9a.toUpperCase()); // la comparación normaliza mayúsculas
+    let r9c = null;
+    try { await crear(E9a, 'Admin Externo', { con: conPg, correoExterno: true, confirmarCorreo: sp9c.fn }); }
+    catch (e) { r9c = e.message; }
+    ok('9c crear con el flag y la confirmación correcta termina sin error', !r9c, r9c?.slice(0, 100));
+    ok('9c …la cuenta existe, sin activar, y su fila de public.users NO tiene universidad',
+      sql(`select count(*) from auth.users where email = '${E9a}'`) === '1'
+        && sql(`select (activado_at is null)::text from private.admins a join auth.users u on u.id = a.user_id where u.email = '${E9a}'`) === 'true'
+        && sql(`select (universidad_id is null)::text from public.users where correo = '${E9a}'`) === 'true');
+    const cod9 = await codigoNuevo(E9a, 0);
+    ok('9c …y le llegó el código de recuperación al correo externo', Boolean(cod9));
+    const c9 = cli();
+    await c9.auth.verifyOtp({ type: 'recovery', email: E9a, token: cod9 });
+    await c9.auth.updateUser({ password: PASS });
+    const c9b = cli();
+    await c9b.auth.signInWithPassword({ email: E9a, password: PASS });
+    const en9 = await c9b.auth.mfa.enroll({ factorType: 'totp' });
+    const v9 = await c9b.auth.mfa.challengeAndVerify({ factorId: en9.data.id, code: totp(en9.data.totp.secret) });
+    ok('9c enrolar el TOTP del correo externo', !en9.error && !v9.error, en9.error?.message ?? v9.error?.message);
+    let a9 = null;
+    try { await activar(E9a, { confirmado: true, con: conPg }); } catch (e) { a9 = e.message; }
+    const s9 = await c9b.schema('admin').rpc('sesion');
+    ok('9c activar acepta el correo externo (sin flag) y la cuenta es admin', !a9 && s9.data?.es_admin === true, a9 ?? JSON.stringify(s9.data ?? s9.error));
+    const id9 = sql(`select id from auth.users where email = '${E9a}'`);
+    let d9 = null;
+    try { await desactivar(E9a, 'Prueba del correo externo (9c)', { con: conPg }); } catch (e) { d9 = e.message; }
+    ok('9c desactivar acepta el correo externo y lo audita',
+      !d9 && sql(`select (activado_at is null)::text from private.admins where user_id = '${id9}'`) === 'true'
+        && sql(`select count(*) from private.admin_acciones where accion = 'desactivar_admin' and objetivo_id = '${id9}'`) === '1', d9?.slice(0, 100));
+    ok('9c el alta de un admin externo no tocó el registro de usuarios normales (universidad_dominios igual)',
+      sql(`select string_agg(dominio, ',' order by dominio) from public.universidad_dominios`) === dominiosAntes9);
+
+    // 9d. Un dominio de universidad_dominios se rechaza aun con flag y confirmación.
+    const dominioUniv = sql(`select dominio from public.universidad_dominios order by dominio limit 1`);
+    const E9d = `probe-admin-9d-${RUN}@${dominioUniv}`;
+    creadas.push(E9d);
+    const base9d = fotoBase();
+    let r9d = null;
+    try { await crear(E9d, 'Admin Alumno', { con: conPg, correoExterno: true, confirmarCorreo: async () => E9d }); }
+    catch (e) { r9d = e.message; }
+    ok(`9d un correo de un dominio universitario (${dominioUniv}) se rechaza aun con flag y confirmación`,
+      /^preflight: .*universidad participante/.test(r9d ?? '') && fotoBase() === base9d, r9d?.slice(0, 110));
+
+    // 9e. Una cuenta existente (del marketplace) NO se convierte en admin.
+    const E9e = `probe-admin-9e-${RUN}@gmail.com`;
+    creadas.push(E9e);
+    sql(`insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+        email_confirmed_at, created_at, updated_at, confirmation_token, recovery_token,
+        email_change, email_change_token_current, email_change_token_new, phone_change,
+        phone_change_token, reauthentication_token)
+      values (gen_random_uuid(), '00000000-0000-0000-0000-000000000000', 'authenticated',
+              'authenticated', '${E9e}', '', now(), now(), now(), '', '', '', '', '', '', '', '')`);
+    const perfilAntes = sql(`select count(*) || ':' || coalesce(max(estado::text), '-') from public.users where correo = '${E9e}'`);
+    const base9e = fotoBase();
+    let r9e = null;
+    try { await crear(E9e, 'Admin Existente', { con: conPg, correoExterno: true, confirmarCorreo: async () => E9e }); }
+    catch (e) { r9e = e.message; }
+    ok('9e una cuenta existente NO se convierte en admin: se detiene en el preflight',
+      /^preflight: .*NO se convierte en admin/.test(r9e ?? '')
+        && sql(`select count(*) from private.admins a join auth.users u on u.id = a.user_id where u.email = '${E9e}'`) === '0'
+        && fotoBase() === base9e
+        && sql(`select count(*) || ':' || coalesce(max(estado::text), '-') from public.users where correo = '${E9e}'`) === perfilAntes,
+      r9e?.slice(0, 120));
+
+    // 9f. Un correo mal formado se rechaza antes de cualquier llamada.
+    const malos = ['a@b', 'a..b@example.org', '@example.org', 'a b@example.org', '.a@example.org', 'a.@example.org',
+      'a@-example.org', 'a@example', 'a@example.o', 'no-es-un-correo', `${'x'.repeat(250)}@example.org`];
+    const rechazados = [];
+    for (const m of malos) {
+      const sp = espia(m); const cnt = contada(conPg);
+      try { await crear(m, 'Admin Malo', { con: cnt.con, correoExterno: true, confirmarCorreo: sp.fn }); rechazados.push(`ACEPTÓ ${m.slice(0, 20)}`); }
+      catch (e) { if (sp.n !== 0 || cnt.llamadas() !== 0 || !/correo inválido/.test(e.message)) rechazados.push(`${m.slice(0, 20)}: ${e.message.slice(0, 40)}`); }
+    }
+    ok(`9f ${malos.length} correos mal formados se rechazan con "correo inválido", sin confirmación ni llamadas`,
+      rechazados.length === 0 && fotoBase() === base9e, rechazados.join(' | '));
+    // Y los bien formados poco comunes sí pasan la validación (sin crear nada: se aborta en la confirmación).
+    const raros = ["o'brien+x@example.org", 'a.b-c_d%e@sub.example.co.uk', 'x@a-b.example.org'];
+    creadas.push(...raros, ...malos.filter((m) => m.length < 100)); // por si un control las crea: el finally las borra
+    const aceptados = [];
+    for (const m of raros) {
+      let msg = null;
+      try { await crear(m, 'Admin Raro', { con: conPg, correoExterno: true, confirmarCorreo: async () => 'abortar' }); } catch (e) { msg = e.message; }
+      if (!/confirmación del correo no coincide/.test(msg ?? '')) aceptados.push(`${m}: ${msg?.slice(0, 40)}`);
+    }
+    ok('9f correos válidos poco comunes pasan la validación (y se detienen en la confirmación)', aceptados.length === 0 && fotoBase() === base9e, aceptados.join(' | '));
+
+    // 9g. Un @rlvo.com.mx no pide confirmación (y el flag no la vuelve obligatoria).
+    const E9g = `probe-admin-9g-${RUN}@rlvo.com.mx`;
+    creadas.push(E9g);
+    const sp9g = espia('no-debería-pedirse');
+    let r9g = null;
+    try { await crear(E9g, 'Admin Rlvo', { con: conPg, confirmarCorreo: sp9g.fn }); } catch (e) { r9g = e.message; }
+    ok('9g un @rlvo.com.mx se crea sin pedir confirmación', !r9g && sp9g.n === 0, r9g?.slice(0, 100) ?? `confirmaciones pedidas=${sp9g.n}`);
   } finally {
     for (const c of creadas) {
       sql(`delete from auth.users where email = '${c.replace(/'/g, "''")}'`);

@@ -1,9 +1,23 @@
 #!/usr/bin/env node
 // Alta, activación y desactivación de admins del panel (RF-17).
 //
-//   node scripts/crear-admin.mjs crear      [--remoto --pooler-host H] <correo@rlvo.com.mx> <Nombre>
-//   node scripts/crear-admin.mjs activar    [--remoto --pooler-host H] <correo@rlvo.com.mx>
-//   node scripts/crear-admin.mjs desactivar [--remoto --pooler-host H] <correo@rlvo.com.mx> --motivo "<3-500>"
+//   node scripts/crear-admin.mjs crear      [--remoto --pooler-host H] [--correo-externo] <correo> <Nombre>
+//   node scripts/crear-admin.mjs activar    [--remoto --pooler-host H] <correo>
+//   node scripts/crear-admin.mjs desactivar [--remoto --pooler-host H] <correo> --motivo "<3-500>"
+//
+// CORREO DEL ADMIN. Por defecto `crear` solo acepta `@rlvo.com.mx` (D4: cuentas
+// de admin separadas del marketplace). Un correo de OTRO dominio, p. ej. el
+// personal de un cofundador, exige `--correo-externo` Y teclear el correo de
+// nuevo para confirmarlo. Aun así `crear` se detiene (preflight, SQL) si:
+//   · el dominio está en `public.universidad_dominios` (misma comparación
+//     exacta que el Auth Hook): ese correo es de un alumno, no de un admin;
+//   · ya existe una cuenta con ese correo: una cuenta del marketplace NO se
+//     convierte en admin, se usa otro correo.
+// Nada de esto toca el registro de usuarios normales: el alta del admin va por
+// el admin API de GoTrue, fuera del Auth Hook (medido en local v2.196.0 y en
+// remoto v2.197.0), y no cambia `universidad_dominios`, el hook ni
+// `handle_new_user`. `activar` y `desactivar` aceptan cualquier correo bien
+// formado: el SQL ya exige que esté en `private.admins`.
 //
 // Sin `--remoto` corre SOLO contra el stack local (como en las Olas 1 y 2).
 // Con `--remoto` (Ola 3) habla con el proyecto de producción, y lo corre el
@@ -64,13 +78,29 @@ import { normalizarNombre, nombreValido } from '../src/lib/validacion-perfil.ts'
 const DB = 'supabase_db_relevo-marketplace';
 export const REF_REMOTO = 'ukxfnydfhmryrzhdqkvj';
 const CORREO_RE = /^[a-z0-9._%+'-]+@rlvo\.com\.mx$/;
+// Otro dominio (solo con `--correo-externo`): una dirección bien formada, sin
+// puntos dobles ni punto antes de la arroba, con un TLD de letras.
+const CORREO_EXTERNO_RE =
+  /^(?!.*\.\.)[a-z0-9][a-z0-9._%+'-]{0,63}(?<!\.)@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/;
 const MOTIVO_ACTIVAR = 'Activación tras confirmar por otro canal el enrolamiento TOTP';
 const SIN_ESPERA = { auth: { persistSession: false, autoRefreshToken: false } };
 
-export function validarCorreo(crudo) {
+export const esCorreoRlvo = (correo) => CORREO_RE.test(correo);
+
+/**
+ * `externo` abre la puerta a correos que no son @rlvo.com.mx. Sin él, el
+ * mensaje dice cómo hacerlo en vez de rechazar a secas.
+ */
+export function validarCorreo(crudo, { externo = false } = {}) {
   const correo = String(crudo ?? '').trim().toLowerCase();
-  if (correo.length > 254 || !CORREO_RE.test(correo)) {
-    throw new Error(`correo inválido (se espera nombre@rlvo.com.mx): ${JSON.stringify(crudo)}`);
+  if (correo.length > 254) throw new Error(`correo inválido (más de 254 caracteres)`);
+  if (CORREO_RE.test(correo)) return correo;
+  if (!externo) {
+    throw new Error(`correo fuera de @rlvo.com.mx: ${JSON.stringify(crudo)}. Para un correo `
+      + 'externo (p. ej. personal) usa `crear --correo-externo`');
+  }
+  if (!CORREO_EXTERNO_RE.test(correo)) {
+    throw new Error(`correo inválido: ${JSON.stringify(crudo)}`);
   }
   return correo;
 }
@@ -194,6 +224,11 @@ export async function conexionRemota({ poolerHost, preguntar = preguntarTerminal
   });
 }
 
+export function confirmarCorreoEnTerminal(correo) {
+  return preguntarTerminal(`Vas a crear un admin con un correo FUERA de @rlvo.com.mx. `
+    + `Teclea el correo completo para confirmarlo (${correo.replace(/^(.).*@/, '$1…@')}): `);
+}
+
 async function preguntarTerminal(texto, { oculto = false } = {}) {
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   if (oculto) {
@@ -226,12 +261,14 @@ export async function preflight(con, correo, { debeExistir }) {
              coalesce((select position('desactivar_admin' in pg_get_constraintdef(c.oid)) > 0
                          from pg_constraint c
                         where c.conname = 'admin_acciones_accion_check'), false),
-             exists (select 1 from auth.users where lower(email) = :'correo');`,
+             exists (select 1 from auth.users where lower(email) = :'correo'),
+             exists (select 1 from public.universidad_dominios d
+                      where d.dominio = split_part(:'correo', '@', -1));`,
     { correo });
   } catch (e) {
     throw new Error(`preflight: no se pudo consultar la base (${String(e.stderr ?? e.message).trim().split('\n')[0]})`);
   }
-  const [usuario, admins, acciones, mig479, accionCheck, existe] = fila.split('|');
+  const [usuario, admins, acciones, mig479, accionCheck, existe, dominioUniv] = fila.split('|');
   const fallas = [];
   if (usuario !== 'postgres') fallas.push(`current_user = ${usuario}`);
   if (admins !== 't') fallas.push('sin INSERT/UPDATE en private.admins');
@@ -239,7 +276,14 @@ export async function preflight(con, correo, { debeExistir }) {
   if (mig479 !== 't') fallas.push('falta la migración 20260930000479');
   if (accionCheck !== 't') fallas.push('admin_acciones_accion_check sin desactivar_admin');
   if (debeExistir && existe !== 't') fallas.push(`no existe la cuenta ${correo}`);
-  if (!debeExistir && existe === 't') fallas.push(`ya existe una cuenta ${correo}`);
+  if (!debeExistir && existe === 't') {
+    fallas.push(`ya existe una cuenta ${correo}: una cuenta existente (p. ej. del marketplace) `
+      + 'NO se convierte en admin; usa otro correo');
+  }
+  if (!debeExistir && dominioUniv === 't') {
+    fallas.push(`el dominio de ${correo} pertenece a una universidad participante `
+      + '(public.universidad_dominios): ese correo es de un alumno, no de un admin');
+  }
   if (fallas.length) throw new Error(`preflight: ${fallas.join('; ')}`);
 
   const adm = createClient(con.apiUrl, con.secretKey, SIN_ESPERA);
@@ -253,9 +297,22 @@ export async function preflight(con, correo, { debeExistir }) {
 // Acciones
 // ---------------------------------------------------------------------------
 
-async function crear(correoCrudo, nombreCrudo, { con } = {}) {
-  const correo = validarCorreo(correoCrudo);
+/**
+ * `correoExterno` + `confirmarCorreo` solo importan si el correo NO es
+ * @rlvo.com.mx. La confirmación es parte de `crear`, no del CLI: se pide
+ * teclear el correo otra vez y, si no coincide, no se toca nada (antes del
+ * preflight y de cualquier llamada a la red).
+ */
+async function crear(correoCrudo, nombreCrudo, { con, correoExterno = false, confirmarCorreo } = {}) {
+  const correo = validarCorreo(correoCrudo, { externo: correoExterno });
   const nombre = validarNombre(nombreCrudo);
+  if (!esCorreoRlvo(correo)) {
+    const tecleado = String(await (confirmarCorreo ?? confirmarCorreoEnTerminal)(correo) ?? '')
+      .trim().toLowerCase();
+    if (tecleado !== correo) {
+      throw new Error('la confirmación del correo no coincide: no se toca nada');
+    }
+  }
   con ??= conexionLocal();
   await preflight(con, correo, { debeExistir: false });
 
@@ -302,7 +359,7 @@ async function crear(correoCrudo, nombreCrudo, { con } = {}) {
 }
 
 async function activar(correoCrudo, { confirmado, con } = {}) {
-  const correo = validarCorreo(correoCrudo);
+  const correo = validarCorreo(correoCrudo, { externo: true });
   con ??= conexionLocal();
   await preflight(con, correo, { debeExistir: true });
 
@@ -380,7 +437,7 @@ async function activar(correoCrudo, { confirmado, con } = {}) {
 }
 
 async function desactivar(correoCrudo, motivoCrudo, { con } = {}) {
-  const correo = validarCorreo(correoCrudo);
+  const correo = validarCorreo(correoCrudo, { externo: true });
   const motivo = validarMotivo(motivoCrudo);
   con ??= conexionLocal();
   await preflight(con, correo, { debeExistir: true });
@@ -435,6 +492,7 @@ function parsear(argv) {
     if (a === '--remoto') op.remoto = true;
     else if (a === '--pooler-host') op.poolerHost = argv[++i];
     else if (a === '--motivo') op.motivo = argv[++i];
+    else if (a === '--correo-externo') op.correoExterno = true;
     else pos.push(a);
   }
   return { pos, op };
@@ -444,18 +502,29 @@ const esMain = import.meta.url === `file://${process.argv[1]}`;
 if (esMain) {
   const [cmd, ...resto] = process.argv.slice(2);
   const { pos: [a, b], op } = parsear(resto);
-  const uso = 'uso: crear-admin.mjs crear <correo> <Nombre> | activar <correo> | '
+  const uso = 'uso: crear-admin.mjs crear [--correo-externo] <correo> <Nombre> | activar <correo> | '
     + 'desactivar <correo> --motivo "<3-500>"   (más --remoto --pooler-host <host> para producción)';
   try {
     // Validar ANTES de pedir credenciales: un typo no debe costar la llave.
-    if (cmd === 'crear' && a && b) { validarCorreo(a); validarNombre(b); }
-    else if (cmd === 'activar' && a) validarCorreo(a);
-    else if (cmd === 'desactivar' && a) { validarCorreo(a); validarMotivo(op.motivo); }
+    // `activar` y `desactivar` aceptan cualquier correo bien formado: el SQL
+    // ya exige que esté en private.admins.
+    let tecleadoExterno;
+    if (cmd === 'crear' && a && b) {
+      const correo = validarCorreo(a, { externo: op.correoExterno });
+      validarNombre(b);
+      // La confirmación se pide AQUÍ, antes de las credenciales; `crear` la
+      // vuelve a exigir con la respuesta ya tecleada (no se puede saltar).
+      if (!esCorreoRlvo(correo)) tecleadoExterno = await confirmarCorreoEnTerminal(correo);
+    }
+    else if (cmd === 'activar' && a) validarCorreo(a, { externo: true });
+    else if (cmd === 'desactivar' && a) { validarCorreo(a, { externo: true }); validarMotivo(op.motivo); }
     else { console.error(uso); process.exit(2); }
 
     const con = op.remoto ? await conexionRemota({ poolerHost: op.poolerHost }) : conexionLocal();
     if (cmd === 'crear') {
-      const r = await crear(a, b, { con });
+      const r = await crear(a, b, {
+        con, correoExterno: op.correoExterno, confirmarCorreo: async () => tecleadoExterno,
+      });
       if (!r.correoEnviado) process.exitCode = 1;
     } else if (cmd === 'activar') await activar(a, { con });
     else await desactivar(a, op.motivo, { con });

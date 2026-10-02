@@ -110,17 +110,38 @@ base —quién, cuándo y por qué— y le avisa al dueño por el canal de sopor
 `activa` solo pasa con al menos una foto; a `pausada`, sin condición
 (`CLAUDE.md` §3, "Panel de admin").
 
-## Alta de admins: `scripts/crear-admin.mjs` (solo local hasta la Ola 3)
+## Alta de admins: `scripts/crear-admin.mjs`
 
-- `crear <correo@rlvo.com.mx> <Nombre>`: **no** usa `inviteUserByEmail`, que
-  SÍ pasa por el Auth Hook de dominios (403 `dominio_no_participante`, medido);
-  crea por `admin/users`, registra en `private.admins` sin activar y manda el
-  código de recuperación. La persona fija su contraseña en "Primera vez u
-  olvidé mi contraseña" y enrola su TOTP.
+Sin `--remoto` corre solo contra el stack local; con `--remoto --pooler-host H`
+lo corre el admin técnico en su terminal contra producción (prompt sin eco para
+la secret key temporal y la contraseña de la base; ver la cabecera del script).
+
+- `crear [--correo-externo] <correo> <Nombre>`: **no** usa `inviteUserByEmail`,
+  que SÍ pasa por el Auth Hook de dominios (403 `dominio_no_participante`,
+  medido); crea por `admin/users`, registra en `private.admins` sin activar y
+  manda el código de recuperación. La persona fija su contraseña en "Primera
+  vez u olvidé mi contraseña" y enrola su TOTP.
+  - **Correo del admin.** Por defecto solo `@rlvo.com.mx`. Otro dominio (p. ej.
+    el personal de un cofundador) exige `--correo-externo` **y** teclear el
+    correo de nuevo; sin coincidencia no se toca nada.
+  - **El preflight se detiene** (SQL, sin lista en el cliente) si el dominio
+    está en `public.universidad_dominios` (misma comparación exacta que el
+    hook: es un correo de alumno, no de admin) o si ya existe una cuenta con
+    ese correo: **una cuenta del marketplace no se convierte en admin**, se usa
+    otro correo.
+  - **No toca el registro de usuarios normales**: el alta del admin va por el
+    admin API, fuera del hook, y no cambia `universidad_dominios`, el hook ni
+    `handle_new_user`. Un correo personal de admin sigue sin poder registrarse
+    por OTP en la app.
+  - Con un correo externo, `admin_correo` guarda ese correo **para siempre** en
+    la auditoría (append-only). Los cofundadores lo aceptaron.
 - `activar <correo>`: exige confirmar **por otro canal** y exactamente UN TOTP
-  verificado creado después del alta. Audita con el actor centinela
-  `00000000-0000-0000-0000-000000000000` y `admin_correo =
-  'script:crear-admin.mjs'` (no hay JWT de un admin).
+  verificado creado después del alta y de la última desactivación. Audita con
+  el actor centinela `00000000-0000-0000-0000-000000000000` y `admin_correo =
+  'script:crear-admin.mjs'` (no hay JWT de un admin). Acepta cualquier correo
+  bien formado: el SQL exige que esté en `private.admins`.
+- `desactivar <correo> --motivo "<3-500>"`: `activado_at = null` y la fila
+  `desactivar_admin`, en la misma sentencia.
 - Nada se interpola: variables de psql (`:'var'`), `execFileSync` sin shell y
   **ningún dollar-quote** en su SQL (psql no sustituye `:'var'` dentro de uno).
 
