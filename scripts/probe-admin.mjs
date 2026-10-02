@@ -30,6 +30,13 @@
 //      importado REAL): solo los tres mensajes de `exigir_admin()` cierran la
 //      sesión o piden TOTP; los 42501 de las guardas solo se muestran. Y el
 //      amarre: los mensajes que devuelve la base por HTTP son esas constantes.
+//   8. `crear-admin.mjs --remoto` (Ola 3), con la conexión por PG* apuntada al
+//      stack local: (a) un ref equivocado se niega antes de pedir credenciales;
+//      (b) un preflight fallido no crea nada; (c) si el INSERT falla tras
+//      createUser, la compensación borra la cuenta; (d) crear → activar →
+//      desactivar, con su auditoría y `no_admin` en la sesión aal2 vigente;
+//      (e) tras desactivar, el factor viejo no reactiva y uno nuevo sí;
+//      (f) ningún console.* imprime una credencial.
 //
 // Limpia lo suyo al final (sus cuentas; la auditoría es append-only y se
 // queda, como en cualquier borrado de cuenta de admin).
@@ -37,7 +44,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
-import { crear, activar } from './crear-admin.mjs';
+import { crear, activar, desactivar, conexionPg, conexionRemota } from './crear-admin.mjs';
 import { totp, siguienteVentana } from './totp.mjs';
 import {
   clasificarRechazo, NO_ADMIN, MFA_REQUERIDO, TOTP_VENCIDO, tieneTextoDecidido,
@@ -292,6 +299,121 @@ async function main() {
     const sinDecidir = lanzados.filter((m) => !tieneTextoDecidido(m));
     ok(`7c los ${lanzados.length} mensajes de admin.* tienen un texto decidido en rechazos.ts`,
       lanzados.length > 0 && sinDecidir.length === 0, sinDecidir.join(', ') || lanzados.join(', '));
+
+    // -------------------------------------------------------------------
+    // 8. El camino de `--remoto` (Ola 3), contra el stack LOCAL: una conexión
+    // por PG* (TCP dentro del contenedor, la contraseña por defecto del stack
+    // local) es exactamente la que usa producción, solo cambia el host.
+    console.log('\n== 8. crear-admin --remoto: ref, preflight, compensación, desactivar ==');
+    const conPg = conexionPg({
+      etiqueta: 'probe (PG* contra local)', apiUrl: E.API_URL, secretKey: E.SECRET_KEY,
+      publishableKey: E.PUBLISHABLE_KEY,
+      pg: { host: '127.0.0.1', port: 5432, user: 'postgres', password: 'postgres', sslmode: 'disable' },
+    });
+    const totalAuth = () => sql('select count(*) from auth.users');
+
+    // 8a. El ref se confirma ANTES de pedir credenciales o tocar la red.
+    const antes8a = totalAuth();
+    const preguntas = [];
+    let r8a = null;
+    try {
+      await conexionRemota({
+        poolerHost: 'aws-0-us-east-1.pooler.supabase.com',
+        preguntar: async (t) => { preguntas.push(t); return 'otro-ref'; },
+      });
+    } catch (e) { r8a = e.message; }
+    ok('8a --remoto con un ref equivocado se niega, sin pedir credenciales ni crear nada',
+      /ref no coincide/.test(r8a ?? '') && preguntas.length === 1 && totalAuth() === antes8a,
+      `${r8a} · preguntas=${preguntas.length}`);
+
+    // 8b. Un preflight que falla (host inválido) no crea nada.
+    const C8b = `probe-admin-8b-${RUN}@rlvo.com.mx`;
+    creadas.push(C8b);
+    const antes8b = [totalAuth(), sql('select count(*) from private.admins')];
+    let r8b = null;
+    try {
+      await crear(C8b, 'Admin Preflight', { con: conexionPg({
+        etiqueta: 'probe (host inválido)', apiUrl: E.API_URL, secretKey: E.SECRET_KEY,
+        publishableKey: E.PUBLISHABLE_KEY,
+        pg: { host: 'no-existe.invalid', port: 5432, user: 'postgres', password: 'x', sslmode: 'disable' },
+      }) });
+    } catch (e) { r8b = e.message; }
+    ok('8b preflight fallido → no se crea nada (auth.users y private.admins iguales)',
+      /^preflight:/.test(r8b ?? '') && totalAuth() === antes8b[0]
+        && sql('select count(*) from private.admins') === antes8b[1], r8b?.slice(0, 100));
+
+    // 8c. El INSERT falla tras createUser → la compensación borra la cuenta.
+    const C8c = `probe-admin-8c-${RUN}@rlvo.com.mx`;
+    creadas.push(C8c);
+    const conRota = { ...conPg, ejecutar: (q, v) => {
+      if (q.includes('insert into private.admins')) throw new Error('INSERT forzado a fallar (probe 8c)');
+      return conPg.ejecutar(q, v);
+    } };
+    let r8c = null;
+    try { await crear(C8c, 'Admin Huerfano', { con: conRota }); } catch (e) { r8c = e.message; }
+    ok('8c INSERT fallido → compensación: 0 filas en auth.users y en public.users',
+      /compensación/.test(r8c ?? '')
+        && sql(`select count(*) from auth.users where email = '${C8c}'`) === '0'
+        && sql(`select count(*) from public.users where correo = '${C8c}'`) === '0', r8c?.slice(0, 100));
+
+    // 8d. crear → activar → desactivar, todo por PG*.
+    const C = `probe-admin-8d-${RUN}@rlvo.com.mx`;
+    creadas.push(C);
+    let r8d = null;
+    try { await crear(C, 'Admin Ocho', { con: conPg }); } catch (e) { r8d = e.message; }
+    ok('8d crear por PG* termina sin error', !r8d, r8d?.slice(0, 100));
+    const codC = await codigoNuevo(C, 0);
+    const cC = cli();
+    await cC.auth.verifyOtp({ type: 'recovery', email: C, token: codC });
+    await cC.auth.updateUser({ password: PASS });
+    const cC2 = cli();
+    await cC2.auth.signInWithPassword({ email: C, password: PASS });
+    const enC = await cC2.auth.mfa.enroll({ factorType: 'totp' });
+    const vC = await cC2.auth.mfa.challengeAndVerify({ factorId: enC.data.id, code: totp(enC.data.totp.secret) });
+    ok('8d enrolar el primer TOTP', !enC.error && !vC.error, enC.error?.message ?? vC.error?.message);
+    await activar(C, { confirmado: true, con: conPg });
+    const sC1 = await cC2.schema('admin').rpc('sesion');
+    ok('8d activado por PG* → es_admin=true', sC1.data?.es_admin === true, JSON.stringify(sC1.data ?? sC1.error));
+
+    const idC = sql(`select id from auth.users where email = '${C}'`);
+    const activadoAntes = sql(`select to_jsonb(activado_at)::text from private.admins where user_id = '${idC}'`);
+    await desactivar(C, 'Perdió el teléfono (probe 8d)', { con: conPg });
+    ok('8d desactivar → activado_at NULL',
+      sql(`select (activado_at is null)::text from private.admins where user_id = '${idC}'`) === 'true');
+    ok('8d la auditoría desactivar_admin trae el activado_at de antes y null después',
+      sql(`select ((antes->'activado_at')::text = '${activadoAntes}' and despues = '{"activado_at": null}'::jsonb
+                   and admin_id = '00000000-0000-0000-0000-000000000000'
+                   and admin_correo = 'script:crear-admin.mjs')::text
+             from private.admin_acciones
+            where accion = 'desactivar_admin' and objetivo_id = '${idC}'`) === 'true');
+    const bC = await cC2.schema('admin').rpc('buscar_usuarios', { p_q: 'x' });
+    ok('8d con aal2 y TOTP vigente, una cuenta desactivada recibe no_admin',
+      bC.error?.code === '42501' && bC.error?.message === NO_ADMIN, bC.error?.message);
+
+    // 8e. Tras desactivar, el factor VIEJO no reactiva; uno nuevo sí.
+    let r8e = null;
+    try { await activar(C, { confirmado: true, con: conPg }); } catch (e) { r8e = e.message; }
+    ok('8e activar con el factor de ANTES de la desactivación → rechazado',
+      /no se activó/.test(r8e ?? '') && sql(`select (activado_at is null)::text from private.admins where user_id = '${idC}'`) === 'true',
+      r8e?.slice(0, 120));
+    const admC = createClient(E.API_URL, E.SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+    const delF = await admC.auth.admin.mfa.deleteFactor({ id: enC.data.id, userId: idC });
+    const cC3 = cli();
+    await cC3.auth.signInWithPassword({ email: C, password: PASS });
+    const enC2 = await cC3.auth.mfa.enroll({ factorType: 'totp' });
+    const vC2 = await cC3.auth.mfa.challengeAndVerify({ factorId: enC2.data.id, code: totp(enC2.data.totp.secret) });
+    let r8e2 = null;
+    try { await activar(C, { confirmado: true, con: conPg }); } catch (e) { r8e2 = e.message; }
+    const sC2 = await cC3.schema('admin').rpc('sesion');
+    ok('8e borrar el factor, enrolar uno nuevo y activar → es_admin=true',
+      !delF.error && !enC2.error && !vC2.error && !r8e2 && sC2.data?.es_admin === true,
+      delF.error?.message ?? enC2.error?.message ?? vC2.error?.message ?? r8e2 ?? JSON.stringify(sC2.data));
+
+    // 8f. Ninguna línea que imprime menciona una variable de credencial.
+    const fuenteCA = readFileSync(new URL('./crear-admin.mjs', import.meta.url), 'utf8');
+    const filtran = fuenteCA.split('\n')
+      .filter((l) => /console\.\w+\(/.test(l) && /\b(secretKey|password|PGPASSWORD|publishableKey)\b/.test(l));
+    ok('8f ningún console.* de crear-admin.mjs imprime una credencial', filtran.length === 0, filtran.join(' | '));
   } finally {
     for (const c of creadas) {
       sql(`delete from auth.users where email = '${c.replace(/'/g, "''")}'`);
