@@ -1061,6 +1061,24 @@ de RF-16 en CLAUDE.md §3):
 Y `evaluacionIncompleta()` es pura: 4 aserciones en `probe-moderacion.mjs` (166
 en total). Su control, ignorar el eje de Rekognition, cae en la suya.
 
+**Dato de producción (2026-10-02): las `pendiente` anteriores a `…471` no tienen
+fila de reclamo.** Las 4 que había en remoto (ids 67, 73, 75 y 78, evaluadas
+`revisar` el 21 y 22 de septiembre) nunca pasaron por
+`listing_moderacion_reclamos`, así que su dueño podía invocar el camino de
+usuario una vez más: `index.ts:212-227` solo comprueba la propiedad, se toma el
+reclamo (`:236`) y `moderarListing()` puede promover sin mirar `users.estado`
+(`:440-455`). Un reclamo con `completada_at` nulo NO es una marca permanente: se
+borra a los 60 s (`TTL_RECLAMO_MS`, `:289`; `reclamar()`, `:296-310`) o de
+inmediato si la evaluación falla o queda incompleta (`liberarReclamo`,
+`:346-358`), y la siguiente llamada del dueño, aunque esté suspendido, lo vuelve
+a tomar. Para activarse hace falta al menos una foto (cuentan las que ya tenía; un
+suspendido ya no puede subir nuevas). Las 4 heredadas las resolvió el usuario
+en Studio el 2026-10-02 (UTC; las 4 quedaron `bloqueada`); desde entonces las
+`pendiente` nuevas pasan por el reclamo en cuanto se invoca la función, y un alta
+abandonada antes de invocarla seguiría sin reclamo. El
+hueco general del dueño suspendido se acepta hasta la Ola 4, con la regla de
+`docs/admin-runbook.md`; el fix es el trigger `dueno_no_activo`.
+
 ### 5.2. El `with_check` de `listings_insert_own`
 
 `listings_insert_own` no restringe hoy qué valor de `estado` trae un INSERT

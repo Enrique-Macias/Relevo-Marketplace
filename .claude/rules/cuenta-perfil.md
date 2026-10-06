@@ -635,7 +635,8 @@ mismo criterio que `campusChip`/`buttonWhatsapp`).
   activo — y ojo, es el mismo tipo de cambio que su gemela, así que si algún día
   se cierran, se cierran juntas y con las fixtures de la suite en la mano.
 
-  **Con la Ola 1 de RF-17 (hecha en local) el disparador se cumplió a medias**:
+  **Con la Ola 1 de RF-17 (entonces solo en local; hoy en producción) el
+  disparador se cumplió a medias**:
   el panel existe y suspender desde él es un clic, así que la ventana
   "`pendiente` de un dueño suspendido que se activa" se vuelve más alcanzable.
   Medido al planear, qué la abre y qué no: el camino `['secret']` de
@@ -650,7 +651,9 @@ mismo criterio que `campusChip`/`buttonWhatsapp`).
   `publicaciones_activas` (si la cuenta está suspendida y es > 0, avisa que algo
   las activó después). El runbook de la Ola 3 lleva una decisión explícita antes
   del push: aceptar la ventana hasta la Ola 4 o adelantar `dueno_no_activo`
-  (`CLAUDE.md` §8, pendiente 0k).
+  (`CLAUDE.md` §8, pendiente 0k). **Decidido antes del push de la Ola 3: se
+  acepta la ventana hasta la Ola 4**, con la regla de `docs/admin-runbook.md` y
+  sin ningún guard.
 
 - **Cambiar el avatar puede dejar el anterior huérfano en Storage.** El reemplazo
   es subir → escribir `foto_url` → borrar el anterior, y ese tercer paso es

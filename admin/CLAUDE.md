@@ -24,13 +24,17 @@ la sesión toca `admin/`.
    el panel esconde un botón es UX, no candado.
 3. **La secret key nunca llega al navegador.** Lo que de verdad necesite
    `service_role` va en una Edge Function que verifique `is_admin()` del que
-   llama (la primera será `admin-reset-mfa`, Ola 3), o en
-   `scripts/crear-admin.mjs`, que corre en local con la secret key.
+   llama (la primera será `admin-reset-mfa`, Ola 3b, con su frame primero), o en
+   `scripts/crear-admin.mjs`, que corre en la terminal del admin técnico con una
+   secret key TEMPORAL (se crea para la alta y se borra después).
 
 ## Identidad y MFA (20260930000477)
 
 - Admin = fila en `private.admins` con `activado_at` puesto. **Revocar a un
-  admin es BORRAR su fila**, y surte efecto en la request siguiente (T35 (l)).
+  admin es poner `activado_at = null`** (`crear-admin.mjs desactivar`, que lo
+  audita como `desactivar_admin`), con efecto en la request siguiente. T35 (l)
+  prueba la revocación borrando la fila: también revoca, pero pierde nombre y
+  fechas y no deja rastro.
 - **Suspender NO revoca a un admin**: `is_admin()` no mira `users.estado`
   (decisión E de la Ola 1). Desde el panel no se puede suspender a un admin
   (G4, `objetivo_es_admin`); por Studio sí, y en ese caso otro admin lo puede
@@ -110,6 +114,37 @@ base —quién, cuándo y por qué— y le avisa al dueño por el canal de sopor
 `activa` solo pasa con al menos una foto; a `pausada`, sin condición
 (`CLAUDE.md` §3, "Panel de admin").
 
+## Runbook de operación (los tres admins; versión en lenguaje llano: `docs/admin-runbook.md`)
+
+- **Antes de suspender a alguien, la regla del hueco del dueño suspendido** (se
+  acepta hasta la Ola 4, sin guard): si el panel avisa "En revisión: N" con N > 0,
+  se suspende igual y se le avisa al admin técnico el mismo día, porque esas N
+  `pendiente` pueden activarse solas. El admin técnico corre en Studio, tras cada
+  aviso y una vez por semana, `select l.id, l.estado, u.id from public.listings l
+  join public.users u on u.id = l.user_id where u.estado = 'suspendido' and
+  l.estado in ('pendiente', 'activa')`: una `activa` la pasa a `pausada` y anota el
+  motivo fuera de la base; una `pendiente` no se aprueba mientras su dueño siga
+  suspendido. Y en Studio nunca se aprueba una `pendiente` sin mirar
+  `users.estado` de su dueño.
+- **Perder el teléfono (o cambiarlo).** `is_admin()` NO mira `auth.mfa_factors`:
+  borrar el factor deja `activado_at` puesto y cualquiera con la contraseña
+  enrolaría uno nuevo y quedaría admin sin pasar por `activar`. Por eso el orden
+  es: (1) llamada de voz a la persona; (2) `node scripts/crear-admin.mjs
+  desactivar --remoto --pooler-host <host-del-pooler> <correo> --motivo "<3-500>"`;
+  (3) Dashboard → Authentication → Users → borrar su factor; (4) la persona entra
+  con su contraseña y enrola (sin TOTP verificado, el panel manda a enrolar:
+  `App.tsx`); (5) segunda llamada con la hora del enrolamiento; (6) `node
+  scripts/crear-admin.mjs activar --remoto --pooler-host <host-del-pooler>
+  <correo>`, que exige un factor POSTERIOR a la desactivación. **No probado en
+  producción:** el borrado del factor desde el Dashboard no se ha ejecutado; el
+  equivalente por API (`auth.admin.mfa.deleteFactor`) sí está en `probe-admin`,
+  caso 8e. Si el que pierde el teléfono es el propio admin técnico, hace los
+  mismos pasos sobre su cuenta (conviene que otro admin sea testigo de la
+  llamada).
+- **Suspender por Studio** exige `suspendido_at` y `suspension_motivo` (3-500
+  tras `btrim`) o falla con 23514 (D15); reactivar exige dejar los dos en NULL.
+  Studio no audita.
+
 ## Alta de admins: `scripts/crear-admin.mjs`
 
 Sin `--remoto` corre solo contra el stack local; con `--remoto --pooler-host H`
@@ -162,6 +197,54 @@ la secret key temporal y la contraseña de la base; ver la cabecera del script).
   fila COMPLETA, con el `motivo`, y puede llegar a logs. No lo pegues en chats
   ni en tickets.**
 
+## Producción (Ola 3)
+
+*Estado a 2026-10-05; si algo de esto cambia, se cambia aquí.*
+
+- **Dónde:** Cloudflare Pages, proyecto `rlvo-admin`, dominio
+  `admin.rlvo.com.mx` (también `rlvo-admin.pages.dev`). **Direct Upload, sin Git
+  ni CI/CD**: se despliega a mano.
+- **Variables del build** (`admin/.env.production.local`, ignorado por git; solo
+  estas dos): `VITE_SUPABASE_URL` (la del proyecto remoto) y
+  `VITE_SUPABASE_PUBLISHABLE_KEY` (la publishable; **nunca** la secret).
+  `vite.config.ts` aborta el build si falta alguna.
+- **Desplegar:** `npm --prefix admin ci && npm --prefix admin run build` y después
+  `npx wrangler pages deploy admin/dist --project-name rlvo-admin`. Comprueba en
+  el Dashboard que el deployment quedó como **Production**: si quedara como
+  Preview, el dominio seguiría con la versión vieja. El de la Ola 3 se corrió sin
+  `--branch`, desde `main`, y quedó en producción.
+- **Antes de subir, sobre `admin/dist`:** 0 archivos `.map`; 0 coincidencias de
+  `eyJhbGci`, `service_role`, `http://127.0.0.1:54321`; `sb_secret_` solo como el
+  prefijo de la biblioteca (1; con ≥10 caracteres de llave, 0); `localhost` solo
+  los 3 de `supabase-js` (`localhost:9999` sin usar y dos comparaciones);
+  `127.0.0.1` solo el 1 de su lista; la URL remota 1 vez en el JS, en `_headers` y
+  en `index.html`; exactamente 1 llave publishable embebida y es la del remoto.
+- **`_headers`:** lo genera el MISMO plugin que la `<meta>` de la CSP
+  (`vite.config.ts`), así que no pueden divergir. Lleva CSP con
+  `frame-ancestors 'none'`, HSTS, `X-Frame-Options: DENY`, `nosniff`,
+  `Referrer-Policy: no-referrer` y `Permissions-Policy`. Pages lo aplica a todas
+  las respuestas, incluido el fallback de SPA.
+- **Después de subir, la batería de 4 variantes de petición** (curl simple, UA de
+  navegador con `*/*`, UA con `Accept: text/html`, UA con `Accept` y
+  `Sec-Fetch-Dest: document`) sobre el dominio, `pages.dev` y el deployment: el
+  HTML debe ser byte-idéntico a `dist/index.html` y sin `cloudflareinsights`. Una
+  sola variante NO basta: la inyección de Cloudflare Web Analytics solo aparece
+  con `Accept: text/html` (`CLAUDE.md` §9). Además, los 6 headers contra
+  `dist/_headers` y JS, CSS y fuentes byte a byte.
+- **Cloudflare Web Analytics** estaba, a 2026-10-05, en "Enable with JS Snippet
+  installation" a nivel de zona y el snippet vive solo en la landing (otro repo):
+  el panel no lo lleva y **la CSP no se amplía** para permitirlo. Si alguien
+  vuelve la zona a inyección automática, el beacon reaparece en el panel.
+- **Observaciones sin acción (medidas el 2026-10-02):** Cloudflare agrega `access-control-allow-origin:
+  *`, `nel` y `report-to` (no se quitan desde `_headers`); las fuentes `.woff2`
+  se sirven sin `content-type` (cargan igual); cualquier ruta inexistente da 200
+  con el `index.html`; y el borde conserva el JS anterior tras un redespliegue,
+  medido: hasta 4 h en el dominio propio (`max-age=14400`) y hasta 7 días en
+  `pages.dev` (`s-maxage=604800`) (no hace falta purgar: el `index.html` ya apunta
+  al nuevo).
+- **Rutas:** el panel no usa rutas con path (`Panel.tsx` es un estado), así que
+  `/usuarios/x` y cualquier otra abren la app en Reportes.
+
 ## Desarrollo local
 
 ```bash
@@ -182,9 +265,18 @@ responde 503. En remoto, el Dashboard se toca después del push de
 
 - `npm run check:admin` desde la raíz (typecheck + lint del panel). El
   `tsconfig.json` raíz excluye `admin/`: sin este comando, nadie lo mira.
-- `node scripts/probe-admin.mjs` (stack local + Mailpit).
+- `node scripts/probe-admin.mjs` (stack local + Mailpit): 83 pruebas a
+  2026-10-05, con el camino `--remoto` y los correos externos de
+  `crear-admin.mjs`. Y `node scripts/probe-puerta-totp.mjs` (11) y
+  `node scripts/probe-storage.mjs` (34), también a 2026-10-05.
 - `supabase/tests/rls.sql`: T12 y T35.
 - Tipos: `npm run gen:types` (desde `admin/`) regenera `src/db/admin.types.ts`
-  contra el stack local; se commitea.
+  contra el stack **local** y es el default a propósito: las RPC nuevas se
+  prueban en local antes del push. `--linked` produce el mismo contenido con
+  otro formato (bloque `__InternalSupabase`, paréntesis en los genéricos de los
+  helpers, una línea en blanco menos). **Tras cada push** se regenera con
+  `cd .. && supabase gen types typescript --linked --schema admin >
+  admin/src/db/admin.types.ts`, se compara y se commitea ese; un archivo
+  generado con `--local` vuelve al formato viejo (ruido en el diff, no un error).
 - ESLint prohíbe `dangerouslySetInnerHTML` y el prop `style` en TSX: la CSP
   del build (`vite.config.ts`) no permite scripts ni estilos inline.

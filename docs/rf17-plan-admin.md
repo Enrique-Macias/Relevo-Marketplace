@@ -1,15 +1,79 @@
 # RF-17 — Plataforma web de administración: plan de arquitectura
 
-**Estado (2026-10-01):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
-(`7574b01`; remoto remedido: 40 migraciones con `20260930000476` y el `WHEN` de
-`reports_notify_resolved` con `reporter_id IS NOT NULL`). **Olas 1 y 2 hechas
-en LOCAL, sin pushear** (Ola 1: `6278a0a` a `b11865c`; Ola 2: frames
-`5466752`/`2e3ab12` y código `3f49263` a `f7ee579`). Las dos secciones
-siguientes ganan sobre el texto viejo de abajo. Este archivo es la
-consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
+**Estado (2026-10-05):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
+(`7574b01`; remedido en remoto el 2026-09-29, cuando había 40 migraciones con
+`20260930000476` y el `WHEN` de `reports_notify_resolved` con
+`reporter_id IS NOT NULL`). **Olas 1, 2 y 3 en producción desde el 2026-10-02**
+(fechas en UTC; el push cayó la noche del 2026-10-01 en Monterrey) (Ola 1:
+`6278a0a` a `b11865c`; Ola 2: frames `5466752`/`2e3ab12` y código `3f49263` a
+`f7ee579`; Ola 3: `887fc72` a `da097ac`). Las tres secciones siguientes ganan
+sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
 chocan, prevalece v2.1** (`is_admin()` con `jsonb_typeof`, la lista de claves de
 auditoría por tipo, el orden de las olas). El resumen operativo vive en
 `CLAUDE.md` §8, pendiente 0k; el detalle, aquí.
+
+## Ola 3: lo que cambió al implementarla (gana sobre el resto del archivo)
+
+Medido o decidido entre el 2026-10-01 y el 2026-10-05; la evidencia completa
+está en `CLAUDE.md` §8, "Hecho", "Panel de admin (RF-17), Olas 1 a 3 EN
+PRODUCCIÓN":
+
+1. **`desactivar_admin` entró en `…479` ANTES de su push** (decisión del
+   usuario): `admin_acciones_accion_check` tiene **6** acciones, T35 (j3) lo
+   vigila (rls.sql en 455). Desactivar es `activado_at = null` y se audita en
+   la misma sentencia (`crear-admin.mjs desactivar`); es la vía de emergencia, en
+   lugar de borrar la fila.
+2. **`crear-admin.mjs --remoto`** (el script se negaba a correr fuera de
+   localhost): prompt sin eco para la secret key TEMPORAL y la contraseña de la
+   base, session pooler porque la conexión directa es solo IPv6 y Docker no tiene
+   IPv6 (medido), preflight antes de crear nada y compensación si el alta falla a
+   medias. La llave temporal se crea y se borra por ronda de altas.
+3. **D4 se modificó otra vez: correos externos.** Dos de los tres admins usan
+   correo personal (no se paga Google Workspace para ellos). `crear` exige
+   `--correo-externo` y teclear el correo de nuevo; el preflight rechaza un
+   dominio de `universidad_dominios` y una cuenta ya existente, para conservar la
+   separación del marketplace de D4. No se toca el registro de usuarios normales
+   (hook, `universidad_dominios`, `handle_new_user`). **Costo aceptado:** su
+   correo queda en `admin_acciones.admin_correo`, que es append-only.
+4. **`activar` exige un TOTP posterior a la última `desactivar_admin`** (o al
+   alta si nunca se desactivó): borrar el factor no reactiva a nadie.
+   `is_admin()` no mira `auth.mfa_factors`, así que el reset de MFA es
+   desactivar → borrar el factor → enrolar → activar.
+5. **El hueco del dueño suspendido se aceptó hasta la Ola 4** (decisión del
+   usuario, con la regla de `docs/admin-runbook.md`). Medido: un suspendido no
+   inserta publicaciones nuevas (`listings_insert_own` exige `is_active_user()`),
+   pero una `pendiente` existente puede activarse por Studio, por una alta sin
+   reclamo o por un reclamo liberado. Las 4 `pendiente` heredadas (sin reclamo
+   porque se evaluaron antes de `…471`) las resolvió el usuario en Studio:
+   quedaron `bloqueada`.
+6. **`admin-reset-mfa` sale de la Ola 3 (Ola 3b)**: no tiene frame y
+   `admin/CLAUDE.md` exige frame primero.
+7. **Redirect URLs y Site URL en remoto no hicieron falta**: el código de
+   recuperación se teclea (`FijarContrasena.tsx` no manda `redirectTo`).
+8. **Despliegue:** Cloudflare Pages en `admin.rlvo.com.mx` por Direct Upload
+   (proyecto `rlvo-admin`, sin Git ni CI/CD), con el `_headers` generado por el
+   mismo plugin que la `<meta>` de la CSP. **Incidente:** la inyección automática
+   de Cloudflare Web Analytics de la zona metía su beacon solo con `Accept:
+   text/html`; se resolvió cambiando la zona a snippet manual, sin ampliar la CSP.
+9. **El Auth Hook no se consultó en `/admin/users` en remoto** (GoTrue v2.197.0):
+   la cuenta `@rlvo.com.mx` se creó sin estar el dominio en `universidad_dominios`.
+10. **Tipos:** `public` solo sumó `users.suspendido_at` y `users.suspension_motivo`;
+    `admin` no cambió de contenido, solo de formato (`--linked` contra `--local`).
+11. **E6 (TOTP vencido) en producción:** una llamada rechazada con `totp_vencido`
+    por intento, un solo modal, y el refresh del token no renovó el TOTP (D16).
+    Alcance acordado: solo el camino de las RPC; las fotos con TOTP vencido no se
+    pueden provocar esperando y quedan cubiertas por los probes.
+12. **Límites de evidencia:** el E4 de los otros dos admins lo confirmó
+    manualmente el usuario y no es demostrable en la base; la revocación de la
+    llave temporal no se probó con la llave vieja (la evidencia es que su fila
+    desapareció del Dashboard).
+13. **El proyecto no tiene backups ni PITR.** Existe una copia cifrada del
+    2026-10-01 (anterior a A1a y a los 3 admins): una fotografía que envejece,
+    no una estrategia.
+14. **Lo que ya no aplica de la sección original de la Ola 3 (abajo):** "476-479"
+    (476 ya estaba en producción: fueron 477-479), "las invitaciones reales"
+    (se crean, no se invitan: punto 1 de la Ola 1), `gen:types --schema admin`
+    (se regenera con `--linked` tras el push) y `admin-reset-mfa` (Ola 3b).
 
 ## Ola 2: lo que cambió al implementarla (gana sobre el resto del archivo)
 
@@ -62,7 +126,7 @@ Medido o decidido el 2026-10-01:
     runbook de la Ola 3:** quien lo haga deja el motivo anotado fuera de la
     base y avisa al dueño por soporte.
 12. **Hueco del dueño suspendido (aceptable hasta la Ola 4, a decidir antes
-    del push).** Una `pendiente` de un dueño suspendido se puede activar:
+    del push; decidido en la Ola 3, punto 5 de su sección).** Una `pendiente` de un dueño suspendido se puede activar:
     `moderarListing()` escribe con privilegios elevados y no lee `users.estado`
     (`supabase/functions/moderar-contenido/index.ts:445-455`), mientras que el
     dueño, como `authenticated`, recibe `UPDATE 0` (`listings_update_own` exige
@@ -413,7 +477,9 @@ exists (
     el factor. Eso exige `service_role`, así que va en una **Edge Function
     `admin-reset-mfa`** (Ola 3): verifica `is_admin()` del que llama, no se
     aplica a sí mismo y deja auditoría. Mientras tanto, el admin técnico lo hace
-    con el script.
+    con el script. **[Ola 3b; el script NO tiene un comando de reset: lo que
+    existe hoy es desactivar → borrar el factor en el Dashboard → enrolar →
+    activar, `docs/admin-runbook.md`.]**
 - **La UI del panel debe detectar el rechazo y pedir el TOTP otra vez (C6):**
   toda llamada que devuelva `42501` con `totp_vencido` o `mfa_requerido` abre el
   modal de TOTP (`challengeAndVerify`) y reintenta; `no_admin` cierra la sesión.
@@ -567,7 +633,8 @@ ola las fija.
 | `admin.auditoria(p_objetivo_tipo text default null, p_objetivo_id text default null, p_cursor bigint default null, p_limit int default 50)` | `table(…)` | 6 | Solo lectura. (La Ola 1 muestra "su auditoría" de un usuario con una consulta acotada del mismo módulo) |
 
 **No son RPCs, por diseño:** `crear-admin.mjs` (script local con la secret key:
-invitar y activar) y la Edge Function `admin-reset-mfa` (Ola 3).
+invitar y activar) y la Edge Function `admin-reset-mfa` (Ola 3b; ver "Ola 3: lo que
+cambió").
 
 ---
 
@@ -927,7 +994,7 @@ consecutivo** (`CLAUDE.md` §6). El orden de v2.1 con los adelantos de D19:
 | 1 | `20260930000476_notify_report_resolved_sin_reportante.sql` | 0 — **en producción** (remedido el 2026-09-29) | `WHEN` de `reports_notify_resolved` con `and new.reporter_id is not null` |
 | 2 | `20260930000477_admins_y_auditoria.sql` | 1 | `private.admins`, `private.claves_auditoria_ok`, `private.admin_acciones` (CHECK + triggers append-only), `private.is_admin`, `private.exigir_admin`, schema `admin` con su `grant usage`, `admin.sesion()` |
 | 3 | `20260930000478_users_suspension.sql` | 1 | `users.suspendido_at`/`suspension_motivo` + `users_suspension_coherente`; `admin.buscar_usuarios`, `admin.detalle_usuario`, `admin.suspender_usuario`, `admin.reactivar_usuario` |
-| 4 | `20260930000479_admin_reportes.sql` | 2 | `admin.listar_reportes`, `admin.resolver_reporte`, y **adelantadas por D19:** `admin.detalle_listing`, `admin.bloquear_listing` y la policy `listing_photos_objects_select_admin` |
+| 4 | `20260930000479_admin_reportes.sql` | 2 | `admin.listar_reportes`, `admin.resolver_reporte`, y **adelantadas por D19:** `admin.detalle_listing`, `admin.bloquear_listing` y la policy `listing_photos_objects_select_admin`; **en la Ola 3, antes del push,** `desactivar_admin` en `admin_acciones_accion_check` |
 | 5 | `20260930000480_listings_activa_exige_dueno_activo.sql` | 4 — **después** de desplegar `moderar-contenido` | Trigger `before insert or update of estado` que lanza `dueno_no_activo` |
 | 6 | `20260930000481_admin_moderacion.sql` | 4 | `admin.cola_moderacion`, `admin.aprobar_listing`, y la policy del dueño y la de la tabla `listing_photos` según D5 |
 | 7 | `20260930000482_catalogo_admin.sql` | 5 | `universidad_dominios.activo`; hook y `handle_new_user()` (`create or replace`); RPCs de catálogo |
@@ -1102,9 +1169,10 @@ rechazado" (control: la rama sin el chequeo de existencia).
 | Ola | Contenido | Estado |
 |---|---|---|
 | 0 | Sin panel: fix del trigger de reportes y documentación | **En producción** (remedido el 2026-09-29) |
-| 1 | Login con MFA, alta de admins y suspender/reactivar de punta a punta con auditoría | **Hecha en local, sin pushear** |
-| 2 | Reportes (con `detalle_listing`, la policy de Storage del admin y `bloquear_listing` adelantados, D19) | **Hecha en local, sin pushear; prueba manual hecha el 2026-10-01** (ver "Ola 2: lo que cambió") |
-| 3 | Despliegue (Cloudflare Pages) + `admin-reset-mfa` | Pendiente |
+| 1 | Login con MFA, alta de admins y suspender/reactivar de punta a punta con auditoría | **En producción** (2026-10-02) |
+| 2 | Reportes (con `detalle_listing`, la policy de Storage del admin y `bloquear_listing` adelantados, D19) | **En producción** (2026-10-02; prueba manual en local el 2026-10-01, ver "Ola 2: lo que cambió") |
+| 3 | Despliegue (Cloudflare Pages) y alta de los 3 admins | **En producción** (2026-10-02 al 2026-10-05, ver "Ola 3: lo que cambió") |
+| 3b | `admin-reset-mfa` (con su frame primero) | Pendiente |
 | 4 | Moderación (cola, aprobar, trigger de dueño activo, policy del dueño) | Pendiente; D5 se decide al entrar |
 | 5 | Catálogo institucional | Pendiente |
 | 6 | Métricas y `actividad_diaria` | Pendiente |
@@ -1224,6 +1292,9 @@ acciones resolver, descartar, bloquear la publicación y suspender al reportado
 
 ### Ola 3 — despliegue y `admin-reset-mfa`
 
+**Esta sección es el plan original: lo que pasó y por qué cambió está arriba,
+en "Ola 3: lo que cambió al implementarla".**
+
 - **Cloudflare Pages** con `admin.rlvo.com.mx` y headers (§11); Cloudflare Access
   queda para después.
 - **Redirect URLs y Site URL en remoto** (§11), sin `config push`.
@@ -1263,7 +1334,7 @@ queda **después** (D11).
 | D1 | `admin/` en este repo con `package.json` propio, sin workspaces, más la línea en §0 del `CLAUDE.md` raíz | Aprobada |
 | D2 | SPA Vite + React + TS y no Next.js | Aprobada |
 | D3 | Schema `admin` expuesto y no RPCs en `public` (paso manual en el Dashboard) | Aprobada |
-| D4 | Cuentas separadas `@rlvo.com.mx`, ~~invitadas~~ **creadas por `/admin/users`** por script y activadas en dos pasos; no son usuarios del marketplace; identidad en `private.admins`, no en `app_metadata` | Aprobada; **modificada en la Ola 1** (la invitación pasa por el hook, medido) |
+| D4 | Cuentas separadas `@rlvo.com.mx`, ~~invitadas~~ **creadas por `/admin/users`** por script y activadas en dos pasos; no son usuarios del marketplace; identidad en `private.admins`, no en `app_metadata` | Aprobada; **modificada en la Ola 1** (la invitación pasa por el hook, medido) y **en la Ola 3** (dos admins con correo personal, con `--correo-externo`) |
 | D5 | Cómo borra el dueño una `bloqueada` cuando ya no ve sus fotos: Edge Function (recomendada), prohibirlo o aceptar huérfanos y purgar. "Eliminar cuenta" no necesita cambios | **Pendiente: se decide al entrar a la Ola 4**, junto con su frame. No bloquea las Olas 0-3 |
 | D6 | `bloquear_listing` también desde `activa`, `pausada` y `vendida` | Aprobada |
 | D7 | La auditoría conserva `objetivo_id` y el motivo después de que se elimina una cuenta, sin datos personales en `antes`/`despues`; excepción documentada a T33 (h) | Aprobada |

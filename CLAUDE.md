@@ -115,12 +115,12 @@ Cuando código y documentación discrepen:
 | Capa | Tecnología | Por qué |
 |---|---|---|
 | App móvil | React Native + Expo (Router, SDK 57) | Un solo código para iOS/Android, builds sin Mac vía EAS Build |
-| Backend / BD | Supabase (Postgres), proyecto remoto `ukxfnydfhmryrzhdqkvj`, región Ohio (us-east-2) | Auth + BD relacional + Storage + Row Level Security, sin backend custom |
+| Backend / BD | Supabase (Postgres), proyecto remoto `ukxfnydfhmryrzhdqkvj`, región us-east-1 (leída en el Dashboard durante el paso 2 de la Ola 3 y coherente con el session pooler `aws-0-us-east-1`; este archivo decía Ohio, us-east-2) | Auth + BD relacional + Storage + Row Level Security, sin backend custom |
 | Cliente BD | `@supabase/supabase-js` (versión fijada, sin `^`) | Ver sección 8 para el wrapper (`src/lib/supabase.ts`) y por qué usa `expo-crypto` en vez de `react-native-get-random-values` |
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Moderación de imagen | Google Cloud Vision (SafeSearch + OCR) **+ Amazon Rekognition** (`DetectModerationLabels`) | Dos proveedores porque cubren cosas distintas: SafeSearch no mira drogas/alcohol/gambling y Rekognition no hace OCR. Rekognition **no batchea** (una llamada por imagen) y acepta **solo JPEG/PNG**, al revés de Vision — ver §3 |
-| Admin / moderación | Supabase Studio **hoy**; panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **en construcción**: las Olas 1 (login con MFA, alta de admins y suspender/reactivar) y 2 (reportes, detalle de publicación y bloqueo) están hechas en LOCAL | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **Mientras no esté desplegado, la moderación sigue en Studio** |
+| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins). Supabase Studio para lo que el panel aún no cubre | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **A 2026-10-05, la cola de moderación, aprobar publicaciones, el catálogo y las métricas (Olas 4-6) siguen en Studio** |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Nomenclatura de API keys (Supabase renombró su sistema en 2026):** usamos las
@@ -232,6 +232,12 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 43 y 43 (medido el 2026-10-05) — a la par.** `ls
+supabase/migrations | wc -l` da **43**; `mcp__supabase__list_migrations` también
+da **43**, con `20260930000477`, `…478` y `…479` incluidas: el runbook de la
+Ola 3 (§8, pendiente 0k) ya corrió completo, evidencia en "Hecho". La historia
+de antes, tal como estaba:
 
 **Repo y remoto: 43 y 40 (medido el 2026-10-01).** `ls supabase/migrations |
 wc -l` da **43**; `mcp__supabase__list_migrations` da **40**. Faltan en remoto
@@ -1438,9 +1444,13 @@ catálogos. Todo lo que sigue está **medido** contra GoTrue v2.196.0 local con
 flujos lo disparan ni qué pasa si falla.
 
 **EN PRODUCCIÓN desde el 2026-09-23** (ver §8, "Hecho"). Dominios dados de alta
-en remoto: `tec.mx` y `exatec.tec.mx`, los dos de Tec de Monterrey. El segundo
-es un ejemplo real de por qué el match es exacto: un subdominio no hereda del
-dominio padre, así que necesita su propia fila.
+en remoto, medidos el 2026-10-05: `exatec.tec.mx`, `tec.mx`, `tecmilenio.mx`,
+`u-erre.mx`, `uanl.edu.mx` y `udem.edu` (los dos de Tec de Monterrey fueron los
+de la puesta en producción; los otros cuatro se agregaron después). Ninguno es
+personal: `gmail.com` y compañía NO están, y por eso un correo así no se puede
+registrar por OTP. `exatec.tec.mx` es un ejemplo real de por qué el match es
+exacto: un subdominio no hereda del dominio padre, así que necesita su propia
+fila.
 
 - **Desde `20260929000474` tiene un SEGUNDO rechazo, que se evalúa primero:**
   `403 correo_bloqueado` si el hash del correo normalizado está en
@@ -1629,15 +1639,17 @@ Lo que no se ve en la tabla:
   desde `listings`, que el borrado se lleva. Detalle de la función (auth,
   reautenticación por `amr`, idempotencia) en §8 y en §9.
 
-**Panel de admin, Olas 1 y 2 de RF-17 (`20260930000477` + `20260930000478`
-+ `20260930000479`,
-hechas en LOCAL, sin pushear).** Plan en `docs/rf17-plan-admin.md`; las reglas
+**Panel de admin, Olas 1 a 3 de RF-17 (`20260930000477` + `20260930000478`
++ `20260930000479`, EN PRODUCCIÓN desde el 2026-10-02).** Plan en `docs/rf17-plan-admin.md`; las reglas
 del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
 
 - **Quién es admin: `private.admins`**, una fila con `activado_at` puesto. No
   `app_metadata`: viaja en el JWT y revocar no surtiría efecto hasta el `exp`.
-  **Revocar es BORRAR la fila**, con efecto en la request siguiente. Suspender a
-  un admin en `users` NO lo revoca: `is_admin()` no mira `users.estado`.
+  **Revocar es poner `activado_at = null`**: `crear-admin.mjs desactivar` lo hace
+  y lo audita como `desactivar_admin` en la misma sentencia, con efecto en la
+  request siguiente. Borrar la fila también revoca, pero pierde nombre y fechas y
+  no deja rastro. Suspender a un admin en `users` NO lo revoca: `is_admin()` no
+  mira `users.estado`.
 - **`private.is_admin()`** (sql, definer, EXECUTE para `authenticated` por el
   SIGSEGV) exige, a la vez: la fila activada, `aal = aal2` y un TOTP de las
   últimas 12 h en `amr`. El parseo de `amr` vive UNA vez, en
@@ -1652,11 +1664,17 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   TRUNCATE), sin FK en `admin_id` (sobrevive al borrado del admin), con CHECK
   de claves permitidas POR TIPO de objetivo (`private.claves_auditoria_ok`,
   D20) y de motivo (3-500 tras btrim). Se escribe solo por
-  `private.auditar()`, que saca el actor de `auth.uid()`.
+  `private.auditar()`, que saca el actor de `auth.uid()` (`admin_correo` guarda
+  su correo tal cual: a 2026-10-05 dos de los tres admins usan correo personal,
+  que queda ahí para siempre; los cofundadores lo aceptaron) o, para las filas que escribe el
+  script (`activar_admin` y `desactivar_admin`), el actor centinela
+  `00000000-0000-0000-0000-000000000000` con `admin_correo =
+  'script:crear-admin.mjs'`.
 - **Schema `admin`** (D3): USAGE solo para `authenticated`; sus funciones son
   definer con `search_path` fijo y sin EXECUTE para `anon`/PUBLIC. No cuentan
   entre "las TRES definer de `public`": viven en otro schema. Hoy son 9
-  (medido en `pg_proc` el 2026-10-01): `sesion` (la única que no lanza: gating
+  (medido en `pg_proc` el 2026-10-01 y, en remoto, el 2026-10-05 con un md5 de
+  la lista de funciones, ACL y privilegios idéntico al de local): `sesion` (la única que no lanza: gating
   de UX), `buscar_usuarios`, `detalle_usuario`, `suspender_usuario` y
   `reactivar_usuario` (Ola 1), y `listar_reportes`, `resolver_reporte`,
   `detalle_listing` y `bloquear_listing` (Ola 2).
@@ -1675,8 +1693,10 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   mismo / otro admin" (D-B2), hoy inalcanzables desde el producto pero
   construibles en la base. En `resolver_reporte`, "sí mismo" son TRES
   personas: quien reportó, el reportado y el dueño de la publicación reportada
-  (un reporte de publicación tiene `reported_user_id` NULL). `admin_acciones_accion_check` suma
-  `resolver_reporte` y `bloquear_listing`.
+  (un reporte de publicación tiene `reported_user_id` NULL). `admin_acciones_accion_check` admite 6
+  acciones: las 3 de la Ola 1 (`suspender_usuario`, `reactivar_usuario`,
+  `activar_admin`), `resolver_reporte` y `bloquear_listing` (Ola 2) y
+  `desactivar_admin`, sumada a la 479 antes de su push (T35 (j3)).
 - **Propiedad conocida: Studio SÍ puede sacar una publicación de `bloqueada`,
   y es a propósito.** `bloqueada` es terminal para la app, el panel y la
   moderación (medido el 2026-10-01: `decidirListing` devuelve `bloqueada` con
@@ -1718,15 +1738,35 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `inviteUserByEmail`**: medido, `/invite` pasa por el Auth Hook de dominios y
   `@rlvo.com.mx` sale 403 (ver §9). Nacen por `admin/users`, fijan contraseña
   con el código de recuperación y se activan en un segundo paso que exige un
-  TOTP verificado y confirmación por otro canal.
+  TOTP verificado y confirmación por otro canal. Con `--remoto` corre contra
+  producción (prompt sin eco para la secret key temporal y la contraseña de la
+  base, session pooler porque la conexión directa es solo IPv6, preflight y
+  compensación si falla a medias). **El correo es `@rlvo.com.mx` por defecto;
+  uno externo (p. ej. personal) exige `--correo-externo` y teclear el correo de
+  nuevo, y el preflight rechaza un dominio de `universidad_dominios` o una
+  cuenta que ya exista: una cuenta del marketplace NO se convierte en admin**
+  (D4, modificada en la Ola 3). `activar` exige un TOTP posterior a la última
+  desactivación. A 2026-10-05 hay 3 admins: uno `@rlvo.com.mx` y dos con correo
+  personal.
+  Nada de esto toca el registro de usuarios normales (`admin/CLAUDE.md`).
 - **Deuda que el panel vuelve más alcanzable**: una `pendiente` de un dueño ya
   suspendido se puede activar (camino de usuario de `moderar-contenido`, o
   Studio). `detalle_usuario` la hace visible y el fix es la Ola 4 (trigger
-  `dueno_no_activo`); antes del push de la Ola 3 hay que decidir si se acepta
-  la ventana (`cuenta-perfil.md`).
+  `dueno_no_activo`). **Aceptada en la Ola 3** (decisión del usuario, tomada antes del push)
+  como riesgo conocido, con una regla de runbook (`docs/admin-runbook.md`) y
+  sin ningún guard hasta la Ola 4. Alcance medido: un suspendido NO puede
+  insertar publicaciones nuevas (`listings_insert_own` exige `is_active_user()`,
+  `20260919000463:71-75`) ni subir fotos, pero una `pendiente` que ya existía
+  puede pasar a `activa` por tres vías: Studio; una `pendiente` sin fila de
+  reclamo (eran las 4 heredadas, anteriores a `…471`, ya resueltas; hoy también
+  lo sería un alta abandonada antes de invocar la función); o un reclamo
+  incompleto o liberado, que el camino de usuario retoma pasados 60 s
+  (`moderar-contenido/index.ts:289-310`). Para activarse necesita al menos una
+  foto (`listings_enforce_activation_has_photos`). La suspensión solo pausa las
+  `activa` (`20260917000457:86-89`): una `pendiente` se queda `pendiente`.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 454 aserciones (medido con el
-`grep` de §8 el 2026-10-01; antes decía 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 455 aserciones (medido con el
+`grep` de §8 el 2026-10-05; antes decía 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2496,6 +2536,24 @@ remoto). Su control, "G3 sin la rama del dueño", cae solo en (g3r2), en la
 suite y aislada, y el de (g3r) ("sin G3") sigue cayendo en (g3r). Con él son
 **49** controles, y los 49 caen en la suite completa.
 
+Y a **455** con (j3), que llegó con un cambio a `…479` ANTES de su push (sin
+migración nueva): `admin_acciones_accion_check` admite `desactivar_admin` (6
+acciones). T35 pasa a 39 aserciones y T12 sigue en 40 (medidos con el `grep`
+acotado a cada sección el 2026-10-05; T35c 5, T36 4 y T36 de la Ola 2 40).
+(j3) tiene dos mitades que cazan cosas distintas: `desactivar_admin` con las
+claves del tipo `admin` entra, y una acción fuera de la lista da
+`23514:admin_acciones_accion_check`. Los controles, uno a la vez dentro de la
+misma transacción que la suite, contra la suite completa **y** contra T35
+aislada, imprimiendo antes `pg_get_constraintdef`:
+
+| Variante rota | Cae en |
+|---|---|
+| el CHECK de la Ola 2 (5 acciones, sin `desactivar_admin`) | (j3), primera mitad |
+| `check (true)` | (j3), segunda mitad |
+
+El control de la Ola 2 "sin `resolver_reporte` ni `bloquear_listing`"
+(conservando `desactivar_admin`) sigue cayendo en T36 (c1).
+
 **Gotcha: la suite espera 3 usuarios en local.** Una cuenta de prueba (la del
 admin de la prueba manual del panel) la rompe en T1; se arregla con
 `supabase db reset`.
@@ -3192,16 +3250,23 @@ en "Verificación (correo no participante)".
      PostgREST y Mailpit locales. Lo que T35 no puede ver porque allá los claims
      se fabrican: el `aal`/`amr` REAL que emite GoTrue (el refresh conserva el
      timestamp del TOTP y re-verificar lo renueva), que `/invite` pasa por el
-     hook y `/admin/users` no, el alta y la activación de `crear-admin.mjs`
-     (importado REAL), el reset de contraseña de un admin, que `admin` esté
+     hook y `/admin/users` no, el alta, la activación y la desactivación de
+     `crear-admin.mjs` (importado REAL, también por el camino `--remoto` con la
+     conexión apuntada al stack local), el reset de contraseña de un admin, que `admin` esté
      expuesto por PostgREST, y el amarre del clasificador de rechazos del
      panel (`admin/src/lib/rechazos.ts`) con los mensajes de la base. Necesita
-     TOTP encendido y `admin` en `[api] schemas`. Tarda ~1.5 min por las
+     TOTP encendido y `admin` en `[api] schemas`. Tarda unos minutos por las
      esperas de ventana TOTP. Del lado del código, `npm run check:admin` hace
      el typecheck y el lint del panel, que el `tsc` y el `lint` de la raíz no
-     miran. **47 pruebas** desde la Ola 2: el caso 7c exige que todo `raise`
+     miran. **83 pruebas** (47 en la Ola 2): el caso 7c exige que todo `raise`
      de `admin.*` (leído del `pg_proc` vivo) tenga un texto decidido en
-     `rechazos.ts`, propio o el genérico a propósito.
+     `rechazos.ts`, propio o el genérico a propósito. El caso 8 cubre el camino
+     `--remoto` (ref equivocado, preflight que falla, compensación con
+     `correos_bloqueados` intacta, `desactivar`, `activar` posterior a la
+     desactivación, fuga de credenciales con centinelas, correo en MAYÚSCULAS
+     con `lower()` en las 6 comparaciones) y el 9, los correos externos
+     (`--correo-externo`, confirmación, dominio universitario, cuenta
+     existente, formato). Sus controles negativos caen cada uno en su caso.
   12. `node scripts/probe-puerta-totp.mjs`: la puerta única del modal de TOTP
      del panel (`admin/src/lib/puerta-totp.ts`, importada REAL). Reproduce el
      bug que corrigió (el patrón viejo de `App.tsx`: dos llamadas concurrentes
@@ -3302,7 +3367,7 @@ de los route groups).
 | `compartir-deeplinks.md` | Compartir sin link (las dos pantallas) | `detalle/**`, `perfil-publico/**`, `app.json` |
 
 **Hecho:**
-- Esquema aplicado al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, Ohio) con RLS y la
+- Esquema aplicado al proyecto remoto (`ukxfnydfhmryrzhdqkvj`, us-east-1) con RLS y la
   suite de regresión pasando.
   **Esta línea ya NO lleva números, y es a propósito.** Llevaba "8 migraciones /
   53 aserciones", luego "10 / 64", luego "16 / 108" — siempre desincronizada, y
@@ -3538,6 +3603,102 @@ de los route groups).
   - **Dato al remedir:** `user_intereses` tiene **1** fila en remoto, que
     encaja con lo que dejan las pruebas manuales.
 
+- **Panel de admin (RF-17), Olas 1 a 3 EN PRODUCCIÓN (2026-10-02 al
+  2026-10-05).** Migraciones `20260930000477`, `…478` y `…479` en remoto, panel
+  en `https://admin.rlvo.com.mx` y los 3 admins creados y activados. Cada paso se
+  REMIDIÓ, no se dio por bueno de memoria. **Fechas y horas en UTC** (Monterrey
+  es UTC−6), salvo donde se diga: el push cayó a las ~05:00 del 2026-10-02 UTC,
+  o sea la noche del 2026-10-01 en Monterrey, y la copia cifrada se llama
+  `2026-10-01` por su fecha local (22:33 en Monterrey, ya 2026-10-02 en UTC).
+  Lo que corrió el usuario (push,
+  despliegue, Dashboard, `crear-admin.mjs --remoto`) y lo que midió Claude (`select`
+  y peticiones HTTP públicas; una de ellas, un intento de alta con un dominio no
+  participante, que el hook rechazó sin crear nada) quedaron separados a propósito:
+  - **Antes del push:** remoto en 40 y repo en 43; 0 usuarios suspendidos (el
+    bloqueante de `users_suspension_coherente`); schema `admin` y `private.admins`
+    inexistentes. Las 4 `pendiente` heredadas (ids 67, 73, 75 y 78, **sin fila en
+    `listing_moderacion_reclamos`** porque se evaluaron antes de `…471`) las
+    resolvió el usuario en Studio el 2026-10-02: las 4 quedaron `bloqueada`, con
+    sus 4 avisos `publicacion_bloqueada` en el inbox y SIN push (los secretos de
+    Vault de `send-push` siguen sin ponerse, pendiente 1).
+  - **Push (lo corrió el usuario):** `list_migrations` pasó de 40 a 43, la última
+    `…479`.
+  - **Verificación en remoto (sección D del plan), comparada contra local con un
+    md5 de la misma consulta:** funciones, ACL y privilegios de `admin` y
+    `private` (9 + 33 funciones; PUBLIC con EXECUTE solo en las 4 INVOKER
+    conocidas) `6c544e55…`; grants de `users` y `listings` (54 filas) `681aaf99…`;
+    policies, trigger de `resolved_at`, constraints, policy de Storage del admin y
+    Realtime `9cedcf4c…`. `suspendido_at` y `suspension_motivo` sin privilegios
+    para `anon` ni `authenticated`, y `authenticated` actualiza exactamente 5
+    columnas de `users`. El 2026-10-05 los tres md5 siguen idénticos.
+  - **Exposición del schema `admin` (Dashboard, DESPUÉS del push):** `rpc/sesion`
+    sin sesión pasó de `406 PGRST106` a `401 42501`; `private` sigue sin exponerse
+    (`406`); `categories` sigue en 401. Los advisors habían sumado, tras el push,
+    2 INFO de RLS sin policies en `private.admins` y `private.admin_acciones`
+    (intencionales: RLS sin policies es el control de acceso), y al exponer
+    `admin` sumaron los 9 WARN de definer de `admin.*` (el lint solo mira
+    schemas expuestos, §9).
+  - **Tipos (`gen types --linked`):** `public` solo suma `users.suspendido_at` y
+    `users.suspension_motivo`; `admin` no cambia de contenido, solo de formato
+    (§9). Commit `d8a4c75`.
+  - **Despliegue:** Cloudflare Pages, proyecto `rlvo-admin`, Direct Upload con
+    `wrangler pages deploy` (sin Git ni CI/CD), dominio `admin.rlvo.com.mx`. El
+    `_headers` lo genera el mismo plugin de Vite que la `<meta>` de la CSP. Medido
+    en el dominio propio, en `rlvo-admin.pages.dev` y en el deployment
+    `5345fbc4`: los 6 headers idénticos a `dist/_headers` en `/`, en una ruta
+    profunda, el JS, el CSS y las fuentes; JS, CSS y fuentes byte-idénticos a
+    `admin/dist`; el fallback de SPA da 200. **Incidente:** Cloudflare Web
+    Analytics inyectaba su beacon en el HTML del panel desde el borde, porque la
+    inyección automática es de la ZONA `rlvo.com.mx` y no del proyecto de Pages
+    (§9); la CSP lo bloqueaba (consola con violaciones, nada salía). Se resolvió
+    cambiando la zona a "Enable with JS Snippet installation" y poniendo el snippet
+    solo en la landing (otro repo). **La CSP no se amplió**: el panel sigue sin
+    Web Analytics, con 0 coincidencias en las 4 variantes de petición por host.
+  - **Admins:** 3 creados con `crear-admin.mjs --remoto`, activados con `activar`
+    y auditados (3 filas `activar_admin` con el actor centinela): uno
+    `@rlvo.com.mx` y dos con correo personal (`--correo-externo`, decisión del
+    usuario; su correo queda en `admin_correo` para siempre). Medido: el hook de
+    registro NO se consultó en `/admin/users` en remoto (GoTrue v2.197.0): la
+    cuenta `@rlvo.com.mx` se creó sin estar el dominio en `universidad_dominios`.
+  - **E6, TOTP vencido, en producción (2026-10-02):** con la pestaña abierta
+    desde el login, pasadas las 12 h, los logs de la API muestran `POST
+    listar_reportes` → 403 y Postgres `42501 totp_vencido` (el clic y el
+    "Reintentar", una llamada rechazada por intento), después `challenge` y
+    `verify` en 200 y `listar_reportes` en 200. El refresh del token a las
+    20:00:10 NO renovó el TOTP: es la prueba real de D16 (el token seguía
+    vigente y aun así se rechazó por la antigüedad del TOTP). `last_challenged_at`
+    quedó posterior a la caducidad y `admin_acciones` sin filas nuevas. **Alcance
+    acordado:** solo el camino de las RPC; la ruta de fotos con TOTP vencido no se
+    puede provocar esperando (todas las fotos se montan después de que la RPC
+    responde) y queda cubierta por `probe-storage.mjs` y `probe-puerta-totp.mjs`.
+  - **Cierre (E8), 2026-10-05:** 3 factores TOTP verificados (0 de cuentas que
+    no son admin), 3 admins activados, 3 filas `activar_admin` con el centinela
+    y `public.users` = 10 (7 de marketplace + 3 admins); funciones, ACL, policies
+    y hook sin deriva. La secret key temporal `crear-admin-ola3` se eliminó y
+    quedan solo la `default` y la publishable; el historial del shell dio 0, 0 y 0
+    (`sb_secret_…` pegada, asignaciones con valor de la contraseña y
+    `--password`/`-p`); portapapeles limpio. La contraseña de la base no se rotó:
+    solo se tecleó en prompts.
+  - **Límites de evidencia, registrados a propósito:** (1) el E4 de los otros dos
+    admins (login con contraseña y TOTP, y navegar el panel) lo **confirmó
+    manualmente el usuario**; no es demostrable en la base: su
+    `last_challenged_at` es anterior a su `activado_at` y uno no tiene sesión.
+    (2) La **revocación** de la llave `crear-admin-ola3` no se probó con la llave
+    vieja (ya no existía); la evidencia es que su fila desapareció del Dashboard,
+    porque desde SQL no se ven las secret keys. (3) El texto de la UI en E6 (modal
+    único, "No pudimos cargar los reportes") lo reportó el usuario; los logs
+    confirman una sola llamada rechazada por intento. (4) La revisión del historial
+    cubre `~/.zsh_history`; lo tecleado en prompts sin eco no se guarda en ningún
+    archivo y eso no se puede comprobar.
+  - **Respaldo:** el proyecto NO tiene backups ni PITR (Dashboard, paso 2 de la
+    Ola 3, antes del push). Hay una copia cifrada (imagen de disco AES-256,
+    234,496 B) de esquema y datos tomada la noche del 2026-10-01 (hora de
+    Monterrey), **antes de A1a y de los 3 admins**: una fotografía que
+    envejece, no una estrategia. Los `.sql` en claro se borraron después de abrir
+    la imagen y comprobar los tres archivos por SHA-256. Cubre `public`, `private`,
+    `auth` y `storage` (solo las filas de `storage.objects`: no los archivos), y
+    deja fuera Vault y `supabase_migrations`. La frase de paso se guarda aparte.
+
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
    CLAUDE.md §8 arriba).** Los pasos 0-5 ya corrieron y están en "Hecho"
@@ -3553,16 +3714,13 @@ de los route groups).
    registros que en local pasan. Hoy el hook tarda de 1 a 10 ms en producción,
    así que no hay urgencia. **Revisar cuando:** el hook haga algo más que una
    búsqueda por PK, o los logs de Auth muestren `request_timeout` en `/otp`.
-0c. **Borrar de remoto los datos de prueba de la fase 2B antes de que entren
-   usuarios reales — HECHO A MEDIAS, falta una fila.** Medido en remoto el
-   2026-09-29 (`select`, solo lectura): la universidad "Prueba 2B", sus dos
-   campus y `public.users` ya no existen (0, 0 y 0 filas), y sus publicaciones
-   tampoco. **Queda `auth.users` `7f50bc00-68de-4c01-bdd6-a68362653b1a`
-   (`prueba-2b@example.com`, sin contraseña ni identidades):** el `delete from
-   auth.users` del SQL de `explorar.md` (sección "Datos de prueba en remoto") no
-   se corrió, o se corrió el resto sin él. Sigue siendo suyo por hacer. Mientras
-   tanto, `auth.users` tiene una fila más que `public.users` (8 contra 7), así
-   que **ninguna métrica del panel de RF-17 cuenta sobre `auth.users`**.
+**(El pendiente 0c — borrar los datos de prueba de la fase 2B — se cerró. Había
+quedado a medias el 2026-09-29: solo faltaba la fila de `auth.users` de
+`prueba-2b`, sin contraseña ni identidades. Remedido el 2026-10-02 (UTC), esa
+cuenta ya no existe y `auth.users` y `public.users` coincidían, 7 y 7; a
+2026-10-05 son 10 y 10, o sea 7 de marketplace más los 3 admins. Se deja este hueco para no romper las referencias cruzadas a
+"pendiente 0c". **Las métricas de RF-17 (Ola 6) cuentan sobre `public.users` y
+excluyen a los admins.**)**
 0d. **Fase 2C ("Detectar campus más cercano"): la migración YA está en
    remoto; faltan los pasos 2-4.** Requiere, en este orden:
    1. ~~`supabase db push` de `20260925000467_campus_coordenadas.sql`~~
@@ -3669,14 +3827,16 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
    RF-17). Decisiones ya tomadas: `admin/` en este repo con `package.json` propio
    y sin workspaces (D1); SPA Vite + React + TS, sin servidor (D2); schema
    `admin` con RPCs `security definer`, cada una con `exigir_admin()` adentro y
-   auditoría (D3); admins con cuentas separadas `@rlvo.com.mx` creadas por
+   auditoría (D3); admins con cuentas separadas del marketplace (`@rlvo.com.mx` o,
+   desde la Ola 3, correo personal con `--correo-externo`) creadas por
    `/admin/users`, primera contraseña fijada con el código de recuperación
    (opción A: `/invite` pasa por el Auth Hook, medido) y activadas en dos pasos, identidad en `private.admins` y no en
    `app_metadata` (D4); una sola `is_admin()` que exige aal2 y un TOTP de las
    últimas 12 h leído de `amr`, forma con `jsonb_typeof(...) = 'array'` porque
    `coalesce` no atrapa un `"amr": null` (D16, D18); `claves_auditoria_ok()`
    IMMUTABLE con lista de claves POR tipo de objetivo (D20); cuentas de admin
-   sin datos personales en `antes`/`despues`. **D5 (cómo borra el dueño una
+   sin datos personales en `antes`/`despues` (el correo del actor sí queda en
+   `admin_correo`). **D5 (cómo borra el dueño una
    `bloqueada` cuando ya no ve sus fotos) se decide al entrar a la Ola 4.**
    - **Ola 0 — EN PRODUCCIÓN** (`7574b01`, migración `20260930000476` + T36):
      resolver el reporte de una cuenta eliminada ya no aborta (§3, "Resolver el
@@ -3684,18 +3844,24 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      en remoto da **40** con `20260930000476`, y `pg_get_triggerdef` de
      `reports_notify_resolved` en remoto trae `(new.reporter_id IS NOT NULL)`.
      `gen:types` no cambia (es un trigger).
-   - **Ola 1 — HECHA EN LOCAL, sin pushear** (commits `6278a0a` a `b11865c`):
+   - **Ola 1 — EN PRODUCCIÓN desde 2026-10-02** (commits `6278a0a` a `b11865c`):
      migraciones `20260930000477` (admins, MFA, auditoría, schema `admin`) y
      `…478` (suspender/reactivar); T12 y T35 (rls.sql en 407, con (g0b));
-     `scripts/crear-admin.mjs` y `scripts/probe-admin.mjs` (46 pruebas); el
+     `scripts/crear-admin.mjs` y `scripts/probe-admin.mjs` (46 pruebas entonces, 83
+     hoy); el
      panel `admin/` sin frame (D14). **Cambió respecto al plan:** las cuentas
      no se INVITAN, se CREAN por `/admin/users` y fijan contraseña con el
      código de recuperación, porque medido `/invite` pasa por el Auth Hook y
      rechaza `@rlvo.com.mx` (§9). Decisión del usuario, 2026-09-29. **Prueba
      manual en local, en navegador y con un TOTP real: HECHA por el usuario el
      2026-10-01, sin hallazgos** (`admin/CLAUDE.md`, "Desarrollo local").
-   - **Runbook de la Ola 3 para `…477`/`…478`/`…479`, en este orden** (se suma a lo
-     de abajo):
+   - **Runbook de la Ola 3 para `…477`/`…478`/`…479` — CORRIDO, cerrado el
+     2026-10-05** (evidencia en "Hecho"; se conserva como registro). Diferencias
+     con lo que dice abajo: el paso 1 se decidió aceptando la ventana, con la
+     regla del runbook para los cofundadores (`docs/admin-runbook.md`) y las 4
+     `pendiente` heredadas resueltas en Studio; el paso 6 fue `crear-admin.mjs
+     --remoto`; el paso 7 usó `--linked`; y `desactivar_admin` entró en `…479`
+     antes del push, así que el CHECK del paso 8 tiene **6** acciones, no 5:
      0. **Bloqueante:** `select count(*) from public.users where estado =
         'suspendido'` en remoto debe dar 0 (el 2026-09-29 dio 0 de 7). Si no,
         NO se hace push: se trae como decisión (backfill con motivo, o
@@ -3719,8 +3885,8 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
         invariantes de T12).
      5. Desde ese push, **suspender por Studio exige `suspendido_at` y
         `suspension_motivo`** (3-500 tras btrim) o falla con 23514 (D15).
-     6. Decidir cómo corre `crear-admin.mjs` contra remoto (hoy se niega: solo
-        local).
+     6. Decidir cómo corre `crear-admin.mjs` contra remoto (entonces se negaba:
+        solo local; resuelto en la Ola 3 con `--remoto`).
      7. `npm --prefix admin run gen:types` contra remoto, y comparar.
      8. (`…479`) Verificar en remoto `pg_get_triggerdef` de
         `reports_sella_resolved_at`, `pg_get_constraintdef` de
@@ -3734,13 +3900,13 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
         el motivo anotado fuera de la base —quién, cuándo y por qué— y avísale
         al dueño por el canal de soporte: Studio no escribe en
         `admin_acciones` y la base no le manda ningún aviso.
-   - **Ola 2 — HECHA EN LOCAL, sin pushear** (frames `5466752`/`2e3ab12`,
+   - **Ola 2 — EN PRODUCCIÓN desde 2026-10-02** (frames `5466752`/`2e3ab12`,
      aprobados el 2026-10-01; código `3f49263` a `f7ee579`): 24 frames en
      `design/admin-panel.html`; migración `20260930000479` (`listar_reportes`,
      `resolver_reporte`, `detalle_listing`, `bloquear_listing`, el trigger de
-     `resolved_at` y la policy de Storage del admin); rls.sql en 454 (T12, T35c
+     `resolved_at` y la policy de Storage del admin); rls.sql en 454 (455 hoy; T12, T35c
      y T36 Ola 2, con 49 controles, incluido el de G3 sobre el dueño); `probe-storage.mjs` en 34 y
-     `probe-admin.mjs` en 47; `scripts/totp.mjs` y
+     `probe-admin.mjs` en 47 (83 hoy); `scripts/totp.mjs` y
      `scripts/probe-puerta-totp.mjs`; el panel con reportes, detalle de
      publicación con fotos (blob) y las pantallas de la Ola 1 alineadas a los
      frames, con fuentes autoalojadas. **Prueba manual en local, en navegador y
@@ -3751,9 +3917,15 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      **Pendiente de diseño:** el detalle de un reporte resuelto no muestra su
      auditoría (el frame sí): no hay RPC que la devuelva para el tipo
      `reporte` hasta `admin.auditoria` (Ola 6).
-   - **Ola 3:** despliegue (Cloudflare Pages en `admin.rlvo.com.mx`) y
-     `admin-reset-mfa`. Tú agregas el schema `admin` a los exposed schemas del
-     Dashboard.
+   - **Ola 3 — HECHA, EN PRODUCCIÓN (2026-10-02 al 2026-10-05):** push de las 3
+     migraciones, schema `admin` expuesto, tipos regenerados, panel desplegado en
+     Cloudflare Pages (`admin.rlvo.com.mx`) y los 3 admins activados. Detalle,
+     evidencia y límites en "Hecho".
+   - **Ola 3b — PENDIENTE: Edge Function `admin-reset-mfa`.** Salió de la Ola 3
+     porque no tiene frame (`design/admin-panel.html`) y `admin/CLAUDE.md` exige
+     frame primero. Mientras tanto, perder el teléfono se resuelve con
+     `desactivar` → borrar el factor en el Dashboard → enrolar de nuevo →
+     `activar` (`docs/admin-runbook.md`).
    - **Ola 4:** moderación, incluido el trigger "una publicación no pasa a
      `activa` si su dueño no está activo" (`cuenta-perfil.md`, deuda del pausado
      al suspender). Medido en local antes de escribirlo: cae en **4 fixtures**
@@ -3767,8 +3939,8 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
    de `admin_acciones` en `admin/CLAUDE.md`). Las de la Ola 2 también están
    hechas (T36 (g)-(i) y el trigger de `resolved_at`). Siguen las de las Olas 4
    y 6 de `docs/rf17-plan-admin.md`.
-   Pendientes tuyos: agregar el schema `admin` cuando toque (Ola 3) y la fila
-   de `prueba-2b` (pendiente 0c).
+   Pendientes: la Ola 3b, una estrategia de respaldos (índice de deuda, abajo) y
+   los secretos de Vault de `send-push` (pendiente 1). Ninguno de los de la Ola 3 queda abierto.
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que
@@ -3839,8 +4011,13 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - No se puede deshacer una venta entera → `confianza-ventas.md`
 - Una recuperación de contraseña abandonada a media deja la sesión abierta con la contraseña VIEJA → `onboarding-auth.md`
 - Compartir comparte solo texto plano, sin ningún link — en LAS DOS pantallas que lo tienen → `compartir-deeplinks.md`
-- ~~`reports.resolved_at` existe y NADIE la escribe~~ **[CERRADA]** por `20260930000479` (trigger `reports_sella_resolved_at`, en LOCAL) → `notificaciones-push.md`
+- ~~`reports.resolved_at` existe y NADIE la escribe~~ **[CERRADA]** por `20260930000479` (trigger `reports_sella_resolved_at`, en producción desde 2026-10-02) → `notificaciones-push.md`
 - Bloquear una `vendida` deja a su comprador sin camino en la UI para calificar (`listings_select` esconde la `bloqueada`) → CLAUDE.md §3, "Panel de admin"
+- **El proyecto NO tiene backups ni PITR**: el único respaldo es una copia cifrada del 2026-10-01 (anterior a A1a y a los 3 admins) → CLAUDE.md §8, "Hecho", Panel de admin
+- Los correos personales de 2 admins quedan en `admin_acciones.admin_correo`, una tabla append-only → CLAUDE.md §3, "Panel de admin"
+- `listing_photos` con `storage_path` en forma de URL completa (publicaciones 1 y 2, pausadas, anteriores a `…445`) y objetos de Storage sin fila: el panel muestra "La foto no está disponible" → CLAUDE.md §8, "Hecho", Panel de admin
+- El panel se despliega a mano (`wrangler pages deploy`, sin CI/CD) y Cloudflare le agrega `access-control-allow-origin: *`, `nel` y `report-to`, que no se quitan desde `_headers`; las fuentes `.woff2` se sirven sin `content-type` → `admin/CLAUDE.md`, "Producción"
+- Leaked password protection de Auth desactivado (advisor de seguridad); se decide en el Dashboard → CLAUDE.md §8, "Hecho", Panel de admin
 - Sin receipts de Expo → `notificaciones-push.md`
 - `pg_net` es fire-and-forget → `notificaciones-push.md`
 - El inbox no pagina → `notificaciones-push.md`
@@ -3886,7 +4063,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - El cursor de "Recomendados para ti" es un puntaje: quitar un favorito o un contacto a media lista puede saltar tarjetas hasta el siguiente refresh → `explorar.md`
 - "Recomendados para ti" ordena TODO el alcance por puntaje en cada página (sin índice posible; 21 ms en "todo" con 80k) → `explorar.md`
 - Un favorito o contacto sobre una publicación ajena hoy oculta no da señal al ranking (efecto de ser INVOKER) → CLAUDE.md §3, "Intereses y recomendados"
-- Una `pendiente` de un dueño ya suspendido se puede activar (camino de usuario de `moderar-contenido`, o Studio); el panel la hace visible y el fix es `dueno_no_activo` (Ola 4 de RF-17) → `cuenta-perfil.md`
+- Una `pendiente` de un dueño ya suspendido se puede activar (camino de usuario de `moderar-contenido`, o Studio); el panel la hace visible, se aceptó hasta la Ola 4 con una regla de runbook (`docs/admin-runbook.md`) y el fix es `dueno_no_activo` (Ola 4 de RF-17) → `cuenta-perfil.md`
 - `.easignore` es copia literal de `.gitignore` y no se ha verificado contra el tarball de un build real de EAS → CLAUDE.md §8, pendiente 0i
 
 **Inventario de componentes reutilizables (`src/components/`) — no los
@@ -4397,7 +4574,12 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   "secret key sí o no" sino **por endpoint**, y la invitación cuenta como alta.
   Por eso las cuentas de admin nacen por `/admin/users` y fijan su contraseña
   con el código de recuperación (`scripts/crear-admin.mjs`). Antes de asumir que
-  un endpoint de admin salta el hook, se mide ESE endpoint.
+  un endpoint de admin salta el hook, se mide ESE endpoint. **En REMOTO** (GoTrue
+  v2.197.0, 2026-10-02) `POST /admin/users` también salta el hook: la cuenta
+  `@rlvo.com.mx` del primer admin se creó sin que `rlvo.com.mx` esté en
+  `universidad_dominios`. Lo mismo vale para un correo personal de admin: los dos
+  admins con correo personal se crearon por ese endpoint (2026-10-02 y
+  2026-10-03).
 - **Un Auth Hook de Postgres que lanza una excepción le manda su TEXTO al
   cliente.** Medido con un `raise exception 'CONTROL ROTO'`: GoTrue responde
   `500` y `msg: "CONTROL ROTO"`, y auth-js lo pone en `error.message`. Nada que
@@ -4761,3 +4943,50 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   para distinguir "vino del panel" de "vino de Studio" en un control negativo
   (T36 (c1b)); **no** lo uses como candado: es un GUC que cualquier sesión
   puede poner.
+
+- **Cloudflare Web Analytics inyecta su beacon en el HTML desde el borde, y solo
+  si la petición pide HTML.** Medido el 2026-10-02 sobre `admin.rlvo.com.mx`: con
+  `curl` simple o con `Accept: */*` el HTML sale limpio (1041 B), y con
+  `Accept: text/html` sale con un `<script … beacon.min.js>` antes de `</body>`
+  (1408 B). Era la inyección AUTOMÁTICA de la ZONA (`rlvo.com.mx`, "Enable,
+  excluding visitor data in the EU") y alcanzaba a todos sus subdominios
+  proxeados, aunque el proyecto de Pages dijera "Web analytics is disabled": `rlvo-admin.
+  pages.dev`, que no pasa por la zona, nunca lo tuvo. La CSP del panel lo
+  bloquea (`blocked:csp`, nada sale), así que el síntoma es ruido en la consola, y
+  un `curl` normal NO lo ve: la primera verificación de F4, con `curl` simple, dio
+  0 y se leyó como "apagado" (error de método, no de configuración). **Para verificar, 4 variantes de petición** (curl simple, UA de
+  navegador con `*/*`, UA con `Accept: text/html` y UA con `Accept` más
+  `Sec-Fetch-Dest: document`). La salida sin tocar la CSP fue cambiar la zona a
+  "Enable with JS Snippet installation" (así está a 2026-10-05) y poner el
+  snippet solo donde se quiere medir; las reglas para excluir tráfico exigen plan
+  Pro.
+- **`supabase gen types --local` y `--linked` producen el MISMO contenido con
+  distinto formato.** Medido el 2026-10-02: `--linked` agrega el bloque
+  `__InternalSupabase { PostgrestVersion }`, pone paréntesis en los genéricos de
+  los helpers (5 sitios) y quita una línea en blanco final. Compila igual. El
+  `gen:types` de la raíz usa `--linked` y se corre después de cada push; el del
+  panel usa `--local` a propósito, porque las RPC nuevas se prueban en local
+  ANTES del push y `--linked` no las vería. Quien commitee un archivo generado
+  con `--local` vuelve al formato viejo: es ruido en el diff, no un error. Tras
+  cada push, `admin/src/db/admin.types.ts` se regenera con `--linked` y ese es el
+  que se commitea.
+- **El advisor `authenticated_security_definer_function_executable` solo cuenta
+  las funciones de los schemas EXPUESTOS por la API.** Antes de exponer `admin`
+  los advisors mostraban 3 definer (las de `public`) aunque las 9 RPC de `admin.*`
+  ya existían; al exponerlo pasaron a 12. No es una regresión: es el lint
+  empezando a ver lo que ya estaba. Esos 9 WARN son intencionales (cada RPC
+  llama `exigir_admin()` primero). El 12 es la cifra de 2026-10-05 (9 de
+  `admin.*` y 3 de `public`): un número distinto sin una función nueva es la
+  señal.
+- **Una fila de `auth.users` sembrada por SQL con las columnas de token en NULL
+  rompe `auth.admin.listUsers`** (`500 Database error finding users`). GoTrue lee
+  esas columnas como texto; las que crea él mismo van en cadena vacía. Mordió al
+  sembrar una cuenta de prueba en `probe-admin.mjs` (caso 8g) y se arregló
+  sembrándolas con `''`. En remoto no aplica: todas las filas las crea GoTrue.
+- **Pages sirve 200 con `index.html` para CUALQUIER ruta inexistente, también las
+  de recursos, y cachea en el borde el JS anterior.** Medido tras el redespliegue:
+  `/assets/no-existe.js` da 200 `text/html` (el navegador no lo ejecuta, por
+  `nosniff`), y la ruta del JS viejo (`index-BXRSgDOV.js`) seguía respondiendo su
+  contenido en el dominio propio (`max-age=14400`) y en `pages.dev`
+  (`s-maxage=604800`), pero no en el deployment nuevo. No hace falta purgar: el
+  `index.html` ya apunta al JS nuevo y se sirve con `max-age=0, must-revalidate`.

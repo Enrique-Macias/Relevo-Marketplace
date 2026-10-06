@@ -238,8 +238,10 @@ vez validado.
 - **RF-17** Panel de administración web propio para revisar reportes,
   moderar publicaciones, suspender usuarios y ver métricas básicas de uso. Lo
   usan 3 admins y dos no son técnicos, así que no puede exigir Supabase Studio
-  ni SQL. (Antes decía "vive en Supabase Studio"; sigue siendo así hasta que el
-  panel esté desplegado.) **Fase 1:**
+  ni SQL. (Antes decía "vive en Supabase Studio".) **Estado (2026-10-05):** el
+  panel está EN PRODUCCIÓN con reportes, detalle de publicación, bloqueo y
+  usuarios (Olas 1-3); la cola de moderación, aprobar, el catálogo y las métricas
+  siguen en Studio hasta las Olas 4-6. **Fase 1:**
   (a) reportes: listar, ver el objetivo (publicación o usuario) y resolver o
   descartar; (b) cola de moderación: publicaciones en `pendiente` con sus
   fotos y el veredicto de moderación, aprobar o bloquear — bloquear también
@@ -255,9 +257,10 @@ vez validado.
   admin adentro y MFA (aal2) exigido en la base, y deja fila en una tabla de
   auditoría; el panel nunca escribe directo y la `service_role` key nunca llega
   al navegador.
-  **⏳ Estado: en construcción por olas — `CLAUDE.md` §8, pendiente 0k.** La
-  Ola 0 (una corrección previa de un trigger) está hecha en local, sin
-  pushear a remoto; el panel todavía no existe.
+  **Estado (2026-10-05): en producción por olas — `CLAUDE.md` §8, pendiente 0k.**
+  Las Olas 0 a 3 (corrección de un trigger, login con MFA, usuarios, reportes,
+  despliegue y alta de los 3 admins) están en producción; faltan la Ola 3b
+  (`admin-reset-mfa`) y las Olas 4 a 6 (cola de moderación, catálogo y métricas).
 - **RF-18** Moderación automática de contenido antes de publicarse: fotos de
   publicaciones y de perfil analizadas con Google Cloud Vision (SafeSearch +
   detección de texto en imagen); título y descripción analizados con OpenAI
@@ -368,7 +371,7 @@ generosa.
 | App móvil | React Native + Expo | Un solo código Android/iOS, builds sin Mac (EAS Build) |
 | Backend/BD | Supabase (Postgres) | Auth + BD relacional + Storage + RLS incluidos |
 | Notificaciones | Expo Notifications | Integración directa, sin servicio adicional |
-| Admin | Supabase Studio hoy; panel web propio (RF-17) en construcción | Studio: cero desarrollo para arrancar. El panel existe porque 2 de los 3 admins no pueden usar Studio ni SQL |
+| Admin | Panel web propio (RF-17) en producción (Olas 1-3, a 2026-10-05); Supabase Studio para el resto | Studio: cero desarrollo para arrancar. El panel existe porque 2 de los 3 admins no pueden usar Studio ni SQL |
 | Distribución | EAS Build/Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Alternativas consideradas y descartadas:**
@@ -399,7 +402,7 @@ React Native + Expo · iOS / Android
 Expo Push Notification Service
 
 Contacto comprador ↔ vendedor: deep link wa.me — fuera del backend
-Moderación: Supabase Studio hoy (uso directo del equipo); panel web propio (RF-17) en construcción
+Moderación (a 2026-10-05): panel web propio (RF-17) en producción para reportes, bloqueo y usuarios; Supabase Studio (uso directo del equipo) para la cola de moderación hasta la Ola 4
 ```
 
 ### Modelo de datos — entidades principales

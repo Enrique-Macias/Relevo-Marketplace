@@ -1,0 +1,146 @@
+# Runbook del panel de administración de Relevo
+
+Para los tres administradores. Está escrito en lenguaje llano: lo que hace falta
+saber para usar el panel sin Studio ni SQL, y qué le toca hacer solo al **admin
+técnico** (la persona que corre los scripts y tiene acceso a Supabase Studio).
+La versión técnica vive en `admin/CLAUDE.md` y en `docs/rf17-plan-admin.md`.
+
+El panel está en **https://admin.rlvo.com.mx**.
+
+*Estado a 2026-10-05. Lo que dice este documento sobre qué cubre el panel y sobre
+los respaldos cambia con las Olas 3b a 6 y con la estrategia de respaldos: cuando
+cambie, se actualiza aquí.*
+
+## 1. Entrar al panel
+
+1. Correo y contraseña de tu cuenta de administrador.
+2. Después, el código de 6 dígitos de tu app autenticadora.
+3. **Cada 12 horas el panel te pide el código otra vez.** Si abres un reporte o
+   una lista y aparece una ventana "Código de verificación", es normal: escribe el
+   código actual y lo que estabas abriendo continúa. Si cancelas, esa pantalla no
+   carga y puedes pulsar "Reintentar".
+4. **Primera vez, o si olvidaste tu contraseña:** en la pantalla de entrada, "Primera
+   vez u olvidé mi contraseña". Te llega un código al correo de tu cuenta. Tu
+   cuenta solo ve datos cuando el admin técnico la ha **activado** después de
+   confirmar contigo, por otro canal, que fuiste tú quien enroló tu app
+   autenticadora.
+
+Cada acción que haces desde el panel guarda tu correo, para siempre, en el registro
+de auditoría (una tabla que no se puede modificar ni borrar). Los dos
+administradores con correo personal lo aceptaron.
+
+## 2. Qué se puede hacer desde el panel
+
+- **Reportes:** ver la lista, abrir uno, resolverlo o descartarlo (con un motivo
+  de 3 a 500 caracteres), ver la publicación o la cuenta reportada y **bloquear
+  una publicación**.
+- **Usuarios:** buscar, ver el detalle, **suspender** y **reactivar** (siempre con
+  motivo).
+- Todo lo que escribe queda **auditado**: quién, cuándo, qué y por qué.
+
+**Lo que a 2026-10-05 todavía no está en el panel** (sigue en Studio hasta las Olas 4 a 6): la
+cola de moderación, aprobar publicaciones, el catálogo de universidades y
+dominios, y las métricas.
+
+No escribas datos personales en los motivos: son texto libre y la base no puede
+impedirlo.
+
+## 3. Antes de suspender a alguien
+
+Suspender a una cuenta pausa sus publicaciones activas, pero **no toca sus
+publicaciones "en revisión"**. Mientras no exista el candado de la Ola 4, una de
+esas publicaciones podría activarse sola aunque su dueño esté suspendido.
+
+- Si el panel muestra, al suspender, **"En revisión: N" con N mayor que 0**:
+  suspende igual (la suspensión importa más) y **avísale al admin técnico ese mismo
+  día**.
+- **El admin técnico**, después de cada aviso y una vez por semana, corre esto en
+  Studio:
+  ```sql
+  select l.id, l.estado, u.id as dueno
+    from public.listings l
+    join public.users u on u.id = l.user_id
+   where u.estado = 'suspendido' and l.estado in ('pendiente', 'activa');
+  ```
+  Si aparece una publicación **activa**, la pasa a `pausada` y anota el motivo fuera
+  de la base. Una **pendiente** no se aprueba mientras su dueño siga suspendido.
+- **En Studio, nunca se aprueba una publicación en revisión sin mirar antes si su
+  dueño está activo.**
+
+## 4. Bloquear una publicación
+
+- **Bloquear es definitivo** para la app y el panel: el panel no desbloquea. Piénsalo
+  antes.
+- **Si fue un error,** solo el admin técnico puede revertirlo, en Studio. Studio **no
+  deja rastro** en la auditoría y **el dueño no recibe ningún aviso**, así que quien
+  lo haga anota fuera de la base quién, cuándo y por qué, y le avisa al dueño por el
+  correo de soporte. Para pasar a `activa` la publicación debe tener al menos una
+  foto.
+- **Si la publicación está vendida** y hay una calificación pendiente, el comprador
+  se queda sin camino en la app para calificar al vendedor. Avísale al comprador por
+  soporte **antes** de bloquearla.
+
+## 5. Perdí o cambié el teléfono (la app autenticadora)
+
+El admin técnico no puede simplemente borrar tu factor: cualquiera con tu contraseña
+podría registrar uno nuevo y quedar como administrador. El orden es este:
+
+1. Llamas por voz al admin técnico, a un número que él ya tenga tuyo.
+2. Él **desactiva** tu cuenta (no la borra): pierdes el acceso de inmediato y queda
+   auditado.
+3. Él borra tu factor en el Dashboard de Supabase (Authentication → Users). **Este
+   paso del Dashboard todavía no se ha ejecutado en producción**: si esa opción no
+   aparece o no funciona, no improvises otra vía; avisa y se resuelve caso por caso.
+4. Entras al panel con tu contraseña y, como no tienes factor, te manda a enrolar la
+   app en el teléfono nuevo.
+5. Segunda llamada: confirmas que fuiste tú y a qué hora enrolaste.
+6. Él te **reactiva**. El sistema exige que tu factor sea posterior a la
+   desactivación, así que el factor viejo no sirve.
+
+Si quien pierde el teléfono es el propio admin técnico, hace los mismos pasos sobre
+su cuenta; conviene que otro admin sea testigo de la llamada.
+
+## 6. Si sospechas que una cuenta de administrador se comprometió
+
+1. Avisa **de inmediato** al admin técnico.
+2. Él desactiva esa cuenta. El efecto es inmediato (desde la raíz del repositorio):
+   ```bash
+   node scripts/crear-admin.mjs desactivar --remoto --pooler-host <host-del-pooler> <correo> --motivo "<3 a 500 caracteres>"
+   ```
+   Pide, en este orden, el identificador del proyecto, la llave secreta temporal y la
+   contraseña de la base (las dos últimas sin eco). Si hay prisa y no hay tiempo de
+   crear la llave, el admin técnico tiene un recurso en Studio:
+   `update private.admins set activado_at = null where user_id = '<uuid de esa cuenta>'`.
+   Se usa solo en una emergencia, **no deja fila de auditoría** (anota después quién,
+   cuándo y por qué) y, como no deja la fila `desactivar_admin`, el script
+   `activar` no exigiría un factor nuevo al reactivar: borra el factor a mano
+   antes de reactivar.
+3. La persona cambia la contraseña de su correo y revisa su verificación en dos
+   pasos antes de volver a activarse.
+
+## 7. Lo que solo hace el admin técnico
+
+- **Dar de alta a un administrador** (`crear-admin.mjs crear --remoto …`; para un
+  correo que no sea `@rlvo.com.mx`, con `--correo-externo`) y **activarlo**, siempre
+  después de una llamada de confirmación. Una cuenta que ya existe en el marketplace
+  **no se convierte** en administrador: se usa otro correo.
+- **La llave secreta temporal** que pide el script se crea en el Dashboard para esa
+  alta y **se borra al terminar**. No se guarda en ningún archivo ni se pega en un
+  chat.
+- **Suspender o reactivar por Studio** (no por el panel): hay que escribir
+  `suspendido_at` y `suspension_motivo` (entre 3 y 500 caracteres) al suspender, y
+  dejar los dos en nulo al reactivar. Si falta alguno, la base responde con el error
+  `23514`. Studio no audita.
+- **Desbloquear una publicación** (sección 4) y **desactivar a un administrador**
+  (secciones 5 y 6).
+
+## 8. Respaldos: lo que hay y lo que no
+
+- **A 2026-10-05, el proyecto de Supabase no tiene respaldos automáticos ni
+  recuperación a un punto en el tiempo.**
+- Existe una copia cifrada del esquema y de los datos tomada la noche del
+  **2026-10-01** (hora de Monterrey), antes de resolver las cuatro publicaciones pendientes y de crear a los tres
+  administradores. Es una fotografía que envejece cada día, **no** una estrategia de
+  respaldo, y no incluye los archivos de Storage ni los secretos.
+- Definir una estrategia de respaldos (plan con respaldos diarios o un volcado
+  cifrado periódico) es una deuda abierta.

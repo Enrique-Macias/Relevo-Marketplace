@@ -19,6 +19,8 @@ Lo imprescindible antes de tocar nada:
   (`admin/src/lib/rechazos.ts`); cualquier otro rechazo solo se muestra.
 - Las cuentas de admin se crean con `scripts/crear-admin.mjs` por
   `admin/users` y se activan en dos pasos; `inviteUserByEmail` pasa por el Auth
-  Hook y rechaza `@rlvo.com.mx` (medido).
+  Hook y rechaza `@rlvo.com.mx` (medido). El correo es `@rlvo.com.mx` por
+  defecto; uno externo exige `--correo-externo` y el preflight rechaza dominios
+  de `universidad_dominios` y cuentas ya existentes.
 - El `DETAIL` de un rechazo de CHECK de `admin_acciones` imprime la fila con
   el `motivo`: no se pega en chats ni en tickets.

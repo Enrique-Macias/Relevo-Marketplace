@@ -181,8 +181,8 @@ Componentes nuevos: `NotifRow`, `SkeletonNotifRows`, `IconMail`, y dos roles de
     de error del token falso y **borró ese token** (`limpiados: 1`). Lo único que
     falta es un aparato de verdad — ver el pendiente de abajo.
 
-- **[CERRADA por `20260930000479`, en LOCAL]** La sella el trigger BEFORE
-  `reports_sella_resolved_at` (`private.sella_resolved_at()`, INVOKER y
+- **[CERRADA por `20260930000479`; en producción desde 2026-10-02]** La sella
+  el trigger BEFORE `reports_sella_resolved_at` (`private.sella_resolved_at()`, INVOKER y
   revocada): `now()` al salir de `pendiente`, NULL al volver; también sin
   reportante y desde Studio. `admin.resolver_reporte` NO la escribe, solo la lee
   con `returning` para auditarla (una sola fuente). Vigilado por T36 (c1)-(c3),
