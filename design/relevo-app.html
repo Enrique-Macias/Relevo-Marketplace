@@ -2800,6 +2800,12 @@
             <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:9px;">
               Variante (doc, no es parte del flujo): en revisión, y bloqueada
             </div>
+            <!-- RF-17 Ola 4 (D5): las fotos de una BLOQUEADA ya no las ve ni su
+                 dueño (las policies de listing_photos y del bucket excluyen
+                 `bloqueada`), así que el hero de una bloqueada es SIEMPRE el
+                 fallback del carrusel —el ícono de la categoría sobre su tinte,
+                 el mismo que dibuja este frame arriba—, sin puntos ni visor. El
+                 .notice lo dice para que no parezca que las fotos se perdieron. -->
             <div class="sticky-cta" style="position:static; padding:0 0 10px; background:none; backdrop-filter:none; border-top:none;">
               <div class="notice" style="flex:1; width:auto; margin-bottom:0;">
                 <div class="notice-text">Esta publicación está en revisión. Se publicará en cuanto la revisemos.</div>
@@ -2807,7 +2813,7 @@
             </div>
             <div class="sticky-cta" style="position:static; padding:0; background:none; backdrop-filter:none; border-top:none;">
               <div class="notice" style="flex:1; width:auto; margin-bottom:0;">
-                <div class="notice-text">Esta publicación no fue aprobada y no se publicó.</div>
+                <div class="notice-text">Esta publicación no fue aprobada y no se publicó. Sus fotos ya no se muestran.</div>
               </div>
             </div>
           </div>
