@@ -507,9 +507,18 @@ select pg_temp.assert(
 -- Por eso esta sección se siembra su propia publicación, como hacen las
 -- fixtures del inicio: directo, no vía as_user, porque `listings_insert_own`
 -- exige is_active_user() y B quedó suspendido en T10.
+--
+-- RF-17 Ola 4 (20261007000480): una `activa` de un dueño suspendido ya no se
+-- puede crear, ni como postgres. Aquí el dueño TIENE que ser `:B`, porque la
+-- primera aserción prueba justo que un suspendido lee el conteo de SU
+-- publicación; con otro dueño dejaría de probarlo. Así que la fila se siembra
+-- como el estado LEGACY que representa (anterior a …480), apagando el trigger
+-- de INSERT solo alrededor de este insert, dentro de la transacción de la suite.
+alter table public.listings disable trigger listings_exige_dueno_activo_ins;
 insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
                              titulo, precio, condicion, estado)
 values (:B::uuid, 1, 1, 1, 'RLS Favoritos contables', 99, 'nuevo', 'activa');
+alter table public.listings enable trigger listings_exige_dueno_activo_ins;
 
 create temp table t_fav as
 select (select id from public.listings where titulo = 'RLS Favoritos contables') as listing;
@@ -552,9 +561,20 @@ select pg_temp.assert(
 -- que `ilike '%calculo%'` devolvía 0 sobre "Cálculo de Larson", y el usuario
 -- teclea sin acento. Si alguien cambia la config del to_tsvector a 'simple' o
 -- 'english', el stemmer deja de plegar el acento y ESTA es la prueba que falla.
+--
+-- RF-17 Ola 4 (20261007000480): el dueño era `:B` (suspendido) por pura
+-- casualidad, y una `activa` de un suspendido ya no se puede sembrar. El dueño
+-- aquí es incidental (la búsqueda la hace `:A`), así que va uno ACTIVO propio,
+-- `:N13`. No `:A`: T14 depende de que a esta altura `:A` no tenga publicaciones.
+\set N13 '''13131313-0000-0000-0000-0000000013a0'''
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values (:N13::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated',
+        'authenticated', 'rls-n13@tec.mx', '', now(), now(), now());
+
 insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
                              titulo, descripcion, precio, condicion, estado)
-values (:B::uuid, 1, 1, 1, 'RLS Cálculo de Larson, 9a edición',
+values (:N13::uuid, 1, 1, 1, 'RLS Cálculo de Larson, 9a edición',
         'Sin subrayados ni marcas', 280, 'como_nuevo', 'activa');
 
 create temp table t_fts as
@@ -646,7 +666,11 @@ insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
 values
   (:A::uuid, 1, 1, 1, 'RLS Fotos activa',      50, 'nuevo', 'activa'),
   (:A::uuid, 1, 1, 1, 'RLS Fotos pausada',     50, 'nuevo', 'pausada'),
-  (:B::uuid, 1, 1, 1, 'RLS Fotos suspendido',  50, 'nuevo', 'activa');
+  -- `pausada` y no `activa` desde 20261007000480 (una `activa` de un
+  -- suspendido ya no se puede sembrar). Las dos aserciones que la usan siguen
+  -- probando lo mismo: la policy de INSERT del objeto mira dueño e
+  -- is_active_user(), no el estado, y el dueño ve su `pausada`.
+  (:B::uuid, 1, 1, 1, 'RLS Fotos suspendido',  50, 'nuevo', 'pausada');
 
 create temp table t_obj as
 select
@@ -1970,9 +1994,16 @@ select pg_temp.assert(
 -- UPDATE (deuda consciente documentada en publicar-fotos.md) y la policy no
 -- aplica porque esto corre como postgres, igual que el resto de las fixtures
 -- posteriores a T10.
+--
+-- RF-17 Ola 4 (20261007000480): esa fila es EXACTAMENTE la deuda que el
+-- trigger nuevo cierra, así que sin apagarlo (e) dejaría de ser observable. Se
+-- apaga solo alrededor de este insert y dentro de la transacción de la suite:
+-- la fila representa el estado legacy, anterior a …480.
+alter table public.listings disable trigger listings_exige_dueno_activo_ins;
 insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
                              titulo, precio, condicion, estado)
 values (:Q::uuid, 1, 1, 1, 'RLS Susp posterior', 500, 'nuevo', 'activa');
+alter table public.listings enable trigger listings_exige_dueno_activo_ins;
 
 -- (e) `old.estado is distinct from new.estado`. Editar el propio perfil es de
 -- las cosas que un suspendido CONSERVA (tabla de decisión de CLAUDE.md §3, y
@@ -2482,8 +2513,10 @@ select pg_temp.assert(
   -- siguiente), pero se revoca igual por decisión del usuario, porque no hay
   -- motivo para que nadie la invoque.
   and not has_function_privilege('authenticated', 'private.sella_resolved_at()', 'execute')
-  and not (select prosecdef from pg_proc where oid = 'private.sella_resolved_at()'::regprocedure),
-  'las 20 funciones que solo disparan por trigger siguen revocadas');
+  and not (select prosecdef from pg_proc where oid = 'private.sella_resolved_at()'::regprocedure)
+  -- RF-17, Ola 4 (20261007000480): definer que lee el estado de OTRO usuario.
+  and not has_function_privilege('authenticated', 'private.exige_dueno_activo()', 'execute'),
+  'las 21 funciones que solo disparan por trigger siguen revocadas');
 
 -- Las DOS funciones de trigger que NO están en la lista de arriba, a
 -- propósito: `set_updated_at()` y `limpia_veredicto_en_pantalla()` son
@@ -5164,6 +5197,11 @@ select pg_temp.assert(
 -- (o), (o2), (o3) Los conteos de `detalle_usuario`, con publicaciones
 -- sembradas DESPUÉS de suspender (el camino de la deuda `dueno_no_activo`,
 -- Ola 4: algo que se activa con el dueño ya suspendido).
+--
+-- Desde 20261007000480 ese estado ya no se puede crear; estas filas son las
+-- LEGACY (anteriores a …480, o de Studio antes del trigger), que
+-- `detalle_usuario` tiene que seguir contando. Trigger apagado solo aquí.
+alter table public.listings disable trigger listings_exige_dueno_activo_ins;
 insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
                              titulo, precio, condicion, estado)
 select :S35::uuid, 1, u.universidad_id,
@@ -5172,6 +5210,7 @@ select :S35::uuid, 1, u.universidad_id,
   from public.users u,
        (values ('RLS T35 activa tardía con foto'), ('RLS T35 activa tardía sin foto')) as v(t)
  where u.id = :S35::uuid;
+alter table public.listings enable trigger listings_exige_dueno_activo_ins;
 insert into public.listing_photos (listing_id, storage_path, orden)
 select id, id || '/t35.jpg', 0 from public.listings
  where titulo = 'RLS T35 activa tardía con foto';
@@ -5919,6 +5958,135 @@ select pg_temp.assert(
   and pg_temp.rechazo_aal(:A36::uuid, 'aal2', pg_temp.amr_totp(1), format(
     'select admin.detalle_listing(%s)', 999999999)) = 'P0002:listing_no_existe',
   'T36 (k2) detalle_listing rechaza a un no-admin y una publicación inexistente');
+
+-- ---------------------------------------------------------------------------
+\echo ''
+\echo '== T35b — una publicación no pasa a activa si su dueño no está activo (RF-17, Ola 4) =='
+-- 20261007000480. Autocontenida: sus propios `:D35b` (dueño que se suspende) y
+-- `:E35b` (dueño activo), con universidad y campus de tec.mx (la 1/1 sembrada).
+-- Las acciones corren como `postgres` a propósito: el trigger tiene que
+-- alcanzar también a Studio y a `moderar-contenido`, que escriben elevados.
+--
+-- `rechazo_msg` devuelve `sqlstate:mensaje` (no `sqlstate:constraint` como
+-- `rechazo_de`): aquí hay dos rechazos que se confunden en la misma
+-- transición —el de este trigger y el de fotos de 20260909000447— y solo el
+-- mensaje dice cuál fue.
+create or replace function pg_temp.rechazo_msg(p_sql text)
+returns text language plpgsql as $$
+begin
+  execute p_sql;
+  return 'ok';
+exception when others then
+  return sqlstate || ':' || sqlerrm;
+end $$;
+
+\set D35b '''35b35b35-0000-0000-0000-00000035b0d0'''
+\set E35b '''35b35b35-0000-0000-0000-00000035b0e0'''
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values
+  (:D35b::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-d35b@tec.mx', '', now(), now(), now()),
+  (:E35b::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+   'rls-e35b@tec.mx', '', now(), now(), now());
+
+-- Tres `pendiente` sembradas MIENTRAS los dos dueños están activos: con foto
+-- de D, sin foto de D, y con foto de E. La foto es load-bearing (lección de
+-- T20 (d)): sin ella, el rechazo de (a) vendría del trigger de fotos.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values
+  (:D35b::uuid, 1, 1, 1, 'RLS T35b pendiente con foto', 100, 'usado', 'pendiente'),
+  (:D35b::uuid, 1, 1, 1, 'RLS T35b pendiente sin foto', 100, 'usado', 'pendiente'),
+  (:E35b::uuid, 1, 1, 1, 'RLS T35b pendiente activo',   100, 'usado', 'pendiente');
+insert into public.listing_photos (listing_id, storage_path, orden)
+select id, id || '/t35b.jpg', 0 from public.listings
+ where titulo in ('RLS T35b pendiente con foto', 'RLS T35b pendiente activo');
+
+select (select id from public.listings where titulo = 'RLS T35b pendiente con foto') as t35b_con,
+       (select id from public.listings where titulo = 'RLS T35b pendiente sin foto') as t35b_sin,
+       (select id from public.listings where titulo = 'RLS T35b pendiente activo')   as t35b_act
+\gset
+
+update public.users set estado = 'suspendido', suspendido_at = now(),
+                        suspension_motivo = 'T35b: dueño suspendido'
+ where id = :D35b::uuid;
+
+select pg_temp.assert(
+  (select count(*) from public.listings
+    where user_id = :D35b::uuid and estado = 'pendiente') = 2,
+  'precondición T35b: suspender no tocó las pendiente de :D35b');
+
+-- (a) La transición que este trigger existe para cerrar, con foto: el único
+-- motivo posible de rechazo es el dueño.
+select pg_temp.rechazo_msg(format(
+  'update public.listings set estado = ''activa'' where id = %s', :t35b_con)) as t35b_a \gset
+select pg_temp.assert(
+  :'t35b_a' = '55000:dueno_no_activo'
+  and (select estado from public.listings where id = :t35b_con) = 'pendiente',
+  'T35b (a) pendiente → activa con el dueño suspendido lanza 55000:dueno_no_activo, también como postgres');
+
+-- (a2) El INSERT directo de una `activa` (Studio, service_role).
+select pg_temp.rechazo_msg(format(
+  'insert into public.listings (user_id, categoria_id, universidad_id, campus_id, titulo, precio, condicion, estado)
+   values (%L, 1, 1, 1, ''RLS T35b insert activa'', 100, ''usado'', ''activa'')', :D35b)) as t35b_a2 \gset
+select pg_temp.assert(
+  :'t35b_a2' = '55000:dueno_no_activo'
+  and not exists (select 1 from public.listings where titulo = 'RLS T35b insert activa'),
+  'T35b (a2) insertar una activa de un dueño suspendido lanza 55000:dueno_no_activo');
+
+-- (b) El control positivo: con el dueño activo, la misma transición pasa. Sin
+-- él, un trigger que rechazara todo pasaría (a) y (a2).
+select pg_temp.rechazo_msg(format(
+  'update public.listings set estado = ''activa'' where id = %s', :t35b_act)) as t35b_b \gset
+select pg_temp.assert(
+  :'t35b_b' = 'ok'
+  and (select estado from public.listings where id = :t35b_act) = 'activa',
+  'T35b (b) con el dueño activo, pendiente → activa pasa');
+
+-- (c) Una `activa` LEGACY de un suspendido (anterior a …480; se siembra con el
+-- trigger de INSERT apagado) sigue aceptando los UPDATE que no cambian el
+-- estado. Sin el `old.estado is distinct from new.estado`, abrir su Detalle
+-- (increment_listing_view) y editarla desde Studio reventarían.
+alter table public.listings disable trigger listings_exige_dueno_activo_ins;
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+values (:D35b::uuid, 1, 1, 1, 'RLS T35b legacy activa', 100, 'usado', 'activa');
+alter table public.listings enable trigger listings_exige_dueno_activo_ins;
+select id as t35b_leg from public.listings where titulo = 'RLS T35b legacy activa' \gset
+
+-- La vista se CAPTURA con rechazo_de en vez de correr suelta con as_user: sin
+-- el `old.estado is distinct from`, es justo esta llamada la que revienta, y
+-- así cae aquí con el nombre de (c) en vez de con un error crudo.
+select pg_temp.rechazo_de(:E35b::uuid,
+  format('select public.increment_listing_view(%s)', :t35b_leg)) as t35b_c_vista \gset
+select pg_temp.rechazo_msg(format(
+  'update public.listings set estado = ''activa'', precio = 90 where id = %s', :t35b_leg)) as t35b_c \gset
+select pg_temp.assert(
+  :'t35b_c_vista' = 'ok'
+  and :'t35b_c' = 'ok'
+  and (select vistas_count from public.listings where id = :t35b_leg) = 1
+  and (select precio from public.listings where id = :t35b_leg) = 90,
+  'T35b (c) una activa legacy de un suspendido acepta vistas y updates que no cambian el estado');
+
+-- (d) Dueño suspendido Y sin fotos: gana el trigger de fotos, que dispara
+-- antes por orden alfabético (`…enforce_activation…` < `…exige_dueno…`).
+-- Fija ese orden: si alguien renombra el trigger y lo adelanta, cae aquí.
+select pg_temp.rechazo_msg(format(
+  'update public.listings set estado = ''activa'' where id = %s', :t35b_sin)) as t35b_d \gset
+select pg_temp.assert(
+  :'t35b_d' = 'P0001:Una publicación no puede activarse sin fotos',
+  'T35b (d) suspendido y sin fotos: el rechazo es el de fotos (orden de disparo)');
+
+-- (e) FAIL-CLOSED: un dueño que no existe también lanza `dueno_no_activo`,
+-- antes que la FK (el BEFORE corre primero). La forma `into v … <> 'activo'`
+-- dejaría pasar el NULL y el error llegaría como 23503.
+select pg_temp.rechazo_msg(
+  'insert into public.listings (user_id, categoria_id, universidad_id, campus_id, titulo, precio, condicion, estado)
+   values (''35b35b35-0000-0000-0000-0000000000ff'', 1, 1, 1, ''RLS T35b fantasma'', 100, ''usado'', ''activa'')') as t35b_e \gset
+select pg_temp.assert(
+  :'t35b_e' = '55000:dueno_no_activo',
+  'T35b (e) una activa cuyo dueño no existe lanza 55000:dueno_no_activo, no 23503');
 
 \echo ''
 \echo '==========================================='
