@@ -669,6 +669,11 @@ mismo criterio que `campusChip`/`buttonWhatsapp`).
   de borrados de avatar que no afectaron nada. **Fix:** es el MISMO cron de
   barrido que ya piden las dos deudas de `publicar-fotos.md` — no es una tarea
   aparte, y cuando se haga tiene que cubrir los dos buckets.
+  **Medido en remoto el 2026-10-06 (UTC), con `select`:** el bucket `avatars` tiene
+  8 objetos y solo 3 los referencia algún `users.foto_url`, o sea 5 huérfanos;
+  2 usuarios tienen más de un objeto, y 2 objetos están en carpetas de un usuario
+  que ya no existe (causa sin investigar). Sin acción: es la deuda de arriba, ya
+  con números.
 **Foto de perfil (RF-03) construida — el círculo de las dos pantallas ya no es
 inerte.** Bucket `avatars` (`config.toml` + migración `20260916000456`), el
 componente `Avatar` (`src/components/Avatar.tsx`), `useFotoPerfil()` +

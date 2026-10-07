@@ -45,6 +45,12 @@ dominios, y las métricas.
 No escribas datos personales en los motivos: son texto libre y la base no puede
 impedirlo.
 
+**Fotos que no cargan:** si en el detalle de una publicación una foto dice "La foto
+no está disponible", puede ser que la fila de esa foto apunte a una dirección web y
+no a un archivo del almacenamiento (hay 2 así, de publicaciones antiguas pausadas,
+a 2026-10-06); no es un fallo del panel. Si pulsar "Reintentar" no la carga, avisa
+al admin técnico.
+
 ## 3. Antes de suspender a alguien
 
 Suspender a una cuenta pausa sus publicaciones activas, pero **no toca sus
@@ -142,5 +148,12 @@ su cuenta; conviene que otro admin sea testigo de la llamada.
   **2026-10-01** (hora de Monterrey), antes de resolver las cuatro publicaciones pendientes y de crear a los tres
   administradores. Es una fotografía que envejece cada día, **no** una estrategia de
   respaldo, y no incluye los archivos de Storage ni los secretos.
+- Hechos puntuales verificados en el equipo del admin técnico (no garantías
+  permanentes; pueden cambiar): FileVault activado; sin destinos de Time Machine ni
+  snapshots locales de APFS al momento de la comprobación; la copia está fuera de
+  iCloud Drive y de las carpetas sincronizadas comprobadas; su frase de paso está
+  en un gestor de contraseñas; la imagen se montó y se comprobó contra los SHA-256
+  originales, y los `.sql` en claro se borraron después. **No hay fecha límite ni
+  política para borrar o reemplazar la copia: es una decisión pendiente.**
 - Definir una estrategia de respaldos (plan con respaldos diarios o un volcado
   cifrado periódico) es una deuda abierta.

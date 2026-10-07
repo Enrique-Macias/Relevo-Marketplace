@@ -217,6 +217,10 @@ Componentes nuevos: `NotifRow`, `SkeletonNotifRows`, `IconMail`, y dos roles de
   reintenta. **Revisar cuando:** alguien reporte no haber recibido un push que sí
   está en su inbox. **Fix:** un barrido de
   `notifications where push_enviado_at is null and created_at > now() - interval '1 day'`.
+  **Estado medido el 2026-10-06 (UTC):** las 32 notificaciones de remoto tienen
+  `push_enviado_at` NULL y `push_tokens` tiene 0 filas. **Decidido ese día: los
+  avisos viejos NO se reenvían** (no hay mecanismo, el inbox ya los muestra y no
+  hay tokens); se reabre cuando existan tokens de dispositivos reales.
 - **El inbox no pagina:** `fetchNotificaciones()` trae las últimas 100 y ya.
   **Revisar cuando:** una cuenta real pase de ~100 notificaciones — hoy se
   acumulan de a una por baja de precio de un favorito, o sea decenas al año.

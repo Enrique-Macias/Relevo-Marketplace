@@ -3619,8 +3619,16 @@ de los route groups).
     inexistentes. Las 4 `pendiente` heredadas (ids 67, 73, 75 y 78, **sin fila en
     `listing_moderacion_reclamos`** porque se evaluaron antes de `…471`) las
     resolvió el usuario en Studio el 2026-10-02: las 4 quedaron `bloqueada`, con
-    sus 4 avisos `publicacion_bloqueada` en el inbox y SIN push (los secretos de
-    Vault de `send-push` siguen sin ponerse, pendiente 1).
+    sus 4 avisos `publicacion_bloqueada` en el inbox. **Ningún aviso de ese
+    inbox ha salido como push, no solo esos 4:** medido en remoto el 2026-10-06
+    (UTC), las 32 filas de `notifications` tienen `push_enviado_at` NULL (6 de
+    ellas `publicacion_bloqueada`) y `push_tokens` tiene 0 filas. Los secretos de
+    Vault de `send-push` siguen sin ponerse (pendiente 1) y no hay tokens de
+    dispositivo reales. **Decidido el 2026-10-06: los avisos viejos NO se
+    reenvían.** No hay mecanismo (el trigger `notifications_notify_push` es solo
+    AFTER INSERT, migración `…452:92-94`, y no hay barrido ni cron), el inbox ya
+    los muestra y no hay a quién mandárselos. Se reabre cuando existan tokens de
+    dispositivos reales.
   - **Push (lo corrió el usuario):** `list_migrations` pasó de 40 a 43, la última
     `…479`.
   - **Verificación en remoto (sección D del plan), comparada contra local con un
@@ -3697,7 +3705,23 @@ de los route groups).
     envejece, no una estrategia. Los `.sql` en claro se borraron después de abrir
     la imagen y comprobar los tres archivos por SHA-256. Cubre `public`, `private`,
     `auth` y `storage` (solo las filas de `storage.objects`: no los archivos), y
-    deja fuera Vault y `supabase_migrations`. La frase de paso se guarda aparte.
+    deja fuera Vault y `supabase_migrations`.
+    **Hechos verificados por el usuario en su equipo, puntuales y NO garantías
+    permanentes** (FileVault, Time Machine, ubicación y estado del respaldo se
+    comprobaron en ese momento y pueden cambiar): FileVault activado; sin destinos
+    de Time Machine configurados ni snapshots locales de APFS al momento de la
+    comprobación; la copia está fuera de iCloud Drive y de las carpetas
+    sincronizadas comprobadas (la ruta no se documenta); la frase de paso está en
+    un gestor de contraseñas (ni la frase ni su ubicación exacta se documentan);
+    la imagen AES-256 se montó y verificó, contiene los tres `.sql` originales y
+    sus SHA-256 coinciden; después se eliminaron los tres `.sql` en claro.
+    **Ciclo de vida: decisión pendiente.** No hay fecha límite ni política de
+    borrado o reemplazo; se define junto con la estrategia de backups/PITR y la
+    retención aplicable. **Pendiente aparte, sin resolver aquí:** comprobar si
+    esta copia, y la retención de datos de cuentas eliminadas que implica
+    (contiene filas anteriores a cualquier borrado posterior), obliga a actualizar
+    el aviso de privacidad o la política de retención (`docs/auditoria-lanzamiento-2026-09-22.md`,
+    §6). El aviso de privacidad no se modificó.
 
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
@@ -3951,7 +3975,9 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      que el aviso de privacidad, que explique el borrado desde la app y ofrezca
      un correo de soporte (`CORREO_CONTACTO`) para quien ya no la tenga.
    - **El aviso de privacidad tiene contenido pendiente**: la lista vive en la
-     auditoría, §6.
+     auditoría, §6. Incluye, sin resolver: los correos de admin en
+     `admin_correo`/ARCO, si la copia cifrada del 2026-10-01 exige actualizar el
+     aviso o la retención, y qué hace la landing con Cloudflare Web Analytics.
    - **`.easignore` existe desde la Ola 1 de RF-17** (para dejar fuera
      `admin/`), y en cuanto existe EAS deja de leer `.gitignore`. Es copia
      literal de `.gitignore` (verificado con `diff`), pero **no se ha
@@ -3971,6 +3997,10 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      `select vault.create_secret('https://ukxfnydfhmryrzhdqkvj.supabase.co/functions/v1/send-push', 'send_push_function_url');`
      Sin ellos el trigger no revienta: levanta un `warning`, la fila queda en el
      inbox con `push_enviado_at is null` y no sale ningún push.
+   - **Estado medido el 2026-10-06 (UTC):** las 32 notificaciones de remoto tienen
+     `push_enviado_at` NULL y `push_tokens` tiene 0 filas. **Los avisos viejos no
+     se reenvían (decidido el 2026-10-06):** no hay mecanismo y el inbox ya los
+     muestra. Se reabre cuando existan tokens de dispositivos reales.
    - Por §6 el simulador headless no cuenta como prueba. Es hermano del pendiente
      del header `Authorization` de `expo-image`.
 2. ~~Poner RF-18 en producción (los cuatro pasos manuales del runbook).~~
@@ -4013,9 +4043,10 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - Compartir comparte solo texto plano, sin ningún link — en LAS DOS pantallas que lo tienen → `compartir-deeplinks.md`
 - ~~`reports.resolved_at` existe y NADIE la escribe~~ **[CERRADA]** por `20260930000479` (trigger `reports_sella_resolved_at`, en producción desde 2026-10-02) → `notificaciones-push.md`
 - Bloquear una `vendida` deja a su comprador sin camino en la UI para calificar (`listings_select` esconde la `bloqueada`) → CLAUDE.md §3, "Panel de admin"
-- **El proyecto NO tiene backups ni PITR**: el único respaldo es una copia cifrada del 2026-10-01 (anterior a A1a y a los 3 admins) → CLAUDE.md §8, "Hecho", Panel de admin
-- Los correos personales de 2 admins quedan en `admin_acciones.admin_correo`, una tabla append-only → CLAUDE.md §3, "Panel de admin"
-- `listing_photos` con `storage_path` en forma de URL completa (publicaciones 1 y 2, pausadas, anteriores a `…445`) y objetos de Storage sin fila: el panel muestra "La foto no está disponible" → CLAUDE.md §8, "Hecho", Panel de admin
+- **El proyecto NO tiene backups ni PITR**: el único respaldo es una copia cifrada del 2026-10-01 (anterior a A1a y a los 3 admins), con ciclo de vida sin decidir y su efecto en el aviso de privacidad sin comprobar → CLAUDE.md §8, "Hecho", Panel de admin
+- Los correos personales de 2 admins quedan en `admin_acciones.admin_correo`, una tabla append-only; falta reflejarlo en el aviso de privacidad y en el trámite ARCO → `docs/auditoria-lanzamiento-2026-09-22.md`, §6
+- `listing_photos` con `storage_path` en forma de URL completa (publicaciones 1 y 2, pausadas, anteriores a `…445`) y objetos de Storage sin fila: Storage responde "Object not found" a esas rutas (medido en local) y, por el código, el panel mostraría "La foto no está disponible"; hoy ningún reporte apunta a esas publicaciones → `publicar-fotos.md` y `docs/admin-runbook.md`
+- La landing (otro repo) podría cargar el snippet de Cloudflare Web Analytics: sin verificar si lo hace, y el aviso de privacidad no lo menciona → `docs/auditoria-lanzamiento-2026-09-22.md`, §6
 - El panel se despliega a mano (`wrangler pages deploy`, sin CI/CD) y Cloudflare le agrega `access-control-allow-origin: *`, `nel` y `report-to`, que no se quitan desde `_headers`; las fuentes `.woff2` se sirven sin `content-type` → `admin/CLAUDE.md`, "Producción"
 - Leaked password protection de Auth desactivado (advisor de seguridad); se decide en el Dashboard → CLAUDE.md §8, "Hecho", Panel de admin
 - Sin receipts de Expo → `notificaciones-push.md`

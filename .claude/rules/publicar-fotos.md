@@ -502,6 +502,18 @@ cambio de semántica de seguridad disfrazado de refactor (§9).
   **Revisar cuando:** el costo de almacenamiento aparezca en la factura, o se
   abra la API a terceros. **Fix:** contar objetos en la policy de insert, o un
   cron de barrido.
+  **Medido en remoto el 2026-10-06 (UTC), con `select`:** de 53 objetos en
+  `listing-photos`, 1 no tiene fila en `listing_photos` y su carpeta no coincide
+  con ninguna publicación (subido el 2026-09-19; causa sin investigar). Aparte,
+  2 filas de `listing_photos` (publicaciones 1 y 2, pausadas, anteriores a
+  `…445`) tienen `storage_path` con forma de URL completa (`https://…`) y no de
+  ruta del bucket. Storage les responde "Object not found" (medido en local, con
+  un admin aal2, igual que a una ruta inexistente). El panel baja la foto con
+  `storage.download()` (`admin/src/componentes/FotoListing.tsx:36`) y ante
+  `error` muestra "La foto no está disponible" con "Reintentar" (`:45`, `:72-73`):
+  eso se leyó en el código, no se vio en un navegador, y no se midió en remoto.
+  Hoy ningún reporte apunta a esas publicaciones y el detalle de una publicación
+  solo se alcanza desde un reporte (`DetalleReporte.tsx:237`).
 - ~~**Borrar una publicación no borra sus fotos de Storage.**~~ **CERRADA** al
   construir "Confirmar eliminar" en Editar publicación. No hizo falta la Edge
   Function que se había previsto: el cliente borra los objetos **antes** de

@@ -125,18 +125,20 @@ Medido o decidido el 2026-10-01:
     `pendiente`). A `activa` solo pasa con al menos una foto. **Regla del
     runbook de la Ola 3:** quien lo haga deja el motivo anotado fuera de la
     base y avisa al dueño por soporte.
-12. **Hueco del dueño suspendido (aceptable hasta la Ola 4, a decidir antes
-    del push; decidido en la Ola 3, punto 5 de su sección).** Una `pendiente` de un dueño suspendido se puede activar:
-    `moderarListing()` escribe con privilegios elevados y no lee `users.estado`
-    (`supabase/functions/moderar-contenido/index.ts:445-455`), mientras que el
+12. **Hueco del dueño suspendido: aceptable hasta la Ola 4, y así se decidió en
+    la Ola 3** (punto 5 de su sección). Una `pendiente` de un dueño suspendido
+    se puede activar: `moderarListing()` escribe con privilegios elevados y no
+    lee `users.estado` (`supabase/functions/moderar-contenido/index.ts:445-455`),
+    mientras que el
     dueño, como `authenticated`, recibe `UPDATE 0` (`listings_update_own` exige
     `is_active_user()`). Reproducido en local dentro de `begin … rollback`.
     `pause_listings_on_suspend` solo pausa `activa` (`…457:86-89`): `pendiente`
     no existía cuando se escribió (llegó en `…458`) y pausarla abriría un
     atajo `pausada → activa` que se salta la revisión. Medido en remoto el
     2026-10-01: ningún dueño suspendido; las 4 `pendiente` (ids 67, 73, 75 y 78)
-    llevan 9-10 días esperando Studio, evaluadas `revisar`, o sea que no son
-    transitorias. **Opción anotada, sin implementar:** un guard de
+    llevaban 9-10 días esperando Studio, evaluadas `revisar`, o sea que no eran
+    transitorias; el usuario las resolvió en Studio el 2026-10-02 (UTC) y las 4
+    quedaron `bloqueada`. **Opción anotada, sin implementar:** un guard de
     `users.estado` en `moderarListing()` que no promueva a `activa` si el
     dueño no está activo; cubre esa salida, no la de Studio. El fix completo es
     el trigger `dueno_no_activo` de la Ola 4.
