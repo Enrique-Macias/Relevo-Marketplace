@@ -276,17 +276,25 @@ export default {
 // ---------------------------------------------------------------------------
 
 /**
- * Más de 60 s sin completarse = el worker murió y el reclamo quedó huérfano.
- * Es 12 veces el máximo medido en producción (5,044 ms, function_edge_logs del
- * 2026-09-22, n=13). Si una evaluación legítima tardara más, una segunda podría
- * correr en paralelo, y la red de ese caso es el compare-and-set de
- * `moderarListing()`.
+ * Más de 180 s sin completarse = el worker murió y el reclamo quedó huérfano.
+ *
+ * NO es un múltiplo del tiempo medido (máx 5,044 ms, function_edge_logs del
+ * 2026-09-22, n=13): es el TECHO de la plataforma más margen. El wall-clock de
+ * una Edge Function en el plan Free es de 150 s (docs "Edge Functions ›
+ * Limits"; 400 s en los de pago: si el proyecto cambia de plan, este número
+ * sube a 420 s), así que un worker VIVO nunca pasa de 150 s y ningún reclamo
+ * en vuelo se libera antes de tiempo. Con 60 s, una evaluación lenta pero viva
+ * (los `fetch` a terceros no tenían timeout) dejaba entrar a una segunda.
+ *
+ * ESCRITO DOS VECES: aquí y en `admin.aprobar_listing` (20261007000481), que
+ * toma el mismo reclamo para aprobar. Cambiar uno sin el otro no da ningún
+ * error; lo caza el tripwire de `scripts/probe-admin.mjs`, que compara los dos.
  *
  * El corte se calcula con el reloj de la función y se compara contra
  * `reclamada_at`, que pone la base: dos relojes de servidor sincronizados,
  * con una deriva despreciable frente a 60 s.
  */
-const TTL_RECLAMO_MS = 60_000;
+const TTL_RECLAMO_MS = 180_000;
 
 type Reclamo =
   | { tipo: 'propio'; reclamadaAt: string }
@@ -299,7 +307,7 @@ async function reclamar(
   listingId: number
 ): Promise<Reclamo> {
   // 1. El TTL. `completada_at is null` es lo que impide que libere un reclamo
-  //    EXITOSO: sin esa condición, pasados 60 s cualquier llamada borraría la
+  //    EXITOSO: sin esa condición, pasado el TTL cualquier llamada borraría la
   //    marca permanente y el alta se volvería a evaluar.
   const limite = new Date(Date.now() - TTL_RECLAMO_MS).toISOString();
   const { error: errTtl } = await db
@@ -434,6 +442,7 @@ async function moderarListing(
   // decisión que ya se escribió.
   let estadoFinal: EstadoListing = nuevoEstado;
   let descartadoPorCarrera = false;
+  let descartadoPorDuenoNoActivo = false;
 
   if (nuevoEstado !== estadoActual) {
     // `veredicto_en_pantalla` (RF-16, 20260928000473): true SOLO cuando el
@@ -454,9 +463,27 @@ async function moderarListing(
       .eq('id', listingId)
       .eq('estado', estadoActual);
 
-    if (errUpdate) return fallo(error(errUpdate.message, 500));
-
-    if ((count ?? 0) === 0) {
+    // EL DUEÑO NO ESTÁ ACTIVO (20261007000480, RF-17 Ola 4). El trigger
+    // `listings_exige_dueno_activo_upd` LANZA (D9) cuando esta escritura
+    // intenta promover a `activa` la publicación de una cuenta suspendida. No es
+    // un fallo de infraestructura: la publicación se queda donde estaba
+    // (`pendiente`, que no es pública) y la resuelve un humano en el panel
+    // cuando la cuenta se reactive. Responder 500 haría que el cliente ofreciera
+    // "Reintentar" sobre algo que va a dar lo mismo.
+    //
+    // Se detecta por el MENSAJE, no por el SQLSTATE (55000 lo comparten otros
+    // rechazos), y este código tolera que el trigger todavía no exista: por eso
+    // se despliega ANTES que la migración.
+    if (errUpdate && errUpdate.message?.includes('dueno_no_activo')) {
+      descartadoPorDuenoNoActivo = true;
+      estadoFinal = estadoActual;
+      console.warn(
+        `[moderar-contenido] ${listingId}: el dueño no está activo; se queda en ${estadoActual} ` +
+          `(se descarta ${nuevoEstado})`
+      );
+    } else if (errUpdate) {
+      return fallo(error(errUpdate.message, 500));
+    } else if ((count ?? 0) === 0) {
       descartadoPorCarrera = true;
       const { data: vigente } = await db
         .from('listings')
@@ -486,6 +513,9 @@ async function moderarListing(
       ejes,
       estado_anterior: estadoActual,
       ...(descartadoPorCarrera ? { descartado_por_carrera: true, estado_propuesto: nuevoEstado } : {}),
+      ...(descartadoPorDuenoNoActivo
+        ? { descartado_por_dueno_no_activo: true, estado_propuesto: nuevoEstado }
+        : {}),
     },
   });
 

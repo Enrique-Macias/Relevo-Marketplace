@@ -76,6 +76,8 @@
 // ===========================================================================
 
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { guardaRelevo } from './_guarda-relevo.mjs';
 import sharp from 'sharp';
 
 const RUN = Date.now();
@@ -309,6 +311,15 @@ async function sembrarReclamo(E, id, reclamadaAt, completadaAt) {
 
 const hace = (ms) => new Date(Date.now() - ms).toISOString();
 
+// El TTL del reclamo se LEE del fuente de la función, no se transcribe: así el
+// huérfano y el completado de la sección 8 se siembran siempre más viejos que
+// el TTL vigente, sea cual sea (eran 120 s fijos cuando el TTL era de 60 s; con
+// 180 s, el "huérfano" de 120 s ya no lo era).
+const TTL_RECLAMO_MS = Number(
+  readFileSync(new URL('../supabase/functions/moderar-contenido/index.ts', import.meta.url), 'utf8')
+    .match(/const TTL_RECLAMO_MS = ([\d_]+);/)[1].replace(/_/g, '')
+);
+
 /**
  * Las TRES formas de credencial que la función puede recibir, cada una en el
  * header que le corresponde de verdad:
@@ -447,6 +458,10 @@ async function main() {
   if (!E.API_URL || !E.SECRET) {
     throw new Error('No hay stack local. Corre `supabase start` primero.');
   }
+  // Escribe en la base local (Vault, estados de usuarios): no corre contra
+  // ningún otro stack que esté levantado en la máquina.
+  guardaRelevo({ apiUrl: E.API_URL });
+  console.log(`TTL del reclamo (leído de index.ts): ${TTL_RECLAMO_MS} ms`);
 
   // Comprobación de arranque con mensaje propio: sin esto, TODAS las
   // aserciones fallarían con 404 y el motivo real ("no corriste `functions
@@ -470,6 +485,9 @@ async function main() {
   // Fixtures propios de la sección 8 (el reclamo del camino cliente).
   let rConcurrente, fotoRConcurrente, rHuerfano, fotoRHuerfano, rCompletado,
       rEnVuelo, rSinFotos, rCarrera, fotoRCarrera;
+  // Fixtures propios de la sección 9 (dueño suspendido, RF-17 Ola 4).
+  let duenoSusp, rSusp, fotoRSusp;
+  const correoSusp = `probe-mod-susp-${RUN}@tec.mx`;
 
   try {
     dueno = await crearUsuario(E, correoDueno);
@@ -825,22 +843,22 @@ async function main() {
       `HTTP ${c3.status} ${JSON.stringify(c3.json)}`);
     igual('…y no deja fila de auditoría nueva', (await auditoriasDe(E, rConcurrente)).length, 1);
 
-    // (c) Reclamo HUÉRFANO (worker muerto): sin completar y de hace 2 min → el
-    // TTL lo libera y se evalúa.
+    // (c) Reclamo HUÉRFANO (worker muerto): sin completar y más viejo que el
+    // TTL (TTL + 60 s) → el TTL lo libera y se evalúa.
     rHuerfano = await crearListing(E, dueno, `${TITULO_LIMPIO} huerfano`, 'pendiente', DESCRIPCION_LIMPIA);
     fotoRHuerfano = await subirFotoLimpia(E, rHuerfano);
-    await sembrarReclamo(E, rHuerfano, hace(120_000), null);
+    await sembrarReclamo(E, rHuerfano, hace(TTL_RECLAMO_MS + 60_000), null);
     const ch = await llamar(E, 'user', { listing_id: rHuerfano }, tDueno);
-    ok('un reclamo huérfano (sin completar, > 60 s) se libera y SÍ se evalúa',
+    ok(`un reclamo huérfano (sin completar, > ${TTL_RECLAMO_MS / 1000} s) se libera y SÍ se evalúa`,
       ch.status === 200 && ch.json?.sin_evaluar === undefined &&
         (await auditoriasDe(E, rHuerfano)).length === 1,
       `HTTP ${ch.status} ${JSON.stringify(ch.json)}`);
 
     // (d) EL CONTROL DEL BUG que se cazó al diseñar: un reclamo COMPLETADO y
     // viejo NO lo toca el TTL. Sin `completada_at is null` en el delete, a los
-    // 60 s cualquier llamada borraría la marca permanente y re-evaluaría.
+    // TTL cualquier llamada borraría la marca permanente y re-evaluaría.
     rCompletado = await crearListing(E, dueno, `${TITULO_LIMPIO} completado`, 'pendiente', DESCRIPCION_LIMPIA);
-    await sembrarReclamo(E, rCompletado, hace(120_000), hace(110_000));
+    await sembrarReclamo(E, rCompletado, hace(TTL_RECLAMO_MS + 60_000), hace(TTL_RECLAMO_MS + 50_000));
     const cc = await llamar(E, 'user', { listing_id: rCompletado }, tDueno);
     ok('un reclamo COMPLETADO y viejo NO se libera: no se evalúa',
       cc.status === 200 && cc.json?.sin_evaluar === 'reclamo_tomado' &&
@@ -853,7 +871,7 @@ async function main() {
     rEnVuelo = await crearListing(E, dueno, `${TITULO_LIMPIO} en vuelo`, 'pendiente', DESCRIPCION_LIMPIA);
     await sembrarReclamo(E, rEnVuelo, hace(0), null);
     const cv = await llamar(E, 'user', { listing_id: rEnVuelo }, tDueno);
-    ok('un reclamo en vuelo (< 60 s) bloquea la segunda evaluación',
+    ok(`un reclamo en vuelo (< ${TTL_RECLAMO_MS / 1000} s) bloquea la segunda evaluación`,
       cv.status === 200 && cv.json?.sin_evaluar === 'reclamo_tomado' &&
         (await auditoriasDe(E, rEnVuelo)).length === 0,
       `HTTP ${cv.status} ${JSON.stringify(cv.json)}`);
@@ -898,6 +916,40 @@ async function main() {
         audCarrera?.detalle?.estado_propuesto === 'activa',
       `respuesta=${JSON.stringify(cr.json)}, auditoría=${JSON.stringify({ r: audCarrera?.estado_resultante, c: audCarrera?.detalle?.descartado_por_carrera, p: audCarrera?.detalle?.estado_propuesto })}`);
 
+    // -----------------------------------------------------------------
+    console.log('\n== 9. Dueño suspendido entre el alta y la llamada (RF-17 Ola 4) ==');
+    // 20261007000480: el trigger `listings_exige_dueno_activo_upd` LANZA
+    // `dueno_no_activo` si la promoción a `activa` es de un dueño no activo.
+    // La función tiene que traducirlo a `pendiente` (200), no a un 500, y dejar
+    // la marca en la auditoría. Contenido LIMPIO verificado y con foto: el
+    // único motivo para no promover es el dueño (sin foto, el rechazo sería el
+    // de `listings_enforce_activation_has_photos`, que dispara antes).
+    const trig = sqlDocker(
+      "select count(*) from pg_trigger where tgname = 'listings_exige_dueno_activo_upd'").trim();
+    ok('precondición: el trigger listings_exige_dueno_activo_upd existe en la base local (…480 aplicada)',
+      trig === '1', `pg_trigger devolvió ${trig}`);
+    duenoSusp = await crearUsuario(E, correoSusp);
+    const tSusp = await token(E, correoSusp);
+    rSusp = await crearListing(E, duenoSusp, `${TITULO_LIMPIO} susp`, 'pendiente', DESCRIPCION_LIMPIA);
+    fotoRSusp = await subirFotoLimpia(E, rSusp);
+    sqlDocker(`update public.users set estado = 'suspendido', suspendido_at = now(),
+                 suspension_motivo = 'probe-moderacion-http: dueño suspendido'
+                where id = ${lit(duenoSusp)}`);
+    const cs = await llamar(E, 'user', { listing_id: rSusp }, tSusp);
+    ok('con el dueño suspendido, la promoción se descarta: 200 y estado pendiente (no un 500)',
+      cs.status === 200 && cs.json?.estado === 'pendiente',
+      `HTTP ${cs.status} ${JSON.stringify(cs.json)}`);
+    igual('…la publicación sigue pendiente en la base', await estadoDe(E, rSusp), 'pendiente');
+    const audSusp = (await auditoriasConDetalle(E, rSusp)).at(-1);
+    ok('…y la auditoría anota descartado_por_dueno_no_activo con el estado propuesto',
+      audSusp?.estado_resultante === 'pendiente' &&
+        audSusp?.detalle?.descartado_por_dueno_no_activo === true &&
+        audSusp?.detalle?.estado_propuesto === 'activa',
+      `auditoría=${JSON.stringify({ r: audSusp?.estado_resultante, d: audSusp?.detalle?.descartado_por_dueno_no_activo, p: audSusp?.detalle?.estado_propuesto })}`);
+    ok('…y el reclamo queda COMPLETADO: la resuelve el panel, no un reintento',
+      (await reclamoDe(E, rSusp))?.completada_at != null,
+      `reclamo=${JSON.stringify(await reclamoDe(E, rSusp))}`);
+
   } finally {
     // Vault primero: un secreto repuntado que sobreviva a la corrida deja el
     // trigger llamando a un `functions serve` que ya no está.
@@ -917,7 +969,7 @@ async function main() {
     // `pg_constraint`), pero `storage.objects` es un sistema aparte sin FK a
     // `listings`. Sin este borrado explícito, cada corrida deja un JPEG
     // huérfano en el bucket — mismo gotcha que CLAUDE.md §9 ya documenta.
-    for (const ruta of [fotoEnPendiente, fotoEscalable, fotoNueva, fotoRConcurrente, fotoRHuerfano, fotoRCarrera]) {
+    for (const ruta of [fotoEnPendiente, fotoEscalable, fotoNueva, fotoRConcurrente, fotoRHuerfano, fotoRCarrera, fotoRSusp]) {
       if (!ruta) continue;
       await fetch(`${E.API_URL}/storage/v1/object/listing-photos/${ruta}`, {
         method: 'DELETE',
@@ -927,10 +979,10 @@ async function main() {
 
     for (const id of [propia, ajena, enPendiente, escalable, nuevaFotoListing,
                        credencialSecret, credencialUser, rConcurrente, rHuerfano,
-                       rCompletado, rEnVuelo, rSinFotos, rCarrera]) {
+                       rCompletado, rEnVuelo, rSinFotos, rCarrera, rSusp]) {
       if (id) await del('listings', `id=eq.${id}`);
     }
-    for (const id of [dueno, ajeno]) {
+    for (const id of [dueno, ajeno, duenoSusp]) {
       if (id) {
         await fetch(`${E.API_URL}/auth/v1/admin/users/${id}`, {
           method: 'DELETE',

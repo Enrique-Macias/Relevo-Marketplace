@@ -83,6 +83,7 @@ import { execFileSync } from 'node:child_process';
 import http from 'node:http';
 import { createPrivateKey, sign as firmar } from 'node:crypto';
 import { totp } from './totp.mjs';
+import { guardaRelevo } from './_guarda-relevo.mjs';
 
 const BUCKET = 'listing-photos';
 const BUCKET_AVATARS = 'avatars';
@@ -430,6 +431,10 @@ async function main() {
     console.error(`probe-storage solo corre contra un stack local; API_URL=${new URL(E.API_URL).hostname}`);
     process.exit(1);
   }
+  // localhost no distingue este stack de otro levantado en la misma máquina, y
+  // este probe repunta Vault y crea triggers sonda: la guarda verifica que la
+  // base sea la de Relevo antes de escribir nada.
+  guardaRelevo({ apiUrl: E.API_URL });
 
   const correoDueno = `probe-dueno-${RUN}@tec.mx`;
   const correoAjeno = `probe-ajeno-${RUN}@tec.mx`;
