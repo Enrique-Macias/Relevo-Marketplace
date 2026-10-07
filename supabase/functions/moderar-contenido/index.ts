@@ -296,6 +296,20 @@ export default {
  */
 const TTL_RECLAMO_MS = 180_000;
 
+/**
+ * Tope por llamada a un tercero (Rekognition, Vision, OpenAI). Sin él, el peor
+ * caso de una evaluación lo acotaba solo el wall-clock de la plataforma (150 s
+ * en Free), porque ningún `fetch` llevaba `signal`. Un timeout cae en el mismo
+ * `catch` que un error de red, o sea en la falla segura de cada eje
+ * (`no_evaluable`/`revisar`, nunca `limpio`). 20 s es 4 veces el máximo medido
+ * de una evaluación COMPLETA (5,044 ms, function_edge_logs del 2026-09-22).
+ *
+ * NO baja el TTL del reclamo: con varias llamadas por evaluación (Rekognition
+ * es una por foto, en paralelo) más la descarga de Storage, que no tiene
+ * timeout, el techo sigue siendo la plataforma. Bajarlo exige medirlo antes.
+ */
+const TIMEOUT_TERCEROS_MS = 20_000;
+
 type Reclamo =
   | { tipo: 'propio'; reclamadaAt: string }
   | { tipo: 'ocupado' }
@@ -898,6 +912,7 @@ async function llamarRekognition(
         Authorization: firma.authorization,
       },
       body: cuerpo,
+      signal: AbortSignal.timeout(TIMEOUT_TERCEROS_MS),
     });
 
     const json = await res.json().catch(() => null);
@@ -967,6 +982,7 @@ async function llamarLoteVision(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cuerpo),
+      signal: AbortSignal.timeout(TIMEOUT_TERCEROS_MS),
     });
 
     if (!res.ok) {
@@ -1006,6 +1022,7 @@ async function evaluarTexto(
         Authorization: `Bearer ${config.openaiApiKey}`,
       },
       body: JSON.stringify(cuerpo),
+      signal: AbortSignal.timeout(TIMEOUT_TERCEROS_MS),
     });
 
     if (!res.ok) {
