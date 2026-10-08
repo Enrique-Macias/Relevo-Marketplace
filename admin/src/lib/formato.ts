@@ -48,6 +48,7 @@ export const ACCION: Record<string, string> = {
   activar_admin: 'Activar admin',
   resolver_reporte: 'Resolver reporte',
   bloquear_listing: 'Bloquear publicación',
+  aprobar_listing: 'Aprobar publicación',
 };
 
 const ESTADO_LEGIBLE: Record<string, string> = {

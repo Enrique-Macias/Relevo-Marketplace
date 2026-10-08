@@ -128,6 +128,9 @@ body{
 .tabla .suave{color:var(--ink-soft);}
 .tabla .num{text-align:right; font-variant-numeric:tabular-nums;}
 .celda-titulo{font-weight:600;}
+.celda-con-foto{display:flex; align-items:center; gap:12px;}
+.miniatura{width:44px; height:44px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:var(--ink-soft);}
+.miniatura.t1{background:var(--slate-tint);} .miniatura.t2{background:var(--gold-tint);} .miniatura.t3{background:var(--forest-tint);} .miniatura.t4{background:var(--brick-tint);}
 .celda-sub{font-size:11.5px; color:var(--ink-soft); margin-top:3px;}
 .pie-tabla{display:flex; align-items:center; justify-content:space-between; margin-top:14px; font-size:12.5px; color:var(--ink-soft);}
 
@@ -238,6 +241,7 @@ body{
 .modal-card{width:440px; background:var(--card); border-radius:20px; padding:26px 26px 22px;}
 .modal-icon{width:50px; height:50px; border-radius:50%; background:var(--brick-tint); color:var(--brick); display:flex; align-items:center; justify-content:center; margin-bottom:16px;}
 .modal-icon.neutro{background:var(--paper); color:var(--ink);}
+.modal-icon.ok{background:var(--forest-tint); color:var(--forest);}
 .modal-title{font-family:var(--font-display), serif; font-weight:500; font-size:19px; color:var(--ink); margin-bottom:8px;}
 .modal-sub{font-size:12.5px; color:var(--ink-soft); line-height:1.55; margin-bottom:18px;}
 .modal-actions{display:flex; gap:10px; justify-content:flex-end; margin-top:4px;}

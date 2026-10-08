@@ -11,71 +11,25 @@ import { Aviso, Chip, ErrorCarga, Esqueleto, Volver } from '../componentes/Basic
 import { IconBan } from '../componentes/Iconos.tsx';
 import { FotoListing } from '../componentes/FotoListing.tsx';
 import { ModalBloquear } from '../componentes/ModalBloquear.tsx';
+import { ModalAprobar } from '../componentes/ModalAprobar.tsx';
+import { razones } from '../lib/razones.ts';
 
 const iniciales = (n: string | null) =>
   (n ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') || '?';
 
 const VEREDICTO: Record<string, string> = { limpio: 'Limpio', revisar: 'Revisar', bloquear: 'Bloquear' };
 
-/** Las categorías del eje de texto (GPT), como las nombra `openai.ts`. */
-const CATEGORIA_GPT: Record<string, string> = {
-  violencia: 'violencia', estafa_spam: 'estafa o spam', datos_contacto: 'datos de contacto',
-  contenido_sexual: 'contenido sexual', articulo_prohibido: 'artículo prohibido',
-  odio_discriminacion: 'odio o discriminación',
-};
-
 /**
- * "Por qué" de una evaluación, legible. Lee la forma REAL de
- * `listing_moderacion.detalle` que escribe `moderar-contenido` (index.ts,
- * `Detalle`; medida en una fila de remoto): `fotos[].safe_search` (niveles de
- * Vision), `fotos[].rekognition` (`{name, confidence}` o `{estado, motivo}` si
- * no se evaluó), `lista_tecleada`/`lista_ocr` (palabras) y `gpt.veredicto`
- * (categoría → nivel) o `gpt.motivo` si falló. Lo que no explica un veredicto
- * (`lotes_vision`, `ejes`) no se pinta.
+ * Frames "Detalle de publicación" (con sus variantes: bloqueada, foto no
+ * disponible) y "Detalle de publicación en revisión (aprobar)": una
+ * `pendiente` suma la tarjeta Aprobar (Ola 4) y su chip dice "En revisión".
  */
-function razones(detalle: Record<string, unknown> | null): string[] {
-  if (!detalle) return [];
-  const out: string[] = [];
-  const fotos = Array.isArray(detalle.fotos) ? detalle.fotos as Record<string, unknown>[] : [];
-  for (const f of fotos) {
-    if (f.estado !== 'evaluada') {
-      out.push(`Imagen: no evaluada${f.motivo ? ` (${String(f.motivo)})` : ''}`);
-      continue;
-    }
-    const ss = (f.safe_search ?? {}) as Record<string, string>;
-    const marcadas = Object.entries(ss).filter(([, v]) => v === 'LIKELY' || v === 'VERY_LIKELY');
-    if (marcadas.length) out.push(`Imagen (Vision): ${marcadas.map(([k, v]) => `${k} ${v}`).join(', ')}`);
-    const rek = f.rekognition;
-    if (Array.isArray(rek)) {
-      for (const e of rek as Record<string, unknown>[]) {
-        if (typeof e.name === 'string') {
-          out.push(`Imagen (Rekognition): ${e.name}${typeof e.confidence === 'number' ? ` ${e.confidence.toFixed(1)}` : ''}`);
-        }
-      }
-    } else if (rek && typeof rek === 'object') {
-      out.push(`Imagen (Rekognition): no evaluada${(rek as Record<string, unknown>).motivo ? ` (${String((rek as Record<string, unknown>).motivo)})` : ''}`);
-    }
-  }
-  const tecleada = Array.isArray(detalle.lista_tecleada) ? detalle.lista_tecleada as string[] : [];
-  const ocr = Array.isArray(detalle.lista_ocr) ? detalle.lista_ocr as string[] : [];
-  if (tecleada.length) out.push(`Texto: ${tecleada.join(', ')}`);
-  if (ocr.length) out.push(`Texto en la foto: ${ocr.join(', ')}`);
-  const gpt = detalle.gpt as Record<string, unknown> | undefined;
-  if (gpt?.veredicto && typeof gpt.veredicto === 'object') {
-    const marcadas = Object.entries(gpt.veredicto as Record<string, string>).filter(([, v]) => v !== 'ninguno');
-    if (marcadas.length) out.push(`Texto (GPT): ${marcadas.map(([k, v]) => `${CATEGORIA_GPT[k] ?? k} ${v}`).join(', ')}`);
-  } else if (gpt?.motivo) {
-    out.push(`Texto (GPT): no evaluado (${String(gpt.motivo)})`);
-  }
-  return out;
-}
-
-/** Frame "Detalle de publicación", con sus variantes (bloqueada, foto no disponible). */
-export function DetalleListing({ id, desde, ir }: { id: number; desde?: number; ir: (v: Vista) => void }) {
+export function DetalleListing({ id, desde, ir }: { id: number; desde?: number | 'moderacion'; ir: (v: Vista) => void }) {
   const llamar = useLlamar();
   const [d, setD] = useState<Detalle | null>(null);
   const [fallo, setFallo] = useState<string | null>(null);
   const [bloqueando, setBloqueando] = useState(false);
+  const [aprobando, setAprobando] = useState(false);
   const [exito, setExito] = useState<string | null>(null);
   const [recarga, setRecarga] = useState(0);
 
@@ -90,20 +44,28 @@ export function DetalleListing({ id, desde, ir }: { id: number; desde?: number; 
     return () => { vivo = false; };
   }, [id, recarga, llamar]);
 
-  const volver = desde !== undefined
-    ? <Volver onClick={() => ir({ tipo: 'reporte', id: desde })}>Reporte #{desde}</Volver>
-    : <Volver onClick={() => ir({ tipo: 'reportes' })}>Reportes</Volver>;
+  const volver = desde === 'moderacion'
+    ? <Volver onClick={() => ir({ tipo: 'moderacion' })}>Moderación</Volver>
+    : desde !== undefined
+      ? <Volver onClick={() => ir({ tipo: 'reporte', id: desde })}>Reporte #{desde}</Volver>
+      : <Volver onClick={() => ir({ tipo: 'reportes' })}>Reportes</Volver>;
 
   if (fallo && !d) return <>{volver}<ErrorCarga titulo="No pudimos cargar la publicación" onReintentar={() => setRecarga((n) => n + 1)} /></>;
   if (!d) return <>{volver}<Esqueleto filas={3} /></>;
 
-  const [claseEstado, textoEstado] = CHIP_LISTING[d.estado];
+  const [claseEstado, textoChip] = CHIP_LISTING[d.estado];
+  // El título de una `pendiente` dice "En revisión" (frame "en revisión
+  // (aprobar)"); en las tablas sigue diciendo "Pendiente", como en sus frames.
+  const textoEstado = d.estado === 'pendiente' ? 'En revisión' : textoChip;
+  const enRevision = d.estado === 'pendiente';
+  const duenoSuspendido = d.dueno.estado === 'suspendido';
+  const sinFotos = d.fotos.length === 0;
 
   return (
     <>
       {volver}
       <div className="titulo-pagina">{d.titulo} <Chip clase={claseEstado}>{textoEstado}</Chip></div>
-      <div className="sub-pagina">Publicación #{d.id} · creada el {fechaDia(d.created_at)} · modificada el {fechaDia(d.updated_at)}</div>
+      <div className="sub-pagina">Publicación #{d.id} · creada el {fechaDia(d.created_at)}{!enRevision && <> · modificada el {fechaDia(d.updated_at)}</>}</div>
       {exito && <Aviso tipo="info">{exito}</Aviso>}
       <div className="dos-columnas">
         <div>
@@ -198,6 +160,18 @@ export function DetalleListing({ id, desde, ir }: { id: number; desde?: number; 
             </div>
             <button type="button" className="btn ghost-btn" onClick={() => ir({ tipo: 'usuario', id: d.dueno.id })}>Ver cuenta</button>
           </div>
+          {enRevision && (
+            <div className="tarjeta">
+              <div className="titulo-seccion">Aprobar</div>
+              {duenoSuspendido
+                ? <Aviso>La cuenta del dueño está <b>suspendida</b>: no se puede aprobar mientras siga así.</Aviso>
+                : sinFotos
+                  ? <Aviso>La publicación <b>no tiene fotos</b>: no se puede aprobar.</Aviso>
+                  : <><div className="texto-suave">Pasa a activa y aparece en el catálogo. El dueño recibe un aviso en la app.</div><br /></>}
+              <button type="button" className="btn forest-btn" disabled={duenoSuspendido || sinFotos}
+                onClick={() => setAprobando(true)}>Aprobar publicación</button>
+            </div>
+          )}
           {d.estado === 'bloqueada'
             ? <Aviso tipo="neutro" icono={<IconBan tam={12} clase="icono-blanco" />}>Esta publicación está bloqueada: no aparece en el catálogo y desde el panel no se puede desbloquear.</Aviso>
             : (
@@ -211,6 +185,15 @@ export function DetalleListing({ id, desde, ir }: { id: number; desde?: number; 
         </div>
       </div>
 
+      {aprobando && (
+        <ModalAprobar listingId={d.id} titulo={d.titulo}
+          onCerrar={() => setAprobando(false)}
+          onAprobada={() => {
+            setAprobando(false);
+            setExito('Publicación aprobada. El dueño recibirá un aviso en la app.');
+            setRecarga((n) => n + 1);
+          }} />
+      )}
       {bloqueando && (
         <ModalBloquear listingId={d.id} titulo={d.titulo}
           onCerrar={() => setBloqueando(false)}

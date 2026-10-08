@@ -60,12 +60,23 @@ export interface DetalleUsuario {
   suspension_motivo: string | null; created_at: string; es_admin: boolean;
   publicaciones_activas: number; publicaciones_pendientes: number; activas_sin_foto: number;
   reportes_en_contra: number; auditoria: Auditoria[];
+  /** Bloqueadas que siguen existiendo + las eliminadas que se retienen 12 meses (`…482`). */
+  bloqueadas: number;
+}
+
+/** Una fila de `admin.cola_moderacion` (`…481`). Las de "Sin evaluar" no traen veredicto. */
+export interface FilaCola {
+  id: number; titulo: string; precio: number; categoria: string | null; created_at: string;
+  dueno_id: string; dueno_nombre: string | null; dueno_estado: EstadoUsuario; fotos: string[];
+  evaluaciones: number; ultimo_veredicto: 'limpio' | 'revisar' | 'bloquear' | null;
+  ultimo_detalle: Record<string, unknown> | null; ultima_evaluacion_at: string | null;
 }
 
 /** Adónde puede ir el panel. Sin router: un estado en el Panel. */
 export type Vista =
   | { tipo: 'reportes' }
   | { tipo: 'reporte'; id: number }
-  | { tipo: 'listing'; id: number; desde?: number }
+  | { tipo: 'moderacion' }
+  | { tipo: 'listing'; id: number; desde?: number | 'moderacion' }
   | { tipo: 'usuarios' }
   | { tipo: 'usuario'; id: string; desde?: number };

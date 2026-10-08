@@ -47,3 +47,10 @@ export const IconInbox = ({ tam = 30, clase }: P) => (
 export const IconWifi = ({ tam = 30, clase }: P) => (
   <svg {...base(tam, clase)}><g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 9a12 12 0 0 1 16 0" /><path d="M7 12.5a7.5 7.5 0 0 1 10 0" /><path d="M10 16a3 3 0 0 1 4 0" /><path d="M12 19.5h.01" /></g></svg>
 );
+export const IconEye = ({ tam = 18, clase }: P) => (
+  <svg {...base(tam, clase)}><g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></g></svg>
+);
+/** `i-check` en `currentColor` (el ícono del modal "Aprobar"); `IconCheck` es el blanco de los avisos. */
+export const IconCheckColor = ({ tam = 24, clase }: P) => (
+  <svg {...base(tam, clase)}><path stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" d="M6 12.5l4 4 8-9" /></svg>
+);

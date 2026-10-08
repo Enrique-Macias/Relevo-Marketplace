@@ -152,6 +152,7 @@ export function DetalleCuenta({ id, desde, ir }: { id: string; desde?: number; i
               )}
               <div className="dato"><dt>Publicaciones activas</dt><dd>{d.publicaciones_activas}</dd></div>
               {d.estado === 'activo' && <div className="dato"><dt>En revisión</dt><dd>{d.publicaciones_pendientes}</dd></div>}
+              {!d.es_admin && <div className="dato"><dt>Bloqueadas</dt><dd>{d.bloqueadas}</dd></div>}
             </dl>
             {d.estado === 'suspendido' && d.suspension_motivo && (
               <>
@@ -190,7 +191,7 @@ export function DetalleCuenta({ id, desde, ir }: { id: string; desde?: number; i
           <div className="tarjeta">
             <div className="titulo-seccion">{puedeSuspender ? 'Suspender' : 'Reactivar'}</div>
             {puedeSuspender && d.publicaciones_pendientes > 0 && (
-              <Aviso>Tiene <b>{d.publicaciones_pendientes} {d.publicaciones_pendientes === 1 ? 'publicación en revisión' : 'publicaciones en revisión'}</b>: {d.publicaciones_pendientes === 1 ? 'podría activarse' : 'podrían activarse'} aun con la cuenta suspendida.</Aviso>
+              <Aviso>Tiene <b>{d.publicaciones_pendientes} {d.publicaciones_pendientes === 1 ? 'publicación en revisión' : 'publicaciones en revisión'}</b>: no se podrá aprobar mientras la cuenta esté suspendida.</Aviso>
             )}
             {puedeSuspender && d.activas_sin_foto > 0 && (
               <Aviso><b>{d.activas_sin_foto} {d.activas_sin_foto === 1 ? 'publicación activa' : 'publicaciones activas'}</b> no {d.activas_sin_foto === 1 ? 'tiene' : 'tienen'} foto: al reactivarla, tendrá que subir una foto a cada una.</Aviso>
