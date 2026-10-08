@@ -1,0 +1,6 @@
+RLVO | KIT VECTORIAL RECONSTRUIDO
+18 SVG limpios, con curvas geométricas, sin autotracing pixelado.
+Colores: #B9FF66, #191A23, #F5F1EA.
+RLVO está convertido a contornos vectoriales (no requiere fuente).
+El lema permanece como texto SVG.
+La geometría es una reconstrucción limpia basada en las referencias compartidas, no el archivo maestro original.
