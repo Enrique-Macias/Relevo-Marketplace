@@ -120,7 +120,7 @@ Cuando código y documentación discrepen:
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Moderación de imagen | Google Cloud Vision (SafeSearch + OCR) **+ Amazon Rekognition** (`DetectModerationLabels`) | Dos proveedores porque cubren cosas distintas: SafeSearch no mira drogas/alcohol/gambling y Rekognition no hace OCR. Rekognition **no batchea** (una llamada por imagen) y acepta **solo JPEG/PNG**, al revés de Vision — ver §3 |
-| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins), y desde el 2026-10-08 la 4 (cola de moderación y aprobar publicaciones). Supabase Studio para lo que el panel aún no cubre | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **A 2026-10-08, el catálogo y las métricas (Olas 5-6) siguen en Studio** |
+| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins), desde el 2026-10-08 la 4 (cola de moderación y aprobar publicaciones) y la 3b (restablecer la app autenticadora de otro admin). Supabase Studio para lo que el panel aún no cubre | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **A 2026-10-08, el catálogo y las métricas (Olas 5-6) siguen en Studio** |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Nomenclatura de API keys (Supabase renombró su sistema en 2026):** usamos las
@@ -232,6 +232,11 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 47 y 47 (medido el 2026-10-08) — a la par.** `ls
+supabase/migrations | wc -l` da **47**; `mcp__supabase__list_migrations`
+también da **47**, y la última es `20261008000483` (Ola 3b de RF-17, §8
+"Hecho"). La historia de antes, tal como estaba:
 
 **Repo y remoto: 46 y 46 (medido el 2026-10-08) — a la par.** `ls
 supabase/migrations | wc -l` da **46**; `mcp__supabase__list_migrations`
@@ -1647,9 +1652,9 @@ Lo que no se ve en la tabla:
   desde `listings`, que el borrado se lleva. Detalle de la función (auth,
   reautenticación por `amr`, idempotencia) en §8 y en §9.
 
-**Panel de admin, Olas 1 a 4 de RF-17 (`20260930000477` + `20260930000478`
+**Panel de admin, Olas 1 a 4 y 3b de RF-17 (`20260930000477` + `20260930000478`
 + `20260930000479`, EN PRODUCCIÓN desde el 2026-10-02; `20261007000480` a
-`…482`, desde el 2026-10-08).** Plan en `docs/rf17-plan-admin.md`; las reglas
+`…482` y `20261008000483`, desde el 2026-10-08).** Plan en `docs/rf17-plan-admin.md`; las reglas
 del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
 
 - **Quién es admin: `private.admins`**, una fila con `activado_at` puesto. No
@@ -1681,14 +1686,14 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   'script:crear-admin.mjs'`.
 - **Schema `admin`** (D3): USAGE solo para `authenticated`; sus funciones son
   definer con `search_path` fijo y sin EXECUTE para `anon`/PUBLIC. No cuentan
-  entre "las TRES definer de `public`": viven en otro schema. Hoy son 11
-  (medido en `pg_proc` el 2026-10-08, en local y en remoto, con el mismo md5
-  de nombres, argumentos, definer, volatilidad, `search_path`, ACL, `prosrc` y
-  retorno; antes, 9): `sesion` (la única que no lanza: gating
+  entre "las TRES definer de `public`": viven en otro schema. Hoy son 13
+  (medido en `pg_proc` de remoto el 2026-10-08, tras el push de `…483`; antes
+  11 y antes 9): `sesion` (la única que no lanza: gating
   de UX), `buscar_usuarios`, `detalle_usuario`, `suspender_usuario` y
   `reactivar_usuario` (Ola 1), `listar_reportes`, `resolver_reporte`,
-  `detalle_listing` y `bloquear_listing` (Ola 2), y `cola_moderacion` y
-  `aprobar_listing` (Ola 4).
+  `detalle_listing` y `bloquear_listing` (Ola 2), `cola_moderacion` y
+  `aprobar_listing` (Ola 4), y `restablecer_mfa_iniciar` y
+  `restablecer_mfa_completar` (Ola 3b).
 - **Reportes y bloqueo (`20260930000479`, Ola 2).** `listar_reportes` usa solo
   left joins y nunca esconde un reporte: los 4 `objetivo_tipo`
   (`publicacion`, `usuario`, `publicacion_eliminada`, `cuenta_eliminada`).
@@ -1708,7 +1713,33 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   acciones: las 3 de la Ola 1 (`suspender_usuario`, `reactivar_usuario`,
   `activar_admin`), `resolver_reporte` y `bloquear_listing` (Ola 2) y
   `desactivar_admin`, sumada a la 479 antes de su push (T35 (j3)). **Desde
-  `…481` son 7**, con `aprobar_listing`.
+  `…481` son 7**, con `aprobar_listing`, y **desde `…483` son 9**, con
+  `restablecer_mfa` y `factores_mfa_borrados`.
+- **Restablecer la app autenticadora de otro admin (`20261008000483` + Edge
+  Function `admin-reset-mfa`, Ola 3b).** Plan, decisiones y evidencia en
+  `docs/rf17-plan-admin.md`, "Ola 3b: lo que cambió al implementarla". En corto:
+  - La función solo borra factores en Auth con la secret key. Toda la
+    autorización y la auditoría son de dos RPC que llama con el JWT del
+    ejecutor: `admin.restablecer_mfa_iniciar` (guardas `exigir_admin`, motivo
+    3-500, `no_sobre_si_mismo`, `objetivo_no_es_admin`; lock de la fila de
+    `private.admins`; desactiva y escribe el inicio en la misma transacción) y
+    `admin.restablecer_mfa_completar` (cierra solo si la base comprueba que no
+    queda ningún TOTP viejo).
+  - **Fail-closed:** desactiva ANTES de tocar Auth. Borrar el factor nunca
+    reactiva; `crear-admin.mjs activar` cuenta `restablecer_mfa` como
+    desactivación (cutoff) y se niega mientras haya un intento pendiente.
+  - Solo borra factores `totp` (verified y unverified) creados hasta el inicio
+    del intento. WebAuthn, phone y un TOTP posterior al inicio no se tocan.
+  - Auditoría en dos acciones: `restablecer_mfa` (inicio, con
+    `factores_totp` contado por la base) y `factores_mfa_borrados` (cierre).
+    `claves_auditoria_ok('admin')` suma `factores_totp`.
+  - S1 (Auth falló) se reanuda con el MISMO intento; S2 (Auth terminó, faltó
+    el cierre) se cierra y la petición termina (`cierre_recuperado`), nunca
+    con un intento nuevo. `p_intento_pendiente` evita que un reintento
+    concurrente, ya cerrado por otro admin, abra un reset nuevo.
+  - `admin.detalle_usuario` suma `admin_activado`, `app_registrada` (TOTP
+    verified) y `restablecimiento_pendiente`, y su auditoría incluye las filas
+    tipo `admin`.
 - **Moderación, aprobar y D5 (`20261007000480` a `…482`, Ola 4).** El detalle,
   con el porqué de cada decisión, está en `docs/rf17-plan-admin.md`, "Ola 4: lo
   que cambió al implementarla". En corto:
@@ -1805,8 +1836,8 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   foto (`listings_enforce_activation_has_photos`). La suspensión solo pausa las
   `activa` (`20260917000457:86-89`): una `pendiente` se queda `pendiente`.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 501 aserciones (medido con el
-`grep` de §8 el 2026-10-08; antes decía 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 529 aserciones (medido con el
+`grep` de §8 el 2026-10-08; antes decía 501, 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2607,6 +2638,20 @@ revocadas pasa de 20 a 22 sin cambiar la cuenta), T35b 7
 anteriores; el detalle está en los mensajes de commit de `883d0e7`, `6795ae8` y
 `53601ac`.
 
+Y a **529** con las 28 de T35f (Ola 3b de RF-17, `20261008000483`),
+autocontenida con sus propias cuentas y factores sembrados como `postgres` en
+`auth.mfa_factors`. Como toda la suite corre en una transacción, `now()` es
+constante: un factor "viejo" lleva `now() - 1 day`, uno "nuevo" `now() + 1
+minute`, y el borde exacto (`created_at = inicio`) cuenta como viejo. Quince
+controles negativos, uno a la vez dentro de la transacción de la suite, contra
+la suite completa y T35f aislada, imprimiendo antes el md5 de la función viva;
+los 15 caen en su aserción con nombre, igual en las dos corridas (detalle en el
+mensaje de `9e78608`). **La lección de la sección:** en la primera tanda, 4
+controles morían con "invalid input syntax for type json" en vez de en su
+aserción, porque el `ERR:…` de un rechazo se casteaba a jsonb;
+`pg_temp.t3b_json` lo resuelve. Es la familia de §9: un error crudo no dice qué
+regla cayó.
+
 **Gotcha: la suite espera 3 usuarios en local.** Una cuenta de prueba (la del
 admin de la prueba manual del panel) la rompe en T1; se arregla con
 `supabase db reset`.
@@ -3173,8 +3218,8 @@ en "Verificación (correo no participante)".
   quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son TRECE pasos, no uno (decía "DOCE" antes de la
-  Ola 4 del panel, "ONCE" antes de la
+  `postgres`/superusuario. Son CATORCE pasos, no uno (decía "TRECE" antes de la
+  Ola 3b del panel, "DOCE" antes de la Ola 4, "ONCE" antes de la
   Ola 2 del panel, "DIEZ" antes del panel de admin, "NUEVE" antes de eliminar cuenta, y "SIETE" con ocho en la
   lista):
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
@@ -3341,7 +3386,23 @@ en "Verificación (correo no participante)".
      `probe-storage.mjs` y `probe-moderacion-http.mjs`, aborta si cualquier
      comprobación de `scripts/_guarda-relevo.mjs` (contenedor, puerto,
      proyecto, marcador en `pg_proc`) falla.
-  Los probes 2, 3, 6, 7, 9, 10, 11 y 13 necesitan el stack local arriba y limpian lo suyo (el
+  14. `node scripts/probe-admin-reset-mfa.mjs`: la Edge Function
+     `admin-reset-mfa` (RF-17 Ola 3b) por HTTP, 35 pruebas, con GoTrue de
+     verdad (TOTP reales, `deleteFactor` real) y `crear-admin.mjs activar`
+     importado REAL. **Necesita DOS procesos** (stack + `supabase functions
+     serve`), es gratis y se niega a correr fuera del stack de Relevo
+     (`_guarda-relevo.mjs`). Sin código de inyección de fallos en la función:
+     S1 se fabrica llamando solo a la RPC `iniciar`, y S2 con `iniciar` más
+     `deleteFactor` desde el probe. Cubre el reset sobre un admin activado (un
+     WebAuthn sembrado sobrevive), 9 rechazos sin cambios, S1 → `reanudado`,
+     S2 con un TOTP nuevo → `cierre_recuperado` (el TOTP nuevo sobrevive), dos
+     concurrencias, `activar` (rechaza con el intento pendiente o sin TOTP
+     posterior al cutoff, acepta tras enrolar) y el amarre de
+     `admin/src/lib/funciones.ts`. **Hueco conocido:** la tolerancia al `404
+     mfa_factor_not_found` de `deleteFactor` solo se alcanza en una carrera
+     real, y el probe no la reproduce de forma determinista (su control
+     negativo no cae).
+  Los probes 2, 3, 6, 7, 9, 10, 11, 13 y 14 necesitan el stack local arriba y limpian lo suyo (el
   9, con un rollback); si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4, 5, 8 y 12 no necesitan nada: ni stack, ni red, ni credenciales.
 
@@ -3882,6 +3943,86 @@ de los route groups).
       reactivarla no las despausa: es la decisión de `20260917000457`. Siguen
       `pausada` hasta que esa cuenta las reactive.
 
+- **Panel de admin (RF-17), Ola 3b EN PRODUCCIÓN, CERRADA (2026-10-08, UTC).**
+  Restablecer la app autenticadora de otro admin: frames `e5f498a` y
+  `2189814` (29 frames), migración `20261008000483` (`9e78608`), `activar`
+  (`219a585`), panel (`cec292c`) y Edge Function `admin-reset-mfa` con su
+  probe (`c45009d`). Qué cambió respecto al plan, en
+  `docs/rf17-plan-admin.md`, "Ola 3b: lo que cambió al implementarla".
+  - **Evidencia local, antes del rollout:** `rls.sql` 529/529 (T35f 28/28,
+    también aislada); `probe-admin-reset-mfa` 35/35; `probe-admin` 84/84;
+    `probe-storage` 41/41; `probe-eliminar-publicacion` 12/12;
+    `probe-puerta-totp` 11/11; `check:functions`, `check:admin`, `lint`, el
+    `tsc` de la app y el build del panel, limpios. S1 y S2 convergen al mismo
+    intento; dos ejecutores concurrentes dejan un solo intento y un solo
+    cierre; un TOTP posterior al inicio y un WebAuthn sobreviven; `activar`
+    rechaza con un intento pendiente o con un TOTP anterior al cutoff. Antes de
+    escribir la función se midió `deleteFactor` (B0, GoTrue local): un factor
+    ya borrado responde `404 mfa_factor_not_found`. Aceptación visual local del
+    panel con Chrome headless, 21/21 comprobaciones.
+  - **Git:** push selectivo `git push origin c45009d:main` (`origin/main` =
+    `c45009d`), sin los dos commits ajenos `926ea74` y `1c8cd8f`, que quedaron
+    solo en local.
+  - **Migración:** `db push --dry-run` listó solo `…483`; tras el push, 47
+    migraciones en remoto. Readback: CHECK con 9 acciones; las dos RPC definer,
+    `search_path=""`, EXECUTE solo para `authenticated`;
+    `private.cerrar_restablecer_mfa` sin EXECUTE para el cliente;
+    `detalle_usuario` con sus campos nuevos; el md5 de todas las funciones de
+    `admin`/`private` que no debían cambiar, idéntico antes y después; las 5
+    funciones nuevas o cambiadas, con el mismo hash en remoto que en local.
+  - **Edge Function:** `admin-reset-mfa` desplegada ACTIVE, `verify_jwt =
+    false`, id `9c768916-8312-4418-bbca-57b407220a96`. **No es una
+    comparación byte a byte:** el fuente local corresponde al commit aprobado
+    (`c45009d`, sha256 `3fab0be2…`), pero `supabase functions download`
+    devuelve el bundle TRANSPILADO (sin tipos, reformateado), así que su
+    sha256 no puede coincidir. La evidencia es una comparación estructural:
+    el AST del fuente local transpilado y el del desplegado son equivalentes
+    (667 nodos, solo con los paréntesis redundantes desenvueltos), y sus
+    controles negativos (un literal y un operador alterados) se detectan. El
+    perímetro HTTP sin credenciales válidas dio 401 en las 5 variantes.
+  - **Observación sin causa conocida:** después del E2E, las 5 Edge Functions
+    aparecieron con una versión más (`admin-reset-mfa` v1 → v2; `send-push`
+    11 → 12, `moderar-contenido` 9 → 10, `eliminar-cuenta` 3 → 4,
+    `eliminar-publicacion` 1 → 2), con el mismo `updated_at` y el mismo
+    `ezbr_sha256`. No se observó ningún cambio de código ni hubo ningún deploy
+    de esta tarea en ese intervalo. La causa no está determinada.
+  - **Tipos:** `supabase gen types --linked --schema admin` dio un archivo
+    byte-idéntico al comiteado.
+  - **Panel:** deployment `f0e7e467-aab5-444b-95c6-e35091cb1b21`, Production,
+    rama `main`, fuente `c45009d` (con `--commit-hash` explícito: sin él,
+    wrangler habría etiquetado el HEAD local, que tiene trabajo ajeno),
+    `index-D6xnSHVl.js` (sha256 `7771a000…`). Preflight limpio; las 24
+    peticiones de la batería de 4 variantes, byte-idénticas a
+    `dist/index.html` y sin beacon; los 6 headers coinciden en los 3 hosts.
+    Aceptación manual no destructiva por el usuario: propia cuenta sin botón,
+    otro admin con la tarjeta, validación del motivo y una cuenta normal sin
+    cambios.
+  - **E2E en producción con una cuenta temporal (`contacto@rlvo.com.mx`):**
+    1. Creada con `crear-admin.mjs crear --remoto` y activada con `activar`
+       tras enrolar su TOTP (auditoría 9, `activar_admin`).
+    2. Un admin operativo la restableció desde el panel: `activado_at` pasó a
+       NULL, su TOTP se borró y la auditoría escribió la 10
+       (`restablecer_mfa`, `factores_totp: 1`, motivo «Prueba E2E RF-17 Ola
+       3b») y la 11 (`factores_mfa_borrados: 1`), en ~0.2 s.
+    3. Enroló un TOTP NUEVO y verificado, y siguió desactivada:
+       **fail-closed demostrado** (la condición de activado de `is_admin()`
+       daba false con aal2 y un TOTP reciente).
+    4. `activar` la reactivó con el TOTP posterior al reset (auditoría 12) y
+       volvió a entrar al panel.
+    5. Limpieza con `crear-admin.mjs desactivar` (auditoría 13,
+       `desactivar_admin`); el usuario comprobó que su sesión ya no opera como
+       admin.
+    - **La cuenta se conserva a propósito:** es un correo real de RLVO. No se
+      borró de `auth.users`, `public.users` ni `private.admins`, ni su TOTP
+      (que ya no sirve para reactivarla: es anterior al cutoff de la 13).
+    - Los 3 admins operativos no cambiaron en toda la prueba: mismas fechas de
+      activación y mismos factores TOTP.
+  - **Estado final medido (2026-10-08):** 4 filas en `private.admins`, 3
+    activas (las de los 3 admins operativos) y `contacto@rlvo.com.mx`
+    desactivada; 4 factores, todos TOTP verified; 0 restablecimientos
+    pendientes; 11 `auth.users` y 11 `public.users`; auditoría de 13 filas, id
+    máximo 13 (9-13 son del E2E).
+
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
    CLAUDE.md §8 arriba).** Los pasos 0-5 ya corrieron y están en "Hecho"
@@ -4104,27 +4245,27 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      migraciones, schema `admin` expuesto, tipos regenerados, panel desplegado en
      Cloudflare Pages (`admin.rlvo.com.mx`) y los 3 admins activados. Detalle,
      evidencia y límites en "Hecho".
-   - **Ola 3b — PENDIENTE: Edge Function `admin-reset-mfa`.** Salió de la Ola 3
-     porque no tiene frame (`design/admin-panel.html`) y `admin/CLAUDE.md` exige
-     frame primero. Mientras tanto, perder el teléfono se resuelve con
-     `desactivar` → borrar el factor en el Dashboard → enrolar de nuevo →
-     `activar` (`docs/admin-runbook.md`).
+   - **Ola 3b — CERRADA, EN PRODUCCIÓN (2026-10-08):** `admin-reset-mfa`,
+     migración `20261008000483`, panel `f0e7e467` (`c45009d`) y E2E con una
+     cuenta temporal. Evidencia en "Hecho". Perder el teléfono se resuelve
+     desde el panel (`docs/admin-runbook.md` §5).
    - **Ola 4 — CERRADA, EN PRODUCCIÓN (2026-10-07 al 2026-10-08):**
      `dueno_no_activo` (`20261007000480`), cola y aprobar con D5 = (a)
      (`…481` + Edge Function `eliminar-publicacion`) y el registro mínimo
      retenido con pg_cron (`…482`); panel desplegado (`2bb8f280`, `d4cf591`) y
      aceptación manual A-F pasada. Evidencia en "Hecho".
-   - **Ola 5:** catálogo (migración `…483`). **Ola 6:** métricas y
-     `actividad_diaria` (`…484`). Se renumeraron en la Ola 4 (D17).
+   - **Ola 5 (la siguiente):** catálogo (migración `…484`). **Ola 6:** métricas
+     y `actividad_diaria` (`…485`). Se renumeraron en la Ola 4 (D17) y otra vez
+     en la Ola 3b, que tomó `…483`.
    **Notas que las olas heredan:** las dos de la Ola 1 ya están hechas (T35
    (d3), "timestamp basura", con su control; y el aviso del `DETAIL` del CHECK
    de `admin_acciones` en `admin/CLAUDE.md`). Las de la Ola 2 también están
    hechas (T36 (g)-(i) y el trigger de `resolved_at`), y la de la Ola 4 también
    (las fixtures, corregidas en `…480`). Sigue la de la Ola 6 de
    `docs/rf17-plan-admin.md`.
-   Pendientes: las Olas 3b, 5 y 6, una estrategia de respaldos (índice de
+   Pendientes: las Olas 5 y 6, una estrategia de respaldos (índice de
    deuda, abajo) y los secretos de Vault de `send-push` (pendiente 1). Ninguno
-   de los de las Olas 3 y 4 queda abierto.
+   de los de las Olas 3, 3b y 4 queda abierto.
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que
@@ -5185,6 +5326,20 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   esas columnas como texto; las que crea él mismo van en cadena vacía. Mordió al
   sembrar una cuenta de prueba en `probe-admin.mjs` (caso 8g) y se arregló
   sembrándolas con `''`. En remoto no aplica: todas las filas las crea GoTrue.
+  **Lo mismo vale para `auth.mfa_factors`** (medido en la Ola 3b): un factor
+  sembrado por SQL con `friendly_name`/`secret` en NULL hace que GoTrue no
+  pueda cargar al usuario (`500 Database error loading user`). Fallan TODOS sus
+  `deleteFactor` y hasta su `deleteUser`, y la cuenta de prueba se queda
+  (rompió T1 de `rls.sql` una vez). GoTrue los guarda como cadena vacía.
+- **GoTrue exige aal2 para enrolar un segundo factor** (medido en la Ola 3b):
+  con un TOTP verificado presente, `mfa.enroll` desde una sesión aal1 responde
+  "AAL2 required to enroll a new factor". En la práctica, quien perdió el
+  teléfono no puede enrolar uno nuevo hasta que el reset borre el viejo.
+- **`supabase functions download` devuelve el bundle transpilado, no el TS
+  original** (medido en la Ola 3b): sin tipos y reformateado, así que su
+  sha256 nunca coincide con el del fuente. Para verificar lo desplegado no
+  sirve un `cmp`: hace falta una comparación estructural (AST del fuente
+  transpilado contra el descargado) con sus propios controles negativos.
 - **Pages sirve 200 con `index.html` para CUALQUIER ruta inexistente, también las
   de recursos, y cachea en el borde el JS anterior.** Medido tras el redespliegue:
   `/assets/no-existe.js` da 200 `text/html` (el navegador no lo ejecuta, por

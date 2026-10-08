@@ -7,11 +7,92 @@
 (fechas en UTC; el push cayó la noche del 2026-10-01 en Monterrey) (Ola 1:
 `6278a0a` a `b11865c`; Ola 2: frames `5466752`/`2e3ab12` y código `3f49263` a
 `f7ee579`; Ola 3: `887fc72` a `da097ac`). **Ola 4 CERRADA en producción el
-2026-10-08** (`26d0e62` a `d4cf591`). Las Olas 3b, 5 y 6 siguen pendientes.
-Las cuatro secciones siguientes ganan sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
+2026-10-08** (`26d0e62` a `d4cf591`). **Ola 3b CERRADA en producción el
+2026-10-08** (`e5f498a` a `c45009d`). Las Olas 5 y 6 siguen pendientes; la
+siguiente es la 5 (catálogo, `…484`).
+Las cinco secciones siguientes ganan sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
 chocan, prevalece v2.1** (`is_admin()` con `jsonb_typeof`, la lista de claves de
 auditoría por tipo, el orden de las olas). El resumen operativo vive en
 `CLAUDE.md` §8, pendiente 0k; el detalle, aquí.
+
+## Ola 3b: lo que cambió al implementarla (gana sobre el resto del archivo)
+
+Diseñada, construida y desplegada el 2026-10-08 (UTC); commits `e5f498a` y
+`2189814` (frames), `9e78608` (migración y T35f), `219a585` (`activar`),
+`cec292c` (panel) y `c45009d` (Edge Function y probe). La evidencia de
+despliegue, el E2E y el estado final están en `CLAUDE.md` §8, "Hecho", "Panel
+de admin (RF-17), Ola 3b EN PRODUCCIÓN". **Ola 3b: CERRADA en producción.**
+
+1. **Frames:** `design/admin-panel.html` pasa de 28 a 29. "Usuario — cuenta de
+   admin" se reemplazó por "Usuario — cuenta de admin (restablecer app
+   autenticadora)" (su copy vieja, «para quitarle el acceso, se borra su fila
+   de admins», contradecía que revocar es desactivar) y se sumó el modal. Las
+   variantes (propia cuenta, ya desactivado, sin app, restablecimiento
+   pendiente, éxito, rechazos, `factores_pendientes` y `cierre_pendiente`)
+   viven dentro de esos dos frames.
+2. **Reparto (decisión del usuario):** RPC `iniciar` → Edge Function (Auth) →
+   RPC `completar`. La función no decide nada: llama a las dos RPC con el JWT
+   del ejecutor, así que autoriza `private.exigir_admin()` (la misma definición
+   que `is_admin()`: activado + aal2 + TOTP de ≤12 h). La secret key solo
+   borra factores en Auth y nunca llega al navegador.
+3. **Migración `20261008000483_admin_reset_mfa.sql`** (la Ola 3 no tenía
+   migración; la 3b sí):
+   - `admin_acciones_accion_check` de 7 a 9 acciones: `restablecer_mfa` y
+     `factores_mfa_borrados`.
+   - `claves_auditoria_ok('admin')` suma `factores_totp`.
+   - `admin.restablecer_mfa_iniciar(p_user_id, p_motivo, p_intento_pendiente)`
+     y `admin.restablecer_mfa_completar(p_accion_id)`, con la plantilla de
+     siempre (definer, `search_path = ''`, EXECUTE solo para `authenticated`).
+   - `private.cerrar_restablecer_mfa` (el cierre, una sola copia; revocada).
+   - `admin.detalle_usuario` suma `admin_activado`, `app_registrada` (un TOTP
+     `verified`) y `restablecimiento_pendiente`, y su auditoría incluye las
+     filas tipo `admin`.
+4. **Semántica (decisiones del usuario):**
+   - Nunca sobre la propia cuenta; motivo 3-500.
+   - **Fail-closed:** si el objetivo está activado, queda desactivado en la
+     misma transacción que escribe el inicio, ANTES de tocar Auth. Borrar el
+     factor nunca reactiva.
+   - **Solo factores `totp`** (verified y unverified) creados hasta el inicio
+     del intento (`created_at <= inicio`, comparado siempre en SQL). WebAuthn,
+     phone y un TOTP posterior al inicio no se tocan.
+   - **Auditoría en dos acciones:** `restablecer_mfa` (inicio: `antes
+     {activado_at}`, `despues {activado_at: null, factores_totp}`) y
+     `factores_mfa_borrados` (cierre: `{factores_borrados}` tomado del inicio,
+     no de quien llama). El motivo pertenece al intento original: reanudar o
+     recuperar no escribe otro motivo.
+   - **Recuperación:** S1 (desactivado, TOTP viejos presentes) se reanuda con el
+     MISMO intento; S2 (TOTP viejos ya borrados, falta el cierre) se cierra y la
+     petición termina con `cierre_recuperado`, nunca con un intento nuevo,
+     aunque exista un TOTP posterior. `estado_inesperado` solo si está
+     desactivado, sin TOTP y sin intento pendiente.
+   - **Concurrencia:** el `for update` sobre la fila de `private.admins`
+     serializa todo `iniciar`/`completar` del objetivo (y el `activar`/
+     `desactivar` del script). `p_intento_pendiente` (el id que el panel tenía
+     en pantalla) hace que un reintento ya cerrado por otro admin responda
+     `ya_completado` en lugar de abrir un reset nuevo.
+   - **`crear-admin.mjs activar`:** el cutoff pasa a ser el último
+     `desactivar_admin` o `restablecer_mfa`, y se niega mientras haya un
+     intento pendiente. Eso sostiene la invariante "intento pendiente ⇒
+     desactivado".
+5. **Medido antes de escribir la función (B0, GoTrue local):** `deleteFactor`
+   de un factor ya borrado responde `404 mfa_factor_not_found`, que la función
+   cuenta como hecho; cualquier otro error da `502 factores_pendientes`.
+6. **Pruebas:** T35f (28 aserciones y 15 controles negativos) y
+   `scripts/probe-admin-reset-mfa.mjs` (35). Hueco conocido: la tolerancia al
+   404 solo se alcanza en una carrera real, y su control negativo no cae en el
+   probe.
+7. **Despliegue de la Edge Function:** el fuente desplegado no se puede
+   comparar byte a byte, porque `supabase functions download` devuelve el
+   bundle transpilado. La evidencia es estructural: AST equivalente (667
+   nodos) con controles negativos que detectan cambios semánticos (`CLAUDE.md`
+   §8 y §9).
+8. **Numeración:** la Ola 3b tomó `…483`, así que **el catálogo (Ola 5) pasa a
+   `…484` y las métricas (Ola 6) a `…485`**.
+9. **Perder el teléfono** ya no pasa por el Dashboard: otro admin lo restablece
+   desde el panel, la persona enrola un TOTP nuevo y el admin técnico corre
+   `activar` tras la llamada (`docs/admin-runbook.md` §5). Retirar el acceso
+   de un admin sigue siendo `crear-admin.mjs desactivar`: el panel no tiene
+   esa acción.
 
 ## Ola 4: lo que cambió al implementarla (gana sobre el resto del archivo)
 
@@ -23,7 +104,8 @@ de admin (RF-17), Ola 4 EN PRODUCCIÓN". **Ola 4: CERRADA en producción.**
 1. **Numeración (D17):** el día real ya superaba la última fecha del repo, así
    que las migraciones son `20261007000480`, `…481` y `…482`. La `…482` NO es
    el catálogo: es el registro mínimo retenido (punto 6). **Las Olas 5 y 6
-   pasan a `…483` y `…484`** (tabla "Migraciones, en orden").
+   pasan a `…483` y `…484`** (tabla "Migraciones, en orden"). [Después, la Ola
+   3b tomó `…483`: hoy son `…484` y `…485`.]
 2. **`20261007000480` — `dueno_no_activo` (D9).** Dos triggers BEFORE,
    `listings_exige_dueno_activo_ins` (INSERT `when new.estado = 'activa'`) y
    `listings_exige_dueno_activo_upd` (UPDATE OF `estado`, `when` la transición
@@ -92,7 +174,7 @@ de admin (RF-17), Ola 4 EN PRODUCCIÓN". **Ola 4: CERRADA en producción.**
    existiendo más las eliminadas que se retienen. El frame dice "Bloqueadas" y
    no "Bloqueadas (12 meses)" (decisión del usuario), porque las que siguen
    existiendo no tienen fecha de bloqueo.
-8. **Panel:** 28 frames en `design/admin-panel.html` (antes 24: tres de
+8. **Panel:** 28 frames en `design/admin-panel.html` (29 desde la Ola 3b; antes 24: tres de
    Moderación y el detalle "en revisión (aprobar)"). Pantalla Moderación con
    los dos chips, tarjeta y modal Aprobar con los cuatro rechazos del frame,
    dato "Bloqueadas" y el aviso de suspender "no se podrá aprobar mientras la
@@ -577,9 +659,9 @@ exists (
     el factor. Eso exige `service_role`, así que va en una **Edge Function
     `admin-reset-mfa`** (Ola 3): verifica `is_admin()` del que llama, no se
     aplica a sí mismo y deja auditoría. Mientras tanto, el admin técnico lo hace
-    con el script. **[Ola 3b; el script NO tiene un comando de reset: lo que
-    existe hoy es desactivar → borrar el factor en el Dashboard → enrolar →
-    activar, `docs/admin-runbook.md`.]**
+    con el script. **[Hecho en la Ola 3b (2026-10-08): `admin-reset-mfa` y las
+    RPC `admin.restablecer_mfa_*`; ver "Ola 3b: lo que cambió al
+    implementarla".]**
 - **La UI del panel debe detectar el rechazo y pedir el TOTP otra vez (C6):**
   toda llamada que devuelva `42501` con `totp_vencido` o `mfa_requerido` abre el
   modal de TOTP (`challengeAndVerify`) y reintenta; `no_admin` cierra la sesión.
@@ -669,7 +751,7 @@ valor de una clave permitida.
 | `universidad` | `nombre` |
 | `campus` | `nombre`, `ciudad`, `latitud`, `longitud`, `universidad_id` |
 | `dominio` | `dominio`, `universidad_id`, `activo` |
-| `admin` | `activado_at`, `factores_borrados` |
+| `admin` | `activado_at`, `factores_borrados`, `factores_totp` (desde `…483`) |
 
 Cualquier tipo fuera de esta tabla, o una clave nueva, exige migración. **Se
 revisó cada RPC del plan contra esta lista y todas pueden auditar con ella:**
@@ -726,6 +808,8 @@ ola las fija.
 | `admin.bloquear_listing(p_id bigint, p_motivo text)` | `void` | 2 (adelantada, D19) | Desde `pendiente/activa/pausada/vendida`, nunca desde `bloqueada`. Audita solo `estado` |
 | `admin.cola_moderacion(p_solo_evaluadas boolean default true, p_cursor bigint default null, p_limit int default 50)` | `table(listing…, dueño_nombre, dueño_estado, fotos text[], evaluaciones int, ultimo_veredicto text, ultimo_detalle jsonb)` | 4 | `p_solo_evaluadas` separa las marcadas por moderación de las abandonadas a media subida |
 | `admin.aprobar_listing(p_id bigint, p_motivo text default null)` | `text` (estado final) | 4 | Solo `pendiente → activa`. Rechaza si el dueño no está `activo` o si tiene 0 fotos (traduce los errores de los triggers) |
+| `admin.restablecer_mfa_iniciar(p_user_id uuid, p_motivo text, p_intento_pendiente bigint default null)` | `jsonb {estado, accion_id, factores, desactivado}` | 3b | Desactiva y escribe el inicio, o reanuda/cierra un intento pendiente. Devuelve los ids de los TOTP viejos |
+| `admin.restablecer_mfa_completar(p_accion_id bigint)` | `jsonb {estado, factores_borrados}` | 3b | Cierra solo si no queda ningún TOTP viejo; idempotente |
 | `admin.crear_universidad(p_nombre text)` / `admin.editar_universidad(p_id bigint, p_nombre text, p_motivo text)` | `bigint` / `void` | 5 | |
 | `admin.crear_campus(p_universidad_id bigint, p_nombre text, p_ciudad text, p_latitud double precision, p_longitud double precision)` / `admin.editar_campus(p_id bigint, p_nombre text, p_ciudad text, p_latitud double precision, p_longitud double precision, p_motivo text)` | `bigint` / `void` | 5 | `editar_campus` **no acepta** `universidad_id`: nunca mueve un campus de universidad |
 | `admin.agregar_dominio(p_dominio text, p_universidad_id bigint, p_motivo text)` / `admin.desactivar_dominio(p_dominio text, p_motivo text)` / `admin.reactivar_dominio(p_dominio text, p_motivo text)` | `void` | 5 | Borrado lógico (§10) |
@@ -733,8 +817,8 @@ ola las fija.
 | `admin.auditoria(p_objetivo_tipo text default null, p_objetivo_id text default null, p_cursor bigint default null, p_limit int default 50)` | `table(…)` | 6 | Solo lectura. (La Ola 1 muestra "su auditoría" de un usuario con una consulta acotada del mismo módulo) |
 
 **No son RPCs, por diseño:** `crear-admin.mjs` (script local con la secret key:
-invitar y activar) y la Edge Function `admin-reset-mfa` (Ola 3b; ver "Ola 3: lo que
-cambió").
+invitar y activar) y la Edge Function `admin-reset-mfa` (Ola 3b; ver "Ola 3b: lo que
+cambió al implementarla"), que llama a las dos RPC `admin.restablecer_mfa_*`.
 
 ---
 
@@ -1098,11 +1182,13 @@ consecutivo** (`CLAUDE.md` §6). El orden de v2.1 con los adelantos de D19:
 | 5 | `20261007000480_listings_activa_exige_dueno_activo.sql` | 4 — **en producción** (después de `moderar-contenido` v9) | Triggers `listings_exige_dueno_activo_ins`/`_upd` que lanzan `55000 dueno_no_activo` |
 | 6 | `20261007000481_admin_moderacion.sql` | 4 — **en producción** | `admin.cola_moderacion`, `admin.aprobar_listing`, CHECK de 7 acciones, y las policies del dueño en `storage.objects` y en `listing_photos` según D5 |
 | 7 | `20261007000482_moderacion_retenida.sql` | 4 — **en producción** | `private.moderacion_retenida`, `private.minimo_moderacion`, el trigger `listings_retiene_moderacion`, pg_cron y su purga diaria, y `bloqueadas` en `admin.detalle_usuario` |
-| 8 | `…483_catalogo_admin.sql` (fecha real al crearla) | 5 | `universidad_dominios.activo`; hook y `handle_new_user()` (`create or replace`); RPCs de catálogo |
-| 9 | `…484_actividad_diaria_y_metricas.sql` (fecha real al crearla) | 6 | `public.actividad_diaria`, `admin.metricas`, `admin.auditoria` |
+| 8 | `20261008000483_admin_reset_mfa.sql` | 3b — **en producción** | CHECK de 9 acciones, `factores_totp` en las claves de `admin`, `admin.restablecer_mfa_iniciar`/`_completar`, `private.cerrar_restablecer_mfa` y los campos nuevos de `admin.detalle_usuario` |
+| 9 | `…484_catalogo_admin.sql` (fecha real al crearla) | 5 | `universidad_dominios.activo`; hook y `handle_new_user()` (`create or replace`); RPCs de catálogo |
+| 10 | `…485_actividad_diaria_y_metricas.sql` (fecha real al crearla) | 6 | `public.actividad_diaria`, `admin.metricas`, `admin.auditoria` |
 
-La Ola 3 no tiene migración (despliegue + Edge Function). Las de la Ola 4
-llevan la fecha real (D17), y por eso las de las Olas 5 y 6 se renumeraron. Cada migración de un
+La Ola 3 no tiene migración (despliegue). La 3b sí (`…483`, con la Edge
+Function). Las de la Ola 4 llevan la fecha real (D17); por eso, y porque la 3b
+tomó `…483`, las de las Olas 5 y 6 se renumeraron dos veces. Cada migración de un
 grant nuevo lleva `revoke all` explícito antes (`CLAUDE.md` §1, §9,
 `pg_default_acl`).
 
@@ -1274,9 +1360,9 @@ rechazado" (control: la rama sin el chequeo de existencia).
 | 1 | Login con MFA, alta de admins y suspender/reactivar de punta a punta con auditoría | **En producción** (2026-10-02) |
 | 2 | Reportes (con `detalle_listing`, la policy de Storage del admin y `bloquear_listing` adelantados, D19) | **En producción** (2026-10-02; prueba manual en local el 2026-10-01, ver "Ola 2: lo que cambió") |
 | 3 | Despliegue (Cloudflare Pages) y alta de los 3 admins | **En producción** (2026-10-02 al 2026-10-05, ver "Ola 3: lo que cambió") |
-| 3b | `admin-reset-mfa` (con su frame primero) | Pendiente |
-| 4 | Moderación (cola, aprobar, trigger de dueño activo, policy del dueño) | Pendiente; D5 se decide al entrar |
-| 5 | Catálogo institucional | Pendiente |
+| 3b | `admin-reset-mfa` (con su frame primero) | **Cerrada en producción** (2026-10-08, ver "Ola 3b: lo que cambió") |
+| 4 | Moderación (cola, aprobar, trigger de dueño activo, policy del dueño) | **Cerrada en producción** (2026-10-08, ver "Ola 4: lo que cambió") |
+| 5 | Catálogo institucional | Pendiente (la siguiente) |
 | 6 | Métricas y `actividad_diaria` | Pendiente |
 
 ### Ola 0 — sin panel (EN PRODUCCIÓN)
@@ -1422,11 +1508,11 @@ frame**; T35c (c)-(f); el probe de Storage y el de eliminar cuenta.
 
 ### Ola 5 — catálogo institucional
 
-Migración `…483` (era `…482`, renumerada en la Ola 4), T37 y el probe de registro (§10).
+Migración `…484` (era `…482`; renumerada en la Ola 4 y en la 3b), T37 y el probe de registro (§10).
 
 ### Ola 6 — métricas
 
-Migración `…484` (era `…483`), T38, el cambio en la app para `actividad_diaria` (con su build y
+Migración `…485` (era `…483`; renumerada en la Ola 4 y en la 3b), T38, el cambio en la app para `actividad_diaria` (con su build y
 el runbook de push) y la pantalla de métricas. El snapshot diario con `pg_cron`
 queda **después** (D11).
 

@@ -16,7 +16,7 @@ la sesión toca `admin/`.
    frames. Solo se reusan los TOKENS de color y
    tipografía de §2 raíz (`src/estilos.css`); nada de tamaños ni componentes
    de teléfono.
-   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 28 frames (24 hasta la Ola 3; la Ola 4 sumó tres de Moderación y el detalle "en revisión (aprobar)", aprobados por el usuario el 2026-10-07) medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
+   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 29 frames (24 hasta la Ola 3; la Ola 4 sumó tres de Moderación y el detalle "en revisión (aprobar)", aprobados por el usuario el 2026-10-07; la Ola 3b reemplazó "Usuario — cuenta de admin" por su versión con «Restablecer app autenticadora» y sumó el modal, aprobados el 2026-10-08) medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
 2. **Autorización, siempre en la base** (§0 regla 7 raíz, esta sí aplica).
    Toda acción es una RPC `security definer` de `admin.*` cuya primera línea es
    `perform private.exigir_admin();`, y toda escritura se audita en
@@ -24,7 +24,8 @@ la sesión toca `admin/`.
    el panel esconde un botón es UX, no candado.
 3. **La secret key nunca llega al navegador.** Lo que de verdad necesite
    `service_role` va en una Edge Function que verifique `is_admin()` del que
-   llama (la primera será `admin-reset-mfa`, Ola 3b, con su frame primero), o en
+   llama (hoy: `admin-reset-mfa`, Ola 3b, que delega toda la autorización en
+   las RPC `admin.restablecer_mfa_*`), o en
    `scripts/crear-admin.mjs`, que corre en la terminal del admin técnico con una
    secret key TEMPORAL (se crea para la alta y se borra después).
 
@@ -43,6 +44,26 @@ la sesión toca `admin/`.
   Medido: un refresh conserva el timestamp del TOTP y re-verificarlo lo
   renueva (`scripts/probe-admin.mjs`, caso 3). Por eso la UI, ante
   `totp_vencido`, pide el código y reintenta.
+
+## Restablecer la app autenticadora (Ola 3b, `20261008000483`, en producción desde el 2026-10-08)
+
+- **Panel:** el detalle de una cuenta de admin (`pantallas/Usuarios.tsx`)
+  muestra "Acceso al panel" y "App autenticadora", y la tarjeta «Restablecer app
+  autenticadora» con sus variantes (propia cuenta sin botón, ya desactivado, sin
+  app, restablecimiento pendiente). El modal es `componentes/ModalRestablecerMfa.tsx`.
+  Que la propia cuenta no tenga botón es UX: el candado es la guarda
+  `no_sobre_si_mismo` de la base.
+- **La llamada:** la Edge Function `admin-reset-mfa`, por `useLlamar`. Su
+  rechazo se traduce a `{code, message}` con `lib/funciones.ts` (puro), así que
+  un `totp_vencido` reenviado abre el modal de TOTP igual que en una RPC.
+- **`intento_pendiente`:** el modal lo manda cuando el detalle muestra un
+  restablecimiento pendiente, y también en los reintentos tras un 502 (la
+  función devuelve el `accion_id`). En el estado normal va en `null`. Así un
+  reintento que otro admin ya cerró responde `ya_completado` en lugar de abrir
+  un reset nuevo.
+- **Fail-closed:** la base desactiva antes de que la función toque Auth; solo
+  se borran factores `totp` anteriores al inicio del intento. El detalle de
+  diseño y la evidencia, en `docs/rf17-plan-admin.md`, "Ola 3b".
 
 ## Rechazos: solo tres mensajes cambian la sesión
 
@@ -146,21 +167,23 @@ base —quién, cuándo y por qué— y le avisa al dueño por el canal de sopor
   suspendida", como el frame.
 - **Barrido semanal de fotos huérfanas** (`docs/admin-runbook.md` §7): carpetas de
   `listing-photos` sin publicación, que se borran desde el Dashboard.
-- **Perder el teléfono (o cambiarlo).** `is_admin()` NO mira `auth.mfa_factors`:
-  borrar el factor deja `activado_at` puesto y cualquiera con la contraseña
-  enrolaría uno nuevo y quedaría admin sin pasar por `activar`. Por eso el orden
-  es: (1) llamada de voz a la persona; (2) `node scripts/crear-admin.mjs
-  desactivar --remoto --pooler-host <host-del-pooler> <correo> --motivo "<3-500>"`;
-  (3) Dashboard → Authentication → Users → borrar su factor; (4) la persona entra
-  con su contraseña y enrola (sin TOTP verificado, el panel manda a enrolar:
-  `App.tsx`); (5) segunda llamada con la hora del enrolamiento; (6) `node
-  scripts/crear-admin.mjs activar --remoto --pooler-host <host-del-pooler>
-  <correo>`, que exige un factor POSTERIOR a la desactivación. **No probado en
-  producción:** el borrado del factor desde el Dashboard no se ha ejecutado; el
-  equivalente por API (`auth.admin.mfa.deleteFactor`) sí está en `probe-admin`,
-  caso 8e. Si el que pierde el teléfono es el propio admin técnico, hace los
-  mismos pasos sobre su cuenta (conviene que otro admin sea testigo de la
-  llamada).
+- **Perder el teléfono (o cambiarlo), desde la Ola 3b.** (1) Llamada de voz a
+  la persona; (2) otro admin pulsa «Restablecer app autenticadora» en su detalle
+  (desactiva y borra sus TOTP en una sola operación, fail-closed); (3) la
+  persona entra con su contraseña y enrola un TOTP nuevo (sin TOTP verificado,
+  el panel manda a enrolar: `App.tsx`); (4) segunda llamada con la hora del
+  enrolamiento; (5) `node scripts/crear-admin.mjs activar --remoto
+  --pooler-host <host-del-pooler> <correo>`, que exige un factor POSTERIOR al
+  último `desactivar_admin` o `restablecer_mfa` y se niega con un intento
+  pendiente. Probado de punta a punta en producción el 2026-10-08 con una
+  cuenta temporal (`CLAUDE.md` §8). El camino viejo (desactivar → borrar el
+  factor en el Dashboard → `activar`) queda solo como emergencia si nadie puede
+  usar el panel; el borrado desde el Dashboard nunca se ha ejecutado en
+  producción.
+- **Retirar el acceso de un admin** (sin borrar su cuenta, su fila de
+  `private.admins` ni su app): `crear-admin.mjs desactivar`. El panel no tiene
+  esa acción, y «Restablecer app autenticadora» no es para esto (su auditoría
+  diría que cambió de teléfono).
 - **Suspender por Studio** exige `suspendido_at` y `suspension_motivo` (3-500
   tras `btrim`) o falla con 23514 (D15); reactivar exige dejar los dos en NULL.
   Studio no audita.
@@ -191,7 +214,9 @@ la secret key temporal y la contraseña de la base; ver la cabecera del script).
   - Con un correo externo, `admin_correo` guarda ese correo **para siempre** en
     la auditoría (append-only). Los cofundadores lo aceptaron.
 - `activar <correo>`: exige confirmar **por otro canal** y exactamente UN TOTP
-  verificado creado después del alta y de la última desactivación. Audita con
+  verificado creado después del alta y de la última desactivación o
+  restablecimiento (`desactivar_admin` o `restablecer_mfa`), y se niega
+  mientras haya un restablecimiento pendiente (Ola 3b). Audita con
   el actor centinela `00000000-0000-0000-0000-000000000000` y `admin_correo =
   'script:crear-admin.mjs'` (no hay JWT de un admin). Acepta cualquier correo
   bien formado: el SQL exige que esté en `private.admins`.
@@ -219,7 +244,11 @@ la secret key temporal y la contraseña de la base; ver la cabecera del script).
 
 ## Producción (Ola 3)
 
-*Estado a 2026-10-05; si algo de esto cambia, se cambia aquí.*
+*Estado a 2026-10-05, salvo el deployment vigente; si algo de esto cambia, se
+cambia aquí.* Deployment de Production vigente a 2026-10-08: `f0e7e467`
+(fuente `c45009d`, Ola 3b). **Si el HEAD local tiene commits que no son del
+panel, se despliega con `--commit-hash` del commit que corresponde**: wrangler
+etiqueta el deployment con el HEAD.
 
 - **Dónde:** Cloudflare Pages, proyecto `rlvo-admin`, dominio
   `admin.rlvo.com.mx` (también `rlvo-admin.pages.dev`). **Direct Upload, sin Git
@@ -289,10 +318,11 @@ responde 503. En remoto, el Dashboard se toca después del push de
   2026-10-08, con el camino `--remoto`, los correos externos de
   `crear-admin.mjs` y el amarre del TTL del reclamo (7d). Y
   `node scripts/probe-puerta-totp.mjs` (11), `node scripts/probe-storage.mjs`
-  (41) y `node scripts/probe-eliminar-publicacion.mjs` (12), también a
-  2026-10-08.
+  (41), `node scripts/probe-eliminar-publicacion.mjs` (12) y
+  `node scripts/probe-admin-reset-mfa.mjs` (35, Ola 3b; necesita además
+  `supabase functions serve`), también a 2026-10-08.
 - `supabase/tests/rls.sql`: T12, T35 y, desde la Ola 4, T35b, T35c (Ola 4),
-  T35d y T35e.
+  T35d y T35e; desde la Ola 3b, T35f (28).
 - Tipos: `npm run gen:types` (desde `admin/`) regenera `src/db/admin.types.ts`
   contra el stack **local** y es el default a propósito: las RPC nuevas se
   prueban en local antes del push. `--linked` produce el mismo contenido con

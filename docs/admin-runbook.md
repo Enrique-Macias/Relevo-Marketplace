@@ -7,10 +7,9 @@ La versión técnica vive en `admin/CLAUDE.md` y en `docs/rf17-plan-admin.md`.
 
 El panel está en **https://admin.rlvo.com.mx**.
 
-*Estado a 2026-10-08 (secciones 2 y 3), 2026-10-07 (sección 7) y 2026-10-05 (el
-resto). Lo que dice este documento sobre qué cubre el panel y sobre los respaldos
-cambia con las Olas 3b, 5 y 6 y con la estrategia de respaldos: cuando cambie, se
-actualiza aquí.*
+*Estado a 2026-10-08 (secciones 2, 3, 5, 6 y 7) y 2026-10-05 (el resto). Lo que
+dice este documento sobre qué cubre el panel y sobre los respaldos cambia con las
+Olas 5 y 6 y con la estrategia de respaldos: cuando cambie, se actualiza aquí.*
 
 ## 1. Entrar al panel
 
@@ -44,6 +43,11 @@ administradores con correo personal lo aceptaron.
 - **Usuarios:** buscar, ver el detalle, **suspender** y **reactivar** (siempre con
   motivo). El dato **"Bloqueadas"** suma sus publicaciones bloqueadas que siguen
   existiendo y las bloqueadas que eliminó en los últimos 12 meses.
+- **Cuentas de administrador** (desde el 2026-10-08): el detalle de otro admin
+  muestra si su acceso al panel está activado y si tiene app autenticadora
+  registrada, y permite **restablecer su app autenticadora** (sección 5). Sobre
+  tu propia cuenta no se puede. El panel no activa ni desactiva admins: eso lo
+  hace el admin técnico (secciones 5 a 7).
 - Todo lo que escribe queda **auditado**: quién, cuándo, qué y por qué.
 
 **Aprobar, lo que conviene saber:**
@@ -103,23 +107,35 @@ reactive, y entonces se aprueba o se bloquea como cualquier otra.
 
 ## 5. Perdí o cambié el teléfono (la app autenticadora)
 
-El admin técnico no puede simplemente borrar tu factor: cualquiera con tu contraseña
-podría registrar uno nuevo y quedar como administrador. El orden es este:
+Desde el 2026-10-08 se resuelve desde el panel. Restablecer la app nunca te deja
+entrar por sí solo: tu acceso queda desactivado hasta que el admin técnico lo
+active de nuevo, y para eso exige una app registrada DESPUÉS del restablecimiento.
+Así, aunque alguien tuviera tu contraseña, no podría quedar como administrador
+registrando su propia app.
 
-1. Llamas por voz al admin técnico, a un número que él ya tenga tuyo.
-2. Él **desactiva** tu cuenta (no la borra): pierdes el acceso de inmediato y queda
-   auditado.
-3. Él borra tu factor en el Dashboard de Supabase (Authentication → Users). **Este
-   paso del Dashboard todavía no se ha ejecutado en producción**: si esa opción no
-   aparece o no funciona, no improvises otra vía; avisa y se resuelve caso por caso.
-4. Entras al panel con tu contraseña y, como no tienes factor, te manda a enrolar la
-   app en el teléfono nuevo.
-5. Segunda llamada: confirmas que fuiste tú y a qué hora enrolaste.
-6. Él te **reactiva**. El sistema exige que tu factor sea posterior a la
-   desactivación, así que el factor viejo no sirve.
+1. Llamas por voz a otro administrador, a un número que ya tenga tuyo.
+2. Ese administrador abre tu cuenta en **Usuarios** y pulsa **«Restablecer app
+   autenticadora»**, con un motivo (sin datos personales). En ese momento:
+   - tu acceso al panel se desactiva;
+   - se elimina la app autenticadora registrada en tu cuenta. Nadie ve ni recibe
+     un código nuevo;
+   - tu cuenta no se borra: conservas tu correo y tu contraseña;
+   - queda en la auditoría: quién lo hizo, cuándo y el motivo.
+3. Entras al panel con tu contraseña. Como ya no tienes app registrada, te manda
+   a registrar la app en tu teléfono nuevo, y después a «Casi listo».
+4. Segunda llamada al admin técnico: confirmas que fuiste tú y a qué hora
+   registraste la app.
+5. El admin técnico te **activa** (`crear-admin.mjs activar`, sección 7). Solo
+   acepta una app registrada después del restablecimiento.
+6. Pulsas «Ya me confirmaron» y vuelves a entrar.
 
-Si quien pierde el teléfono es el propio admin técnico, hace los mismos pasos sobre
-su cuenta; conviene que otro admin sea testigo de la llamada.
+**Si quien pierde el teléfono es un administrador y no hay otro disponible para
+restablecerlo, o el panel muestra un aviso de restablecimiento pendiente:**
+- «El restablecimiento anterior quedó pendiente. Inténtalo de nuevo para
+  completarlo.»: pulsa otra vez «Restablecer app autenticadora». Continúa el MISMO
+  restablecimiento; no empieza otro.
+- Si nadie puede usar el panel, avisa al admin técnico y se resuelve caso por caso
+  (el borrado del factor en el Dashboard nunca se ha ejecutado en producción).
 
 ## 6. Si sospechas que una cuenta de administrador se comprometió
 
@@ -134,8 +150,9 @@ su cuenta; conviene que otro admin sea testigo de la llamada.
    `update private.admins set activado_at = null where user_id = '<uuid de esa cuenta>'`.
    Se usa solo en una emergencia, **no deja fila de auditoría** (anota después quién,
    cuándo y por qué) y, como no deja la fila `desactivar_admin`, el script
-   `activar` no exigiría un factor nuevo al reactivar: borra el factor a mano
-   antes de reactivar.
+   `activar` no exigiría un factor nuevo al reactivar: antes de reactivar, otro
+   admin le restablece la app autenticadora desde el panel (sección 5), que sí
+   deja el corte que exige `activar`.
 3. La persona cambia la contraseña de su correo y revisa su verificación en dos
    pasos antes de volver a activarse.
 
@@ -152,8 +169,11 @@ su cuenta; conviene que otro admin sea testigo de la llamada.
   `suspendido_at` y `suspension_motivo` (entre 3 y 500 caracteres) al suspender, y
   dejar los dos en nulo al reactivar. Si falta alguno, la base responde con el error
   `23514`. Studio no audita.
-- **Desbloquear una publicación** (sección 4) y **desactivar a un administrador**
-  (secciones 5 y 6).
+- **Desbloquear una publicación** (sección 4), **activar** a un administrador
+  después de restablecer su app (sección 5) y **desactivar** a un administrador
+  (sección 6). Desactivar quita el acceso sin borrar la cuenta, su fila de
+  administrador ni su app: es la forma soportada de retirar a alguien del panel.
+  `activar` se niega si hay un restablecimiento sin terminar.
 - **Barrido de fotos huérfanas, cada lunes.** Una carpeta de `listing-photos` cuya
   publicación ya no existe es basura: nadie la puede ver ni borrar desde la app (la
   publicación siempre se crea ANTES de subir sus fotos, así que una carpeta sin

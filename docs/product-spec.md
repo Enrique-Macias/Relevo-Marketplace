@@ -257,10 +257,11 @@ vez validado.
   admin adentro y MFA (aal2) exigido en la base, y deja fila en una tabla de
   auditoría; el panel nunca escribe directo y la `service_role` key nunca llega
   al navegador.
-  **Estado (2026-10-05): en producción por olas — `CLAUDE.md` §8, pendiente 0k.**
-  Las Olas 0 a 3 (corrección de un trigger, login con MFA, usuarios, reportes,
-  despliegue y alta de los 3 admins) están en producción; faltan la Ola 3b
-  (`admin-reset-mfa`) y las Olas 4 a 6 (cola de moderación, catálogo y métricas).
+  **Estado (2026-10-08): en producción por olas — `CLAUDE.md` §8, pendiente 0k.**
+  Las Olas 0 a 4 y la 3b (corrección de un trigger, login con MFA, usuarios,
+  reportes, despliegue y alta de los 3 admins, cola de moderación y restablecer
+  la app autenticadora de otro admin) están en producción; faltan las Olas 5 y
+  6 (catálogo y métricas).
 - **RF-18** Moderación automática de contenido antes de publicarse: fotos de
   publicaciones y de perfil analizadas con Google Cloud Vision (SafeSearch +
   detección de texto en imagen); título y descripción analizados con OpenAI
