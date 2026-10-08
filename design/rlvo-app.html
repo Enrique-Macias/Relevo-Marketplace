@@ -1279,25 +1279,28 @@
      all other screens keep the first iteration's component styles. */
   .feed-frame header.top{padding-top:6px;}
   .feed-frame header.top > .campus-chip{margin-top:4px;}
-  .feed-frame .hero{margin-top:8px; padding:14px 16px 12px; box-shadow:none;}
-  .feed-frame .hero-eyebrow{font-size:10.5px; line-height:14px; margin-bottom:8px;}
-  .feed-frame .hero-headline{line-height:1.15; margin-bottom:10px;}
-  .feed-frame .hero-stats{align-items:flex-start; flex-direction:column; gap:6px;}
+  .feed-frame .hero{margin-top:8px; padding:20px 20px 54px; border-radius:var(--radius-panel); box-shadow:none;}
+  .feed-frame .hero:has(.hero-stat-count){height:260px;}
+  .feed-frame .hero-eyebrow{font-size:11px; line-height:14px; letter-spacing:.06em; margin-bottom:8px;}
+  .feed-frame .hero-headline{font-size:24px; line-height:1.15; max-width:220px; margin-bottom:16px; white-space:pre-line;}
+  .feed-frame .hero-stats{align-items:flex-start; flex-direction:column; flex-wrap:nowrap; gap:8px;}
   .feed-frame .hero-stat{
-    padding:3px 8px; border:1px solid #797B85; border-radius:var(--radius-pill);
+    padding:6px 11px; border:1px solid #797B85; border-radius:var(--radius-pill);
     background:rgba(255,255,255,.04); color:var(--brand-white);
-    font-size:11px; line-height:16px; font-weight:500; white-space:nowrap;
+    font-size:11.5px; line-height:14px; font-weight:500; white-space:nowrap;
   }
   .feed-frame .hero-stat-count{background:var(--brick); color:var(--brand-graphite); border-color:var(--brick); font-weight:600;}
-  .feed-frame .hero-skyline{height:14px; opacity:.12;}
+  .feed-frame .hero-skyline{height:60px; opacity:.9;}
+  .feed-frame .hero-skyline path{fill:rgba(245,241,234,.16);}
   .feed-frame .search-row{margin-top:12px;}
   .feed-frame .section-head{padding-top:8px; padding-bottom:6px;}
-  .feed-frame .cat-grid{gap:8px;}
+  .feed-frame .cat-grid{gap:9px;}
   .feed-frame .cat-grid:not([style]) .cat-item{
-    height:52px; padding-block:5px; gap:3px;
+    height:86px; padding:10px 6px; gap:7px;
     border-color:color-mix(in srgb, var(--control-border) 72%, white);
   }
-  .feed-frame .cat-grid:not([style]) .cat-icon{height:20px;}
+  .feed-frame .cat-grid:not([style]) .cat-icon{width:32px; height:32px;}
+  .feed-frame .cat-label{font-size:11px;}
   @media (hover:hover){
     .filter-chip:hover,.reset-btn:hover{background:var(--brick-tint); color:var(--ink);}
     .filter-chip.active:hover{background:var(--ink); color:var(--card);}
@@ -1440,7 +1443,9 @@
 
       <div class="hero">
         <div class="hero-eyebrow">HECHO PARA ESTUDIANTES</div>
-        <div class="hero-headline">Compra y vende sin salir del campus.</div>
+        <div class="hero-headline">Compra y vende
+sin salir del
+campus.</div>
         <div class="hero-stats">
           <div class="hero-stat hero-stat-count">128 publicaciones</div>
           <div class="hero-stat">Verificado por correo institucional</div>
@@ -1693,7 +1698,9 @@
 
       <div class="hero">
         <div class="hero-eyebrow">HECHO PARA ESTUDIANTES</div>
-        <div class="hero-headline">Compra y vende sin salir del campus.</div>
+        <div class="hero-headline">Compra y vende
+sin salir del
+campus.</div>
         <div class="hero-stats">
           <div class="hero-stat">Verificado por correo institucional</div>
         </div>

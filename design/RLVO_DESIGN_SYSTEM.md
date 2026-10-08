@@ -19,7 +19,7 @@ La referencia Positivus orienta el equilibrio entre neutralidad, lima y contorno
 ### Cambios de composición
 
 - El hero del feed conserva su mensaje, cifras, verificación y silueta del campus. En la segunda iteración gana espacio interno y presenta los dos indicadores como chips separados.
-- Las ocho categorías del feed permanecen en dos filas de cuatro, ahora con tiles de 52 px y separación de 8 px. Sus iconos y etiquetas mantienen el contraste; el contorno decorativo se aclara. Las categorías de otros frames conservan sus medidas y estilos anteriores.
+- Las ocho categorías del feed permanecen en dos filas de cuatro, con tiles de 86 px y separación de 9 px, como en el prototipo original. Sus iconos y etiquetas mantienen el contraste; el contorno decorativo se aclara. Las categorías de otros frames conservan sus medidas y estilos anteriores.
 - Las miniaturas de la rejilla usan proporción 1:1 para adelantar los precios. La galería de Detalle mantiene 340 px de altura y el visor conserva la imagen completa y el gesto documentado de cierre.
 - Los teléfonos conservan **375 × 812 px**, incluyendo el borde de 10 px: el contenido interior tiene 355 px de ancho. No se deben interpretar esos 355 px como el ancho objetivo de una futura app nativa.
 - La barra inferior conserva sus cuatro destinos y el FAB sigue en Perfil. La selección usa una cápsula lima detrás del icono y un texto en grafito.
@@ -73,11 +73,11 @@ La clase semántica se añade al componente sin retirar la clase ni el estado or
 
 El ajuste se limita a **Feed** y **Feed (sin publicaciones)**, mediante `.feed-frame`. Los otros 71 frames conservan exactamente su markup y no reciben estas reglas CSS.
 
-- **Hero con más aire:** padding de 14 px arriba, 16 px a los lados y 12 px abajo; titular con interlineado 1.15 y 10 px antes de los indicadores. Su altura en el Feed pasa de 120 a 160 px.
-- **Indicadores separados:** chips de 24 px de alto, texto Inter de 11 px y separación vertical de 6 px. El conteo utiliza lima/grafito; la verificación utiliza un contorno claro y texto blanco sobre grafito. En el estado vacío se conserva únicamente el chip de verificación, sin añadir un conteo de cero.
-- **Lima con un propósito concreto:** destaca el conteo de publicaciones y mantiene los acentos existentes de marca/selección. La silueta del campus se conserva como decoración de 14 px de alto al 12 % de opacidad para no competir con los chips. El hero prescinde de su sombra inferior.
-- **Categorías más ligeras:** altura de 52 px, iconos de 20 px, gap interno de 3 px y contorno mezclado con un 28 % de blanco. Ese contorno es decorativo; la identificación de cada categoría sigue apoyándose en icono y etiqueta en grafito. Se conserva un tile de más de 48 px de alto.
-- **Más espacio para productos:** se reducen márgenes del encabezado, buscador y secciones. Las fotografías mantienen su tamaño y proporción. La primera fila empieza unos **15 px antes** que en la iteración anterior; sus precios y títulos quedan por encima de la navegación inferior en la primera vista de 375 × 812 px.
+- **Hero con la composición de la referencia original:** altura de 260 px en el Feed con publicaciones, tomando como referencia la captura compartida. Padding de 20 px arriba y a los lados, 54 px abajo y radio de 20 px. Titular Manrope de 24 px, interlineado 1.15 y tres líneas explícitas: «Compra y vende / sin salir del / campus.», con 16 px antes de los indicadores. El estado vacío conserva altura automática.
+- **Indicadores separados:** chips de 28 px de alto, texto Inter de 11.5 px, padding de 6 × 11 px y separación vertical de 8 px, en una columna sin wrap. El conteo utiliza lima/grafito; la verificación utiliza un contorno claro y texto blanco sobre grafito. En el estado vacío se conserva únicamente el chip de verificación, sin añadir un conteo de cero.
+- **Lima con un propósito concreto:** destaca el conteo de publicaciones y mantiene los acentos existentes de marca/selección. La silueta del campus recupera los 60 px de alto y la opacidad del 90 % del original, con relleno crema al 16 %. Conserva el mismo SVG y sus trazos, en todo el ancho de la base. El hero prescinde de su sombra inferior.
+- **Categorías más ligeras:** altura de 86 px, padding de 10 × 6 px, contenedores de icono de 32 × 32 px, etiquetas de 11 px y gap interno de 7 px, como en el original; el contorno sigue mezclado con un 28 % de blanco. Ese contorno es decorativo; la identificación de cada categoría sigue apoyándose en icono y etiqueta en grafito. Se conserva un tile de más de 48 px de alto.
+- **Más espacio para productos:** se reducen márgenes del encabezado, buscador y secciones. Las fotografías mantienen su tamaño y proporción. La altura mayor del hero desplaza la primera fila hacia abajo respecto del ajuste compacto anterior; se conserva el scroll del Feed. La prioridad de este ajuste es reproducir la composición de la referencia compartida.
 - **Identidad conservada:** logo oficial, tamaño y proporciones de su imagen, tipografías Manrope/Inter, colores base y navegación permanecen iguales. No se añade ni retira contenido, una acción o un estado.
 
 Estos ajustes de densidad son específicos del Feed y no redefinen los espaciados globales del design system.
@@ -110,7 +110,7 @@ El original utiliza Fraunces para marca, precios y titulares, e Inter para la in
 Roles principales del HTML:
 
 - Precio de detalle: 28 px; precio de tarjeta/lista: 19 px.
-- Autenticación y onboarding: 22 px; banner: 20 px.
+- Autenticación y onboarding: 22 px; banner del Feed: 24 px en tres líneas.
 - Títulos de pantalla: 19 px; títulos de sección: 15 px; encabezado de hoja: 16 px.
 - Texto de producto: 12.5 px; cuerpo: 13–14 px; metadatos: 10.5–12.5 px.
 - Botones principales: 13.5 px / 20 px; auxiliares: 13 px / 20 px.
@@ -127,7 +127,7 @@ Escala propuesta: `4 / 8 / 12 / 16 / 20 / 24 / 32 px`, expuesta como `--space-1`
 Se mantienen los paddings de cada flujo cuando el contenido los necesita: margen lateral habitual de 20 px, autenticación de 24 px y estados vacíos de 30 px. La escala no justifica sustituir indiscriminadamente medidas del original.
 
 - Rejilla de productos: dos columnas, separación de 12 px.
-- Categorías del feed: cuatro columnas, separación de 8 px y altura de 52 px por tile en la segunda iteración.
+- Categorías del feed: cuatro columnas, separación de 9 px y altura de 86 px por tile, recuperando las medidas del original.
 - Separación entre acciones: 10 px; entre elementos de lista: 11–12 px.
 - Botones primarios, secundarios y destructivos: mínimo de 48 px de alto.
 - Buscador y filtro: 44 px de alto.
@@ -308,7 +308,7 @@ Revisión ejecutada en Chrome mediante una vista previa local, limitada al nuevo
 - Sin errores o advertencias de consola capturados durante la revisión.
 - Sintaxis del JavaScript verificada con `node --check`.
 
-### Validación de la segunda iteración del Feed
+### Validación de la segunda iteración del Feed — antes del ajuste de referencia
 
 - Comparación con la iteración anterior: mismos 73 frames, textos, estados, logos y JavaScript. Los otros 71 frames permanecen idénticos en el HTML.
 - Revisión de Feed y Feed vacío en Chrome a 375 × 812 px: sin desbordamiento horizontal, chips completos y navegación conservada. Ambos logos cargan correctamente.
@@ -317,6 +317,10 @@ Revisión ejecutada en Chrome mediante una vista previa local, limitada al nuevo
 - Comprobación de contraste de 85 elementos de texto de ambos frames: 0 incidencias con los umbrales AA del texto. El conteo en lima conserva 14.47:1 con grafito; el chip de verificación usa blanco sobre grafito. El contorno más claro de categorías es decorativo.
 - Filtros verificados después del ajuste: Explorar muestra 21/73 y Todas muestra 73/73. Sin errores o advertencias de consola capturados.
 - Las validaciones estructurales y de integridad de los originales/logos siguen pasando. No se modificaron archivos de producción ni se realizaron commits o push.
+
+### Ajuste posterior a las capturas de referencia
+
+La altura de 260 px, el titular en tres líneas, los chips ampliados y la silueta de 60 px se configuraron a partir del CSS original y las capturas compartidas. Las categorías del Feed recuperan también la altura de 86 px, sus paddings, separación y tamaños de contenido del original, manteniendo el tratamiento visual RLVO. No se verificaron en navegador ni mediante computer use, por instrucción del usuario. Las medidas de 160 px y la posición de productos registradas en la revisión anterior describen ese estado anterior, no este ajuste. Pendiente de revisión visual del usuario.
 
 ### Validaciones no ejecutadas / límites
 
@@ -340,7 +344,7 @@ Para comparar, abrir también `design/relevo-app.html` en otra pestaña. Esta pr
 
 - Manrope para titulares/precios junto a Inter para el resto de la interfaz.
 - Colores semánticos adicionales y tratamiento contenido de bordes/sombras.
-- Hero con chips separados, categorías de 52 px y distribución vertical de la segunda iteración del Feed; las miniaturas cuadradas se mantienen.
+- Hero con chips separados, categorías de 86 px y distribución vertical ajustada a la referencia del Feed; las miniaturas cuadradas se mantienen.
 - Uso de las variantes 02/07/16 y presentación del splash con el copy existente.
 
 La aprobación de esta propuesta no autoriza por sí sola cambios al panel, implementación nativa ni despliegue. Esas fases requieren una instrucción posterior.
