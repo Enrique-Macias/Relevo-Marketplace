@@ -7,9 +7,10 @@ La versión técnica vive en `admin/CLAUDE.md` y en `docs/rf17-plan-admin.md`.
 
 El panel está en **https://admin.rlvo.com.mx**.
 
-*Estado a 2026-10-07 (secciones 3 y 7; el resto, a 2026-10-05). Lo que dice este documento sobre qué cubre el panel y sobre
-los respaldos cambia con las Olas 3b a 6 y con la estrategia de respaldos: cuando
-cambie, se actualiza aquí.*
+*Estado a 2026-10-08 (secciones 2 y 3), 2026-10-07 (sección 7) y 2026-10-05 (el
+resto). Lo que dice este documento sobre qué cubre el panel y sobre los respaldos
+cambia con las Olas 3b, 5 y 6 y con la estrategia de respaldos: cuando cambie, se
+actualiza aquí.*
 
 ## 1. Entrar al panel
 
@@ -34,13 +35,29 @@ administradores con correo personal lo aceptaron.
 - **Reportes:** ver la lista, abrir uno, resolverlo o descartarlo (con un motivo
   de 3 a 500 caracteres), ver la publicación o la cuenta reportada y **bloquear
   una publicación**.
+- **Moderación** (desde el 2026-10-08): las publicaciones **en revisión**, de la
+  más antigua a la más reciente. "Evaluadas" son las que la revisión automática
+  mandó a revisión, con el veredicto y el motivo; "Sin evaluar" son altas que se
+  quedaron a media subida. Al abrir una puedes **aprobarla** (con motivo: pasa a
+  activa, aparece en el catálogo y el dueño recibe un aviso en la app) o
+  **bloquearla**.
 - **Usuarios:** buscar, ver el detalle, **suspender** y **reactivar** (siempre con
-  motivo).
+  motivo). El dato **"Bloqueadas"** suma sus publicaciones bloqueadas que siguen
+  existiendo y las bloqueadas que eliminó en los últimos 12 meses.
 - Todo lo que escribe queda **auditado**: quién, cuándo, qué y por qué.
 
-**Lo que a 2026-10-05 todavía no está en el panel** (sigue en Studio hasta las Olas 4 a 6): la
-cola de moderación, aprobar publicaciones, el catálogo de universidades y
-dominios, y las métricas.
+**Aprobar, lo que conviene saber:**
+- No se puede aprobar una publicación **sin fotos** ni la de una **cuenta
+  suspendida**: el botón aparece deshabilitado y, si se intenta, el panel dice por
+  qué.
+- Si dos administradores aprueban la misma publicación a la vez, solo una
+  aprobación cuenta; el otro ve "La publicación cambió de estado mientras tanto.
+  Recarga el detalle." No es un error.
+- Si dice que la revisión automática "sigue en curso", espera unos minutos y
+  vuelve a intentarlo.
+
+**Lo que a 2026-10-08 todavía no está en el panel** (sigue en Studio hasta las
+Olas 5 y 6): el catálogo de universidades y dominios, y las métricas.
 
 No escribas datos personales en los motivos: son texto libre y la base no puede
 impedirlo.
@@ -61,14 +78,17 @@ reactive, y entonces se aprueba o se bloquea como cualquier otra.
 
 - Ya no hace falta avisar al admin técnico al suspender, ni la revisión semanal de
   antes: era la regla provisional mientras faltaba este candado.
-- Si el panel todavía dice que una publicación en revisión "podría activarse aun
-  con la cuenta suspendida", es el texto viejo de antes del candado: ya no aplica
-  y desaparece con la siguiente actualización del panel.
+- Desde el 2026-10-08 el panel lo dice así al suspender: "no se podrá aprobar
+  mientras la cuenta esté suspendida".
 - Si en Studio alguien intenta pasar a `activa` una publicación de una cuenta
   suspendida, la base responde con el error `dueno_no_activo`. Es el candado
   funcionando, no una falla.
 
 ## 4. Bloquear una publicación
+
+- **Si el dueño elimina después una publicación bloqueada**, la app borra sus
+  fotos, pero se conserva un registro mínimo de la moderación (sin fotos) durante
+  12 meses; por eso el dato "Bloqueadas" del usuario no baja.
 
 - **Bloquear es definitivo** para la app y el panel: el panel no desbloquea. Piénsalo
   antes.

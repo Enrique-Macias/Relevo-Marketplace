@@ -529,6 +529,15 @@ cambio de semántica de seguridad disfrazado de refactor (§9).
   vacía**, así que el `if (error)` de `borrarFotos()` ni siquiera imprime su
   `console.warn` y el huérfano se genera **en silencio**. El mecanismo está en
   CLAUDE.md §9; no es específico de este bucket.
+  **Desde la Ola 4 de RF-17 (2026-10-08) sí hay Edge Function:**
+  `eliminar-publicacion` (D5 = (a)), porque desde `20261007000481` el dueño de
+  una `bloqueada` ya no ve sus objetos y `borrarFotos()` con su sesión
+  devolvería `200 []`. La app elimina TODA publicación por ella: la fila con el
+  JWT del usuario y después `listing-photos/{id}/` con la secret key, sin
+  depender de que el dueño vea las fotos. Si Storage falla después de borrar la
+  fila, responde `{ ok: true, huerfanos: true }` y la carpeta la recoge el
+  barrido semanal (`docs/admin-runbook.md` §7). `borrarFotos()` queda solo para
+  las fotos que sobran al reemplazar el set en Editar.
 
 **Editar una publicación ya no la mueve de campus (corregido con la fase 2A).**
 Era un bug que ya existía y nadie había visto. `actualizarListing()` mandaba

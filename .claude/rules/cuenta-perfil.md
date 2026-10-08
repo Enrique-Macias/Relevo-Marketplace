@@ -558,6 +558,14 @@ mismo criterio que `campusChip`/`buttonWhatsapp`).
     ya no existe en el servidor, hasta que navegue hacia atrás a mano —
     "Mis publicaciones" sí mostrará el estado correcto al volver, porque hace
     su propio fetch fresco. Límite conocido, no arreglado a propósito.
+  - **Desde la Ola 4 de RF-17 (2026-10-08) esto cambió de mecanismo.**
+    `borrarListing()` ya no existe: las tres pantallas llaman a
+    `eliminarPublicacion()`, que invoca la Edge Function `eliminar-publicacion`
+    (fila con el JWT del usuario, después la carpeta con la secret key). Un
+    suspendido recibe `403 no_borrable` → `ListingNoBorrableError`, ahora con
+    UNA sola causa; "ya se había borrado" es un 200, así que la ambigüedad de
+    arriba desapareció. Las reconciliaciones de Mis publicaciones y Detalle se
+    conservaron. Detalle en `docs/rf17-plan-admin.md`, "Ola 4: lo que cambió".
   - **De paso, los `ConfirmModal` de "Eliminar" en las dos pantallas ganaron el
     guard de `onCancel` que "Confirmar eliminar cuenta" ya tenía**
     (`configuracion.tsx`): `onCancel={() => { if (!borrando) ... }}`, para que

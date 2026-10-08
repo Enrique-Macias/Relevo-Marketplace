@@ -16,7 +16,7 @@ la sesión toca `admin/`.
    frames. Solo se reusan los TOKENS de color y
    tipografía de §2 raíz (`src/estilos.css`); nada de tamaños ni componentes
    de teléfono.
-   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 24 frames medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
+   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 28 frames (24 hasta la Ola 3; la Ola 4 sumó tres de Moderación y el detalle "en revisión (aprobar)", aprobados por el usuario el 2026-10-07) medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
 2. **Autorización, siempre en la base** (§0 regla 7 raíz, esta sí aplica).
    Toda acción es una RPC `security definer` de `admin.*` cuya primera línea es
    `perform private.exigir_admin();`, y toda escritura se audita en
@@ -104,6 +104,25 @@ la busca por `listings_select`, que esconde la `bloqueada`). Es deuda aceptada
 (`CLAUDE.md` §3, "Panel de admin"); antes de bloquear una vendida con una
 calificación pendiente, avísale al comprador por el canal de soporte.
 
+## Moderación y aprobar (Ola 4, en producción desde el 2026-10-08)
+
+- **Moderación** (`pantallas/Moderacion.tsx`) pinta `admin.cola_moderacion`:
+  solo `pendiente`, de la más antigua a la más reciente, con los chips
+  "Evaluadas" y "Sin evaluar". La miniatura es el recuadro del frame, sin bajar
+  la foto (una página serían hasta 50 descargas del bucket privado); las fotos
+  se ven en el detalle.
+- **Aprobar** (`componentes/ModalAprobar.tsx`, hermano de `ModalBloquear`):
+  `admin.aprobar_listing` con motivo obligatorio. Los cuatro rechazos del frame
+  (`estado_inesperado`, `dueno_no_activo`, `sin_fotos`, `moderacion_en_curso`)
+  los dice la RPC; que la tarjeta deshabilite el botón con el dueño suspendido o
+  sin fotos es UX, no candado. Dos pestañas aprobando la misma publicación: una
+  gana y la otra recibe `estado_inesperado` (medido en producción, prueba D).
+- **"Bloqueadas"** en el detalle de usuario suma las `bloqueada` que siguen
+  existiendo y las eliminadas que se retienen 12 meses en
+  `private.moderacion_retenida` (`…482`).
+- El dueño de una `bloqueada` ya no ve sus fotos (D5); el admin sí, por su
+  policy. La app las borra con la Edge Function `eliminar-publicacion`.
+
 ## Runbook de moderación: desbloquear por Studio
 
 El panel NO desbloquea (D10): `bloqueada` es terminal. Si un bloqueo fue un
@@ -122,9 +141,9 @@ base —quién, cuándo y por qué— y le avisa al dueño por el canal de sopor
   cualquier paso a `activa` de una publicación cuyo dueño no esté activo, para
   todos los roles (Studio incluido), y `moderar-contenido` (v9) lo traduce a
   `pendiente`. La consulta semanal y el aviso al suspender ya no hacen falta.
-  Hasta que se despliegue el panel de la Ola 4, el aviso de suspender sigue
-  diciendo "podría activarse" (`Usuarios.tsx`): es más cauteloso de la cuenta, no
-  peligroso; el frame ya tiene el texto nuevo.
+  Desde el despliegue del panel de la Ola 4 (2026-10-08, deployment `2bb8f280`),
+  el aviso de suspender dice "no se podrá aprobar mientras la cuenta esté
+  suspendida", como el frame.
 - **Barrido semanal de fotos huérfanas** (`docs/admin-runbook.md` §7): carpetas de
   `listing-photos` sin publicación, que se borran desde el Dashboard.
 - **Perder el teléfono (o cambiarlo).** `is_admin()` NO mira `auth.mfa_factors`:
@@ -266,11 +285,14 @@ responde 503. En remoto, el Dashboard se toca después del push de
 
 - `npm run check:admin` desde la raíz (typecheck + lint del panel). El
   `tsconfig.json` raíz excluye `admin/`: sin este comando, nadie lo mira.
-- `node scripts/probe-admin.mjs` (stack local + Mailpit): 83 pruebas a
-  2026-10-05, con el camino `--remoto` y los correos externos de
-  `crear-admin.mjs`. Y `node scripts/probe-puerta-totp.mjs` (11) y
-  `node scripts/probe-storage.mjs` (34), también a 2026-10-05.
-- `supabase/tests/rls.sql`: T12 y T35.
+- `node scripts/probe-admin.mjs` (stack local + Mailpit): 84 pruebas a
+  2026-10-08, con el camino `--remoto`, los correos externos de
+  `crear-admin.mjs` y el amarre del TTL del reclamo (7d). Y
+  `node scripts/probe-puerta-totp.mjs` (11), `node scripts/probe-storage.mjs`
+  (41) y `node scripts/probe-eliminar-publicacion.mjs` (12), también a
+  2026-10-08.
+- `supabase/tests/rls.sql`: T12, T35 y, desde la Ola 4, T35b, T35c (Ola 4),
+  T35d y T35e.
 - Tipos: `npm run gen:types` (desde `admin/`) regenera `src/db/admin.types.ts`
   contra el stack **local** y es el default a propósito: las RPC nuevas se
   prueban en local antes del push. `--linked` produce el mismo contenido con

@@ -120,7 +120,7 @@ Cuando código y documentación discrepen:
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Moderación de imagen | Google Cloud Vision (SafeSearch + OCR) **+ Amazon Rekognition** (`DetectModerationLabels`) | Dos proveedores porque cubren cosas distintas: SafeSearch no mira drogas/alcohol/gambling y Rekognition no hace OCR. Rekognition **no batchea** (una llamada por imagen) y acepta **solo JPEG/PNG**, al revés de Vision — ver §3 |
-| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins). Supabase Studio para lo que el panel aún no cubre | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **A 2026-10-05, la cola de moderación, aprobar publicaciones, el catálogo y las métricas (Olas 4-6) siguen en Studio** |
+| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins), y desde el 2026-10-08 la 4 (cola de moderación y aprobar publicaciones). Supabase Studio para lo que el panel aún no cubre | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **A 2026-10-08, el catálogo y las métricas (Olas 5-6) siguen en Studio** |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Nomenclatura de API keys (Supabase renombró su sistema en 2026):** usamos las
@@ -216,8 +216,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 43 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-10-01; decía "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
+Definido en 46 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-10-08; decía "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
@@ -232,6 +232,13 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 46 y 46 (medido el 2026-10-08) — a la par.** `ls
+supabase/migrations | wc -l` da **46**; `mcp__supabase__list_migrations`
+también da **46**, y las tres últimas son `20261007000480`, `…481` y `…482`
+(Ola 4 de RF-17, §8 "Hecho"). Las tres tablas de `private` (`admins`,
+`admin_acciones` y, desde `…482`, `moderacion_retenida`) no cuentan en el 19 de
+arriba, que es de `public`. La historia de antes, tal como estaba:
 
 **Repo y remoto: 43 y 43 (medido el 2026-10-05) — a la par.** `ls
 supabase/migrations | wc -l` da **43**; `mcp__supabase__list_migrations` también
@@ -1232,17 +1239,18 @@ acotado a las CUATRO que se invocan desde policies — `is_active_user()`,
 `can_rate()`, `listing_id_from_object_name()` y, desde `20260930000477`,
 `is_admin()` (la usará la policy de Storage del admin en la Ola 2 de RF-17, y
 lleva el workaround del SIGSEGV desde que existe; desde `20260930000479` la
-invoca la policy `listing_photos_objects_select_admin`) — mientras las **20** que solo
+invoca la policy `listing_photos_objects_select_admin`) — mientras las **22** que solo
 disparan por trigger siguen revocadas (decía "las otras cinco", un número de la
-Fase 2 que nadie actualizó, y después 12, 16, 18 y 19; medido con `pg_trigger` ⋈ `pg_proc`
-en local el 2026-10-01: **24** funciones de `private` cuelgan de un trigger, 20
-sin EXECUTE para `authenticated` y 4 con él. Las
+Fase 2 que nadie actualizó, y después 12, 16, 18, 19 y 20; medido con `pg_trigger` ⋈ `pg_proc`
+en local el 2026-10-08: **26** funciones de `private` cuelgan de un trigger, 22
+sin EXECUTE para `authenticated` y 4 con él; las dos nuevas son
+`exige_dueno_activo()` (`…480`) y `retiene_moderacion()` (`…482`). Las
 cuatro que no están revocadas son INVOKER y solo reescriben NEW:
 `set_updated_at()`, `limpia_veredicto_en_pantalla()`, `anonimiza_rating()` y
 `anonimiza_report()`, que conservan su `EXECUTE` porque Postgres lo verifica al
 crear el trigger, no al dispararlo. **`sella_resolved_at()` (`…479`) es la
 excepción**: también INVOKER y solo reescribe NEW, pero va revocada por
-decisión del usuario, así que cuenta entre las 20. T12 vigila las dos listas, y
+decisión del usuario, así que cuenta entre las 22. T12 vigila las dos listas, y
 desde la Ola 2 también una invariante GENÉRICA por `pg_depend`: toda función de
 `private` que una policy referencie tiene EXECUTE para `authenticated`.
 **`pg_depend` solo ve dependencias DIRECTAS policy → función**: lo que una
@@ -1639,8 +1647,9 @@ Lo que no se ve en la tabla:
   desde `listings`, que el borrado se lleva. Detalle de la función (auth,
   reautenticación por `amr`, idempotencia) en §8 y en §9.
 
-**Panel de admin, Olas 1 a 3 de RF-17 (`20260930000477` + `20260930000478`
-+ `20260930000479`, EN PRODUCCIÓN desde el 2026-10-02).** Plan en `docs/rf17-plan-admin.md`; las reglas
+**Panel de admin, Olas 1 a 4 de RF-17 (`20260930000477` + `20260930000478`
++ `20260930000479`, EN PRODUCCIÓN desde el 2026-10-02; `20261007000480` a
+`…482`, desde el 2026-10-08).** Plan en `docs/rf17-plan-admin.md`; las reglas
 del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
 
 - **Quién es admin: `private.admins`**, una fila con `activado_at` puesto. No
@@ -1672,12 +1681,14 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   'script:crear-admin.mjs'`.
 - **Schema `admin`** (D3): USAGE solo para `authenticated`; sus funciones son
   definer con `search_path` fijo y sin EXECUTE para `anon`/PUBLIC. No cuentan
-  entre "las TRES definer de `public`": viven en otro schema. Hoy son 9
-  (medido en `pg_proc` el 2026-10-01 y, en remoto, el 2026-10-05 con un md5 de
-  la lista de funciones, ACL y privilegios idéntico al de local): `sesion` (la única que no lanza: gating
+  entre "las TRES definer de `public`": viven en otro schema. Hoy son 11
+  (medido en `pg_proc` el 2026-10-08, en local y en remoto, con el mismo md5
+  de nombres, argumentos, definer, volatilidad, `search_path`, ACL, `prosrc` y
+  retorno; antes, 9): `sesion` (la única que no lanza: gating
   de UX), `buscar_usuarios`, `detalle_usuario`, `suspender_usuario` y
-  `reactivar_usuario` (Ola 1), y `listar_reportes`, `resolver_reporte`,
-  `detalle_listing` y `bloquear_listing` (Ola 2).
+  `reactivar_usuario` (Ola 1), `listar_reportes`, `resolver_reporte`,
+  `detalle_listing` y `bloquear_listing` (Ola 2), y `cola_moderacion` y
+  `aprobar_listing` (Ola 4).
 - **Reportes y bloqueo (`20260930000479`, Ola 2).** `listar_reportes` usa solo
   left joins y nunca esconde un reporte: los 4 `objetivo_tipo`
   (`publicacion`, `usuario`, `publicacion_eliminada`, `cuenta_eliminada`).
@@ -1696,7 +1707,29 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   (un reporte de publicación tiene `reported_user_id` NULL). `admin_acciones_accion_check` admite 6
   acciones: las 3 de la Ola 1 (`suspender_usuario`, `reactivar_usuario`,
   `activar_admin`), `resolver_reporte` y `bloquear_listing` (Ola 2) y
-  `desactivar_admin`, sumada a la 479 antes de su push (T35 (j3)).
+  `desactivar_admin`, sumada a la 479 antes de su push (T35 (j3)). **Desde
+  `…481` son 7**, con `aprobar_listing`.
+- **Moderación, aprobar y D5 (`20261007000480` a `…482`, Ola 4).** El detalle,
+  con el porqué de cada decisión, está en `docs/rf17-plan-admin.md`, "Ola 4: lo
+  que cambió al implementarla". En corto:
+  - `dueno_no_activo` (`…480`): dos triggers BEFORE lanzan `55000` ante
+    cualquier paso a `activa` de un dueño no activo, para todos los roles.
+  - `cola_moderacion`: solo `pendiente`, id asc, tope de 100; "Evaluadas" o
+    "Sin evaluar". `aprobar_listing`: motivo 3-500 obligatorio, guardas
+    `motivo_invalido`, `listing_no_existe`, `no_sobre_si_mismo`,
+    `objetivo_es_admin`, `estado_inesperado`, `dueno_no_activo`, `sin_fotos`,
+    el reclamo de `listing_moderacion_reclamos` dentro de la transacción
+    (`moderacion_en_curso`, TTL de 180 s, el mismo de `moderar-contenido`) y
+    CAS sobre `estado`.
+  - D5 = (a): las 4 policies del dueño en `storage.objects` (bucket
+    `listing-photos`) y las 4 de `listing_photos` excluyen `bloqueada`. La app
+    elimina TODA publicación por la Edge Function `eliminar-publicacion`: fila
+    con el JWT del usuario, después la carpeta con la secret key.
+  - `private.moderacion_retenida` (`…482`): el registro mínimo de una
+    `bloqueada` eliminada, por lista blanca (`private.minimo_moderacion`), 12
+    meses, con `user_id` aun después de eliminar la cuenta, purgado a diario
+    por pg_cron (`purga-moderacion-retenida`, `17 4 * * *`). RLS sin policies
+    ni grants. `detalle_usuario` lo suma en `bloqueadas`.
 - **Propiedad conocida: Studio SÍ puede sacar una publicación de `bloqueada`,
   y es a propósito.** `bloqueada` es terminal para la app, el panel y la
   moderación (medido el 2026-10-01: `decidirListing` devuelve `bloqueada` con
@@ -1772,8 +1805,8 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   foto (`listings_enforce_activation_has_photos`). La suspensión solo pausa las
   `activa` (`20260917000457:86-89`): una `pendiente` se queda `pendiente`.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 455 aserciones (medido con el
-`grep` de §8 el 2026-10-05; antes decía 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 501 aserciones (medido con el
+`grep` de §8 el 2026-10-08; antes decía 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2561,6 +2594,19 @@ aislada, imprimiendo antes `pg_get_constraintdef`:
 El control de la Ola 2 "sin `resolver_reporte` ni `bloquear_listing`"
 (conservando `desactivar_admin`) sigue cayendo en T36 (c1).
 
+Y a **501** con la Ola 4 de RF-17 (`20261007000480` a `…482`), medidos con el
+`grep` acotado a cada sección el 2026-10-08: T12 +2 (42: `moderacion_retenida`
+sin privilegios para `authenticated` ni `anon`, sin policies y con RLS, y el
+EXECUTE revocado de `minimo_moderacion`; la lista de funciones solo-trigger
+revocadas pasa de 20 a 22 sin cambiar la cuenta), T35b 7
+(dueño no activo, incluido el fail-closed de un dueño inexistente), T35c
+(Ola 4) 11 (D5: el dueño de una `bloqueada` no ve ni escribe sus fotos), T35d
+19 (cola y aprobar) y T35e 7 (registro retenido). Las fixtures que sembraban una
+`activa` de un dueño suspendido eran 6, no 4 (se sumó T35), y se corrigieron en
+`…480`. Los controles negativos se corrieron uno a la vez, como en las olas
+anteriores; el detalle está en los mensajes de commit de `883d0e7`, `6795ae8` y
+`53601ac`.
+
 **Gotcha: la suite espera 3 usuarios en local.** Una cuenta de prueba (la del
 admin de la prueba manual del panel) la rompe en T1; se arregla con
 `supabase db reset`.
@@ -3127,7 +3173,8 @@ en "Verificación (correo no participante)".
   quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son DOCE pasos, no uno (decía "ONCE" antes de la
+  `postgres`/superusuario. Son TRECE pasos, no uno (decía "DOCE" antes de la
+  Ola 4 del panel, "ONCE" antes de la
   Ola 2 del panel, "DIEZ" antes del panel de admin, "NUEVE" antes de eliminar cuenta, y "SIETE" con ocho en la
   lista):
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
@@ -3265,7 +3312,9 @@ en "Verificación (correo no participante)".
      TOTP encendido y `admin` en `[api] schemas`. Tarda unos minutos por las
      esperas de ventana TOTP. Del lado del código, `npm run check:admin` hace
      el typecheck y el lint del panel, que el `tsc` y el `lint` de la raíz no
-     miran. **83 pruebas** (47 en la Ola 2): el caso 7c exige que todo `raise`
+     miran. **84 pruebas** (83 en la Ola 3, 47 en la Ola 2; el 7d de la Ola 4
+     amarra el TTL de 180 s del reclamo entre `moderar-contenido/index.ts` y
+     `aprobar_listing`): el caso 7c exige que todo `raise`
      de `admin.*` (leído del `pg_proc` vivo) tenga un texto decidido en
      `rechazos.ts`, propio o el genérico a propósito. El caso 8 cubre el camino
      `--remoto` (ref equivocado, preflight que falla, compensación con
@@ -3282,7 +3331,17 @@ en "Verificación (correo no participante)".
      paso 2, cubre desde la Ola 2 la policy de Storage del admin por HTTP, con
      un token ES256 forjado con la llave local de GoTrue para el TOTP
      vencido; por eso se niega a correr fuera de localhost.)
-  Los probes 2, 3, 6, 7, 9, 10 y 11 necesitan el stack local arriba y limpian lo suyo (el
+  13. `node scripts/probe-eliminar-publicacion.mjs`: la Edge Function
+     `eliminar-publicacion` (RF-17 Ola 4, D5) por HTTP, 12 pruebas. Igual que
+     los pasos 6 y 10, **necesita DOS procesos** (stack + `supabase functions
+     serve --env-file supabase/functions/.env`) y es gratis. Cubre que el dueño
+     borre fila y carpeta (también de una `bloqueada`, cuyos objetos ya no ve),
+     el `403 no_borrable` de un ajeno o de un suspendido sin tocar Storage, la
+     idempotencia y la limpieza de una carpeta sin fila. Igual que
+     `probe-storage.mjs` y `probe-moderacion-http.mjs`, aborta si cualquier
+     comprobación de `scripts/_guarda-relevo.mjs` (contenedor, puerto,
+     proyecto, marcador en `pg_proc`) falla.
+  Los probes 2, 3, 6, 7, 9, 10, 11 y 13 necesitan el stack local arriba y limpian lo suyo (el
   9, con un rollback); si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4, 5, 8 y 12 no necesitan nada: ni stack, ni red, ni credenciales.
 
@@ -3730,6 +3789,99 @@ de los route groups).
     el aviso de privacidad o la política de retención (`docs/auditoria-lanzamiento-2026-09-22.md`,
     §6). El aviso de privacidad no se modificó.
 
+- **Panel de admin (RF-17), Ola 4 EN PRODUCCIÓN, CERRADA (2026-10-07 al
+  2026-10-08, UTC).** Moderación: `dueno_no_activo`, cola, aprobar, D5 = (a) y el
+  registro mínimo retenido. Commits `26d0e62` (frames) a `d4cf591` (tipos); qué
+  cambió respecto al plan, en `docs/rf17-plan-admin.md`, "Ola 4: lo que cambió al
+  implementarla". Lo que corrió el usuario (despliegues, `db push`, `gen types`,
+  `wrangler`, pruebas manuales) y lo que midió Claude (`select`, la API de Edge
+  Functions de solo lectura, `wrangler pages deployment list` y peticiones HTTP
+  públicas) quedaron separados, como en la Ola 3:
+  - **Orden de despliegue, cada paso remedido antes del siguiente:**
+    1. `moderar-contenido` **v9** (2026-10-08 00:25:59 UTC), ANTES del trigger:
+       su fuente desplegado coincide con HEAD `162956c` (con `dueno_no_activo`,
+       `180_000` y `AbortSignal.timeout`, sin el mock de pruebas).
+    2. `db push` de `20261007000480`; verificado en remoto (definición de los
+       dos triggers y EXECUTE revocado).
+    3. `eliminar-publicacion` **v1**, ACTIVE, `verify_jwt: false` (2026-10-08
+       15:15:22 UTC). Su único archivo, bajado con `get_edge_function`, es
+       byte-idéntico a `supabase/functions/eliminar-publicacion/index.ts` de
+       HEAD: SHA-256 `f7bb869de5d4d05b8063b1e154328851be8cf2d1d44d786d48a3b05b025a245d`
+       en los dos. `send-push` (v11), `moderar-contenido` (v9) y
+       `eliminar-cuenta` (v3) no cambiaron.
+    4. El JS nuevo de la app (`e071ce7`, que elimina por la función) en los
+       dispositivos del usuario, por Metro, ANTES de `…481`: con el JS viejo, el
+       borrado de una `bloqueada` habría dejado sus fotos huérfanas en silencio.
+    5. `db push` de `…481` y `…482` (el usuario corrió antes `--dry-run`).
+       Remoto en **46** migraciones, igual que el repo. La misma consulta en
+       remoto y en local dio resultados idénticos: las 11 funciones de `admin.*`
+       (md5 `30cdd185e1098c5ceb9df341308ed446`), las 36 de `private` (md5
+       `2bc21c968f0a70a16312924a2248c536`), las 12 policies de `listing_photos`
+       y `storage.objects` (md5 `b264bff435d79785f97787dfd698c777`; las 8 del
+       dueño llevan `bloqueada`), el CHECK con exactamente 7 acciones, los tres
+       triggers de la ola habilitados, `moderacion_retenida` con RLS, 0 policies
+       y 0 privilegios para `anon`/`authenticated`/PUBLIC, y pg_cron 1.6.4 con un
+       solo job, `purga-moderacion-retenida`, `17 4 * * *`, activo.
+    6. `supabase gen types --linked --schema admin`: mismo contenido que la
+       versión `--local` de `f34c927`, solo formato (§9). Commit `d4cf591`.
+    7. Panel: preflight de `admin/dist` limpio con los criterios de
+       `admin/CLAUDE.md` ("Producción") y `wrangler pages deploy`. Deployment
+       **`2bb8f280-f010-42bf-ac9a-96f96dad85c8`**
+       (`https://2bb8f280.rlvo-admin.pages.dev`), Production,
+       rama `main`, fuente `d4cf591`.
+  - **Post-deploy del panel**, sobre `admin.rlvo.com.mx`, `rlvo-admin.pages.dev`
+    y el deployment: las 24 peticiones (3 hosts × 2 rutas × las 4 variantes)
+    dieron un HTML byte-idéntico a `admin/dist/index.html`, con
+    `index-G1Z23sHQ.js`, sin `index-BSqBxXtU.js` y sin `cloudflareinsights`,
+    `data-cf-beacon` ni `beacon.min.js`. Los 6 headers coinciden con
+    `dist/_headers` en 15 combinaciones; el JS, el CSS y las dos fuentes son
+    byte-idénticos. El bundle desplegado trae `cola_moderacion`,
+    `aprobar_listing` y los textos de los frames de la ola, y ya no el aviso
+    "podría activarse". **A diferencia de la Ola 3, el borde no conservó el JS
+    anterior**: `index-BSqBxXtU.js` e `index-Dmci8kiO.css` responden el
+    fallback de SPA (200, `text/html`, 1041 B) en los tres hosts.
+  - **Aceptación manual en producción, A a F: PASÓ** (la corrió el usuario con
+    su cuenta y TOTP, y una cuenta de estudiante de prueba en la app):
+    - A. Navegación y estados vacíos de Moderación.
+    - B. Una publicación entrando a revisión y su detalle.
+    - C. Aprobar: validación del motivo, auditoría, aviso al dueño y la
+      publicación en el catálogo.
+    - D. Concurrencia en dos pestañas: la segunda aprobación se rechazó.
+    - E. Suspender y reactivar la cuenta de prueba, y no poder aprobar
+      mientras está suspendida.
+    - F. Bloquear, eliminar desde la app y que "Bloqueadas" no baje.
+  - **Readback final, solo lectura (2026-10-08):**
+    - **F es la publicación 105, sin adivinar:** `private.moderacion_retenida`
+      tenía 0 filas tras el push y ahora tiene exactamente 1, `listing_id`
+      105, `admin_accion_ids` `[8]`, del dueño que la eliminó (la cuenta de
+      prueba de E). `borrada_at` 2026-10-08 16:20:32 UTC y `retener_hasta`
+      2027-10-08 16:20:32 UTC (`1 year`). Guarda 1 evaluación (`revisar →
+      pendiente`) con solo las claves de la lista blanca de `…482`: sin
+      `storage_path`, rutas, nombres `.jpg`, palabras de las listas ni
+      `gpt.detalle`. `public.listings` 105: 0 filas; `listing-photos/105/`: 0
+      objetos.
+    - **Auditoría** (`private.admin_acciones`; las ids 1-3 son anteriores):
+      4 `aprobar_listing` sobre la 103; 5 `aprobar_listing` sobre la 104; 6
+      `suspender_usuario` sobre la cuenta de prueba (`publicaciones_pausadas:
+      2`); 7 `reactivar_usuario` sobre la misma; 8 `bloquear_listing` sobre la
+      105. Que la 103 sea la de C y la 104 la de D se infiere por el orden
+      temporal; para lo que D prueba da igual: cada una tiene exactamente una
+      `aprobar_listing` y ninguna publicación tiene dos. El intento rechazado
+      no dejó fila (un rechazo no audita).
+    - **Al cierre:** Git limpio, HEAD = `origin/main` = `d4cf591` (antes de
+      este commit de docs), 46 = 46 migraciones, `eliminar-publicacion` v1 con
+      el mismo `ezbr_sha256` (`2da5295a1bd91c19a6e74142af0ff81b03e5e1011762718c8b817ccac57dcef9`)
+      de la verificación byte a byte, y el deployment `2bb8f280` como
+      Production.
+  - **Observaciones, no son fallos:**
+    - Un primer chequeo del contenido retenido salió positivo por el patrón de
+      búsqueda: `lista_tecleada` y `lista_ocr` aparecen dentro de las claves
+      permitidas `coincidencias_lista_tecleada` y `coincidencias_lista_ocr`,
+      cuyos valores son conteos numéricos (0 y 0). Aislado, 0 claves crudas.
+    - Suspender la cuenta de prueba pausó sus 2 publicaciones activas, y
+      reactivarla no las despausa: es la decisión de `20260917000457`. Siguen
+      `pausada` hasta que esa cuenta las reactive.
+
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
    CLAUDE.md §8 arriba).** Los pasos 0-5 ya corrieron y están en "Hecho"
@@ -3957,21 +4109,22 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      frame primero. Mientras tanto, perder el teléfono se resuelve con
      `desactivar` → borrar el factor en el Dashboard → enrolar de nuevo →
      `activar` (`docs/admin-runbook.md`).
-   - **Ola 4:** moderación, incluido el trigger "una publicación no pasa a
-     `activa` si su dueño no está activo" (`cuenta-perfil.md`, deuda del pausado
-     al suspender). Medido en local antes de escribirlo: cae en **4 fixtures**
-     de `rls.sql` (T11b, T13, T14 y T23), no en aserciones, y todas siembran una
-     publicación `activa` de un dueño suspendido; hay que sembrarlas de otra
-     forma en el mismo cambio. `moderar-contenido` se despliega ANTES, con el
-     manejo del rechazo.
-   - **Ola 5:** catálogo. **Ola 6:** métricas y `actividad_diaria`.
+   - **Ola 4 — CERRADA, EN PRODUCCIÓN (2026-10-07 al 2026-10-08):**
+     `dueno_no_activo` (`20261007000480`), cola y aprobar con D5 = (a)
+     (`…481` + Edge Function `eliminar-publicacion`) y el registro mínimo
+     retenido con pg_cron (`…482`); panel desplegado (`2bb8f280`, `d4cf591`) y
+     aceptación manual A-F pasada. Evidencia en "Hecho".
+   - **Ola 5:** catálogo (migración `…483`). **Ola 6:** métricas y
+     `actividad_diaria` (`…484`). Se renumeraron en la Ola 4 (D17).
    **Notas que las olas heredan:** las dos de la Ola 1 ya están hechas (T35
    (d3), "timestamp basura", con su control; y el aviso del `DETAIL` del CHECK
    de `admin_acciones` en `admin/CLAUDE.md`). Las de la Ola 2 también están
-   hechas (T36 (g)-(i) y el trigger de `resolved_at`). Siguen las de las Olas 4
-   y 6 de `docs/rf17-plan-admin.md`.
-   Pendientes: la Ola 3b, una estrategia de respaldos (índice de deuda, abajo) y
-   los secretos de Vault de `send-push` (pendiente 1). Ninguno de los de la Ola 3 queda abierto.
+   hechas (T36 (g)-(i) y el trigger de `resolved_at`), y la de la Ola 4 también
+   (las fixtures, corregidas en `…480`). Sigue la de la Ola 6 de
+   `docs/rf17-plan-admin.md`.
+   Pendientes: las Olas 3b, 5 y 6, una estrategia de respaldos (índice de
+   deuda, abajo) y los secretos de Vault de `send-push` (pendiente 1). Ninguno
+   de los de las Olas 3 y 4 queda abierto.
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que
@@ -4386,6 +4539,17 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   reintento sobre algo ya borrado haga desaparecer la tarjeta en vez de quedar
   atorado repitiendo el mismo error. `editar/[id].tsx` se queda SIN esa
   reconciliación — límite conocido, no un hueco escondido.
+
+  **Desde la Ola 4 de RF-17 (2026-10-08), la app ya no borra así.** Las tres
+  pantallas llaman a `eliminarPublicacion()`, que invoca la Edge Function
+  `eliminar-publicacion`: la fila con el JWT del usuario y después la carpeta con
+  la secret key, que no pasa por RLS. Lo de arriba sigue siendo cierto de
+  `remove()` y explica por qué hizo falta la función: desde `…481` el dueño de una
+  `bloqueada` ya no VE sus objetos, y un `borrarFotos()` con su sesión habría
+  devuelto `200 []`. Con la función, `ListingNoBorrableError` tiene UNA sola
+  causa (`403 no_borrable`: la fila existe y la base no deja borrarla) y "ya se
+  había borrado" es un 200. `borrarFotos()` sigue viva solo para las fotos que
+  sobran al reemplazar el set en Editar (`src/lib/publicar.ts`).
 - **No se puede borrar de `storage.objects` por SQL, ni siquiera como
   `postgres`.** El trigger `storage.protect_delete` aborta con *"Direct deletion
   from storage tables is not allowed. Use the Storage API instead."* y se dispara

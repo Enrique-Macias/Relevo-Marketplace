@@ -1,16 +1,114 @@
 # RF-17 — Plataforma web de administración: plan de arquitectura
 
-**Estado (2026-10-05):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
+**Estado (2026-10-08):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
 (`7574b01`; remedido en remoto el 2026-09-29, cuando había 40 migraciones con
 `20260930000476` y el `WHEN` de `reports_notify_resolved` con
 `reporter_id IS NOT NULL`). **Olas 1, 2 y 3 en producción desde el 2026-10-02**
 (fechas en UTC; el push cayó la noche del 2026-10-01 en Monterrey) (Ola 1:
 `6278a0a` a `b11865c`; Ola 2: frames `5466752`/`2e3ab12` y código `3f49263` a
-`f7ee579`; Ola 3: `887fc72` a `da097ac`). Las tres secciones siguientes ganan
-sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
+`f7ee579`; Ola 3: `887fc72` a `da097ac`). **Ola 4 CERRADA en producción el
+2026-10-08** (`26d0e62` a `d4cf591`). Las Olas 3b, 5 y 6 siguen pendientes.
+Las cuatro secciones siguientes ganan sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
 chocan, prevalece v2.1** (`is_admin()` con `jsonb_typeof`, la lista de claves de
 auditoría por tipo, el orden de las olas). El resumen operativo vive en
 `CLAUDE.md` §8, pendiente 0k; el detalle, aquí.
+
+## Ola 4: lo que cambió al implementarla (gana sobre el resto del archivo)
+
+Construida el 2026-10-07 y desplegada el 2026-10-07 y 2026-10-08 (UTC); commits
+`26d0e62` (frames) a `d4cf591` (tipos). La evidencia de despliegue, la
+aceptación manual y el readback final están en `CLAUDE.md` §8, "Hecho", "Panel
+de admin (RF-17), Ola 4 EN PRODUCCIÓN". **Ola 4: CERRADA en producción.**
+
+1. **Numeración (D17):** el día real ya superaba la última fecha del repo, así
+   que las migraciones son `20261007000480`, `…481` y `…482`. La `…482` NO es
+   el catálogo: es el registro mínimo retenido (punto 6). **Las Olas 5 y 6
+   pasan a `…483` y `…484`** (tabla "Migraciones, en orden").
+2. **`20261007000480` — `dueno_no_activo` (D9).** Dos triggers BEFORE,
+   `listings_exige_dueno_activo_ins` (INSERT `when new.estado = 'activa'`) y
+   `listings_exige_dueno_activo_upd` (UPDATE OF `estado`, `when` la transición
+   real a `activa`), sobre `private.exige_dueno_activo()` (definer, EXECUTE
+   revocado). Lanza `55000 dueno_no_activo` para TODOS los roles, Studio
+   incluido. El predicado es fail-closed: `not exists (… u.estado = 'activo')`,
+   así que un dueño inexistente también rechaza. Las fixtures que sembraban una
+   `activa` de un dueño suspendido eran **6**, no 4: a las de T11b, T13, T14 y
+   T23 se sumó T35. T13 pasó a un dueño activo propio, T14 a `pausada`, y T11b,
+   T23 y T35 (legacy, load-bearing) se siembran con el trigger de INSERT
+   apagado solo alrededor del insert. Lo vigila T35b.
+3. **`moderar-contenido` v9, desplegada ANTES de `…480`:** si el UPDATE choca
+   con `dueno_no_activo`, la publicación se queda en su estado actual
+   (`pendiente`) y la auditoría anota `descartado_por_dueno_no_activo` y
+   `estado_propuesto`. En el mismo despliegue:
+   - **TTL del reclamo de 60 a 180 s.** El plan es Free (decisión del usuario) y
+     el wall-clock de una Edge Function es 150 s: un reclamo de 60 s podía
+     vencer con la evaluación todavía viva. El valor está escrito dos veces
+     (`TTL_RECLAMO_MS` en `index.ts` y el intervalo de `aprobar_listing`), y lo
+     amarra el caso 7d de `probe-admin.mjs`, que lee los dos fuentes.
+   - **`AbortSignal.timeout(20 s)`** en los `fetch` a Rekognition, Vision y
+     OpenAI (commit propio, `162956c`).
+4. **`20261007000481` — cola, aprobar y D5:**
+   - `admin.cola_moderacion(p_solo_evaluadas, p_cursor, p_limit)`: solo
+     `pendiente`, de la más antigua a la más reciente (id asc), tope de 100 por
+     página; "Evaluadas" (con al menos una fila de `listing_moderacion`) o "Sin
+     evaluar".
+   - `admin.aprobar_listing(p_id, p_motivo)`, con motivo OBLIGATORIO (3-500,
+     decisión del usuario). Guardas en orden: `exigir_admin`;
+     `22023 motivo_invalido`; `P0002 listing_no_existe`; `42501
+     no_sobre_si_mismo`; `42501 objetivo_es_admin`; `55000 estado_inesperado`
+     (no es `pendiente`); `55000 dueno_no_activo`; `55000 sin_fotos`; el
+     reclamo de `listing_moderacion_reclamos` dentro de la transacción (borra
+     el vencido a los 180 s e inserta con `on conflict`; si está tomado,
+     `55000 moderacion_en_curso`); CAS sobre `estado` (`estado_inesperado`); y
+     auditoría con solo `estado`. El dueño recibe el aviso
+     `publicacion_aprobada` por el trigger existente.
+   - `admin_acciones_accion_check`: **7** acciones (suma `aprobar_listing`).
+   - **D5, policies del dueño:** las 4 de `storage.objects` del bucket
+     `listing-photos` y las 4 de la tabla `listing_photos` excluyen
+     `bloqueada`. El dueño de una bloqueada no ve, sube, mueve ni borra sus
+     fotos; el admin las sigue viendo por `listing_photos_objects_select_admin`.
+5. **D5 = (a), decidida al entrar a la ola:** Edge Function
+   `eliminar-publicacion`, y para TODOS los borrados de publicación desde la
+   app (no solo las bloqueadas: el estado que tiene la app puede estar
+   desactualizado). Borra primero la fila con el JWT del usuario (manda
+   `listings_delete_own`; 0 filas con la fila existente es `403 no_borrable`)
+   y después vacía `listing-photos/{id}/` con la secret key, que no pasa por
+   RLS: así borra los objetos aunque el dueño ya no los vea. Si Storage falla
+   después de borrar la fila responde `200 { ok: true, huerfanos: true }` y el
+   id queda en el log para el barrido semanal (`docs/admin-runbook.md` §7). Es
+   idempotente. La app (`eliminarPublicacion()`) la usa en Mis publicaciones,
+   Detalle y Editar.
+6. **`20261007000482` — registro mínimo retenido** (decisión del usuario:
+   conservarlo). `private.moderacion_retenida` (RLS sin policies, sin grants;
+   la leen Studio y, por definer, `detalle_usuario`). El trigger BEFORE DELETE
+   `listings_retiene_moderacion`, `when old.estado = 'bloqueada'`, copia las
+   evaluaciones pasadas por la lista blanca `private.minimo_moderacion()` (sin
+   rutas, sin palabras de las listas, sin `gpt.detalle`) y los ids de
+   `admin_acciones` de esa publicación. **Conserva `user_id` también después de
+   eliminar la cuenta** (decisión del usuario). Retención de **12 meses**
+   (`retener_hasta`), purgada a diario por **pg_cron** (1.6.4, la primera
+   tarea programada del proyecto): job `purga-moderacion-retenida`,
+   `17 4 * * *`.
+7. **`detalle_usuario` suma `bloqueadas`**: las `bloqueada` que siguen
+   existiendo más las eliminadas que se retienen. El frame dice "Bloqueadas" y
+   no "Bloqueadas (12 meses)" (decisión del usuario), porque las que siguen
+   existiendo no tienen fecha de bloqueo.
+8. **Panel:** 28 frames en `design/admin-panel.html` (antes 24: tres de
+   Moderación y el detalle "en revisión (aprobar)"). Pantalla Moderación con
+   los dos chips, tarjeta y modal Aprobar con los cuatro rechazos del frame,
+   dato "Bloqueadas" y el aviso de suspender "no se podrá aprobar mientras la
+   cuenta esté suspendida". La miniatura de la cola es el recuadro del frame,
+   sin bajar la foto.
+9. **App:** `design/relevo-app.html` sigue en 73; el aviso de una bloqueada en
+   "Detalle (vista vendedor)" suma "Sus fotos ya no se muestran.".
+10. **Pruebas:** `rls.sql` de 455 a **501** aserciones (T12 +2; T35b 7, T35c
+    (Ola 4) 11, T35d 19 y T35e 7). Probes: `probe-storage.mjs` 41,
+    `probe-admin.mjs` 84, `probe-moderacion-http.mjs` 45,
+    `probe-eliminar-cuenta.mjs` 25 y el nuevo `probe-eliminar-publicacion.mjs`
+    12. `scripts/_guarda-relevo.mjs` (lo usan `probe-storage.mjs`,
+    `probe-moderacion-http.mjs` y `probe-eliminar-publicacion.mjs`) aborta si
+    cualquier comprobación del stack local (contenedor, puerto, proyecto,
+    marcador en `pg_proc`) falla.
+11. **Aceptación manual A-F en producción, y readback:** ver `CLAUDE.md` §8.
 
 ## Ola 3: lo que cambió al implementarla (gana sobre el resto del archivo)
 
@@ -692,7 +790,7 @@ regla 4): es tarea de la app, no del panel.
 (hace falta para "ver el objetivo" de un reporte); la del **dueño** y la de la
 tabla `listing_photos` van en la Ola 4, después de decidir D5.
 
-### D5: quién borra los objetos de una `bloqueada` (se decide al entrar a la Ola 4, con su frame)
+### D5: quién borra los objetos de una `bloqueada` (decidida en la Ola 4: opción (a))
 
 `remove()` de Storage resuelve primero lo que el invocante VE. Si no ve nada,
 responde **200 `[]` sin error** (`CLAUDE.md` §9, medido). Con la regla nueva:
@@ -997,12 +1095,14 @@ consecutivo** (`CLAUDE.md` §6). El orden de v2.1 con los adelantos de D19:
 | 2 | `20260930000477_admins_y_auditoria.sql` | 1 | `private.admins`, `private.claves_auditoria_ok`, `private.admin_acciones` (CHECK + triggers append-only), `private.is_admin`, `private.exigir_admin`, schema `admin` con su `grant usage`, `admin.sesion()` |
 | 3 | `20260930000478_users_suspension.sql` | 1 | `users.suspendido_at`/`suspension_motivo` + `users_suspension_coherente`; `admin.buscar_usuarios`, `admin.detalle_usuario`, `admin.suspender_usuario`, `admin.reactivar_usuario` |
 | 4 | `20260930000479_admin_reportes.sql` | 2 | `admin.listar_reportes`, `admin.resolver_reporte`, y **adelantadas por D19:** `admin.detalle_listing`, `admin.bloquear_listing` y la policy `listing_photos_objects_select_admin`; **en la Ola 3, antes del push,** `desactivar_admin` en `admin_acciones_accion_check` |
-| 5 | `20260930000480_listings_activa_exige_dueno_activo.sql` | 4 — **después** de desplegar `moderar-contenido` | Trigger `before insert or update of estado` que lanza `dueno_no_activo` |
-| 6 | `20260930000481_admin_moderacion.sql` | 4 | `admin.cola_moderacion`, `admin.aprobar_listing`, y la policy del dueño y la de la tabla `listing_photos` según D5 |
-| 7 | `20260930000482_catalogo_admin.sql` | 5 | `universidad_dominios.activo`; hook y `handle_new_user()` (`create or replace`); RPCs de catálogo |
-| 8 | `20260930000483_actividad_diaria_y_metricas.sql` | 6 | `public.actividad_diaria`, `admin.metricas`, `admin.auditoria` |
+| 5 | `20261007000480_listings_activa_exige_dueno_activo.sql` | 4 — **en producción** (después de `moderar-contenido` v9) | Triggers `listings_exige_dueno_activo_ins`/`_upd` que lanzan `55000 dueno_no_activo` |
+| 6 | `20261007000481_admin_moderacion.sql` | 4 — **en producción** | `admin.cola_moderacion`, `admin.aprobar_listing`, CHECK de 7 acciones, y las policies del dueño en `storage.objects` y en `listing_photos` según D5 |
+| 7 | `20261007000482_moderacion_retenida.sql` | 4 — **en producción** | `private.moderacion_retenida`, `private.minimo_moderacion`, el trigger `listings_retiene_moderacion`, pg_cron y su purga diaria, y `bloqueadas` en `admin.detalle_usuario` |
+| 8 | `…483_catalogo_admin.sql` (fecha real al crearla) | 5 | `universidad_dominios.activo`; hook y `handle_new_user()` (`create or replace`); RPCs de catálogo |
+| 9 | `…484_actividad_diaria_y_metricas.sql` (fecha real al crearla) | 6 | `public.actividad_diaria`, `admin.metricas`, `admin.auditoria` |
 
-La Ola 3 no tiene migración (despliegue + Edge Function). Cada migración de un
+La Ola 3 no tiene migración (despliegue + Edge Function). Las de la Ola 4
+llevan la fecha real (D17), y por eso las de las Olas 5 y 6 se renumeraron. Cada migración de un
 grant nuevo lleva `revoke all` explícito antes (`CLAUDE.md` §1, §9,
 `pg_default_acl`).
 
@@ -1309,7 +1409,10 @@ en "Ola 3: lo que cambió al implementarla".**
 - **Las invitaciones reales de los 3 admins**, con `crear-admin.mjs`.
 - El usuario agrega el schema `admin` a los exposed schemas del Dashboard.
 
-### Ola 4 — moderación
+### Ola 4 — moderación (CERRADA en producción el 2026-10-08)
+
+**Esta sección es el plan original: lo que pasó y por qué cambió está arriba,
+en "Ola 4: lo que cambió al implementarla".**
 
 Orden (§8): (1) desplegar `moderar-contenido` con el manejo de `dueno_no_activo`
 y su caso en el probe; (2) migración `…480` (el trigger) con las **4 fixtures
@@ -1319,11 +1422,11 @@ frame**; T35c (c)-(f); el probe de Storage y el de eliminar cuenta.
 
 ### Ola 5 — catálogo institucional
 
-Migración `…482`, T37 y el probe de registro (§10).
+Migración `…483` (era `…482`, renumerada en la Ola 4), T37 y el probe de registro (§10).
 
 ### Ola 6 — métricas
 
-Migración `…483`, T38, el cambio en la app para `actividad_diaria` (con su build y
+Migración `…484` (era `…483`), T38, el cambio en la app para `actividad_diaria` (con su build y
 el runbook de push) y la pantalla de métricas. El snapshot diario con `pg_cron`
 queda **después** (D11).
 
@@ -1337,7 +1440,7 @@ queda **después** (D11).
 | D2 | SPA Vite + React + TS y no Next.js | Aprobada |
 | D3 | Schema `admin` expuesto y no RPCs en `public` (paso manual en el Dashboard) | Aprobada |
 | D4 | Cuentas separadas `@rlvo.com.mx`, ~~invitadas~~ **creadas por `/admin/users`** por script y activadas en dos pasos; no son usuarios del marketplace; identidad en `private.admins`, no en `app_metadata` | Aprobada; **modificada en la Ola 1** (la invitación pasa por el hook, medido) y **en la Ola 3** (dos admins con correo personal, con `--correo-externo`) |
-| D5 | Cómo borra el dueño una `bloqueada` cuando ya no ve sus fotos: Edge Function (recomendada), prohibirlo o aceptar huérfanos y purgar. "Eliminar cuenta" no necesita cambios | **Pendiente: se decide al entrar a la Ola 4**, junto con su frame. No bloquea las Olas 0-3 |
+| D5 | Cómo borra el dueño una `bloqueada` cuando ya no ve sus fotos: Edge Function (recomendada), prohibirlo o aceptar huérfanos y purgar. "Eliminar cuenta" no necesita cambios | **Decidida al entrar a la Ola 4: (a)**, Edge Function `eliminar-publicacion` para TODOS los borrados de publicación de la app. En producción desde el 2026-10-08 |
 | D6 | `bloquear_listing` también desde `activa`, `pausada` y `vendida` | Aprobada |
 | D7 | La auditoría conserva `objetivo_id` y el motivo después de que se elimina una cuenta, sin datos personales en `antes`/`despues`; excepción documentada a T33 (h) | Aprobada |
 | D8 | El admin puede leer `users.correo` (excepción a RNF-05 solo para admins) | Aprobada |
@@ -1380,6 +1483,8 @@ queda **después** (D11).
 - **Ola 4:** el trigger de dueño activo cae en 4 fixtures (T11b, T13, T14, T23):
   arreglarlas en el mismo cambio y correr la suite con el trigger lanzando.
   `moderar-contenido` se despliega ANTES. D5 se decide al entrar, con su frame.
+  **Hecho en la Ola 4:** eran 6 fixtures (las de las 4 secciones más T35), corregidas en
+  `…480`; `moderar-contenido` v9 se desplegó antes del push; D5 = (a).
 - **Ola 6:** `ignoreDuplicates` sobre `actividad_diaria` sin SELECT queda
   pendiente de medir en local.
 
