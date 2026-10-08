@@ -1571,8 +1571,15 @@
   </div>
 </div>
 
+<!-- Ola 3b: "Restablecer app autenticadora" (Edge Function admin-reset-mfa).
+     Sobre un admin ACTIVADO, primero lo deja desactivado y después elimina sus
+     factores: borrar el factor nunca reactiva (`is_admin()` no mira
+     auth.mfa_factors) y activarlo otra vez lo hace el admin técnico con
+     `crear-admin.mjs activar`. Nunca sobre la propia cuenta. Los datos
+     "Acceso al panel" y "App autenticadora" y la auditoría tipo admin son
+     requerimiento de UX: de dónde salen se decide al implementar. -->
 <div class="desk-block" data-cat="usuarios">
-  <div class="desk-label">Usuario — cuenta de admin</div>
+  <div class="desk-label">Usuario — cuenta de admin (restablecer app autenticadora)</div>
   <div class="desk">
     <header class="barra">
       <span class="marca">Relevo<small>Panel de administración</small></span>
@@ -1589,17 +1596,134 @@
         <div class="titulo-pagina">Carlos Méndez <span class="estado ok">Activa</span> <span class="estado admin">Admin</span></div>
         <div class="sub-pagina">carlos@rlvo.com.mx</div>
         <div class="dos-columnas">
-          <div class="tarjeta">
-            <dl class="rejilla">
-              <div class="dato"><dt>Universidad</dt><dd class="suave">—</dd></div>
-              <div class="dato"><dt>Campus</dt><dd class="suave">—</dd></div>
-              <div class="dato"><dt>Alta</dt><dd>29 sep 2026</dd></div>
-              <div class="dato"><dt>Reportes en contra</dt><dd>0</dd></div>
-            </dl>
+          <div>
+            <div class="tarjeta">
+              <dl class="rejilla tres">
+                <div class="dato"><dt>Universidad</dt><dd class="suave">—</dd></div>
+                <div class="dato"><dt>Campus</dt><dd class="suave">—</dd></div>
+                <div class="dato"><dt>Alta</dt><dd>29 sep 2026</dd></div>
+                <div class="dato"><dt>Reportes en contra</dt><dd>0</dd></div>
+                <div class="dato"><dt>Acceso al panel</dt><dd><span class="estado ok">Activado</span></dd></div>
+                <div class="dato"><dt>App autenticadora</dt><dd><span class="estado ok">Registrada</span></dd></div>
+              </dl>
+            </div>
+            <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-shield"/></svg></div><div class="notice-text">Es una cuenta de admin: no se suspende desde aquí. Quitarle el acceso lo hace el admin técnico.</div></div>
+            <div class="titulo-seccion">Auditoría</div>
+            <table class="tabla">
+              <thead><tr><th>Fecha</th><th>Acción</th><th>Admin</th><th>Motivo</th></tr></thead>
+              <tbody>
+                <tr><td class="suave">2 oct, 21:40</td><td>Activar admin</td><td class="suave">script</td><td>Alta confirmada por llamada.</td></tr>
+              </tbody>
+            </table>
           </div>
-          <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-shield"/></svg></div><div class="notice-text">Es una cuenta de admin: no se suspende desde aquí. Para quitarle el acceso, se borra su fila de admins.</div></div>
+          <div class="tarjeta">
+            <div class="titulo-seccion">Restablecer app autenticadora</div>
+            <div class="texto-suave">Para cuando perdió o cambió el teléfono donde tiene su app autenticadora.</div>
+            <br>
+            <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Antes, confírmalo con esta persona <b>por llamada de voz</b>, a un número que ya tengas suyo.</div></div>
+            <div class="texto-suave">
+              Su acceso al panel se desactiva en ese momento.<br>
+              Se elimina la app autenticadora registrada en su cuenta. Nadie ve ni recibe un código nuevo.<br>
+              Su cuenta no se borra: conserva su correo y su contraseña.<br>
+              Para volver a entrar, registra la app en su teléfono nuevo y el admin técnico la activa después de confirmar con ella.
+            </div>
+            <br>
+            <span class="btn danger-btn">Restablecer app autenticadora</span>
+          </div>
         </div>
       </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): tu propia cuenta · acceso ya desactivado · sin app registrada · restablecida con éxito</div>
+    <div class="variante-caja">
+      <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-shield"/></svg></div><div class="notice-text">Es tu cuenta: no puedes restablecer tu propia app autenticadora. Si perdiste el teléfono, pídeselo a otro admin por llamada de voz.</div></div>
+      <div class="texto-suave">En lugar de la tarjeta «Restablecer app autenticadora».</div>
+    </div>
+    <div class="variante-caja">
+      <dl class="rejilla dos">
+        <div class="dato"><dt>Acceso al panel</dt><dd><span class="estado apagado">Desactivado</span></dd></div>
+        <div class="dato"><dt>App autenticadora</dt><dd><span class="estado ok">Registrada</span></dd></div>
+      </dl>
+      <br>
+      <div class="texto-suave">Su acceso ya está desactivado: al restablecer solo se elimina la app autenticadora registrada en su cuenta.</div>
+      <br>
+      <span class="btn danger-btn">Restablecer app autenticadora</span>
+    </div>
+    <div class="variante-caja">
+      <dl class="rejilla dos">
+        <div class="dato"><dt>Acceso al panel</dt><dd><span class="estado apagado">Desactivado</span></dd></div>
+        <div class="dato"><dt>App autenticadora</dt><dd><span class="estado apagado">Sin registrar</span></dd></div>
+      </dl>
+      <br>
+      <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-shield"/></svg></div><div class="notice-text">No tiene app autenticadora registrada. Cuando registre una, el admin técnico la activa después de confirmar con ella por llamada.</div></div>
+      <div class="texto-suave">Sin botón: recién restablecida, o nunca la registró.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">App autenticadora restablecida. Su acceso queda desactivado hasta que registre una nueva y el admin técnico vuelva a activarlo.</div></div>
+      <div class="texto-suave">El restablecimiento queda en la auditoría de esta cuenta: quién lo hizo, cuándo y el motivo.</div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="usuarios">
+  <div class="desk-label">Restablecer app autenticadora (modal)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
+        <div class="titulo-pagina">Carlos Méndez <span class="estado ok">Activa</span> <span class="estado admin">Admin</span></div>
+        <div class="sub-pagina">carlos@rlvo.com.mx</div>
+        <div class="tarjeta"><div class="sk-line skeleton"></div></div>
+      </main>
+    </div>
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-icon"><svg width="24" height="24"><use href="#i-lock"/></svg></div>
+        <div class="modal-title">¿Restablecer la app autenticadora de Carlos Méndez?</div>
+        <div class="modal-sub">Su acceso al panel se desactiva ahora y se elimina la app autenticadora registrada en su cuenta. Para volver a entrar tendrá que registrar una nueva y esperar a que el admin técnico la active.</div>
+        <div class="field">
+          <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+          <div class="text-field area placeholder">Por qué restableces su app autenticadora</div>
+          <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+        </div>
+        <div class="modal-actions">
+          <span class="btn ghost-btn">Cancelar</span>
+          <span class="btn danger-btn disabled">Restablecer</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): motivo demasiado corto · restableciendo · rechazos · se desactivó pero no se eliminó la app</div>
+    <div class="variante-caja">
+      <div class="field">
+        <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">2/500</span></div>
+        <div class="text-field area is-invalid">ok</div>
+        <div class="field-error">El motivo debe tener entre 3 y 500 caracteres.</div>
+      </div>
+      <div class="modal-actions">
+        <span class="btn ghost-btn disabled">Cancelar</span>
+        <span class="btn danger-btn"><span class="splash-dots"><span class="splash-dot"></span><span class="splash-dot"></span><span class="splash-dot"></span></span>Restableciendo</span>
+      </div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">No puedes aplicar esta acción sobre tu propia cuenta.</div></div>
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">La cuenta cambió de estado mientras tanto. Recarga el detalle.</div></div>
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Esta cuenta ya no es de admin. Recarga el detalle.</div></div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Su acceso quedó desactivado, pero no pudimos eliminar la app autenticadora registrada en su cuenta. Inténtalo otra vez.</div></div>
+      <div class="texto-suave">Falla cerrado: primero se desactiva y después se elimina la app. Si el código del que ejecuta venció, sale el modal «Código de verificación» de siempre; cualquier otro rechazo, «No se pudo completar la acción (código).».</div>
     </div>
   </div>
 </div>
