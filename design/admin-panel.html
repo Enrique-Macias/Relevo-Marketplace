@@ -1635,7 +1635,7 @@
     </div>
   </div>
   <div class="variante-doc">
-    <div class="variante-doc-titulo">Variantes (doc): tu propia cuenta · acceso ya desactivado · sin app registrada · restablecida con éxito</div>
+    <div class="variante-doc-titulo">Variantes (doc): tu propia cuenta · acceso ya desactivado · sin app registrada · restablecimiento pendiente · restablecida con éxito</div>
     <div class="variante-caja">
       <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-shield"/></svg></div><div class="notice-text">Es tu cuenta: no puedes restablecer tu propia app autenticadora. Si perdiste el teléfono, pídeselo a otro admin por llamada de voz.</div></div>
       <div class="texto-suave">En lugar de la tarjeta «Restablecer app autenticadora».</div>
@@ -1658,6 +1658,17 @@
       <br>
       <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-shield"/></svg></div><div class="notice-text">No tiene app autenticadora registrada. Cuando registre una, el admin técnico la activa después de confirmar con ella por llamada.</div></div>
       <div class="texto-suave">Sin botón: recién restablecida, o nunca la registró.</div>
+    </div>
+    <div class="variante-caja">
+      <dl class="rejilla dos">
+        <div class="dato"><dt>Acceso al panel</dt><dd><span class="estado apagado">Desactivado</span></dd></div>
+        <div class="dato"><dt>App autenticadora</dt><dd><span class="estado apagado">Sin registrar</span></dd></div>
+      </dl>
+      <br>
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">El restablecimiento anterior quedó pendiente. Inténtalo de nuevo para completarlo.</div></div>
+      <span class="btn danger-btn">Restablecer app autenticadora</span>
+      <br><br>
+      <div class="texto-suave">Va en lugar de «Sin registrar» cuando hay un restablecimiento sin terminar. Reanuda ESE intento, nunca empieza otro. Con «Registrada» se ve igual si el intento anterior no alcanzó a eliminarla.</div>
     </div>
     <div class="variante-caja">
       <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">App autenticadora restablecida. Su acceso queda desactivado hasta que registre una nueva y el admin técnico vuelva a activarlo.</div></div>
@@ -1704,7 +1715,7 @@
     </div>
   </div>
   <div class="variante-doc">
-    <div class="variante-doc-titulo">Variantes (doc): motivo demasiado corto · restableciendo · rechazos · se desactivó pero no se eliminó la app</div>
+    <div class="variante-doc-titulo">Variantes (doc): motivo demasiado corto · restableciendo · rechazos · se desactivó pero no se eliminó la app · se eliminó la app pero el restablecimiento quedó pendiente</div>
     <div class="variante-caja">
       <div class="field">
         <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">2/500</span></div>
@@ -1723,6 +1734,7 @@
     </div>
     <div class="variante-caja">
       <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Su acceso quedó desactivado, pero no pudimos eliminar la app autenticadora registrada en su cuenta. Inténtalo otra vez.</div></div>
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">La app autenticadora ya se eliminó, pero el restablecimiento quedó pendiente. Inténtalo de nuevo para completarlo.</div></div>
       <div class="texto-suave">Falla cerrado: primero se desactiva y después se elimina la app. Si el código del que ejecuta venció, sale el modal «Código de verificación» de siempre; cualquier otro rechazo, «No se pudo completar la acción (código).».</div>
     </div>
   </div>
