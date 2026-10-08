@@ -506,6 +506,14 @@ verify_jwt = false
 [functions.eliminar-publicacion]
 verify_jwt = false
 
+# admin-reset-mfa — restablece la app autenticadora (TOTP) de OTRO admin del
+# panel (RF-17 Ola 3b). Quién puede y sobre quién lo deciden las RPC
+# `admin.restablecer_mfa_*` (llamadas con el JWT del ejecutor, `exigir_admin()`);
+# la secret key solo borra factores en Auth. `verify_jwt = false` como sus
+# hermanas: autoriza `withSupabase({ auth: 'user' })`.
+[functions.admin-reset-mfa]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
