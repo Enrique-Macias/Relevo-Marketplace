@@ -37,7 +37,7 @@ import { useExplorarState } from '@/lib/explorar-state';
 import { Avatar } from '@/components/Avatar';
 import { formatPrecio, formatRelativo } from '@/lib/format';
 import {
-  borrarListing,
+  eliminarPublicacion,
   cambiarEstadoListing,
   fetchListingById,
   fetchStatsPropias,
@@ -51,7 +51,6 @@ import {
 } from '@/lib/listings';
 import { fetchTelefonoVendedor, urlWhatsapp } from '@/lib/perfil';
 import { useSession } from '@/lib/session';
-import { borrarFotos } from '@/lib/storage';
 
 const CONDICION_LABEL: Record<string, string> = {
   nuevo: 'Nuevo',
@@ -458,25 +457,20 @@ export default function DetalleScreen() {
   }
 
   /**
-   * Eliminar desde el kebab. Mismo orden y las mismas dos funciones que "Mis
-   * publicaciones" (`borrarFotos()` best-effort, después `borrarListing()`,
-   * que SÍ lanza si `count === 0` — CLAUDE.md §9): una cuenta suspendida ve el
+   * Eliminar desde el kebab. La misma función que "Mis publicaciones"
+   * (`eliminarPublicacion()`, Edge Function `eliminar-publicacion`): una cuenta
+   * suspendida recibe `403 no_borrable` → `ListingNoBorrableError`, ve el
    * mismo toast de error, sin navegar, con la publicación intacta.
    *
-   * `ListingNoBorrableError` puede significar dos cosas — rechazo real, o que
-   * la publicación ya se había borrado antes (respuesta perdida en un
-   * reintento) — y las dos se reconcilian igual: un refetch silencioso, sin
-   * quitar el toast de error. Si ya no existe, `cargarDetalle` lo marca
-   * `noDisponible` (su propio `ErrorState`, con salida a un tap, nunca
-   * automática — ver el comentario de esa rama más abajo). Si es una cuenta
-   * suspendida, vuelve a traer la misma publicación intacta.
+   * Ese error ya tiene UNA causa (la publicación existe y no se puede borrar);
+   * "ya se había borrado" la función lo trata como éxito. El refetch
+   * silencioso se conserva para traer el estado vigente sin quitar el toast.
    */
   async function eliminarDetalle() {
     if (!listing) return;
     setBorrando(true);
     try {
-      await borrarFotos(listing.fotos);
-      await borrarListing(listing.id);
+      await eliminarPublicacion(listing.id);
       mostrar('Publicación eliminada');
       if (router.canGoBack()) {
         router.back();
@@ -933,7 +927,7 @@ export default function DetalleScreen() {
 const AVISO_SIN_ACCIONES: Record<'vendida' | 'pendiente' | 'bloqueada', string> = {
   vendida: 'Esta publicación ya se vendió.',
   pendiente: 'Esta publicación está en revisión. Se publicará en cuanto la revisemos.',
-  bloqueada: 'Esta publicación no fue aprobada y no se publicó.',
+  bloqueada: 'Esta publicación no fue aprobada y no se publicó. Sus fotos ya no se muestran.',
 };
 
 function AvisoSinAcciones({ estado }: { estado: EstadoListing }) {

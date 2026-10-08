@@ -36,7 +36,7 @@ import { useExplorarState } from '@/lib/explorar-state';
 import { elegirFotos, PermisoDenegadoError } from '@/lib/foto-picker';
 import { useListingForm } from '@/lib/listing-form';
 import {
-  borrarListing,
+  eliminarPublicacion,
   cambiarEstadoListing,
   fetchListingParaEditar,
   ListingNoEditableError,
@@ -50,7 +50,7 @@ import {
   type ProgresoFoto,
 } from '@/lib/publicar';
 import { useSession } from '@/lib/session';
-import { borrarFotos, MAX_FOTOS } from '@/lib/storage';
+import { MAX_FOTOS } from '@/lib/storage';
 
 export default function EditarPublicacionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -402,25 +402,18 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
   }
 
   /**
-   * ORDEN OBLIGATORIO: primero los archivos, después la fila.
-   *
-   * `listing_photos_objects_delete_own` exige que el listing EXISTA para
-   * autorizar el borrado del objeto. Si se borrara el listing primero, el
-   * `on delete cascade` se llevaría las filas de `listing_photos` pero los
-   * archivos quedarían en el bucket, y ya sin forma de borrarlos porque la
-   * policy no tendría contra qué validar. Esto es lo que cierra la deuda
-   * "borrar una publicación no borra sus fotos de Storage" de CLAUDE.md §8.
+   * Una sola llamada a la Edge Function `eliminar-publicacion`
+   * (`eliminarPublicacion()`): borra la fila con el JWT del usuario y después
+   * vacía la carpeta `listing-photos/{id}/` entera con la secret key, así que
+   * no hace falta pasarle las rutas (antes se pasaba `fotosGuardadas` para no
+   * dejar huérfanas las fotos agregadas en esta sesión; vaciar la carpeta las
+   * cubre igual). Sigue sin reconciliar tras `ListingNoBorrableError`, como
+   * antes: límite conocido (CLAUDE.md §9).
    */
   async function eliminar() {
     setBorrando(true);
     try {
-      // `fotosGuardadas`, no `listing.fotos`: si el usuario editó el set de
-      // fotos con éxito parcial y luego eliminó sin salir de la pantalla, la
-      // lista congelada del prop no incluiría las fotos agregadas en esa
-      // sesión — quedarían huérfanas en Storage, sin ninguna fila que las
-      // referencie para poder encontrarlas después.
-      await borrarFotos(fotosGuardadas);
-      await borrarListing(listing.id);
+      await eliminarPublicacion(listing.id);
       mostrar('Publicación eliminada');
       router.replace('/(tabs)');
     } catch (e: any) {

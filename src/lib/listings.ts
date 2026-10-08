@@ -8,6 +8,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { FunctionsHttpError } from '@supabase/supabase-js';
+
 import { supabase } from '@/lib/supabase';
 
 export type Condicion = 'nuevo' | 'como_nuevo' | 'buen_estado' | 'usado';
@@ -190,9 +192,10 @@ export type ListingDetalle = ListingCard & {
  *  - `vistasCount`: la línea `.mine-meta` del frame lo pinta. Viene en la misma
  *    fila y está dentro del `grant select` de la tabla (solo el UPDATE lo
  *    excluye), así que no cuesta una query aparte.
- *  - `fotos`: TODAS las rutas, no solo la portada. Eliminar necesita cada una,
- *    porque los objetos de Storage hay que borrarlos ANTES que el listing (ver
- *    `borrarListing`), y para entonces ya no habría de dónde leerlas.
+ *  - `fotos`: TODAS las rutas, no solo la portada. Antes las necesitaba
+ *    Eliminar; desde `eliminarPublicacion()` (la Edge Function vacía la
+ *    carpeta entera) ya no. Siguen haciendo falta para la portada, la etiqueta "Sin fotos" y el
+ *    guard de reactivar sin fotos (`mis-publicaciones.tsx`).
  */
 export type MiListing = ListingCard & {
   estado: EstadoListing;
@@ -910,12 +913,11 @@ export async function cambiarEstadoListing(
  * BORRAR (el toast que ve el usuario es fijo y no depende de este mensaje,
  * pero el `console.warn` del llamador sí lo cita).
  *
- * `count === 0` aquí tiene DOS causas posibles, y no se puede distinguir
- * sin una consulta aparte: la fila no es tuya o estás suspendido (rechazo
- * real de `listings_delete_own`), o la publicación YA se había borrado
- * antes — un doble toque con la respuesta perdida, otro dispositivo, un
- * reintento tras un corte de red justo después de que el borrado del
- * servidor sí se completara. Ver CLAUDE.md §9.
+ * Desde la Edge Function `eliminar-publicacion` (RF-17 Ola 4, D5) tiene UNA
+ * sola causa: la publicación EXISTE y la base no te deja borrarla (no es tuya
+ * o estás suspendido) — la función responde `403 no_borrable` solo cuando
+ * comprueba que la fila sigue ahí. "Ya se había borrado" ya no llega aquí:
+ * la función lo trata como éxito (idempotente).
  */
 export class ListingNoBorrableError extends Error {
   constructor() {
@@ -925,22 +927,35 @@ export class ListingNoBorrableError extends Error {
 }
 
 /**
- * RF-06. Las filas de `listing_photos` se van solas por `on delete cascade`;
- * los ARCHIVOS no. Quien llama debe borrarlos ANTES con `borrarFotos()` —
- * ver la nota de orden en `src/lib/storage.ts`.
+ * RF-06. Borra la publicación por la Edge Function `eliminar-publicacion`:
+ * primero la FILA con el JWT del usuario (la base decide con
+ * `listings_delete_own`), después los objetos de `listing-photos/{id}/` con la
+ * secret key. Va por función y no por el cliente porque, desde
+ * `20261007000481`, el dueño de una `bloqueada` ya no VE sus fotos, y un
+ * `remove()` con su JWT devolvería `200 []` dejándolas huérfanas (CLAUDE.md
+ * §9); la función borra lo que haya en la carpeta, la vea o no el dueño.
  *
- * Revisa `count` por el mismo motivo que `cambiarEstadoListing()`: un DELETE
- * que `listings_delete_own` rechaza (dueño suspendido) afecta 0 filas SIN
- * error — sin este chequeo, el llamador seguía de largo creyendo que borró
- * algo que en realidad sigue intacto en la base.
+ * - `403 no_borrable` → `ListingNoBorrableError`.
+ * - `{ ok: true, huerfanos: true }`: la fila SÍ se borró y quedaron objetos;
+ *   para el usuario es un éxito (la publicación ya no existe) y los objetos
+ *   los recoge el barrido de huérfanos (`docs/admin-runbook.md` §7).
+ * - Cualquier otro fallo se relanza tal cual: el llamador muestra su toast de
+ *   error genérico, y reintentar es seguro (la función es idempotente).
  */
-export async function borrarListing(id: number): Promise<void> {
-  const { error, count } = await supabase
-    .from('listings')
-    .delete({ count: 'exact' })
-    .eq('id', id);
-  if (error) throw error;
-  if ((count ?? 0) === 0) throw new ListingNoBorrableError();
+export async function eliminarPublicacion(id: number): Promise<void> {
+  const { data, error } = await supabase.functions.invoke<{ ok: boolean; huerfanos?: boolean }>(
+    'eliminar-publicacion',
+    { body: { listing_id: id } },
+  );
+  if (error) {
+    if (error instanceof FunctionsHttpError && (error.context as Response | undefined)?.status === 403) {
+      throw new ListingNoBorrableError();
+    }
+    throw error;
+  }
+  if (data?.huerfanos) {
+    console.warn(`[eliminarPublicacion] ${id}: fila borrada, objetos de Storage huérfanos`);
+  }
 }
 
 /**

@@ -32,7 +32,7 @@ import { useVenta } from '@/lib/confianza';
 import { useExplorarState } from '@/lib/explorar-state';
 import { formatPrecio, formatRelativo } from '@/lib/format';
 import {
-  borrarListing,
+  eliminarPublicacion,
   cambiarEstadoListing,
   ListingNoBorrableError,
   useMisListings,
@@ -41,7 +41,6 @@ import {
   type MiListing,
 } from '@/lib/listings';
 import { useSession } from '@/lib/session';
-import { borrarFotos } from '@/lib/storage';
 
 /**
  * Los `.chip` del frame. `undefined` es "Todas": no manda filtro a la query.
@@ -213,33 +212,27 @@ export default function MisPublicacionesScreen() {
   }
 
   /**
-   * ORDEN OBLIGATORIO: primero los archivos, después la fila — el mismo de
-   * `editar/[id].tsx`. `listing_photos_objects_delete_own` exige que el listing
-   * EXISTA para autorizar el borrado del objeto, así que al revés el
-   * `on delete cascade` se lleva las filas de `listing_photos` y los archivos
-   * quedan en el bucket, ya sin forma de borrarlos.
-   *
-   * Por eso `MiListing` trae TODAS las rutas y no solo la portada: aquí no hay
-   * a quién preguntárselas después.
+   * Una sola llamada: la Edge Function `eliminar-publicacion` borra la fila con
+   * el JWT del usuario y después la carpeta de Storage con la secret key
+   * (`eliminarPublicacion()`, `src/lib/listings.ts`). El orden "archivos
+   * primero" que vivía aquí ya no aplica: la función no depende de que el
+   * dueño VEA sus objetos (el de una `bloqueada` ya no los ve, `…481`).
    */
   async function eliminar(item: MiListing) {
     setBorrando(true);
     try {
-      await borrarFotos(item.fotos);
-      await borrarListing(item.id);
+      await eliminarPublicacion(item.id);
       setItems((prev) => prev.filter((l) => l.id !== item.id));
       mostrar('Publicación eliminada');
     } catch (e: any) {
       console.warn('[mis-publicaciones] no se pudo eliminar:', e?.message ?? e);
       mostrar('No pudimos eliminar la publicación', 'error');
       /**
-       * `count === 0` en `borrarListing()` no distingue "rechazado" de "ya se
-       * había borrado" (respuesta perdida en un intento anterior). Sin esto,
-       * un reintento sobre una publicación que el servidor YA borró se queda
-       * mostrando el mismo error para siempre, con la tarjeta atorada en la
-       * lista local. `refrescar()` reconcilia con el servidor sin tocar el
-       * toast de error: si de verdad ya no existe, desaparece; si es una
-       * cuenta suspendida, sigue ahí porque nunca salió de `items`.
+       * `ListingNoBorrableError` (`403 no_borrable`) dice que la publicación
+       * SIGUE existiendo y la base no deja borrarla — típicamente una cuenta
+       * suspendida. "Ya se había borrado" ya no llega aquí: la función lo
+       * trata como éxito. `refrescar()` reconcilia el resto de la lista con el
+       * servidor (la suspensión pudo pausar otras) sin tocar el toast.
        */
       if (e instanceof ListingNoBorrableError) {
         void refrescar().catch((e2: any) =>
