@@ -499,6 +499,13 @@ verify_jwt = false
 [functions.eliminar-cuenta]
 verify_jwt = false
 
+# eliminar-publicacion — elimina UNA publicación de quien llama y vacía su
+# carpeta de Storage con la secret key (RF-17 Ola 4, D5). Quién puede borrar lo
+# decide la base (el DELETE va con el JWT del usuario); `verify_jwt = false`
+# por el mismo motivo que sus hermanas: autoriza `withSupabase({ auth: 'user' })`.
+[functions.eliminar-publicacion]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

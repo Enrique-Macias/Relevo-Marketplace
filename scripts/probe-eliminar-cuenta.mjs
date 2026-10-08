@@ -284,7 +284,29 @@ async function main() {
     ok('estado parcial (Storage a medias) → 200 y termina', r5.status === 200
       && cuentas(P.id) === 0 && objetosDe(P.id, [P.listing]) === 0,
       `objetos antes ${antes}, status ${r5.status}`);
+
+    console.log('\n== 5. Una cuenta con una publicación BLOQUEADA (RF-17 Ola 4) ==');
+    // D5: el dueño de una bloqueada ya no ve sus objetos; aquí borra la función
+    // con la secret key, así que no cambia nada, y este caso lo vigila. Y el
+    // cascade deja el registro mínimo de moderación (20261007000482), con su
+    // user_id aunque la cuenta ya no exista (decisión del usuario).
+    const K = await sembrar(E, 'bloq');
+    creados.push(K.id);
+    sql(`insert into public.listing_moderacion (listing_id, veredicto, estado_resultante, detalle)
+         values (${K.listing}, 'bloquear', 'bloqueada', '{}')`);
+    sql(`update public.listings set estado = 'bloqueada' where id = ${K.listing}`);
+    const reK = await login(E, K.correo);
+    const r6 = await eliminar(E, reK.json.access_token);
+    ok('cuenta con una bloqueada con 2 fotos → 200, 0 filas en auth.users, 0 objetos',
+      r6.status === 200 && cuentas(K.id) === 0 && objetosDe(K.id, [K.listing]) === 0,
+      `status ${r6.status} objetos=${objetosDe(K.id, [K.listing])}`);
+    ok('…y el registro mínimo de moderación de la bloqueada queda, con su user_id',
+      n(`select count(*) from private.moderacion_retenida where listing_id = ${K.listing} and user_id = '${K.id}'`) === 1);
   } finally {
+    // El registro retenido es del probe: se quita (no lo borra ninguna cascada).
+    if (creados.length) {
+      sql(`delete from private.moderacion_retenida where user_id in (${creados.map((i) => `'${i}'`).join(',')})`);
+    }
     for (const id of creados) {
       await fetch(`${E.API_URL}/auth/v1/admin/users/${id}`, {
         method: 'DELETE', headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },

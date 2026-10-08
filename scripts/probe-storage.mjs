@@ -445,6 +445,8 @@ async function main() {
   // es justo la trampa que CLAUDE.md §3 documenta para `rls.sql` (`:C` en T11b).
   let modActiva, modPendiente, modBarrera, mock, previos;
   let admin, pendienteAdm;
+  // Fixture propio de la sección del dueño de una bloqueada (RF-17 Ola 4, D5).
+  let bloqueadaD;
 
   try {
     dueno = await crearUsuario(E, correoDueno);
@@ -485,6 +487,41 @@ async function main() {
       await borrar(E, tAjeno, `${activa}/foto.jpg`));
     permitido('el dueño SÍ puede borrar la foto de su publicación',
       await borrar(E, tDueno, `${activa}/foto.jpg`));
+
+    // -----------------------------------------------------------------------
+    // El dueño de una BLOQUEADA (RF-17 Ola 4, D5 = (a), 20261007000481), por la
+    // Storage API real. La suite SQL ya lo prueba con claims fabricados (T35c
+    // (c)-(k)); aquí se confirma que el servicio de Storage se porta igual. Es
+    // la razón de existir de la Edge Function `eliminar-publicacion`: con el
+    // cliente del usuario, `remove()` ya no borra nada de esta carpeta.
+    // Fixture PROPIO: se siembra `activa`, el dueño sube su foto, y recién
+    // entonces se bloquea (con la secret key, como el panel o la moderación).
+    // -----------------------------------------------------------------------
+    console.log('\n== Dueño de una bloqueada (D5: ya no ve ni escribe su carpeta) ==');
+    bloqueadaD = await crearListing(E, dueno, `Probe bloqueada ${RUN}`, 'activa');
+    permitido('precondición: el dueño sube la foto mientras está activa',
+      await subir(E, tDueno, `${bloqueadaD}/b.jpg`));
+    await fetch(`${E.API_URL}/rest/v1/listings?id=eq.${bloqueadaD}`, {
+      method: 'PATCH',
+      headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'bloqueada' }),
+    });
+    const objetosBloq = () => Number(sql(
+      `select count(*) from storage.objects where bucket_id = ${lit(BUCKET)} and name like ${lit(`${bloqueadaD}/%`)}`));
+    denegado('el dueño ya NO lee la foto de su bloqueada (endpoint autenticado)',
+      await leer(E, tDueno, `${bloqueadaD}/b.jpg`));
+    const remBloq = await removeJs(E, tDueno, [`${bloqueadaD}/b.jpg`]);
+    const cuerpoRem = await remBloq.json().catch(() => null);
+    ok('remove() del dueño (lo que hacía la app) responde 200 [] y NO borra: el huérfano silencioso que D5 cierra',
+      remBloq.status === 200 && Array.isArray(cuerpoRem) && cuerpoRem.length === 0 && objetosBloq() === 1,
+      `HTTP ${remBloq.status} cuerpo=${JSON.stringify(cuerpoRem)} objetos=${objetosBloq()}`);
+    denegado('el DELETE de un objeto del dueño sobre su bloqueada es rechazado',
+      await borrar(E, tDueno, `${bloqueadaD}/b.jpg`));
+    denegado('el dueño NO puede subir un objeto nuevo a la carpeta de su bloqueada',
+      await subir(E, tDueno, `${bloqueadaD}/nuevo.jpg`));
+    denegado('el dueño NO puede sobrescribir (x-upsert) la foto de su bloqueada',
+      await subir(E, tDueno, `${bloqueadaD}/b.jpg`, BUCKET, { 'x-upsert': 'true' }));
+    ok('…y la carpeta sigue con su único objeto', objetosBloq() === 1, `objetos=${objetosBloq()}`);
 
     // -----------------------------------------------------------------------
     // Admin del panel (RF-17, Ola 2): fotos de una `pendiente` ajena.
@@ -694,7 +731,8 @@ async function main() {
       }).catch(() => {});
     }
 
-    for (const [id, ruta] of [[pausada, 'oculta.jpg'], [activa, 'foto.jpg'], [pendienteAdm, 'adm.jpg']]) {
+    for (const [id, ruta] of [[pausada, 'oculta.jpg'], [activa, 'foto.jpg'], [pendienteAdm, 'adm.jpg'],
+                              [bloqueadaD, 'b.jpg'], [bloqueadaD, 'nuevo.jpg']]) {
       if (id) await fetch(`${E.API_URL}/storage/v1/object/${BUCKET}/${id}/${ruta}`, {
         method: 'DELETE', headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
       }).catch(() => {});
@@ -710,10 +748,15 @@ async function main() {
         body: JSON.stringify({ prefixes: [`${id}/a.jpg`, `${id}/intruso.jpg`, `${id}/robado.jpg`, `${id}/mod.jpg`] }),
       }).catch(() => {});
     }
-    for (const id of [activa, pausada, deAjeno, modActiva, modPendiente, modBarrera, pendienteAdm]) {
+    for (const id of [activa, pausada, deAjeno, modActiva, modPendiente, modBarrera, pendienteAdm, bloqueadaD]) {
       if (id) await fetch(`${E.API_URL}/rest/v1/listings?id=eq.${id}`, {
         method: 'DELETE', headers: { apikey: E.SECRET, Authorization: `Bearer ${E.SECRET}` },
       }).catch(() => {});
+    }
+    // Borrar la bloqueada del fixture dejó su registro mínimo de moderación
+    // (20261007000482): es del probe, se quita.
+    if (bloqueadaD) {
+      try { sql(`delete from private.moderacion_retenida where listing_id = ${Number(bloqueadaD)}`); } catch {}
     }
     // El admin: borrar la cuenta se lleva su fila de `private.admins` y su
     // factor TOTP (los dos en cascada desde auth.users).
