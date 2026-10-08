@@ -54,7 +54,9 @@
 //      cuenta tenga aal2.
 //   3. `desactivar`: `activado_at = null` y la fila `desactivar_admin` en la
 //      MISMA sentencia (20260930000479). Surte efecto en la request siguiente.
-//      Reactivar exige borrar el factor y enrolar uno nuevo (paso 2).
+//      Reactivar exige borrar el factor y enrolar uno nuevo (paso 2). Desde la
+//      Ola 3b el factor lo borra otro admin desde el panel (`admin-reset-mfa`),
+//      que también desactiva: su inicio cuenta como desactivación en `activar`.
 //
 // SIN INTERPOLAR NADA: correo, nombre y motivo se validan aquí y viajan a psql
 // como variables (`-v correo=…`), que el SQL usa como `:'correo'` (psql las
@@ -380,7 +382,12 @@ async function activar(correoCrudo, { confirmado, con } = {}) {
   // Una sola sentencia: activa y audita en la misma transacción, o ninguna.
   // El factor tiene que ser posterior a la ÚLTIMA desactivación auditada (o al
   // alta, si nunca se desactivó): así, tras un reset de MFA, el factor viejo
-  // no reactiva la cuenta (probe-admin, caso 8e).
+  // no reactiva la cuenta (probe-admin, caso 8e). Desde la Ola 3b
+  // (20261008000483) cuenta como desactivación también el INICIO de un
+  // restablecimiento desde el panel (`restablecer_mfa`), y no se activa
+  // mientras haya uno PENDIENTE (sin su `factores_mfa_borrados`): es lo que
+  // sostiene la invariante "intento pendiente ⇒ desactivado". El UPDATE toma
+  // el lock de la fila de `private.admins`, el mismo que las RPC del panel.
   const id = con.ejecutar(`
     with a as (
       update private.admins ad
@@ -397,10 +404,18 @@ async function activar(correoCrudo, { confirmado, con } = {}) {
                  and f.status = 'verified'
                  and f.created_at > coalesce(
                        (select max(aa.created_at) from private.admin_acciones aa
-                         where aa.accion = 'desactivar_admin'
+                         where aa.accion in ('desactivar_admin', 'restablecer_mfa')
                            and aa.objetivo_tipo = 'admin'
                            and aa.objetivo_id = u.id::text),
                        ad.created_at)) = 1
+         and (select count(*) from private.admin_acciones r
+               where r.accion = 'restablecer_mfa' and r.objetivo_tipo = 'admin'
+                 and r.objetivo_id = u.id::text
+                 and not exists (select 1 from private.admin_acciones c
+                                  where c.accion = 'factores_mfa_borrados'
+                                    and c.objetivo_tipo = 'admin'
+                                    and c.objetivo_id = r.objetivo_id
+                                    and c.id > r.id)) = 0
       returning ad.user_id, ad.activado_at
     )
     insert into private.admin_acciones
@@ -423,15 +438,24 @@ async function activar(correoCrudo, { confirmado, con } = {}) {
                                and f.status = 'verified')
                         || ' ultima_desactivacion=' || coalesce(
                              (select max(aa.created_at)::text from private.admin_acciones aa
-                               where aa.accion = 'desactivar_admin'
+                               where aa.accion in ('desactivar_admin', 'restablecer_mfa')
                                  and aa.objetivo_tipo = 'admin'
                                  and aa.objetivo_id = u.id::text), 'nunca')
+                        || ' restablecimiento_pendiente=' || ((select count(*) from private.admin_acciones r
+                         where r.accion = 'restablecer_mfa' and r.objetivo_tipo = 'admin'
+                           and r.objetivo_id = u.id::text
+                           and not exists (select 1 from private.admin_acciones c
+                                            where c.accion = 'factores_mfa_borrados'
+                                              and c.objetivo_tipo = 'admin'
+                                              and c.objetivo_id = r.objetivo_id
+                                              and c.id > r.id)) > 0)
                          from auth.users u
                          left join private.admins ad on ad.user_id = u.id
                         where lower(u.email) = :'correo'), 'sin cuenta');`,
     { correo });
-    throw new Error(`no se activó (${diag}). Se exige: admin sin activar y exactamente 1 TOTP `
-      + 'verificado creado después del alta y de la última desactivación.');
+    throw new Error(`no se activó (${diag}). Se exige: admin sin activar, exactamente 1 TOTP `
+      + 'verificado creado después del alta y de la última desactivación o restablecimiento, '
+      + 'y ningún restablecimiento pendiente (se completa desde el panel).');
   }
   console.log(`Activado: ${correo} (${id}). Auditado como activar_admin. [${con.etiqueta}]`);
 }
@@ -476,8 +500,9 @@ async function desactivar(correoCrudo, motivoCrudo, { con } = {}) {
     throw new Error(`no se desactivó (${diag}). Se exige: admin activado.`);
   }
   console.log(`Desactivado: ${correo} (${id}). Auditado como desactivar_admin. [${con.etiqueta}]`);
-  console.log('Para reactivarlo: borra su factor MFA (Dashboard → Authentication → Users),');
-  console.log('que enrole uno nuevo, confírmalo por otro canal y corre `activar`.');
+  console.log('Para reactivarlo: otro admin restablece su app autenticadora desde el panel');
+  console.log('(Usuarios → su cuenta), la persona enrola una nueva, confírmalo por otro canal');
+  console.log('y corre `activar`.');
 }
 
 // ---------------------------------------------------------------------------
