@@ -6699,6 +6699,304 @@ select pg_temp.assert(
     format('select (admin.detalle_usuario(%L)->>''bloqueadas'')', :D35f)) = '2',
   'T35e (g) detalle_usuario.bloqueadas suma las bloqueadas actuales y las eliminadas retenidas');
 
+-- ---------------------------------------------------------------------------
+\echo ''
+\echo '== T35f — restablecer la app autenticadora de otro admin (RF-17, Ola 3b) =='
+-- 20261008000483. Autocontenida: sus propias cuentas (prefijo `rls-t3b`) y sus
+-- factores, sembrados como `postgres` en `auth.mfa_factors` (la Edge Function
+-- los borra con la API de Auth; aquí se simula con un DELETE). Toda la suite
+-- corre en UNA transacción, así que `now()` es constante: el inicio de cada
+-- intento es `now()`, un factor "viejo" lleva `now() - 1 day` y uno "nuevo"
+-- (enrolado después del inicio) `now() + 1 minute`. El borde exacto
+-- (`created_at = inicio`) cuenta como viejo: lo vigila (b).
+--   :E3b  ejecutor (admin activado)      :E3c  segundo ejecutor
+--   :X3b  objetivo activado, con TOTP    :Y3b  objetivo YA desactivado, con TOTP
+--   :Z3b  objetivo desactivado, sin TOTP (solo un webauthn)
+--   :V3b  objetivo activado, sin ningún factor
+--   :N3b  cuenta que no es admin
+\set E3b '''3b3b3b3b-0000-0000-0000-0000000000e1'''
+\set E3c '''3b3b3b3b-0000-0000-0000-0000000000e2'''
+\set X3b '''3b3b3b3b-0000-0000-0000-0000000000a1'''
+\set Y3b '''3b3b3b3b-0000-0000-0000-0000000000a2'''
+\set Z3b '''3b3b3b3b-0000-0000-0000-0000000000a3'''
+\set V3b '''3b3b3b3b-0000-0000-0000-0000000000a4'''
+\set N3b '''3b3b3b3b-0000-0000-0000-0000000000b1'''
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:E3b, 'rls-t3b-e1@rls-t3b.test'), (:E3c, 'rls-t3b-e2@rls-t3b.test'),
+               (:X3b, 'rls-t3b-x@rls-t3b.test'),  (:Y3b, 'rls-t3b-y@rls-t3b.test'),
+               (:Z3b, 'rls-t3b-z@rls-t3b.test'),  (:V3b, 'rls-t3b-v@rls-t3b.test'),
+               (:N3b, 'rls-t3b-n@rls-t3b.test')) as v(u, e);
+insert into private.admins (user_id, nombre, activado_at)
+values (:E3b::uuid, 'Ejecutor T3b', now()), (:E3c::uuid, 'Ejecutor 2 T3b', now()),
+       (:X3b::uuid, 'Objetivo X T3b', now() - interval '3 days'),
+       (:Y3b::uuid, 'Objetivo Y T3b', null), (:Z3b::uuid, 'Objetivo Z T3b', null),
+       (:V3b::uuid, 'Objetivo V T3b', now());
+
+-- Factores de :X3b: TOTP verified viejo, TOTP unverified viejo, WebAuthn viejo y
+-- un TOTP EXACTAMENTE en el inicio (el borde).
+insert into auth.mfa_factors (id, user_id, factor_type, status, created_at, updated_at)
+values
+  ('3b3b3b3b-f000-0000-0000-0000000000f1', :X3b::uuid, 'totp',     'verified',   now() - interval '1 day', now()),
+  ('3b3b3b3b-f000-0000-0000-0000000000f2', :X3b::uuid, 'totp',     'unverified', now() - interval '1 day', now()),
+  ('3b3b3b3b-f000-0000-0000-0000000000f3', :X3b::uuid, 'webauthn', 'verified',   now() - interval '1 day', now()),
+  ('3b3b3b3b-f000-0000-0000-0000000000f4', :X3b::uuid, 'totp',     'verified',   now(),                    now()),
+  ('3b3b3b3b-f000-0000-0000-0000000000f6', :Y3b::uuid, 'totp',     'verified',   now() - interval '1 day', now()),
+  ('3b3b3b3b-f000-0000-0000-0000000000f7', :Z3b::uuid, 'webauthn', 'verified',   now() - interval '1 day', now());
+
+-- El iniciar del ejecutor `:E3b` con aal2 y TOTP de hace 1 h, como texto jsonb
+-- (o `ERR:<sqlstate>:<mensaje>`, por `aal_valor`).
+create or replace function pg_temp.t3b_iniciar(p_obj uuid, p_motivo text, p_pend bigint default null,
+                                               p_ejec uuid default '3b3b3b3b-0000-0000-0000-0000000000e1')
+returns text language sql as $$
+  select pg_temp.aal_valor(p_ejec, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.restablecer_mfa_iniciar(%L, %L, %s)::text', p_obj, p_motivo,
+           coalesce(p_pend::text, 'null')))
+$$;
+create or replace function pg_temp.t3b_completar(p_id bigint,
+                                                 p_ejec uuid default '3b3b3b3b-0000-0000-0000-0000000000e1')
+returns text language sql as $$
+  select pg_temp.aal_valor(p_ejec, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.restablecer_mfa_completar(%s)::text', p_id))
+$$;
+-- El texto de `t3b_iniciar`/`t3b_completar` como jsonb. Un `ERR:…` no es JSON:
+-- sin esto, una regresión moriría con "invalid input syntax for type json" en
+-- vez de en la aserción con nombre (medido con los controles negativos).
+create or replace function pg_temp.t3b_json(p text) returns jsonb language sql as $$
+  select case when p like 'ERR:%' or p is null then jsonb_build_object('error', p) else p::jsonb end
+$$;
+create or replace function pg_temp.t3b_filas(p_obj uuid, p_accion text) returns bigint
+language sql as $$
+  select count(*) from private.admin_acciones
+   where objetivo_tipo = 'admin' and objetivo_id = p_obj::text and accion = p_accion
+$$;
+
+-- (a) GUARDAS de iniciar, cada una con su mensaje, y ninguna cambia nada.
+select
+  pg_temp.rechazo_aal(:N3b::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.restablecer_mfa_iniciar(%L, %L)', :X3b, 'motivo de prueba')) as t3b_a1,
+  pg_temp.rechazo_aal(:E3b::uuid, 'aal1', pg_temp.amr_totp(1),
+    format('select admin.restablecer_mfa_iniciar(%L, %L)', :X3b, 'motivo de prueba')) as t3b_a2,
+  pg_temp.rechazo_aal(:E3b::uuid, 'aal2', pg_temp.amr_totp(13),
+    format('select admin.restablecer_mfa_iniciar(%L, %L)', :X3b, 'motivo de prueba')) as t3b_a3,
+  pg_temp.t3b_iniciar(:X3b::uuid, '  ok ') as t3b_a4,
+  pg_temp.t3b_iniciar(:E3b::uuid, 'motivo de prueba') as t3b_a5,
+  pg_temp.t3b_iniciar(:N3b::uuid, 'motivo de prueba') as t3b_a6,
+  pg_temp.t3b_iniciar(:X3b::uuid, 'motivo de prueba', 999999999) as t3b_a7
+\gset
+select pg_temp.assert(:'t3b_a1' = '42501:no_admin', 'T35f (a1) un no admin → 42501:no_admin');
+select pg_temp.assert(:'t3b_a2' = '42501:mfa_requerido', 'T35f (a2) ejecutor aal1 → 42501:mfa_requerido');
+select pg_temp.assert(:'t3b_a3' = '42501:totp_vencido', 'T35f (a3) ejecutor con TOTP de hace 13 h → 42501:totp_vencido');
+select pg_temp.assert(:'t3b_a4' like 'ERR:22023:motivo_invalido%', 'T35f (a4) motivo de 2 caracteres tras btrim → 22023:motivo_invalido');
+select pg_temp.assert(:'t3b_a5' like 'ERR:42501:no_sobre_si_mismo%', 'T35f (a5) sobre sí mismo → 42501:no_sobre_si_mismo');
+select pg_temp.assert(:'t3b_a6' like 'ERR:P0002:objetivo_no_es_admin%', 'T35f (a6) un objetivo que no es admin → P0002:objetivo_no_es_admin');
+select pg_temp.assert(:'t3b_a7' like 'ERR:P0002:intento_no_existe%', 'T35f (a7) un p_intento_pendiente que no existe → P0002:intento_no_existe');
+select pg_temp.assert(
+  (select activado_at is not null from private.admins where user_id = :X3b::uuid)
+  and pg_temp.t3b_filas(:X3b::uuid, 'restablecer_mfa') = 0
+  and (select count(*) from auth.mfa_factors where user_id = :X3b::uuid) = 4,
+  'T35f (a8) ningún rechazo desactivó, auditó ni tocó factores');
+
+-- (b) NUEVO sobre un objetivo ACTIVADO: desactiva, audita el inicio y devuelve
+-- SOLO los TOTP viejos (verified y unverified, borde incluido), no el WebAuthn.
+select pg_temp.t3b_iniciar(:X3b::uuid, 'Perdió el teléfono, confirmado por llamada') as t3b_b \gset
+select (pg_temp.t3b_json(:'t3b_b')->>'accion_id')::bigint as t3b_r \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_b')->>'estado' = 'nuevo'
+  and (pg_temp.t3b_json(:'t3b_b')->>'desactivado')::boolean
+  and (select array_agg(x order by x) from jsonb_array_elements_text(pg_temp.t3b_json(:'t3b_b')->'factores') x)
+      = array['3b3b3b3b-f000-0000-0000-0000000000f1', '3b3b3b3b-f000-0000-0000-0000000000f2',
+              '3b3b3b3b-f000-0000-0000-0000000000f4'],
+  'T35f (b) nuevo: desactivado y factores = los 3 TOTP viejos (verified, unverified y el del borde), sin el WebAuthn');
+select pg_temp.assert(
+  (select activado_at is null from private.admins where user_id = :X3b::uuid)
+  and (select count(*) from private.admin_acciones
+        where id = :t3b_r and accion = 'restablecer_mfa' and admin_id = :E3b::uuid
+          and antes ? 'activado_at' and antes->>'activado_at' is not null
+          and despues = jsonb_build_object('activado_at', null, 'factores_totp', 3)
+          and motivo = 'Perdió el teléfono, confirmado por llamada'
+          and created_at = now()) = 1,
+  'T35f (b2) la fila de inicio: actor, antes {activado_at}, despues {activado_at: null, factores_totp: 3}, inicio = now()');
+
+-- El objetivo enrola su TOTP NUEVO después del inicio (S1 en curso).
+insert into auth.mfa_factors (id, user_id, factor_type, status, created_at, updated_at)
+values ('3b3b3b3b-f000-0000-0000-0000000000f5', :X3b::uuid, 'totp', 'verified', now() + interval '1 minute', now());
+
+-- (c) El detalle refleja el estado: desactivado, app registrada, intento pendiente.
+select pg_temp.as_aal_text(:E3b::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.detalle_usuario(%L)::text', :X3b)) as t3b_c \gset
+select pg_temp.assert(
+  (pg_temp.t3b_json(:'t3b_c')->>'admin_activado')::boolean = false
+  and (pg_temp.t3b_json(:'t3b_c')->>'app_registrada')::boolean
+  and (pg_temp.t3b_json(:'t3b_c')->>'restablecimiento_pendiente')::bigint = :t3b_r
+  and exists (select 1 from jsonb_array_elements(pg_temp.t3b_json(:'t3b_c')->'auditoria') a
+               where a->>'accion' = 'restablecer_mfa'),
+  'T35f (c) detalle: admin_activado=false, app_registrada=true, pendiente = el intento, y su auditoría tipo admin');
+
+-- (d) completar con TOTP viejos todavía presentes → no cierra.
+select pg_temp.t3b_completar(:t3b_r) as t3b_d \gset
+select pg_temp.assert(
+  :'t3b_d' like 'ERR:55000:factores_pendientes%'
+  and pg_temp.t3b_filas(:X3b::uuid, 'factores_mfa_borrados') = 0,
+  'T35f (d) completar con TOTP viejos presentes → 55000:factores_pendientes, sin cierre');
+
+-- (e) S1: reintentar REANUDA el mismo intento, sin fila nueva, y no devuelve el
+-- TOTP nuevo (posterior al inicio).
+select pg_temp.t3b_iniciar(:X3b::uuid, 'reintento') as t3b_e \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_e')->>'estado' = 'reanudado'
+  and (pg_temp.t3b_json(:'t3b_e')->>'accion_id')::bigint = :t3b_r
+  and jsonb_array_length(pg_temp.t3b_json(:'t3b_e')->'factores') = 3
+  and not (pg_temp.t3b_json(:'t3b_e')->'factores') ? '3b3b3b3b-f000-0000-0000-0000000000f5'
+  and pg_temp.t3b_filas(:X3b::uuid, 'restablecer_mfa') = 1,
+  'T35f (e) S1: reanudado con el MISMO intento, sin fila nueva, y sin el TOTP nuevo');
+
+-- (f) Borrado parcial (Auth borró uno): reanuda con los que quedan.
+delete from auth.mfa_factors where id = '3b3b3b3b-f000-0000-0000-0000000000f1';
+select pg_temp.t3b_iniciar(:X3b::uuid, 'reintento', :t3b_r) as t3b_f \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_f')->>'estado' = 'reanudado'
+  and (select array_agg(x order by x) from jsonb_array_elements_text(pg_temp.t3b_json(:'t3b_f')->'factores') x)
+      = array['3b3b3b3b-f000-0000-0000-0000000000f2', '3b3b3b3b-f000-0000-0000-0000000000f4'],
+  'T35f (f) tras un borrado parcial, reanuda con los TOTP viejos que quedan');
+
+-- (g) S2 + TOTP NUEVO: Auth terminó pero faltó el cierre. Reintentar CIERRA el
+-- intento y TERMINA: conserva el TOTP nuevo y el WebAuthn, no crea otro inicio.
+delete from auth.mfa_factors where id in ('3b3b3b3b-f000-0000-0000-0000000000f2',
+                                          '3b3b3b3b-f000-0000-0000-0000000000f4');
+select pg_temp.t3b_iniciar(:X3b::uuid, 'reintento', :t3b_r) as t3b_g \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_g')->>'estado' = 'cierre_recuperado'
+  and (pg_temp.t3b_json(:'t3b_g')->>'accion_id')::bigint = :t3b_r
+  and jsonb_array_length(pg_temp.t3b_json(:'t3b_g')->'factores') = 0,
+  'T35f (g) S2: cierre_recuperado del MISMO intento, sin factores que borrar');
+select pg_temp.assert(
+  pg_temp.t3b_filas(:X3b::uuid, 'restablecer_mfa') = 1
+  and (select count(*) from private.admin_acciones
+        where objetivo_tipo = 'admin' and objetivo_id = :X3b and accion = 'factores_mfa_borrados'
+          and id > :t3b_r and despues = jsonb_build_object('factores_borrados', 3)
+          and antes is null and motivo = 'Perdió el teléfono, confirmado por llamada') = 1
+  and exists (select 1 from auth.mfa_factors where id = '3b3b3b3b-f000-0000-0000-0000000000f5')
+  and exists (select 1 from auth.mfa_factors where id = '3b3b3b3b-f000-0000-0000-0000000000f3')
+  and (select activado_at is null from private.admins where user_id = :X3b::uuid),
+  'T35f (g2) S2 + TOTP nuevo: un solo inicio, un cierre (3, con el motivo del inicio), el TOTP nuevo y el WebAuthn sobreviven');
+
+-- (h) El reintento CONCURRENTE que llega después: con p_intento_pendiente ya
+-- cerrado → ya_completado, sin crear otro intento ni tocar el TOTP nuevo.
+select pg_temp.t3b_iniciar(:X3b::uuid, 'reintento tardío', :t3b_r, :E3c::uuid) as t3b_h \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_h')->>'estado' = 'ya_completado'
+  and pg_temp.t3b_filas(:X3b::uuid, 'restablecer_mfa') = 1
+  and exists (select 1 from auth.mfa_factors where id = '3b3b3b3b-f000-0000-0000-0000000000f5'),
+  'T35f (h) reintento con p_intento_pendiente ya cerrado → ya_completado, sin intento nuevo, el TOTP nuevo sigue');
+
+-- (i) completar es idempotente.
+select pg_temp.t3b_completar(:t3b_r) as t3b_i \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_i')->>'estado' = 'ya_completado'
+  and pg_temp.t3b_filas(:X3b::uuid, 'factores_mfa_borrados') = 1,
+  'T35f (i) completar sobre un intento cerrado → ya_completado, un solo cierre');
+
+-- (j) El detalle ya no muestra pendiente.
+select pg_temp.as_aal_text(:E3b::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.detalle_usuario(%L)::text', :X3b)) as t3b_j \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_j')->'restablecimiento_pendiente' = 'null'::jsonb
+  and (pg_temp.t3b_json(:'t3b_j')->>'app_registrada')::boolean,
+  'T35f (j) detalle tras el cierre: sin pendiente; app_registrada por el TOTP nuevo');
+
+-- (k) Nada que hacer: desactivado, sin TOTP (un WebAuthn no cuenta) y sin
+-- pendiente → 55000:estado_inesperado, sin fila.
+select pg_temp.t3b_iniciar(:Z3b::uuid, 'motivo de prueba') as t3b_k \gset
+select pg_temp.assert(
+  :'t3b_k' like 'ERR:55000:estado_inesperado%'
+  and pg_temp.t3b_filas(:Z3b::uuid, 'restablecer_mfa') = 0
+  and exists (select 1 from auth.mfa_factors where id = '3b3b3b3b-f000-0000-0000-0000000000f7'),
+  'T35f (k) desactivado + solo WebAuthn + sin pendiente → 55000:estado_inesperado');
+
+-- (l) NUEVO sobre un objetivo YA desactivado: no "desactiva", pero audita.
+select pg_temp.t3b_iniciar(:Y3b::uuid, 'Cambió de teléfono') as t3b_l \gset
+select (pg_temp.t3b_json(:'t3b_l')->>'accion_id')::bigint as t3b_ry \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_l')->>'estado' = 'nuevo'
+  and not (pg_temp.t3b_json(:'t3b_l')->>'desactivado')::boolean
+  and (select antes = jsonb_build_object('activado_at', null) from private.admin_acciones where id = :t3b_ry),
+  'T35f (l) nuevo sobre uno ya desactivado: desactivado=false y antes {activado_at: null}');
+
+-- (m) Lo cierra OTRO admin: el actor del cierre es quien cierra.
+delete from auth.mfa_factors where id = '3b3b3b3b-f000-0000-0000-0000000000f6';
+select pg_temp.t3b_completar(:t3b_ry, :E3c::uuid) as t3b_m \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_m')->>'estado' = 'completado'
+  and (pg_temp.t3b_json(:'t3b_m')->>'factores_borrados')::int = 1
+  and (select admin_id from private.admin_acciones
+        where accion = 'factores_mfa_borrados' and objetivo_id = :Y3b) = :E3c::uuid,
+  'T35f (m) otro admin completa: completado, factores_borrados=1, actor = quien cierra');
+
+-- (n) completar con un id que no es restablecer_mfa → intento_no_existe.
+select pg_temp.t3b_completar((select max(id) from private.admin_acciones
+                               where accion = 'factores_mfa_borrados')) as t3b_n \gset
+select pg_temp.assert(:'t3b_n' like 'ERR:P0002:intento_no_existe%',
+  'T35f (n) completar con un id que no es restablecer_mfa → P0002:intento_no_existe');
+
+-- (o) Activado SIN ningún factor: igual se desactiva (falla cerrado) y se
+-- cierra con 0.
+select pg_temp.t3b_iniciar(:V3b::uuid, 'Sin factor y activado') as t3b_o \gset
+select pg_temp.t3b_completar((pg_temp.t3b_json(:'t3b_o')->>'accion_id')::bigint) as t3b_o2 \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_o')->>'estado' = 'nuevo' and jsonb_array_length(pg_temp.t3b_json(:'t3b_o')->'factores') = 0
+  and pg_temp.t3b_json(:'t3b_o2')->>'estado' = 'completado' and (pg_temp.t3b_json(:'t3b_o2')->>'factores_borrados')::int = 0
+  and (select activado_at is null from private.admins where user_id = :V3b::uuid),
+  'T35f (o) activado sin factores: nuevo con [] (desactivado) y completado con 0');
+
+-- (p) El detalle de una cuenta que no es admin: los tres campos nuevos en null.
+select pg_temp.as_aal_text(:E3b::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.detalle_usuario(%L)::text', :N3b)) as t3b_p \gset
+select pg_temp.assert(
+  pg_temp.t3b_json(:'t3b_p')->'admin_activado' = 'null'::jsonb
+  and pg_temp.t3b_json(:'t3b_p')->'app_registrada' = 'null'::jsonb
+  and pg_temp.t3b_json(:'t3b_p')->'restablecimiento_pendiente' = 'null'::jsonb,
+  'T35f (p) detalle de una cuenta que no es admin: admin_activado, app_registrada y pendiente en null');
+
+-- (q) CHECK y claves: las 2 acciones y `factores_totp` (solo para admin) entran;
+-- una acción inventada, o `factores_totp` en un objetivo usuario, no.
+select
+  pg_temp.rechazo_de(null, format($q$insert into private.admin_acciones
+    (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+    values (%L, 'x', 'restablecer_mfa', 'admin', 'x', null, '{"factores_totp": 1}', 'motivo')$q$, :E3b)) as t3b_q1,
+  pg_temp.rechazo_de(null, format($q$insert into private.admin_acciones
+    (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+    values (%L, 'x', 'restablecer_inventado', 'admin', 'x', null, null, 'motivo')$q$, :E3b)) as t3b_q2,
+  pg_temp.rechazo_de(null, format($q$insert into private.admin_acciones
+    (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+    values (%L, 'x', 'suspender_usuario', 'usuario', 'x', null, '{"factores_totp": 1}', 'motivo')$q$, :E3b)) as t3b_q3
+\gset
+select pg_temp.assert(
+  :'t3b_q1' = 'ok'
+  and :'t3b_q2' = '23514:admin_acciones_accion_check'
+  and :'t3b_q3' = '23514:admin_acciones_claves_ok',
+  'T35f (q) CHECK: restablecer_mfa con factores_totp entra; una acción inventada y factores_totp en usuario → 23514');
+
+-- (s) `app_registrada` exige un TOTP VERIFIED: un unverified (o un WebAuthn)
+-- no cuenta como "Registrada".
+insert into auth.mfa_factors (id, user_id, factor_type, status, created_at, updated_at)
+values ('3b3b3b3b-f000-0000-0000-0000000000f8', :Z3b::uuid, 'totp', 'unverified', now() + interval '1 minute', now());
+select pg_temp.as_aal_text(:E3b::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.detalle_usuario(%L)::text', :Z3b)) as t3b_s \gset
+select pg_temp.assert(
+  (pg_temp.t3b_json(:'t3b_s')->>'app_registrada')::boolean = false
+  and (pg_temp.t3b_json(:'t3b_s')->>'admin_activado')::boolean = false,
+  'T35f (s) solo un TOTP unverified y un WebAuthn → app_registrada=false');
+
+-- (r) El cierre compartido NO es invocable por el cliente.
+select pg_temp.assert(
+  not has_function_privilege('authenticated', 'private.cerrar_restablecer_mfa(bigint)', 'execute')
+  and not has_function_privilege('anon', 'private.cerrar_restablecer_mfa(bigint)', 'execute'),
+  'T35f (r) private.cerrar_restablecer_mfa está revocada a authenticated y anon');
+
 \echo ''
 \echo '==========================================='
 \echo '   TODAS LAS PRUEBAS PASARON'
