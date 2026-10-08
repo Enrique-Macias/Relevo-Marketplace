@@ -66,7 +66,10 @@
     "lint": "expo lint src supabase/functions",
     "gen:types": "supabase gen types typescript --linked --schema public > src/lib/database.types.ts",
     "check:functions": "tsc --noEmit -p supabase/functions/tsconfig.json",
-    "check:admin": "npm --prefix admin run typecheck && npm --prefix admin run lint"
+    "check:admin": "npm --prefix admin run typecheck && npm --prefix admin run lint",
+    "build:rlvo-preview": "node scripts/rlvo-preview.mjs build",
+    "check:rlvo-preview": "node scripts/rlvo-preview.mjs check",
+    "deploy:rlvo-preview": "npm run build:rlvo-preview && npm run check:rlvo-preview && npx --no-install wrangler pages deploy dist/rlvo-preview --project-name=rlvo-design-preview"
   },
   "private": true
 }
