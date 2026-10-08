@@ -62,6 +62,12 @@ export interface DetalleUsuario {
   reportes_en_contra: number; auditoria: Auditoria[];
   /** Bloqueadas que siguen existiendo + las eliminadas que se retienen 12 meses (`…482`). */
   bloqueadas: number;
+  /** Solo de una cuenta de admin (null si no lo es), `…483`: `activado_at` puesto. */
+  admin_activado: boolean | null;
+  /** Solo de una cuenta de admin: tiene un TOTP `verified` (un unverified no cuenta). */
+  app_registrada: boolean | null;
+  /** Solo de una cuenta de admin: el id del restablecimiento sin cerrar, o null. */
+  restablecimiento_pendiente: number | null;
 }
 
 /** Una fila de `admin.cola_moderacion` (`…481`). Las de "Sin evaluar" no traen veredicto. */

@@ -109,6 +109,18 @@ export type Database = {
         Args: { p_estado: string; p_id: number; p_motivo: string }
         Returns: undefined
       }
+      restablecer_mfa_completar: {
+        Args: { p_accion_id: number }
+        Returns: Json
+      }
+      restablecer_mfa_iniciar: {
+        Args: {
+          p_intento_pendiente?: number
+          p_motivo: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       sesion: { Args: never; Returns: Json }
       suspender_usuario: {
         Args: { p_motivo: string; p_user_id: string }

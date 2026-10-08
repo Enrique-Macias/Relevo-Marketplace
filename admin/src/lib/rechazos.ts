@@ -31,13 +31,14 @@ export function clasificarRechazo(err: ErrorRpc | null | undefined): AccionRecha
 
 /**
  * Texto para el admin. Los códigos los fijan 20260930000478 (guardas G1-G6),
- * 20260930000479 (reportes y bloqueo) y 20261007000481 (aprobar). Es copy PERSISTENTE (un `.notice`), así
+ * 20260930000479 (reportes y bloqueo), 20261007000481 (aprobar) y 20261008000483 (restablecer la
+ * app autenticadora, más los dos de la Edge Function `admin-reset-mfa`). Es copy PERSISTENTE (un `.notice`), así
  * que cada texto está dibujado en `design/admin-panel.html`.
  */
 const TEXTOS: Record<string, string> = {
   motivo_invalido: 'El motivo debe tener entre 3 y 500 caracteres.',
   no_sobre_si_mismo: 'No puedes aplicar esta acción sobre tu propia cuenta.',
-  objetivo_es_admin: 'Esa cuenta es de un admin. Para quitarle el acceso, se borra su fila de admins.',
+  objetivo_es_admin: 'Es una cuenta de admin: no se suspende desde aquí. Quitarle el acceso lo hace el admin técnico.',
   usuario_no_existe: 'La cuenta ya no existe.',
   estado_inesperado: 'La cuenta cambió de estado mientras tanto. Recarga el detalle.',
   // Ola 4 (20261007000481, `admin.aprobar_listing`): copy de las variantes del
@@ -45,6 +46,11 @@ const TEXTOS: Record<string, string> = {
   dueno_no_activo: 'La cuenta del dueño está suspendida: no se puede aprobar mientras siga así.',
   sin_fotos: 'La publicación no tiene fotos: no se puede aprobar.',
   moderacion_en_curso: 'La revisión automática de esta publicación sigue en curso. Inténtalo en unos minutos.',
+  // Ola 3b (20261008000483 y `admin-reset-mfa`): copy de las variantes del
+  // modal "Restablecer app autenticadora" de `design/admin-panel.html`.
+  objetivo_no_es_admin: 'Esta cuenta ya no es de admin. Recarga el detalle.',
+  factores_pendientes: 'Su acceso quedó desactivado, pero no pudimos eliminar la app autenticadora registrada en su cuenta. Inténtalo otra vez.',
+  cierre_pendiente: 'La app autenticadora ya se eliminó, pero el restablecimiento quedó pendiente. Inténtalo de nuevo para completarlo.',
   [NO_ADMIN]: 'Esta cuenta no es admin del panel.',
   [MFA_REQUERIDO]: 'Falta confirmar tu código de la app autenticadora.',
   [TOTP_VENCIDO]: 'Tu código de la app autenticadora venció. Confírmalo otra vez.',
@@ -59,6 +65,9 @@ const TEXTOS: Record<string, string> = {
  */
 export const SIN_TEXTO_PROPIO: readonly string[] = [
   'estado_invalido', 'reporte_no_existe', 'listing_no_existe', 'auditoria_sin_actor',
+  // `admin.restablecer_mfa_*`: el panel solo manda ids de intento que la base le dio
+  // (las filas de auditoría no se borran), así que no lo provoca.
+  'intento_no_existe',
 ];
 
 export function tieneTextoDecidido(mensaje: string): boolean {

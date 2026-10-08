@@ -49,6 +49,9 @@ export const ACCION: Record<string, string> = {
   resolver_reporte: 'Resolver reporte',
   bloquear_listing: 'Bloquear publicación',
   aprobar_listing: 'Aprobar publicación',
+  desactivar_admin: 'Desactivar admin',
+  restablecer_mfa: 'Restablecer app autenticadora',
+  factores_mfa_borrados: 'App autenticadora eliminada',
 };
 
 const ESTADO_LEGIBLE: Record<string, string> = {

@@ -7,6 +7,7 @@ import type { DetalleUsuario, Vista } from '../lib/tipos.ts';
 import type { Database } from '../db/admin.types.ts';
 import { Aviso, CampoMotivo, Chip, ErrorCarga, Esqueleto, Volver } from '../componentes/Basicos.tsx';
 import { IconSearch, IconShield } from '../componentes/Iconos.tsx';
+import { ModalRestablecerMfa } from '../componentes/ModalRestablecerMfa.tsx';
 
 type Fila = Database['admin']['Functions']['buscar_usuarios']['Returns'][number];
 
@@ -78,8 +79,11 @@ export function BuscarUsuarios({ ir, busqueda, setBusqueda }: {
 
 /**
  * Frames "Usuario — detalle activo (suspender)", "detalle suspendido
- * (reactivar) y auditoría" y "cuenta de admin". La lógica es la de la Ola 1
- * (estaba en Panel.tsx); cambian la maqueta y el copy, que son los del frame.
+ * (reactivar) y auditoría" y "cuenta de admin (restablecer app
+ * autenticadora)". La lógica es la de la Ola 1 (estaba en Panel.tsx); cambian
+ * la maqueta y el copy, que son los del frame. La cuenta de admin (Ola 3b)
+ * muestra su acceso al panel y su app autenticadora, sin la columna "Cambio"
+ * en la auditoría, como su frame.
  */
 export function DetalleCuenta({ id, desde, ir }: { id: string; desde?: number; ir: (v: Vista) => void }) {
   const llamar = useLlamar();
@@ -90,6 +94,14 @@ export function DetalleCuenta({ id, desde, ir }: { id: string; desde?: number; i
   const [ok, setOk] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [recarga, setRecarga] = useState(0);
+  const [modalMfa, setModalMfa] = useState(false);
+  // Solo para no ofrecer el botón sobre la propia cuenta (UX): el candado es la
+  // guarda `no_sobre_si_mismo` de `admin.restablecer_mfa_iniciar`.
+  const [yo, setYo] = useState<string | null>(null);
+
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data }) => setYo(data.session?.user.id ?? null));
+  }, []);
 
   useEffect(() => {
     let vivo = true;
@@ -150,9 +162,20 @@ export function DetalleCuenta({ id, desde, ir }: { id: string; desde?: number; i
               {d.estado === 'suspendido' && (
                 <div className="dato"><dt>Suspendida desde</dt><dd>{fechaLarga(d.suspendido_at)}</dd></div>
               )}
-              <div className="dato"><dt>Publicaciones activas</dt><dd>{d.publicaciones_activas}</dd></div>
-              {d.estado === 'activo' && <div className="dato"><dt>En revisión</dt><dd>{d.publicaciones_pendientes}</dd></div>}
-              {!d.es_admin && <div className="dato"><dt>Bloqueadas</dt><dd>{d.bloqueadas}</dd></div>}
+              {d.es_admin ? (
+                <>
+                  <div className="dato"><dt>Acceso al panel</dt><dd>
+                    {d.admin_activado ? <Chip clase="ok">Activado</Chip> : <Chip clase="apagado">Desactivado</Chip>}</dd></div>
+                  <div className="dato"><dt>App autenticadora</dt><dd>
+                    {d.app_registrada ? <Chip clase="ok">Registrada</Chip> : <Chip clase="apagado">Sin registrar</Chip>}</dd></div>
+                </>
+              ) : (
+                <>
+                  <div className="dato"><dt>Publicaciones activas</dt><dd>{d.publicaciones_activas}</dd></div>
+                  {d.estado === 'activo' && <div className="dato"><dt>En revisión</dt><dd>{d.publicaciones_pendientes}</dd></div>}
+                  <div className="dato"><dt>Bloqueadas</dt><dd>{d.bloqueadas}</dd></div>
+                </>
+              )}
             </dl>
             {d.estado === 'suspendido' && d.suspension_motivo && (
               <>
@@ -161,21 +184,26 @@ export function DetalleCuenta({ id, desde, ir }: { id: string; desde?: number; i
               </>
             )}
           </div>
+          {d.es_admin && (
+            <Aviso tipo="neutro" icono={<IconShield tam={12} clase="icono-blanco" />}>
+              Es una cuenta de admin: no se suspende desde aquí. Quitarle el acceso lo hace el admin técnico.
+            </Aviso>
+          )}
           {d.estado === 'suspendido' && d.publicaciones_activas > 0 && (
             <Aviso>Tiene {d.publicaciones_activas} {d.publicaciones_activas === 1 ? 'publicación activa' : 'publicaciones activas'} estando suspendida. Algo {d.publicaciones_activas === 1 ? 'la activó' : 'las activó'} después de la suspensión.</Aviso>
           )}
           <div className="titulo-seccion">Auditoría</div>
           {d.auditoria.length === 0 ? <div className="texto-suave">Sin acciones registradas.</div> : (
             <table className="tabla">
-              <thead><tr><th>Fecha</th><th>Acción</th><th>Admin</th><th>Motivo</th><th>Cambio</th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Acción</th><th>Admin</th><th>Motivo</th>{!d.es_admin && <th>Cambio</th>}</tr></thead>
               <tbody>
                 {d.auditoria.map((a) => (
                   <tr key={a.id}>
                     <td className="suave">{fechaCorta(a.created_at)}</td>
                     <td>{ACCION[a.accion] ?? a.accion}</td>
-                    <td>{autorAuditado(a.admin_correo)}</td>
+                    <td className={a.admin_correo === 'script:crear-admin.mjs' ? 'suave' : ''}>{autorAuditado(a.admin_correo)}</td>
                     <td>{a.motivo}</td>
-                    <td className="suave">{cambioAuditado(a.antes, a.despues)}</td>
+                    {!d.es_admin && <td className="suave">{cambioAuditado(a.antes, a.despues)}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -183,11 +211,11 @@ export function DetalleCuenta({ id, desde, ir }: { id: string; desde?: number; i
           )}
         </div>
 
-        {d.es_admin && d.estado === 'activo' ? (
-          <Aviso tipo="neutro" icono={<IconShield tam={12} clase="icono-blanco" />}>
-            Es una cuenta de admin: no se suspende desde aquí. Para quitarle el acceso, se borra su fila de admins.
-          </Aviso>
-        ) : (puedeSuspender || puedeReactivar) && (
+        <div>
+        {d.es_admin && (
+          <TarjetaMfa d={d} esMiCuenta={yo === d.id} onAbrir={() => { setOk(null); setModalMfa(true); }} />
+        )}
+        {(puedeSuspender || puedeReactivar) && (
           <div className="tarjeta">
             <div className="titulo-seccion">{puedeSuspender ? 'Suspender' : 'Reactivar'}</div>
             {puedeSuspender && d.publicaciones_pendientes > 0 && (
@@ -210,7 +238,76 @@ export function DetalleCuenta({ id, desde, ir }: { id: string; desde?: number; i
               : <button type="button" className="btn forest-btn" disabled={!valido || ocupado} onClick={() => void actuar('reactivar')}>Reactivar cuenta</button>}
           </div>
         )}
+        </div>
       </div>
+      {modalMfa && (
+        <ModalRestablecerMfa userId={d.id} nombre={d.nombre ?? 'esta cuenta'}
+          intentoPendiente={d.restablecimiento_pendiente}
+          onCerrar={() => setModalMfa(false)}
+          onCambio={() => setRecarga((n) => n + 1)}
+          onHecho={() => {
+            setModalMfa(false);
+            setOk('App autenticadora restablecida. Su acceso queda desactivado hasta que registre una nueva y el admin técnico vuelva a activarlo.');
+            setRecarga((n) => n + 1);
+          }} />
+      )}
     </>
+  );
+}
+
+/**
+ * La tarjeta "Restablecer app autenticadora" del frame de la cuenta de admin y
+ * sus variantes: propia cuenta (sin botón), restablecimiento pendiente (reanuda
+ * ESE intento), sin app registrada (sin botón), acceso ya desactivado y el
+ * estado normal. Qué se puede de verdad lo decide la base; esto es UX.
+ */
+function TarjetaMfa({ d, esMiCuenta, onAbrir }: { d: DetalleUsuario; esMiCuenta: boolean; onAbrir: () => void }) {
+  const boton = (
+    <button type="button" className="btn danger-btn" onClick={onAbrir}>Restablecer app autenticadora</button>
+  );
+  if (esMiCuenta) {
+    return (
+      <Aviso tipo="neutro" icono={<IconShield tam={12} clase="icono-blanco" />}>
+        Es tu cuenta: no puedes restablecer tu propia app autenticadora. Si perdiste el teléfono, pídeselo a otro admin por llamada de voz.
+      </Aviso>
+    );
+  }
+  if (d.restablecimiento_pendiente !== null) {
+    return (
+      <div className="tarjeta">
+        <div className="titulo-seccion">Restablecer app autenticadora</div>
+        <Aviso>El restablecimiento anterior quedó pendiente. Inténtalo de nuevo para completarlo.</Aviso>
+        {boton}
+      </div>
+    );
+  }
+  if (!d.admin_activado && !d.app_registrada) {
+    return (
+      <Aviso tipo="neutro" icono={<IconShield tam={12} clase="icono-blanco" />}>
+        No tiene app autenticadora registrada. Cuando registre una, el admin técnico la activa después de confirmar con ella por llamada.
+      </Aviso>
+    );
+  }
+  return (
+    <div className="tarjeta">
+      <div className="titulo-seccion">Restablecer app autenticadora</div>
+      {d.admin_activado ? (
+        <>
+          <div className="texto-suave">Para cuando perdió o cambió el teléfono donde tiene su app autenticadora.</div>
+          <br />
+          <Aviso>Antes, confírmalo con esta persona <b>por llamada de voz</b>, a un número que ya tengas suyo.</Aviso>
+          <div className="texto-suave">
+            Su acceso al panel se desactiva en ese momento.<br />
+            Se elimina la app autenticadora registrada en su cuenta. Nadie ve ni recibe un código nuevo.<br />
+            Su cuenta no se borra: conserva su correo y su contraseña.<br />
+            Para volver a entrar, registra la app en su teléfono nuevo y el admin técnico la activa después de confirmar con ella.
+          </div>
+        </>
+      ) : (
+        <div className="texto-suave">Su acceso ya está desactivado: al restablecer solo se elimina la app autenticadora registrada en su cuenta.</div>
+      )}
+      <br />
+      {boton}
+    </div>
   );
 }
