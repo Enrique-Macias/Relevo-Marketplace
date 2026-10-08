@@ -2515,8 +2515,10 @@ select pg_temp.assert(
   and not has_function_privilege('authenticated', 'private.sella_resolved_at()', 'execute')
   and not (select prosecdef from pg_proc where oid = 'private.sella_resolved_at()'::regprocedure)
   -- RF-17, Ola 4 (20261007000480): definer que lee el estado de OTRO usuario.
-  and not has_function_privilege('authenticated', 'private.exige_dueno_activo()', 'execute'),
-  'las 21 funciones que solo disparan por trigger siguen revocadas');
+  and not has_function_privilege('authenticated', 'private.exige_dueno_activo()', 'execute')
+  -- RF-17, Ola 4 (20261007000482): definer que escribe el registro retenido.
+  and not has_function_privilege('authenticated', 'private.retiene_moderacion()', 'execute'),
+  'las 22 funciones que solo disparan por trigger siguen revocadas');
 
 -- Las DOS funciones de trigger que NO están en la lista de arriba, a
 -- propósito: `set_updated_at()` y `limpia_veredicto_en_pantalla()` son
@@ -2816,6 +2818,28 @@ select pg_temp.assert(
                   where grantee in ('authenticated', 'anon') and table_schema = 'private'
                     and table_name in ('admins', 'admin_acciones')),
   'private.admins y private.admin_acciones no tienen ni un privilegio para authenticated ni anon');
+
+-- RF-17, Ola 4 (20261007000482): `private.moderacion_retenida`, el registro
+-- mínimo de moderación de las bloqueadas eliminadas. Las dos gemelas de
+-- `listing_moderacion` (tabla Y columna, y ninguna policy), más RLS habilitado:
+-- `authenticated` tiene USAGE sobre `private`, así que el `revoke all` es todo el
+-- control de acceso. Y la lista blanca, que solo llama el trigger, revocada.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where grantee in ('authenticated', 'anon')
+                and table_schema = 'private' and table_name = 'moderacion_retenida')
+  and not exists (select 1 from information_schema.column_privileges
+                  where grantee in ('authenticated', 'anon')
+                    and table_schema = 'private' and table_name = 'moderacion_retenida')
+  and not exists (select 1 from pg_policies
+                  where schemaname = 'private' and tablename = 'moderacion_retenida')
+  and (select relrowsecurity from pg_class where oid = 'private.moderacion_retenida'::regclass),
+  'private.moderacion_retenida: sin privilegios para authenticated ni anon, sin policies y con RLS');
+
+select pg_temp.assert(
+  not has_function_privilege('authenticated', 'private.minimo_moderacion(jsonb)', 'execute')
+  and not has_function_privilege('anon', 'private.minimo_moderacion(jsonb)', 'execute'),
+  'private.minimo_moderacion está revocada a authenticated y anon');
 
 -- Schema `admin`: authenticated lo usa, anon no.
 select pg_temp.assert(
@@ -6522,6 +6546,158 @@ select pg_temp.assert(
   pg_temp.rechazo_aal(:A35d::uuid, 'aal1', pg_temp.amr_totp(1),
     format('select admin.aprobar_listing(%s, %L)', :d_sinev, 'motivo de prueba')) = '42501:mfa_requerido',
   'T35d (p) un admin aal1 recibe mfa_requerido');
+
+-- ---------------------------------------------------------------------------
+\echo ''
+\echo '== T35e — registro mínimo de moderación de una bloqueada eliminada (RF-17, Ola 4) =='
+-- 20261007000482. Autocontenida: universidad `rls-t35f.mx`; admin `:A35f`;
+-- dueño `:D35f` con dos bloqueadas (una se elimina, la otra se queda), una
+-- pendiente y una activa; y `:K35f`, que elimina su cuenta con una bloqueada.
+-- El `detalle` de las evaluaciones sembradas lleva A PROPÓSITO todo lo que la
+-- lista blanca tiene que dejar fuera: la ruta de la foto, una palabra de la
+-- lista y el texto de un error de OpenAI.
+\set A35f '''35f35f35-0000-0000-0000-00000000a35f'''
+\set D35f '''35f35f35-0000-0000-0000-00000000d35f'''
+\set K35f '''35f35f35-0000-0000-0000-00000000c35f'''
+
+insert into public.universidades (nombre) values ('RLS T35f Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t35f.mx', id from public.universidades where nombre = 'RLS T35f Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T35f Campus', 'Ciudad T35f' from public.universidades
+ where nombre = 'RLS T35f Universidad';
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:A35f, 'rls-t35f-a@rls-t35f.mx'), (:D35f, 'rls-t35f-d@rls-t35f.mx'),
+               (:K35f, 'rls-t35f-k@rls-t35f.mx')) as v(u, e);
+insert into private.admins (user_id, nombre, activado_at) values (:A35f::uuid, 'Admin T35f', now());
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+select u.id, 1, u.universidad_id, c.id, v.t, 50, 'nuevo', v.e::public.listing_status
+  from (values (:D35f, 'RLS T35f bloqueada se borra', 'bloqueada'),
+               (:D35f, 'RLS T35f bloqueada se queda', 'bloqueada'),
+               (:D35f, 'RLS T35f pendiente',          'pendiente'),
+               (:D35f, 'RLS T35f activa',             'activa'),
+               (:K35f, 'RLS T35f de la cuenta',       'bloqueada')) as v(uid, t, e)
+  join public.users u on u.id = v.uid::uuid
+  join public.campus c on c.universidad_id = u.universidad_id;
+
+select (select id from public.listings where titulo = 'RLS T35f bloqueada se borra') as f_bor,
+       (select id from public.listings where titulo = 'RLS T35f pendiente')          as f_pend,
+       (select id from public.listings where titulo = 'RLS T35f activa')             as f_act,
+       (select id from public.listings where titulo = 'RLS T35f de la cuenta')       as f_cta
+\gset
+
+insert into public.listing_moderacion (listing_id, veredicto, estado_resultante, detalle)
+values
+  (:f_bor, 'revisar', 'pendiente', jsonb_build_object(
+     'eje_que_manda', 'rekognition',
+     'ejes', jsonb_build_object('vision', 'limpio', 'rekognition', 'revisar'),
+     'gpt', jsonb_build_object('motivo', 'error_http', 'detalle', 'TEXTO_DE_ERROR_T35F'),
+     'lista_tecleada', '[]'::jsonb,
+     'lista_ocr', jsonb_build_array('PALABRA_T35F'),
+     'fotos', jsonb_build_array(jsonb_build_object(
+        'storage_path', :f_bor || '/RUTA_T35F.jpg', 'estado', 'evaluada',
+        'safe_search', jsonb_build_object('adult', 'VERY_UNLIKELY'),
+        'rekognition', jsonb_build_array(jsonb_build_object(
+           'name', 'Alcohol', 'confidence', 95.7, 'taxonomy_level', 1, 'parent_name', '')))))),
+  (:f_bor, 'bloquear', 'bloqueada', jsonb_build_object(
+     'eje_que_manda', 'listaTecleada',
+     'gpt', jsonb_build_object('veredicto', jsonb_build_object('articulo_prohibido', 'claro')),
+     'lista_tecleada', jsonb_build_array('PALABRA_T35F'))),
+  (:f_cta, 'bloquear', 'bloqueada', '{}'::jsonb);
+
+insert into private.admin_acciones (admin_id, admin_correo, accion, objetivo_tipo,
+                                    objetivo_id, antes, despues, motivo)
+values (:A35f::uuid, 'rls-t35f-a@rls-t35f.mx', 'bloquear_listing', 'listing', :f_bor::text,
+        '{"estado":"pendiente"}', '{"estado":"bloqueada"}', 'T35f: motivo del bloqueo')
+returning id as f_accion \gset
+
+-- (a) EL CAMINO REAL: el dueño activo elimina su bloqueada como authenticated
+-- (lo que hará `eliminar-publicacion` con su JWT). La fila retenida guarda la
+-- publicación, el dueño, las dos evaluaciones en orden y la acción del panel.
+select pg_temp.filas_como(:D35f::uuid,
+  format('delete from public.listings where id = %s', :f_bor)) as t35f_a \gset
+select pg_temp.assert(
+  :'t35f_a' = '1'
+  and (select count(*) from private.moderacion_retenida where listing_id = :f_bor) = 1
+  and (select user_id = :D35f::uuid
+              and jsonb_array_length(evaluaciones) = 2
+              and evaluaciones->0->>'veredicto' = 'revisar'
+              and evaluaciones->1->>'estado_resultante' = 'bloqueada'
+              and admin_accion_ids = array[:f_accion::bigint]
+              and retener_hasta between now() + interval '12 months' - interval '1 minute'
+                                    and now() + interval '12 months' + interval '1 minute'
+         from private.moderacion_retenida where listing_id = :f_bor),
+  'T35e (a) eliminar una bloqueada deja su registro: dueño, evaluaciones en orden, acción del panel y 12 meses');
+
+-- (b) Una `pendiente` o una `activa` eliminadas no son infracción: nada.
+delete from public.listings where id in (:f_pend, :f_act);
+select pg_temp.assert(
+  (select count(*) from private.moderacion_retenida where listing_id in (:f_pend, :f_act)) = 0,
+  'T35e (b) eliminar una pendiente o una activa no deja registro');
+
+-- (c) LA LISTA BLANCA: ni la ruta, ni la palabra, ni el texto del error. Sí el
+-- nivel por eje, la etiqueta de Rekognition con su confianza, SafeSearch, el
+-- motivo del fallo de GPT, el veredicto de GPT y CUÁNTAS coincidencias hubo.
+select pg_temp.assert(
+  (select evaluaciones::text not like '%RUTA_T35F%'
+          and evaluaciones::text not like '%PALABRA_T35F%'
+          and evaluaciones::text not like '%TEXTO_DE_ERROR_T35F%'
+          and evaluaciones::text not like '%storage_path%'
+          and evaluaciones::text not like '%parent_name%'
+          and evaluaciones->0->'detalle'->'ejes'->>'rekognition' = 'revisar'
+          and evaluaciones->0->'detalle'->'fotos'->0->'rekognition'->0->>'name' = 'Alcohol'
+          and (evaluaciones->0->'detalle'->'fotos'->0->'rekognition'->0->>'confidence')::numeric = 95.7
+          and evaluaciones->0->'detalle'->'fotos'->0->'safe_search'->>'adult' = 'VERY_UNLIKELY'
+          and evaluaciones->0->'detalle'->'gpt'->>'motivo' = 'error_http'
+          and (evaluaciones->0->'detalle'->>'coincidencias_lista_ocr')::int = 1
+          and evaluaciones->1->'detalle'->'gpt'->'veredicto'->>'articulo_prohibido' = 'claro'
+          and (evaluaciones->1->'detalle'->>'coincidencias_lista_tecleada')::int = 1
+     from private.moderacion_retenida where listing_id = :f_bor),
+  'T35e (c) el registro no guarda rutas, palabras ni textos de error; sí niveles, etiquetas y conteos');
+
+-- (d) Eliminar la CUENTA: el cascade borra su bloqueada y el registro queda,
+-- con su `user_id` (decisión del usuario; la cuenta ya no existe).
+-- El borrado se CAPTURA: si alguien le pone una FK a `user_id`, el insert del
+-- trigger falla dentro del cascade (la fila del dueño ya no es visible), y así
+-- cae aquí con nombre en vez de con un error crudo.
+select pg_temp.rechazo_de(null, format('delete from auth.users where id = %L', :K35f)) as t35f_d \gset
+select pg_temp.assert(
+  :'t35f_d' = 'ok'
+  and not exists (select 1 from public.users where id = :K35f::uuid)
+  and (select count(*) from private.moderacion_retenida
+        where listing_id = :f_cta and user_id = :K35f::uuid) = 1,
+  'T35e (d) eliminar la cuenta deja el registro de su bloqueada, con su user_id');
+
+-- (e) LA PURGA: se ejecuta el comando EXACTO del job (leído de cron.job, no
+-- transcrito) con una fila vencida y otra vigente.
+update private.moderacion_retenida set retener_hasta = now() - interval '1 second'
+ where listing_id = :f_cta;
+do $$
+begin
+  execute (select command from cron.job where jobname = 'purga-moderacion-retenida');
+end $$;
+select pg_temp.assert(
+  (select count(*) from private.moderacion_retenida where listing_id = :f_cta) = 0
+  and (select count(*) from private.moderacion_retenida where listing_id = :f_bor) = 1,
+  'T35e (e) el comando del job borra la fila vencida y conserva la vigente');
+
+-- (f) El job existe con su horario.
+select pg_temp.assert(
+  (select count(*) from cron.job
+    where jobname = 'purga-moderacion-retenida' and schedule = '17 4 * * *' and active) = 1,
+  'T35e (f) cron.job tiene la purga diaria activa');
+
+-- (g) El consumidor: `bloqueadas` = 1 bloqueada actual + 1 retenida vigente.
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A35f::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select (admin.detalle_usuario(%L)->>''bloqueadas'')', :D35f)) = '2',
+  'T35e (g) detalle_usuario.bloqueadas suma las bloqueadas actuales y las eliminadas retenidas');
 
 \echo ''
 \echo '==========================================='
