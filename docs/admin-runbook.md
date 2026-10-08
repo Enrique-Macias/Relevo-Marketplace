@@ -7,7 +7,7 @@ La versión técnica vive en `admin/CLAUDE.md` y en `docs/rf17-plan-admin.md`.
 
 El panel está en **https://admin.rlvo.com.mx**.
 
-*Estado a 2026-10-05. Lo que dice este documento sobre qué cubre el panel y sobre
+*Estado a 2026-10-07 (secciones 3 y 7; el resto, a 2026-10-05). Lo que dice este documento sobre qué cubre el panel y sobre
 los respaldos cambia con las Olas 3b a 6 y con la estrategia de respaldos: cuando
 cambie, se actualiza aquí.*
 
@@ -53,25 +53,20 @@ al admin técnico.
 
 ## 3. Antes de suspender a alguien
 
-Suspender a una cuenta pausa sus publicaciones activas, pero **no toca sus
-publicaciones "en revisión"**. Mientras no exista el candado de la Ola 4, una de
-esas publicaciones podría activarse sola aunque su dueño esté suspendido.
+Suspender a una cuenta pausa sus publicaciones activas y **deja sus publicaciones
+"en revisión" en revisión**. Desde el 2026-10-07 la base no deja activar una
+publicación de una cuenta suspendida por ningún camino (ni el panel, ni la
+revisión automática, ni Studio): se queda en revisión hasta que la cuenta se
+reactive, y entonces se aprueba o se bloquea como cualquier otra.
 
-- Si el panel muestra, al suspender, **"En revisión: N" con N mayor que 0**:
-  suspende igual (la suspensión importa más) y **avísale al admin técnico ese mismo
-  día**.
-- **El admin técnico**, después de cada aviso y una vez por semana, corre esto en
-  Studio:
-  ```sql
-  select l.id, l.estado, u.id as dueno
-    from public.listings l
-    join public.users u on u.id = l.user_id
-   where u.estado = 'suspendido' and l.estado in ('pendiente', 'activa');
-  ```
-  Si aparece una publicación **activa**, la pasa a `pausada` y anota el motivo fuera
-  de la base. Una **pendiente** no se aprueba mientras su dueño siga suspendido.
-- **En Studio, nunca se aprueba una publicación en revisión sin mirar antes si su
-  dueño está activo.**
+- Ya no hace falta avisar al admin técnico al suspender, ni la revisión semanal de
+  antes: era la regla provisional mientras faltaba este candado.
+- Si el panel todavía dice que una publicación en revisión "podría activarse aun
+  con la cuenta suspendida", es el texto viejo de antes del candado: ya no aplica
+  y desaparece con la siguiente actualización del panel.
+- Si en Studio alguien intenta pasar a `activa` una publicación de una cuenta
+  suspendida, la base responde con el error `dueno_no_activo`. Es el candado
+  funcionando, no una falla.
 
 ## 4. Bloquear una publicación
 
@@ -139,6 +134,22 @@ su cuenta; conviene que otro admin sea testigo de la llamada.
   `23514`. Studio no audita.
 - **Desbloquear una publicación** (sección 4) y **desactivar a un administrador**
   (secciones 5 y 6).
+- **Barrido de fotos huérfanas, cada lunes.** Una carpeta de `listing-photos` cuya
+  publicación ya no existe es basura: nadie la puede ver ni borrar desde la app (la
+  publicación siempre se crea ANTES de subir sus fotos, así que una carpeta sin
+  publicación solo queda después de un borrado que no alcanzó a limpiarla). En
+  Studio, de solo lectura:
+  ```sql
+  select split_part(o.name, '/', 1) as carpeta, count(*) as objetos
+    from storage.objects o
+   where o.bucket_id = 'listing-photos'
+     and not exists (select 1 from public.listings l
+                      where l.id::text = split_part(o.name, '/', 1))
+   group by 1 order by 1;
+  ```
+  Cada carpeta que aparezca se borra en Dashboard → Storage → `listing-photos`, y la
+  consulta se repite hasta que dé 0. Al escribir esto (2026-10-07) había una:
+  `57/`, con 1 objeto.
 
 ## 8. Respaldos: lo que hay y lo que no
 

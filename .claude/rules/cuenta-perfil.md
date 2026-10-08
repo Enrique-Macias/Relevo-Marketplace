@@ -613,6 +613,16 @@ mismo criterio que `campusChip`/`buttonWhatsapp`).
   suspensión" de "pausada por el usuario" — es el mismo estado, y diferenciarlo
   exigiría frame nuevo (§0 regla 4) y casi seguro una columna.
 
+- **[CERRADA el 2026-10-07 por `20261007000480`, en producción]** Cerrada como
+  esta misma entrada pedía, y junto con la ventana de las `pendiente` de un
+  suspendido: `listings_exige_dueno_activo_ins` (before insert, `when new.estado =
+  'activa'`) y `_upd` (before update of estado, con `old.estado is distinct
+  from`) lanzan `55000 dueno_no_activo` si el dueño no está activo, para todos los
+  roles. Su gemela (el insert `activa` con 0 fotos, `publicar-fotos.md`) NO se
+  cerró en el mismo cambio, contra lo que sugería el texto de abajo: el trigger de
+  fotos sigue cubriendo solo UPDATE. Las 6 fixtures de la suite que sembraban una
+  `activa` de un suspendido se corrigieron en el mismo commit (`883d0e7`). Texto
+  original:
 - **El pausado automático solo cubre UPDATE: una publicación creada `activa`
   para una cuenta YA suspendida se queda `activa`.** El trigger de
   `20260917000457` es `after update on public.users`, así que nada vuelve a mirar

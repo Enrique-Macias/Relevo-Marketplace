@@ -116,16 +116,17 @@ base —quién, cuándo y por qué— y le avisa al dueño por el canal de sopor
 
 ## Runbook de operación (los tres admins; versión en lenguaje llano: `docs/admin-runbook.md`)
 
-- **Antes de suspender a alguien, la regla del hueco del dueño suspendido** (se
-  acepta hasta la Ola 4, sin guard): si el panel avisa "En revisión: N" con N > 0,
-  se suspende igual y se le avisa al admin técnico el mismo día, porque esas N
-  `pendiente` pueden activarse solas. El admin técnico corre en Studio, tras cada
-  aviso y una vez por semana, `select l.id, l.estado, u.id from public.listings l
-  join public.users u on u.id = l.user_id where u.estado = 'suspendido' and
-  l.estado in ('pendiente', 'activa')`: una `activa` la pasa a `pausada` y anota el
-  motivo fuera de la base; una `pendiente` no se aprueba mientras su dueño siga
-  suspendido. Y en Studio nunca se aprueba una `pendiente` sin mirar
-  `users.estado` de su dueño.
+- **[RETIRADA el 2026-10-07] La regla del hueco del dueño suspendido (A1b).** El
+  candado vive en la base desde `20261007000480`: los triggers
+  `listings_exige_dueno_activo_ins`/`_upd` lanzan `55000 dueno_no_activo` ante
+  cualquier paso a `activa` de una publicación cuyo dueño no esté activo, para
+  todos los roles (Studio incluido), y `moderar-contenido` (v9) lo traduce a
+  `pendiente`. La consulta semanal y el aviso al suspender ya no hacen falta.
+  Hasta que se despliegue el panel de la Ola 4, el aviso de suspender sigue
+  diciendo "podría activarse" (`Usuarios.tsx`): es más cauteloso de la cuenta, no
+  peligroso; el frame ya tiene el texto nuevo.
+- **Barrido semanal de fotos huérfanas** (`docs/admin-runbook.md` §7): carpetas de
+  `listing-photos` sin publicación, que se borran desde el Dashboard.
 - **Perder el teléfono (o cambiarlo).** `is_admin()` NO mira `auth.mfa_factors`:
   borrar el factor deja `activado_at` puesto y cualquiera con la contraseña
   enrolaría uno nuevo y quedaría admin sin pasar por `activar`. Por eso el orden

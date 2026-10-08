@@ -1076,8 +1076,13 @@ suspendido ya no puede subir nuevas). Las 4 heredadas las resolvió el usuario
 en Studio el 2026-10-02 (UTC; las 4 quedaron `bloqueada`); desde entonces las
 `pendiente` nuevas pasan por el reclamo en cuanto se invoca la función, y un alta
 abandonada antes de invocarla seguiría sin reclamo. El
-hueco general del dueño suspendido se acepta hasta la Ola 4, con la regla de
-`docs/admin-runbook.md`; el fix es el trigger `dueno_no_activo`.
+hueco general del dueño suspendido **se cerró el 2026-10-07** con el trigger
+`dueno_no_activo` (`20261007000480`): la promoción choca con él y
+`moderarListing()` (v9) deja la publicación en `pendiente` con
+`detalle.descartado_por_dueno_no_activo`, responde 200 y completa el reclamo.
+`probe-moderacion-http.mjs` §9 lo prueba. En el mismo despliegue el TTL del
+reclamo pasó de 60 s a 180 s (por encima del wall-clock de 150 s del plan Free)
+y los tres `fetch` a terceros ganaron `AbortSignal.timeout(20 s)`.
 
 ### 5.2. El `with_check` de `listings_insert_own`
 

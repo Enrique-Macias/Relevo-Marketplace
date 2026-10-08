@@ -1749,6 +1749,13 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   desactivación. A 2026-10-05 hay 3 admins: uno `@rlvo.com.mx` y dos con correo
   personal.
   Nada de esto toca el registro de usuarios normales (`admin/CLAUDE.md`).
+- **[CERRADA el 2026-10-07 por `20261007000480`, en producción, con
+  `moderar-contenido` v9 desplegada antes]** Los triggers
+  `listings_exige_dueno_activo_ins`/`_upd` lanzan `55000 dueno_no_activo` ante
+  cualquier paso a `activa` de un dueño no activo, para todos los roles; la
+  función lo traduce a `pendiente` (auditoría con
+  `descartado_por_dueno_no_activo`). La regla A1b del runbook se retiró. Lo
+  vigila T35b. El texto de antes, tal como estaba:
 - **Deuda que el panel vuelve más alcanzable**: una `pendiente` de un dueño ya
   suspendido se puede activar (camino de usuario de `moderar-contenido`, o
   Studio). `detalle_usuario` la hace visible y el fix es la Ola 4 (trigger
@@ -4064,7 +4071,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - Toda re-evaluación vuelve a tirar el dado de GPT sobre texto que no cambió → `moderacion.md`
 - La cola de `pendiente` mezcla lo marcado por moderación con lo abandonado a media subida → `moderacion.md`
 - La promoción de `moderarListing()` puede reventar con 500 si intenta activar una publicación con 0 fotos → `moderacion.md`
-- El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa` → `cuenta-perfil.md`
+- ~~El pausado al suspender solo cubre UPDATE: una publicación creada para una cuenta YA suspendida nace `activa`~~ **[CERRADA]** por `20261007000480` (`listings_exige_dueno_activo_ins`) → `cuenta-perfil.md`
 - "Calificar la app"/"Compartir la app" ocultas hasta que la app esté publicada (`APP_PUBLICADA`); "Calificar" además exige la URL de la tienda de esa plataforma → `cuenta-perfil.md`
 - "Aviso de privacidad"/"Términos de uso" ocultas hasta que exista una URL real (`URL_PRIVACIDAD`/`URL_TERMINOS`) → `cuenta-perfil.md`
 - ~~"Eliminar cuenta" existe en el frame y en el código (oculta) pero su flujo todavía no existe~~ **[CERRADA]** por `20260929000474` + `eliminar-cuenta` → `cuenta-perfil.md`
@@ -4094,7 +4101,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - El cursor de "Recomendados para ti" es un puntaje: quitar un favorito o un contacto a media lista puede saltar tarjetas hasta el siguiente refresh → `explorar.md`
 - "Recomendados para ti" ordena TODO el alcance por puntaje en cada página (sin índice posible; 21 ms en "todo" con 80k) → `explorar.md`
 - Un favorito o contacto sobre una publicación ajena hoy oculta no da señal al ranking (efecto de ser INVOKER) → CLAUDE.md §3, "Intereses y recomendados"
-- Una `pendiente` de un dueño ya suspendido se puede activar (camino de usuario de `moderar-contenido`, o Studio); el panel la hace visible, se aceptó hasta la Ola 4 con una regla de runbook (`docs/admin-runbook.md`) y el fix es `dueno_no_activo` (Ola 4 de RF-17) → `cuenta-perfil.md`
+- ~~Una `pendiente` de un dueño ya suspendido se puede activar~~ **[CERRADA]** por `20261007000480` (trigger `dueno_no_activo`, en producción desde 2026-10-07) → `cuenta-perfil.md`
 - `.easignore` es copia literal de `.gitignore` y no se ha verificado contra el tarball de un build real de EAS → CLAUDE.md §8, pendiente 0i
 
 **Inventario de componentes reutilizables (`src/components/`) — no los
