@@ -316,6 +316,19 @@ async function main() {
     ok(`7c los ${lanzados.length} mensajes de admin.* tienen un texto decidido en rechazos.ts`,
       lanzados.length > 0 && sinDecidir.length === 0, sinDecidir.join(', ') || lanzados.join(', '));
 
+    // 7d: EL TTL DEL RECLAMO ESTÁ ESCRITO DOS VECES (Ola 4): `TTL_RECLAMO_MS` de
+    // moderar-contenido y el `interval` de `admin.aprobar_listing`, que toma el
+    // mismo reclamo para aprobar. Desincronizados no dan ningún error: el panel
+    // liberaría (o respetaría) un reclamo que la función trata distinto. Se lee
+    // el fuente de la función y el prosrc VIVO, y se comparan en milisegundos.
+    const fuenteFuncion = readFileSync(
+      new URL('../supabase/functions/moderar-contenido/index.ts', import.meta.url), 'utf8');
+    const ttlFuncion = Number(fuenteFuncion.match(/const TTL_RECLAMO_MS = ([\d_]+);/)?.[1].replace(/_/g, ''));
+    const fuenteAprobar = sql("select prosrc from pg_proc where oid = 'admin.aprobar_listing(bigint,text)'::regprocedure");
+    const intervalos = [...fuenteAprobar.matchAll(/interval '(\d+) seconds'/g)].map((m) => Number(m[1]) * 1000);
+    ok(`7d el TTL del reclamo coincide: moderar-contenido ${ttlFuncion} ms, aprobar_listing ${intervalos.join(',')} ms`,
+      Number.isFinite(ttlFuncion) && intervalos.length === 1 && intervalos[0] === ttlFuncion);
+
     // -------------------------------------------------------------------
     // 8. El camino de `--remoto` (Ola 3), contra el stack LOCAL: una conexión
     // por PG* (TCP dentro del contenedor, la contraseña por defecto del stack

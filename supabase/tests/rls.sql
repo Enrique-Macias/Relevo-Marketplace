@@ -5415,8 +5415,8 @@ select pg_temp.assert(
 -- Que el servicio de Storage propague `aal`/`amr` por HTTP lo prueba
 -- `scripts/probe-storage.mjs`.
 --
--- Las (c)-(f) del plan (la policy del DUEÑO sobre una `bloqueada`) son de la
--- Ola 4 y no están aquí.
+-- Las (c)-(f) del plan (la policy del DUEÑO sobre una `bloqueada`) llegaron
+-- con la Ola 4: sección "T35c (Ola 4)", más abajo.
 
 \set A35c '''35c35c35-0000-0000-0000-00000000a35c'''
 \set S35c '''35c35c35-0000-0000-0000-00000000535c'''
@@ -6087,6 +6087,441 @@ select pg_temp.rechazo_msg(
 select pg_temp.assert(
   :'t35b_e' = '55000:dueno_no_activo',
   'T35b (e) una activa cuyo dueño no existe lanza 55000:dueno_no_activo, no 23503');
+
+-- ---------------------------------------------------------------------------
+\echo ''
+\echo '== T35c (Ola 4) — el dueño de una bloqueada ya no ve ni escribe sus fotos (D5) =='
+-- 20261007000481, sección 4. Autocontenida: universidad `rls-t35e.mx`, dueño
+-- ACTIVO `:D35e` (el caso de D5 es justo el activo: un suspendido ya no escribe
+-- por is_active_user()) y un tercero `:T35e`. Tres publicaciones del dueño:
+-- `bloqueada`, `pendiente` y `activa`, cada una con su fila en `listing_photos` y
+-- su objeto en el bucket, sembrados como `postgres` igual que T14.
+--
+-- `filas_como` ejecuta como authenticated y devuelve el ROW_COUNT, o el
+-- SQLSTATE si lanza: aquí importa distinguir "0 filas" (filtrado por RLS, no
+-- lanza) de "rechazo" (42501), y `as_user_int` no da el conteo de un DML.
+-- Las de Storage ponen `storage.allow_delete_query`, como la Storage API: sin
+-- él, `storage.protect_delete` (BEFORE por sentencia) lanza antes que la RLS y
+-- la prueba pasaría por la razón equivocada.
+create or replace function pg_temp.filas_como(p_uid uuid, p_sql text)
+returns text language plpgsql as $$
+declare v_n int;
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  perform set_config('storage.allow_delete_query', 'true', true);
+  perform set_config('role', 'authenticated', true);
+  execute p_sql;
+  get diagnostics v_n = row_count;
+  perform set_config('role', 'postgres', true);
+  perform set_config('storage.allow_delete_query', 'false', true);
+  return v_n::text;
+exception when others then
+  perform set_config('role', 'postgres', true);
+  perform set_config('storage.allow_delete_query', 'false', true);
+  return sqlstate;
+end $$;
+
+\set D35e '''35e35e35-0000-0000-0000-00000000d35e'''
+\set T35e '''35e35e35-0000-0000-0000-00000000735e'''
+
+insert into public.universidades (nombre) values ('RLS T35e Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t35e.mx', id from public.universidades where nombre = 'RLS T35e Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T35e Campus', 'Ciudad T35e' from public.universidades
+ where nombre = 'RLS T35e Universidad';
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:D35e, 'rls-t35e-d@rls-t35e.mx'), (:T35e, 'rls-t35e-t@rls-t35e.mx')) as v(u, e);
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+select u.id, 1, u.universidad_id, c.id, v.t, 50, 'nuevo', v.e::public.listing_status
+  from public.users u join public.campus c on c.universidad_id = u.universidad_id,
+       (values ('RLS T35e bloqueada', 'bloqueada'), ('RLS T35e pendiente', 'pendiente'),
+               ('RLS T35e activa', 'activa')) as v(t, e)
+ where u.id = :D35e::uuid;
+
+select (select id from public.listings where titulo = 'RLS T35e bloqueada') as t35e_bloq,
+       (select id from public.listings where titulo = 'RLS T35e pendiente') as t35e_pend,
+       (select id from public.listings where titulo = 'RLS T35e activa')    as t35e_act
+\gset
+
+insert into public.listing_photos (listing_id, storage_path, orden)
+values (:t35e_bloq, :t35e_bloq || '/a.jpg', 0), (:t35e_pend, :t35e_pend || '/a.jpg', 0),
+       (:t35e_act, :t35e_act || '/a.jpg', 0);
+insert into storage.objects (bucket_id, name)
+values ('listing-photos', :t35e_bloq || '/a.jpg'), ('listing-photos', :t35e_pend || '/a.jpg'),
+       ('listing-photos', :t35e_act || '/a.jpg');
+
+select pg_temp.assert(
+  (select count(*) from public.listing_photos
+    where listing_id in (:t35e_bloq, :t35e_pend, :t35e_act)) = 3
+  and (select count(*) from storage.objects
+        where name in (:t35e_bloq || '/a.jpg', :t35e_pend || '/a.jpg', :t35e_act || '/a.jpg')) = 3,
+  'precondición T35c (Ola 4): 3 publicaciones del dueño, cada una con su fila y su objeto');
+
+-- (c) El objeto de su BLOQUEADA ya no lo ve el dueño (la condición portante).
+select pg_temp.assert(
+  pg_temp.as_user_int(:D35e::uuid, format(
+    'select count(*) from storage.objects where bucket_id = ''listing-photos'' and name = %L',
+    :t35e_bloq || '/a.jpg')) = 0,
+  'T35c (c) el dueño NO ve el objeto de su bloqueada');
+
+-- (d) Los de su PENDIENTE y su ACTIVA, sí. Sin esto, una condición escrita como
+-- `not in ('pendiente','bloqueada')` pasaría (c) escondiéndole de más.
+select pg_temp.assert(
+  pg_temp.as_user_int(:D35e::uuid, format(
+    'select count(*) from storage.objects where bucket_id = ''listing-photos'' and name in (%L, %L)',
+    :t35e_pend || '/a.jpg', :t35e_act || '/a.jpg')) = 2,
+  'T35c (d) el dueño SÍ ve los objetos de su pendiente y de su activa');
+
+-- (e) Un tercero no ve la `pendiente` (listings_select la esconde) y sí la activa.
+select pg_temp.assert(
+  pg_temp.as_user_int(:T35e::uuid, format(
+    'select count(*) from storage.objects where bucket_id = ''listing-photos'' and name = %L',
+    :t35e_pend || '/a.jpg')) = 0
+  and pg_temp.as_user_int(:T35e::uuid, format(
+    'select count(*) from storage.objects where bucket_id = ''listing-photos'' and name = %L',
+    :t35e_act || '/a.jpg')) = 1,
+  'T35c (e) un tercero no ve el objeto de una pendiente ajena y sí el de una activa');
+
+-- (f) La tabla espejea: sin filas de la bloqueada para su dueño, con las otras dos.
+select pg_temp.assert(
+  pg_temp.as_user_int(:D35e::uuid, format(
+    'select count(*) from public.listing_photos where listing_id = %s', :t35e_bloq)) = 0
+  and pg_temp.as_user_int(:D35e::uuid, format(
+    'select count(*) from public.listing_photos where listing_id in (%s, %s)',
+    :t35e_pend, :t35e_act)) = 2,
+  'T35c (f) en la tabla listing_photos, el dueño no ve la fila de su bloqueada y sí las otras');
+
+-- (g) INSERT de una fila nueva para su bloqueada: rechazado. Hoy (antes de
+-- …481) pasaba, medido: `listing_photos_insert_own` no miraba el estado.
+select pg_temp.assert(
+  pg_temp.filas_como(:D35e::uuid, format(
+    'insert into public.listing_photos (listing_id, storage_path, orden) values (%s, %L, 1)',
+    :t35e_bloq, :t35e_bloq || '/b.jpg')) = '42501',
+  'T35c (g) el dueño no puede insertar filas de fotos en su bloqueada');
+
+-- (h) e (i) UPDATE y DELETE filtrando por la publicación: 0 filas, y la fila
+-- sigue intacta (comprobado como postgres en otra sentencia).
+select pg_temp.filas_como(:D35e::uuid, format(
+  'update public.listing_photos set orden = 3 where listing_id = %s', :t35e_bloq)) as t35e_h \gset
+select pg_temp.filas_como(:D35e::uuid, format(
+  'delete from public.listing_photos where listing_id = %s', :t35e_bloq)) as t35e_i \gset
+select pg_temp.assert(
+  :'t35e_h' = '0' and :'t35e_i' = '0'
+  and (select orden from public.listing_photos where listing_id = :t35e_bloq) = 0,
+  'T35c (h)(i) el dueño no reordena ni borra las filas de fotos de su bloqueada');
+
+-- (j) DELETE SIN WHERE: aísla la policy de DELETE de la de SELECT (CLAUDE.md §9:
+-- con WHERE, la de SELECT filtra antes y la de DELETE no se prueba). El dueño
+-- sí borra las de su pendiente y su activa (sus policies lo permiten); la de la
+-- bloqueada tiene que sobrevivir.
+select pg_temp.filas_como(:D35e::uuid, 'delete from public.listing_photos') as t35e_j \gset
+select pg_temp.assert(
+  (select count(*) from public.listing_photos where listing_id = :t35e_bloq) = 1,
+  'T35c (j) un DELETE sin WHERE del dueño no alcanza la fila de su bloqueada');
+insert into public.listing_photos (listing_id, storage_path, orden)
+select v.id, v.id || '/a.jpg', 0
+  from (values (:t35e_pend), (:t35e_act)) as v(id)
+ where not exists (select 1 from public.listing_photos p where p.listing_id = v.id);
+
+-- (k) Storage, las cuatro operaciones del dueño sobre `{id}/` de su bloqueada:
+-- subir un objeto nuevo (rechazo; antes de …481 pasaba sin RETURNING, medido),
+-- sobrescribir (0), borrar con WHERE y sin WHERE (0). El objeto sigue ahí.
+select pg_temp.filas_como(:D35e::uuid, format(
+  'insert into storage.objects (bucket_id, name) values (''listing-photos'', %L)',
+  :t35e_bloq || '/nuevo.jpg')) as t35e_k1 \gset
+select pg_temp.filas_como(:D35e::uuid, format(
+  'update storage.objects set metadata = ''{}'' where bucket_id = ''listing-photos'' and name = %L',
+  :t35e_bloq || '/a.jpg')) as t35e_k2 \gset
+select pg_temp.filas_como(:D35e::uuid, format(
+  'delete from storage.objects where bucket_id = ''listing-photos'' and name = %L',
+  :t35e_bloq || '/a.jpg')) as t35e_k3 \gset
+select pg_temp.filas_como(:D35e::uuid, format(
+  'delete from storage.objects where bucket_id = ''listing-photos'' and name like %L',
+  :t35e_bloq || '/%')) as t35e_k4 \gset
+select pg_temp.assert(
+  :'t35e_k1' = '42501' and :'t35e_k2' = '0' and :'t35e_k3' = '0' and :'t35e_k4' = '0'
+  and (select count(*) from storage.objects where name = :t35e_bloq || '/a.jpg') = 1
+  and (select count(*) from storage.objects where name = :t35e_bloq || '/nuevo.jpg') = 0,
+  'T35c (k) en el bucket, el dueño no sube, no sobrescribe ni borra en la carpeta de su bloqueada');
+
+-- (k2) Control de radio de (k): sobre su ACTIVA el mismo dueño sí sobrescribe.
+-- Sin esto, (k) no distinguiría "bloqueado por estado" de "bloqueado por todo".
+select pg_temp.assert(
+  pg_temp.filas_como(:D35e::uuid, format(
+    'update storage.objects set metadata = ''{}'' where bucket_id = ''listing-photos'' and name = %L',
+    :t35e_act || '/a.jpg')) = '1',
+  'T35c (k2) sobre su activa, el mismo dueño sí escribe en el bucket');
+
+-- (l) Y no se desbloquea ni la edita: `listings_update_own` excluye `bloqueada`
+-- de su `using`, que se evalúa contra la fila vieja → 0 filas, sin error.
+select pg_temp.filas_como(:D35e::uuid, format(
+  'update public.listings set estado = ''pausada'' where id = %s', :t35e_bloq)) as t35e_l1 \gset
+select pg_temp.filas_como(:D35e::uuid, format(
+  'update public.listings set titulo = ''RLS T35e editada'' where id = %s', :t35e_bloq)) as t35e_l2 \gset
+select pg_temp.assert(
+  :'t35e_l1' = '0' and :'t35e_l2' = '0'
+  and (select estado from public.listings where id = :t35e_bloq) = 'bloqueada',
+  'T35c (l) el dueño no puede desbloquear ni editar su bloqueada');
+
+-- ---------------------------------------------------------------------------
+\echo ''
+\echo '== T35d — cola de moderación y aprobar (RF-17, Ola 4) =='
+-- 20261007000481, secciones 1-3. Autocontenida: universidad `rls-t35d.mx` y
+-- sus cuentas:
+--   :A35d — admin activado (actúa); dueño de una pendiente (G4).
+--   :X35d — otro admin, dueño de una pendiente (G5).
+--   :S35d — dueño activo, no admin: también el llamante no-admin.
+--   :Z35d — dueño que se suspende (G7).
+-- Todas las pendiente se siembran con los dueños ACTIVOS y con foto, salvo la
+-- de `sin_fotos`; `:Z35d` se suspende después.
+\set A35d '''35d35d35-0000-0000-0000-00000000a35d'''
+\set X35d '''35d35d35-0000-0000-0000-00000000c35d'''
+\set S35d '''35d35d35-0000-0000-0000-00000000535d'''
+\set Z35d '''35d35d35-0000-0000-0000-00000000235d'''
+
+insert into public.universidades (nombre) values ('RLS T35d Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t35d.mx', id from public.universidades where nombre = 'RLS T35d Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T35d Campus', 'Ciudad T35d' from public.universidades
+ where nombre = 'RLS T35d Universidad';
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:A35d, 'rls-t35d-a@rls-t35d.mx'), (:X35d, 'rls-t35d-x@rls-t35d.mx'),
+               (:S35d, 'rls-t35d-s@rls-t35d.mx'), (:Z35d, 'rls-t35d-z@rls-t35d.mx')) as v(u, e);
+
+insert into private.admins (user_id, nombre, activado_at)
+values (:A35d::uuid, 'Admin T35d', now()), (:X35d::uuid, 'Otro admin T35d', now());
+
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+select u.id, 1, u.universidad_id, c.id, v.t, 50, 'nuevo', v.e::public.listing_status
+  from (values (:S35d, 'RLS T35d aprobable',   'pendiente'),
+               (:S35d, 'RLS T35d sin evaluar', 'pendiente'),
+               (:S35d, 'RLS T35d sin fotos',   'pendiente'),
+               (:Z35d, 'RLS T35d dueño susp',  'pendiente'),
+               (:X35d, 'RLS T35d de otro admin', 'pendiente'),
+               (:A35d, 'RLS T35d del admin',   'pendiente'),
+               (:S35d, 'RLS T35d activa',      'activa'),
+               (:S35d, 'RLS T35d en vuelo',    'pendiente'),
+               (:S35d, 'RLS T35d vencido',     'pendiente'),
+               (:S35d, 'RLS T35d completado',  'pendiente')) as v(uid, t, e)
+  join public.users u on u.id = v.uid::uuid
+  join public.campus c on c.universidad_id = u.universidad_id;
+
+create temp table t35d as
+select titulo, id from public.listings where titulo like 'RLS T35d %';
+
+insert into public.listing_photos (listing_id, storage_path, orden)
+select id, id || '/t35d.jpg', 0 from t35d where titulo <> 'RLS T35d sin fotos';
+
+-- Una evaluación para todas salvo "sin evaluar", y la de "aprobable" con un
+-- detalle reconocible para comprobar que la cola trae la ÚLTIMA.
+insert into public.listing_moderacion (listing_id, veredicto, estado_resultante, detalle)
+select id, 'limpio', 'pendiente', '{"orden": 1}'::jsonb
+  from t35d where titulo not in ('RLS T35d sin evaluar', 'RLS T35d activa');
+insert into public.listing_moderacion (listing_id, veredicto, estado_resultante, detalle)
+select id, 'revisar', 'pendiente', '{"orden": 2}'::jsonb
+  from t35d where titulo = 'RLS T35d aprobable';
+
+insert into public.listing_moderacion_reclamos (listing_id, reclamada_at, completada_at)
+select id, now() - interval '179 seconds', null::timestamptz from t35d where titulo = 'RLS T35d en vuelo'
+union all
+select id, now() - interval '181 seconds', null::timestamptz from t35d where titulo = 'RLS T35d vencido'
+union all
+select id, now() - interval '1 day', now() - interval '1 day' from t35d where titulo = 'RLS T35d completado';
+
+update public.users set estado = 'suspendido', suspendido_at = now(),
+                        suspension_motivo = 'T35d: dueño suspendido'
+ where id = :Z35d::uuid;
+
+select (select id from t35d where titulo = 'RLS T35d aprobable')     as d_ok,
+       (select id from t35d where titulo = 'RLS T35d sin evaluar')   as d_sinev,
+       (select id from t35d where titulo = 'RLS T35d sin fotos')     as d_sinfoto,
+       (select id from t35d where titulo = 'RLS T35d dueño susp')    as d_susp,
+       (select id from t35d where titulo = 'RLS T35d de otro admin') as d_otroadm,
+       (select id from t35d where titulo = 'RLS T35d del admin')     as d_propia,
+       (select id from t35d where titulo = 'RLS T35d activa')        as d_activa,
+       (select id from t35d where titulo = 'RLS T35d en vuelo')      as d_vuelo,
+       (select id from t35d where titulo = 'RLS T35d vencido')       as d_vencido,
+       (select id from t35d where titulo = 'RLS T35d completado')    as d_compl
+\gset
+
+select pg_temp.assert(
+  (select count(*) from t35d) = 10
+  and (select count(*) from public.listings where id in (select id from t35d) and estado = 'pendiente') = 9,
+  'precondición T35d: 10 publicaciones, 9 pendiente (la de Z sigue pendiente tras suspenderlo)');
+
+-- (a) Un no-admin no llama a ninguna de las dos.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:S35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select count(*) from admin.cola_moderacion()') = '42501:no_admin'
+  and pg_temp.rechazo_aal(:S35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.aprobar_listing(%s, %L)', :d_ok, 'motivo de prueba')) = '42501:no_admin',
+  'T35d (a) un no-admin recibe no_admin en cola_moderacion y en aprobar_listing');
+
+-- (b) La cola: evaluadas y sin evaluar son conjuntos DISJUNTOS, solo
+-- `pendiente`, y la fila trae su ÚLTIMA evaluación y sus fotos.
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A35d::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select string_agg(id::text, '','' order by id) from admin.cola_moderacion(true, null, 100)
+      where id in (%s)', (select string_agg(id::text, ',') from t35d)))
+    = (select string_agg(id::text, ',' order by id) from t35d
+        where titulo not in ('RLS T35d sin evaluar', 'RLS T35d activa'))
+  and pg_temp.as_aal_text(:A35d::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select string_agg(id::text, '','') from admin.cola_moderacion(false, null, 100)
+      where id in (%s)', (select string_agg(id::text, ',') from t35d))) = :'d_sinev',
+  'T35d (b) evaluadas = las 8 pendiente con evaluación; sin evaluar = solo la que no tiene; nunca la activa');
+
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A35d::uuid, 'aal2', pg_temp.amr_totp(1), format(
+    'select (ultimo_veredicto = ''revisar'' and ultimo_detalle->>''orden'' = ''2''
+             and evaluaciones = 2 and fotos = array[%L] and dueno_estado = ''activo'')::text
+       from admin.cola_moderacion(true, null, 100) where id = %s',
+    :d_ok || '/t35d.jpg', :d_ok)) = 'true',
+  'T35d (b2) la fila trae la última evaluación, el conteo, las fotos y el estado del dueño');
+
+-- (c) Tope de la plantilla: 100 filas aunque se pidan 10 000. Con las 10 de
+-- arriba un `count(*) <= 100` pasaría con o sin tope, así que se siembran 101
+-- pendientes SIN evaluar más (el chip "Sin evaluar" las junta) y se exige
+-- EXACTAMENTE 100. Se borran después para no ensuciar las aserciones que siguen.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, precio, condicion, estado)
+select u.id, 1, u.universidad_id, c.id, 'RLS T35d tope ' || g, 50, 'nuevo', 'pendiente'
+  from public.users u join public.campus c on c.universidad_id = u.universidad_id,
+       generate_series(1, 101) g
+ where u.id = :S35d::uuid;
+select pg_temp.assert(
+  pg_temp.as_aal_text(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select count(*)::text from admin.cola_moderacion(false, null, 10000)') = '100',
+  'T35d (c) cola_moderacion devuelve exactamente 100 filas cuando hay más y se piden 10 000');
+delete from public.listings where titulo like 'RLS T35d tope %';
+
+-- (d)-(k) Cada guarda de aprobar_listing, por su `sqlstate:mensaje`.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.aprobar_listing(%s, %L)', :d_ok, '  x ')) = '22023:motivo_invalido',
+  'T35d (d) motivo de menos de 3 caracteres tras btrim → 22023:motivo_invalido');
+
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    'select admin.aprobar_listing(999999999, ''motivo de prueba'')') = 'P0002:listing_no_existe',
+  'T35d (e) publicación inexistente → P0002:listing_no_existe');
+
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.aprobar_listing(%s, %L)', :d_propia, 'motivo de prueba')) = '42501:no_sobre_si_mismo',
+  'T35d (f) una publicación propia del admin → 42501:no_sobre_si_mismo');
+
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.aprobar_listing(%s, %L)', :d_otroadm, 'motivo de prueba')) = '42501:objetivo_es_admin',
+  'T35d (g) una publicación de otro admin → 42501:objetivo_es_admin');
+
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.aprobar_listing(%s, %L)', :d_activa, 'motivo de prueba')) = '55000:estado_inesperado',
+  'T35d (h) una publicación que no está en pendiente → 55000:estado_inesperado');
+
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.aprobar_listing(%s, %L)', :d_susp, 'motivo de prueba')) = '55000:dueno_no_activo'
+  and (select estado from public.listings where id = :d_susp) = 'pendiente',
+  'T35d (i) dueño suspendido → 55000:dueno_no_activo, y sigue pendiente');
+
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.aprobar_listing(%s, %L)', :d_sinfoto, 'motivo de prueba')) = '55000:sin_fotos',
+  'T35d (j) sin fotos → 55000:sin_fotos');
+
+-- `aal_valor`: as_aal_text que CAPTURA el error y lo devuelve como
+-- `ERR:<sqlstate>:<mensaje>`. Lo usan (l)-(n), donde el camino feliz devuelve un
+-- valor: sin capturar, una regresión moriría con un error crudo en vez de en la
+-- aserción con nombre.
+create or replace function pg_temp.aal_valor(p_uid uuid, p_aal text, p_amr jsonb, p_sql text)
+returns text language plpgsql as $$
+declare v_out text;
+begin
+  perform set_config('request.jwt.claims', pg_temp.claims_aal(p_uid, p_aal, p_amr), true);
+  perform set_config('role', 'authenticated', true);
+  execute p_sql into v_out;
+  perform set_config('role', 'postgres', true);
+  return v_out;
+exception when others then
+  perform set_config('role', 'postgres', true);
+  return 'ERR:' || sqlstate || ':' || sqlerrm;
+end $$;
+
+-- (k) El reclamo EN VUELO (179 s, sin completar): no se aprueba, y el reclamo
+-- queda como estaba (la raise revierte todo, también el intento de tomarlo).
+select pg_temp.rechazo_aal(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.aprobar_listing(%s, %L)', :d_vuelo, 'motivo de prueba')) as t35d_k \gset
+select pg_temp.assert(
+  :'t35d_k' = '55000:moderacion_en_curso'
+  and (select estado from public.listings where id = :d_vuelo) = 'pendiente'
+  and (select completada_at is null from public.listing_moderacion_reclamos where listing_id = :d_vuelo),
+  'T35d (k) con un reclamo en vuelo (179 s) → 55000:moderacion_en_curso, nada cambia');
+
+-- (l) El reclamo VENCIDO (181 s): se libera, se toma completado y se aprueba.
+-- (k) y (l) juntos pinan el TTL de 180 s; el tripwire de probe-admin.mjs
+-- compara ese literal con TTL_RECLAMO_MS de moderar-contenido.
+select pg_temp.aal_valor(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.aprobar_listing(%s, %L)', :d_vencido, 'motivo de prueba')) as t35d_l \gset
+select pg_temp.assert(
+  :'t35d_l' = 'activa'
+  and (select estado from public.listings where id = :d_vencido) = 'activa'
+  and (select completada_at is not null from public.listing_moderacion_reclamos where listing_id = :d_vencido),
+  'T35d (l) con un reclamo vencido (181 s), se aprueba y el reclamo queda completado');
+
+-- (m) Un reclamo COMPLETADO no bloquea.
+select pg_temp.assert(
+  pg_temp.aal_valor(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.aprobar_listing(%s, %L)', :d_compl, 'motivo de prueba')) = 'activa',
+  'T35d (m) un reclamo completado no impide aprobar');
+
+-- (n) El camino feliz, sin reclamo previo: activa, auditada SOLO con estado,
+-- con el motivo, con el reclamo tomado completado y con el aviso al dueño.
+select pg_temp.aal_valor(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+  format('select admin.aprobar_listing(%s, %L)', :d_ok, '  Es una silla; falso positivo.  ')) as t35d_n \gset
+select pg_temp.assert(
+  :'t35d_n' = 'activa'
+  and (select estado from public.listings where id = :d_ok) = 'activa'
+  and (select count(*) from private.admin_acciones
+        where accion = 'aprobar_listing' and objetivo_tipo = 'listing' and objetivo_id = :d_ok::text
+          and admin_id = :A35d::uuid
+          and antes = '{"estado":"pendiente"}'::jsonb and despues = '{"estado":"activa"}'::jsonb
+          and motivo = 'Es una silla; falso positivo.') = 1
+  and (select completada_at is not null from public.listing_moderacion_reclamos where listing_id = :d_ok),
+  'T35d (n) aprobar: activa, auditada con {estado} y el motivo sin espacios, reclamo completado');
+
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where user_id = :S35d::uuid and listing_id = :d_ok and tipo = 'publicacion_aprobada') = 1,
+  'T35d (n2) el dueño recibe el aviso publicacion_aprobada');
+
+-- (o) Aprobarla otra vez: ya no está en pendiente.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35d::uuid, 'aal2', pg_temp.amr_totp(1),
+    format('select admin.aprobar_listing(%s, %L)', :d_ok, 'motivo de prueba')) = '55000:estado_inesperado',
+  'T35d (o) aprobar dos veces → 55000:estado_inesperado');
+
+-- (p) aal1 con TOTP reciente: lo rechaza exigir_admin (mfa_requerido), no las
+-- guardas de negocio.
+select pg_temp.assert(
+  pg_temp.rechazo_aal(:A35d::uuid, 'aal1', pg_temp.amr_totp(1),
+    format('select admin.aprobar_listing(%s, %L)', :d_sinev, 'motivo de prueba')) = '42501:mfa_requerido',
+  'T35d (p) un admin aal1 recibe mfa_requerido');
 
 \echo ''
 \echo '==========================================='

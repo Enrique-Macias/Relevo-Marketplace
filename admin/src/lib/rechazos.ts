@@ -30,8 +30,8 @@ export function clasificarRechazo(err: ErrorRpc | null | undefined): AccionRecha
 }
 
 /**
- * Texto para el admin. Los códigos los fijan 20260930000478 (guardas G1-G6) y
- * 20260930000479 (reportes y bloqueo). Es copy PERSISTENTE (un `.notice`), así
+ * Texto para el admin. Los códigos los fijan 20260930000478 (guardas G1-G6),
+ * 20260930000479 (reportes y bloqueo) y 20261007000481 (aprobar). Es copy PERSISTENTE (un `.notice`), así
  * que cada texto está dibujado en `design/admin-panel.html`.
  */
 const TEXTOS: Record<string, string> = {
@@ -40,6 +40,11 @@ const TEXTOS: Record<string, string> = {
   objetivo_es_admin: 'Esa cuenta es de un admin. Para quitarle el acceso, se borra su fila de admins.',
   usuario_no_existe: 'La cuenta ya no existe.',
   estado_inesperado: 'La cuenta cambió de estado mientras tanto. Recarga el detalle.',
+  // Ola 4 (20261007000481, `admin.aprobar_listing`): copy de las variantes del
+  // modal "Aprobar publicación" de `design/admin-panel.html`.
+  dueno_no_activo: 'La cuenta del dueño está suspendida: no se puede aprobar mientras siga así.',
+  sin_fotos: 'La publicación no tiene fotos: no se puede aprobar.',
+  moderacion_en_curso: 'La revisión automática de esta publicación sigue en curso. Inténtalo en unos minutos.',
   [NO_ADMIN]: 'Esta cuenta no es admin del panel.',
   [MFA_REQUERIDO]: 'Falta confirmar tu código de la app autenticadora.',
   [TOTP_VENCIDO]: 'Tu código de la app autenticadora venció. Confírmalo otra vez.',
