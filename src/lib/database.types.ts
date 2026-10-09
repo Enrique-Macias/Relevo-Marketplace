@@ -594,16 +594,19 @@ export type Database = {
       }
       universidad_dominios: {
         Row: {
+          activo: boolean
           created_at: string
           dominio: string
           universidad_id: number
         }
         Insert: {
+          activo?: boolean
           created_at?: string
           dominio: string
           universidad_id: number
         }
         Update: {
+          activo?: boolean
           created_at?: string
           dominio?: string
           universidad_id?: number
