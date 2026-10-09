@@ -16,7 +16,7 @@ la sesión toca `admin/`.
    frames. Solo se reusan los TOKENS de color y
    tipografía de §2 raíz (`src/estilos.css`); nada de tamaños ni componentes
    de teléfono.
-   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 29 frames (24 hasta la Ola 3; la Ola 4 sumó tres de Moderación y el detalle "en revisión (aprobar)", aprobados por el usuario el 2026-10-07; la Ola 3b reemplazó "Usuario — cuenta de admin" por su versión con «Restablecer app autenticadora» y sumó el modal, aprobados el 2026-10-08) medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
+   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 35 frames (24 hasta la Ola 3; la Ola 4 sumó tres de Moderación y el detalle "en revisión (aprobar)", aprobados por el usuario el 2026-10-07; la Ola 3b reemplazó "Usuario — cuenta de admin" por su versión con «Restablecer app autenticadora» y sumó el modal, aprobados el 2026-10-08; la Ola 5 sumó seis de Catálogo y el ítem «Catálogo» en la barra lateral de todos, aprobados el 2026-10-08) medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
 2. **Autorización, siempre en la base** (§0 regla 7 raíz, esta sí aplica).
    Toda acción es una RPC `security definer` de `admin.*` cuya primera línea es
    `perform private.exigir_admin();`, y toda escritura se audita en
@@ -124,6 +124,34 @@ para calificar al vendedor (la base todavía acepta la reseña, pero la app
 la busca por `listings_select`, que esconde la `bloqueada`). Es deuda aceptada
 (`CLAUDE.md` §3, "Panel de admin"); antes de bloquear una vendida con una
 calificación pendiente, avísale al comprador por el canal de soporte.
+
+## Catálogo (Ola 5, `20261008000484`): implementado y probado en local, pendiente de despliegue
+
+- **Pantallas:** `pantallas/Catalogo.tsx` (lista) y `pantallas/DetalleUniversidad.tsx`
+  (campus y dominios, con las variantes sin campus y sin dominios), y los modales
+  `ModalUniversidad`, `ModalCampus`, `ModalAgregarDominio` y `ModalEstadoDominio`.
+  Las dos pantallas leen `admin.catalogo()` (el panel no puede leer
+  `universidad_dominios`: no tiene grant, T27).
+- **Ninguna regla vive en el panel.** Normalización de nombres y dominios,
+  unicidad sin distinguir mayúsculas, proveedores públicos
+  (`private.proveedores_correo_publico()`), «sin campus no hay dominio»
+  (`universidad_sin_campus`), agregar que nunca reactiva y el CAS de
+  desactivar/reactivar son de la base. El panel pinta el rechazo con
+  `textoDeRechazo` (sujeto `campus` para `nombre_duplicado` de un campus). El
+  único chequeo local es que latitud y longitud SEAN números. «Guardar» no se
+  bloquea sin cambios: lo decide la base (`sin_cambios`).
+- **Lo que el panel NO ofrece (D12):** borrar o desactivar universidades y
+  campus, mover un campus o un dominio de universidad. `editar_campus` ni
+  siquiera recibe `universidad_id`.
+- **Cuándo lo ve la app** (corrección v3.2 del plan, validada en I-local): el
+  chip y el selector de campus usan el catálogo de la sesión, así que un campus o
+  universidad nuevos, y un cambio de nombre, se ven al reabrir la app; el nombre
+  de una universidad en las tarjetas, con pull-to-refresh; el de un campus, en
+  Detalle.
+- **Riesgos y operación:** la ventana hook→trigger (cuenta sin universidad) y
+  la herramienta de recuperación del hook (`docs/rf17-ola5-recuperacion.sql`, no
+  es un rollback de la ola) están en `docs/admin-runbook.md` §7.
+- Plan completo, con decisiones y evidencia: `docs/rf17-ola5-plan.md` (v3.2).
 
 ## Moderación y aprobar (Ola 4, en producción desde el 2026-10-08)
 
@@ -314,15 +342,19 @@ responde 503. En remoto, el Dashboard se toca después del push de
 
 - `npm run check:admin` desde la raíz (typecheck + lint del panel). El
   `tsconfig.json` raíz excluye `admin/`: sin este comando, nadie lo mira.
-- `node scripts/probe-admin.mjs` (stack local + Mailpit): 84 pruebas a
-  2026-10-08, con el camino `--remoto`, los correos externos de
-  `crear-admin.mjs` y el amarre del TTL del reclamo (7d). Y
+- `node scripts/probe-admin.mjs` (stack local + Mailpit): 94 pruebas a
+  2026-10-09 (84 a 2026-10-08), con el camino `--remoto`, los correos externos de
+  `crear-admin.mjs`, el amarre del TTL del reclamo (7d) y, desde la Ola 5, el
+  catálogo por HTTP (caso 10, con la carrera de `agregar_dominio` hecha
+  determinista). `node scripts/probe-registro.mjs`: 55 (caso 10, dominios
+  activos e inactivos contra GoTrue). Y
   `node scripts/probe-puerta-totp.mjs` (11), `node scripts/probe-storage.mjs`
   (41), `node scripts/probe-eliminar-publicacion.mjs` (12) y
   `node scripts/probe-admin-reset-mfa.mjs` (35, Ola 3b; necesita además
   `supabase functions serve`), también a 2026-10-08.
 - `supabase/tests/rls.sql`: T12, T35 y, desde la Ola 4, T35b, T35c (Ola 4),
-  T35d y T35e; desde la Ola 3b, T35f (28).
+  T35d y T35e; desde la Ola 3b, T35f (28); desde la Ola 5, T37 (77) y T28 (a3)
+  con un dominio inactivo.
 - Tipos: `npm run gen:types` (desde `admin/`) regenera `src/db/admin.types.ts`
   contra el stack **local** y es el default a propósito: las RPC nuevas se
   prueban en local antes del push. `--linked` produce el mismo contenido con

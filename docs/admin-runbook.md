@@ -7,9 +7,11 @@ La versión técnica vive en `admin/CLAUDE.md` y en `docs/rf17-plan-admin.md`.
 
 El panel está en **https://admin.rlvo.com.mx**.
 
-*Estado a 2026-10-08 (secciones 2, 3, 5, 6 y 7) y 2026-10-05 (el resto). Lo que
-dice este documento sobre qué cubre el panel y sobre los respaldos cambia con las
-Olas 5 y 6 y con la estrategia de respaldos: cuando cambie, se actualiza aquí.*
+*Estado a 2026-10-08 (secciones 2, 3, 5, 6 y 7) y 2026-10-05 (el resto), más la
+Ola 5 (catálogo, 2026-10-09): **implementada y probada en local, pendiente de
+despliegue**; lo que se dice aquí del catálogo vale cuando esté en producción. Lo
+que dice este documento sobre qué cubre el panel y sobre los respaldos cambia con
+la Ola 6 y con la estrategia de respaldos: cuando cambie, se actualiza aquí.*
 
 ## 1. Entrar al panel
 
@@ -60,8 +62,36 @@ administradores con correo personal lo aceptaron.
 - Si dice que la revisión automática "sigue en curso", espera unos minutos y
   vuelve a intentarlo.
 
-**Lo que a 2026-10-08 todavía no está en el panel** (sigue en Studio hasta las
-Olas 5 y 6): el catálogo de universidades y dominios, y las métricas.
+**Catálogo** (Ola 5; **pendiente de despliegue** a 2026-10-09: hasta entonces sigue
+en Studio): universidades, sus campus y los dominios de correo con los que sus
+estudiantes se registran.
+- **Universidades y campus** se dan de alta y se editan; **no se borran ni se
+  desactivan** desde el panel. Un campus no se puede mover a otra universidad.
+- **Dominios:** se agregan, se **desactivan** y se **reactivan**. Desactivar un
+  dominio solo impide las altas NUEVAS: las cuentas que ya existen conservan su
+  universidad y siguen entrando. Agregar un dominio que ya existe desactivado no
+  lo reactiva: hay que usar «Reactivar».
+- **Antes de agregar un dominio, la universidad necesita al menos un campus:** sin
+  campus, quien se registre no podría completar su perfil. El panel lo rechaza.
+- **Los proveedores de correo público** (gmail.com, hotmail.com, outlook.com,
+  yahoo.com, icloud.com y similares) no se pueden dar de alta: no identifican a
+  una universidad.
+- **Coincidencia exacta:** un subdominio (por ejemplo, alumnos.uanl.edu.mx)
+  necesita su propia fila.
+- **Cuándo ve la app un cambio** (comprobado en las pruebas locales):
+  - una universidad o un campus **nuevos**, y un **cambio de nombre** en el selector
+    de campus del Feed, se ven **cuando el usuario cierra y vuelve a abrir la
+    app**: la app lee el catálogo una vez por sesión, y deslizar para actualizar
+    no lo vuelve a leer;
+  - el nombre de una **universidad** en las tarjetas se actualiza al deslizar
+    para actualizar;
+  - el nombre de un **campus** se ve en el detalle de una publicación de ese
+    campus, al abrirla.
+- Como todo, cada cambio pide motivo (3 a 500 caracteres) y queda en la
+  auditoría; el panel todavía no muestra la auditoría del catálogo (Ola 6).
+
+**Lo que todavía no está en el panel:** las métricas (Ola 6). Hasta el despliegue
+de la Ola 5, también el catálogo.
 
 No escribas datos personales en los motivos: son texto libre y la base no puede
 impedirlo.
@@ -190,6 +220,42 @@ restablecerlo, o el panel muestra un aviso de restablecimiento pendiente:**
   Cada carpeta que aparezca se borra en Dashboard → Storage → `listing-photos`, y la
   consulta se repite hasta que dé 0. Al escribir esto (2026-10-07) había una:
   `57/`, con 1 objeto.
+- **No dar de alta dominios de RLVO** (como `rlvo.com.mx`) en el catálogo. La base
+  no lo impide a propósito, pero abriría el registro de la app a los buzones de RLVO
+  y, sobre todo, haría que `crear-admin.mjs crear` deje de aceptar correos
+  `@rlvo.com.mx` (su preflight rechaza cualquier dominio que esté en el catálogo,
+  esté activo o no). Si ocurre, se resuelve en Studio con el admin técnico.
+- **Una cuenta que nació sin universidad aunque su dominio está activo** (Ola 5;
+  riesgo conocido y aceptado). Pasa solo si un dominio se desactiva en el mismo
+  instante en que alguien se registra: la cuenta se crea, pero sin universidad, y
+  la app le muestra «sin universidad asignada» en Completar perfil. Reactivar el
+  dominio NO la arregla. **No es una instrucción rutinaria:** primero
+  diagnóstico, después escalamiento.
+  1. Diagnóstico, en Studio y solo leyendo: la fila de `public.users`
+     (`universidad_id`, `campus_id`, `estado`); el dominio de su correo en
+     `auth.users`; la fila de ese dominio en `universidad_dominios` (a qué
+     universidad apunta y si está activo); y las filas `desactivar_dominio` /
+     `reactivar_dominio` de `admin_acciones` cerca del `created_at` de la cuenta,
+     para confirmar que fue esa ventana y no otra causa.
+  2. Qué corresponde: la universidad del dominio, que esa universidad tenga campus
+     y que `campus_id` siga en NULL. Fijar `universidad_id` con `campus_id` en
+     NULL es válido (`users_campus_requiere_universidad`, FK
+     `users_campus_universidad_fkey`). **El campus no se fija a mano: lo elige la
+     persona** en Completar perfil.
+  3. Escalamiento: lo decide el admin técnico. Antes de tocar nada se anota fuera
+     de la base quién, cuándo y por qué (Studio no audita); solo entonces se hace
+     el UPDATE de `universidad_id`, y después se confirma que la persona termine su
+     perfil.
+- **Si el registro de la app se rompe después del despliegue de la Ola 5**:
+  existe una herramienta de recuperación **solo para el hook de registro**,
+  `docs/rf17-ola5-recuperacion.sql` (con copia junto al respaldo cifrado). **No es
+  un rollback de la Ola 5.** Se usa únicamente si el diagnóstico demuestra que la
+  causa es el cambio del hook o del trigger de alta: STOP → diagnóstico →
+  precondición (`select count(*) from universidad_dominios where not activo`,
+  porque restaurar vuelve a abrir los dominios desactivados) → migración
+  correctiva NUEVA con ese texto → `db push --dry-run` → aprobación → ejecución.
+  Si la falla está en otra parte, o la causa es desconocida: STOP y diagnóstico
+  específico, sin restaurar el hook.
 
 ## 8. Respaldos: lo que hay y lo que no
 

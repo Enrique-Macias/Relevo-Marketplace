@@ -8,12 +8,69 @@
 `6278a0a` a `b11865c`; Ola 2: frames `5466752`/`2e3ab12` y código `3f49263` a
 `f7ee579`; Ola 3: `887fc72` a `da097ac`). **Ola 4 CERRADA en producción el
 2026-10-08** (`26d0e62` a `d4cf591`). **Ola 3b CERRADA en producción el
-2026-10-08** (`e5f498a` a `c45009d`). Las Olas 5 y 6 siguen pendientes; la
-siguiente es la 5 (catálogo, `…484`).
-Las cinco secciones siguientes ganan sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
+2026-10-08** (`e5f498a` a `c45009d`). **Ola 5 (catálogo, `20261008000484`):
+implementada y probada en local, pendiente de despliegue** (`d9e5300` a
+`1f2d9ca`, más la documentación); plan y evidencia en `docs/rf17-ola5-plan.md`
+(v3.2). La Ola 6 sigue pendiente.
+Las seis secciones siguientes ganan sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
 chocan, prevalece v2.1** (`is_admin()` con `jsonb_typeof`, la lista de claves de
 auditoría por tipo, el orden de las olas). El resumen operativo vive en
 `CLAUDE.md` §8, pendiente 0k; el detalle, aquí.
+
+## Ola 5: lo que cambió al implementarla (gana sobre el resto del archivo)
+
+Implementada y probada en local entre el 2026-10-08 y el 2026-10-09 (UTC),
+**pendiente de despliegue**: frames `d9e5300` y `e980157`, migración `d890966`,
+T37 `eb7a019`, `probe-registro` `f2c4625`, textos y `probe-admin` `438bb5f`,
+tipos `--local` `1863a28` y panel `1f2d9ca`. El plan aprobado, con todas sus
+decisiones (L1-L10, L-A a L-F, enmiendas v3.1 y la corrección v3.2), la
+evidencia y el orden de despliegue con sus paradas, es
+**`docs/rf17-ola5-plan.md`**; lo que sigue es el resumen. **Esta sección no
+afirma nada de producción**: el remoto sigue en 47 migraciones (medido el
+2026-10-09 con `list_migrations`).
+
+1. **Frames:** `design/admin-panel.html` de 29 a 35 (seis de `catalogo`) y el
+   ítem «Catálogo» en la barra lateral de todos.
+2. **Migración `20261008000484_catalogo_admin.sql`:**
+   - `universidad_dominios.activo boolean not null default true` (D12). **Sin
+     `desactivado_at`** (L3): el estado es `activo`; la historia, las filas de
+     `admin_acciones`.
+   - Hook y `handle_new_user` con `and d.activo`, **copiados literal** de
+     `…474:226-257` y `…466:48-65` (se conserva la rama `correo_bloqueado`);
+     mismos grants. `supabase_auth_admin` lee `activo` sin grant nuevo (su grant
+     es de tabla, `…465:53`).
+   - `admin_acciones_accion_check` de 9 a **16** acciones: `crear_universidad`,
+     `editar_universidad`, `crear_campus`, `editar_campus`, `agregar_dominio`,
+     `desactivar_dominio`, `reactivar_dominio`. `objetivo_tipo` y las claves de
+     D20 no cambian.
+   - Checks de nombre y ciudad normalizados (2-100) con expresión
+     AUTOCONTENIDA: un CHECK que llama a una función de `private` le da 42501 a
+     `service_role` (medido). Índices únicos `lower(nombre)`.
+   - `private.proveedores_correo_publico()` (21 buzones públicos, solo la
+     consulta la RPC; sin CHECK de tabla) y `private.normaliza_texto()`.
+   - **8 RPC** (`admin.*` de 13 a **21**): `catalogo` y las 7 escrituras, sin
+     advisory lock (`on conflict`, CAS, `for update` e índices únicos), sin
+     bloques EXCEPTION. `editar_campus` no recibe `universidad_id`; agregar un
+     dominio nunca reactiva; agregar o reactivar exige un campus.
+   - `rlvo.com.mx` NO se bloquea en la base: es una regla del runbook (L-B).
+3. **Pruebas:** `rls.sql` de 529 a **606** (T37 con 77, y T28 (a3) con un
+   dominio inactivo), 23 controles negativos que caen cada uno en su aserción;
+   `probe-registro` de 34 a **55** (caso 10 contra GoTrue, 2 controles);
+   `probe-admin` de 84 a **94** (caso 10, con la carrera de `agregar_dominio`
+   hecha determinista porque dos llamadas "simultáneas" no se solapaban; 2
+   controles). El hook se ejecutó bajo `supabase_auth_admin` en local (como
+   `supabase_admin`): `postgres` no puede `set role supabase_auth_admin`, ni en
+   local ni en remoto (DP-1).
+4. **Recuperación:** `docs/rf17-ola5-recuperacion.sql` restaura SOLO el hook y
+   `handle_new_user` (probado contra la `…484` real). No es un rollback de la
+   ola; su contrato de uso está en el plan (K-6b) y en el runbook §7.
+5. **Corrección v3.2:** la app lee el catálogo una vez por sesión, así que un
+   campus o universidad nuevos y un cambio de nombre en el chip y el selector
+   se ven al reabrir la app; el nombre de una universidad en las tarjetas, con
+   pull-to-refresh; el de un campus, en Detalle. Era una expectativa incorrecta
+   del plan, no una regresión.
+6. **Aceptación local:** visual con Chrome headless (31/31) y las pruebas
+   manuales I-local del usuario, aprobadas.
 
 ## Ola 3b: lo que cambió al implementarla (gana sobre el resto del archivo)
 
@@ -1183,7 +1240,7 @@ consecutivo** (`CLAUDE.md` §6). El orden de v2.1 con los adelantos de D19:
 | 6 | `20261007000481_admin_moderacion.sql` | 4 — **en producción** | `admin.cola_moderacion`, `admin.aprobar_listing`, CHECK de 7 acciones, y las policies del dueño en `storage.objects` y en `listing_photos` según D5 |
 | 7 | `20261007000482_moderacion_retenida.sql` | 4 — **en producción** | `private.moderacion_retenida`, `private.minimo_moderacion`, el trigger `listings_retiene_moderacion`, pg_cron y su purga diaria, y `bloqueadas` en `admin.detalle_usuario` |
 | 8 | `20261008000483_admin_reset_mfa.sql` | 3b — **en producción** | CHECK de 9 acciones, `factores_totp` en las claves de `admin`, `admin.restablecer_mfa_iniciar`/`_completar`, `private.cerrar_restablecer_mfa` y los campos nuevos de `admin.detalle_usuario` |
-| 9 | `…484_catalogo_admin.sql` (fecha real al crearla) | 5 | `universidad_dominios.activo`; hook y `handle_new_user()` (`create or replace`); RPCs de catálogo |
+| 9 | `20261008000484_catalogo_admin.sql` | 5 — **en el repo, pendiente de push** | `universidad_dominios.activo`; hook y `handle_new_user()` (`create or replace`); CHECK de 16 acciones; checks e índices de nombres; `proveedores_correo_publico` y `normaliza_texto`; las 8 RPC de catálogo |
 | 10 | `…485_actividad_diaria_y_metricas.sql` (fecha real al crearla) | 6 | `public.actividad_diaria`, `admin.metricas`, `admin.auditoria` |
 
 La Ola 3 no tiene migración (despliegue). La 3b sí (`…483`, con la Edge
@@ -1296,6 +1353,9 @@ por cada estado de origen permitido de `bloquear_listing` (`pendiente`, `activa`
 
 ### T37 — catálogo (Ola 5)
 
+**Implementada con 77 aserciones y 23 controles**, más allá de esta tabla
+original: ver `docs/rf17-ola5-plan.md` (G) y el mensaje de `eb7a019`.
+
 | Aserción | Control negativo |
 |---|---|
 | un dominio inactivo no asigna universidad (`handle_new_user`) y el hook lo rechaza | filtrar `activo` en una sola de las dos copias (cae T28 (a3) o la nueva) |
@@ -1362,7 +1422,7 @@ rechazado" (control: la rama sin el chequeo de existencia).
 | 3 | Despliegue (Cloudflare Pages) y alta de los 3 admins | **En producción** (2026-10-02 al 2026-10-05, ver "Ola 3: lo que cambió") |
 | 3b | `admin-reset-mfa` (con su frame primero) | **Cerrada en producción** (2026-10-08, ver "Ola 3b: lo que cambió") |
 | 4 | Moderación (cola, aprobar, trigger de dueño activo, policy del dueño) | **Cerrada en producción** (2026-10-08, ver "Ola 4: lo que cambió") |
-| 5 | Catálogo institucional | Pendiente (la siguiente) |
+| 5 | Catálogo institucional | **Implementada y probada en local, pendiente de despliegue** (ver "Ola 5: lo que cambió" y `docs/rf17-ola5-plan.md`) |
 | 6 | Métricas y `actividad_diaria` | Pendiente |
 
 ### Ola 0 — sin panel (EN PRODUCCIÓN)
@@ -1507,6 +1567,9 @@ la policy del dueño según **D5, que se decide al entrar a esta ola junto con s
 frame**; T35c (c)-(f); el probe de Storage y el de eliminar cuenta.
 
 ### Ola 5 — catálogo institucional
+
+**Esta sección es el plan original: lo que se implementó está arriba, en "Ola 5:
+lo que cambió al implementarla", y el plan completo en `docs/rf17-ola5-plan.md`.**
 
 Migración `…484` (era `…482`; renumerada en la Ola 4 y en la 3b), T37 y el probe de registro (§10).
 
