@@ -91,6 +91,7 @@
   }
   .variante-caja{background:var(--paper); border-radius:14px; padding:20px; width:400px;}
   .variante-caja.ancha{width:620px;}
+  .variante-caja.completa{width:100%;}
 
   /* ---------- Cáscara del panel ---------- */
   .barra{
@@ -293,6 +294,22 @@
   .splash-dot:nth-child(3){animation-delay:0.4s;}
   @keyframes splash-blink{0%,80%,100%{opacity:0.3;} 40%{opacity:1;}}
 
+  /* ---------- Métricas (Ola 6) ----------
+     Solo agregados. «Sin datos» (activos fuera de la cobertura: antes del
+     inicio del registro o fuera de los 90 días retenidos) se pinta distinto
+     del 0, que es un conteo real. */
+  .controles{display:flex; align-items:center; gap:14px; margin-bottom:18px; flex-wrap:wrap;}
+  .controles .chips{margin-bottom:0;}
+  .selector{display:inline-flex; align-items:center; justify-content:space-between; gap:10px; width:250px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:9px 14px; font-size:13px; color:var(--ink);}
+  .selector svg{transform:rotate(-90deg); color:var(--ink-soft);}
+  .metricas-tarjetas{display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:18px;}
+  .metrica{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px 20px;}
+  .metrica-nombre{font-size:11.5px; color:var(--ink-soft); margin-bottom:8px;}
+  .metrica-valor{font-family:var(--font-display), serif; font-weight:600; font-size:30px; color:var(--ink); line-height:1; font-variant-numeric:tabular-nums;}
+  .metrica-valor.sin-datos{font-family:var(--font-body), sans-serif; font-weight:500; font-size:15px; color:var(--ink-soft); line-height:30px;}
+  .metrica-nota{font-size:11.5px; color:var(--ink-soft); margin-top:8px; line-height:1.45;}
+  .tabla .sin-datos{color:var(--ink-soft); font-size:12px; font-style:italic;}
+
   .oculto{display:none !important;}
 </style>
 </head>
@@ -314,6 +331,7 @@
     <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M6 12.5l4 4 8-9"/></symbol>
     <symbol id="i-inbox" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/></g></symbol>
     <symbol id="i-wifi" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 9a12 12 0 0 1 16 0"/><path d="M7 12.5a7.5 7.5 0 0 1 10 0"/><path d="M10 16a3 3 0 0 1 4 0"/><path d="M12 19.5h.01"/></g></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20h16"/><path d="M7 16v-4M12 16V7M17 16v-7"/></g></symbol>
     <symbol id="i-building" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V10M19 21V10"/><path d="M9.5 21v-5h5v5"/><path d="M2 10l10-6 10 6"/></g></symbol>
   </defs>
 </svg>
@@ -327,6 +345,7 @@
     <div class="filter-chip" data-filter="publicacion">Publicación</div>
     <div class="filter-chip" data-filter="usuarios">Usuarios</div>
     <div class="filter-chip" data-filter="catalogo">Catálogo</div>
+    <div class="filter-chip" data-filter="metricas">Métricas</div>
     <div class="filter-chip" data-filter="sistema">Sistema</div>
     <div class="filter-count" id="filter-count"></div>
   </div>
@@ -542,6 +561,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Reportes</div>
@@ -615,6 +635,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Reportes</div>
@@ -645,6 +666,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -728,6 +750,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -795,6 +818,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -852,6 +876,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -911,6 +936,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -927,6 +953,7 @@
               <div class="titulo-seccion">Comentario de quien reportó</div>
               <div class="texto">Las fotos son de otra marca.</div>
             </div>
+            <!-- Ola 6: esta tabla la llena admin.auditoria('reporte', id), del más reciente al más antiguo. -->
             <div class="titulo-seccion">Auditoría</div>
             <table class="tabla">
               <thead><tr><th>Fecha</th><th>Acción</th><th>Admin</th><th>Motivo</th><th>Cambio</th></tr></thead>
@@ -954,7 +981,7 @@
     </div>
   </div>
   <div class="variante-doc">
-    <div class="variante-doc-titulo">Variante (doc): resuelto antes de que se registrara la fecha (resolved_at NULL, como el reporte que hoy está en remoto)</div>
+    <div class="variante-doc-titulo">Variantes (doc): resuelto antes de que se registrara la fecha (resolved_at NULL, como el reporte que hoy está en remoto) · descartado · auditoría vacía</div>
     <div class="variante-caja">
       <dl class="rejilla tres">
         <div class="dato"><dt>Resuelto</dt><dd class="suave">—</dd></div>
@@ -962,6 +989,12 @@
     </div>
     <div class="variante-caja">
       <div class="texto-suave">Un reporte descartado se ve igual, con el chip <span class="estado apagado">Descartado</span> y la fila «Descartado» en lugar de «Resuelto».</div>
+    </div>
+    <div class="variante-caja">
+      <div class="titulo-seccion">Auditoría</div>
+      <div class="texto-suave">Este reporte no tiene movimientos en la auditoría: se resolvió fuera del panel.</div>
+      <br>
+      <div class="texto-suave">(Variante de la auditoría vacía: un reporte resuelto en Studio, antes del panel.)</div>
     </div>
   </div>
 </div>
@@ -979,6 +1012,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -1040,6 +1074,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Moderación</div>
@@ -1111,6 +1146,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Moderación</div>
@@ -1148,6 +1184,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Moderación</div>
@@ -1209,6 +1246,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reporte #131</div>
@@ -1308,6 +1346,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Moderación</div>
@@ -1405,6 +1444,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Usuarios</div>
@@ -1440,6 +1480,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Usuarios</div>
@@ -1471,6 +1512,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
@@ -1540,6 +1582,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
@@ -1614,6 +1657,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
@@ -1714,6 +1758,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
@@ -1789,6 +1834,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Catálogo</div>
@@ -1844,6 +1890,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Catálogo</div>
@@ -1871,17 +1918,44 @@
           </tbody>
         </table>
         <div class="pie-tabla"><span>Solo un dominio activo permite registrarse. Desactivarlo no cambia las cuentas que ya existen.</span><span class="btn ghost-btn">Agregar dominio</span></div>
+
+        <!-- Ola 6: admin.auditoria('universidad', id) en UNA llamada: la universidad, sus campus y sus dominios. -->
+        <div class="titulo-seccion">Auditoría</div>
+        <table class="tabla">
+          <thead><tr><th>Fecha</th><th>Objeto</th><th>Acción</th><th>Admin</th><th>Motivo</th><th>Cambio</th></tr></thead>
+          <tbody>
+            <tr><td class="suave">5 oct, 11:40</td><td><div class="celda-titulo">alumnos.uanl.edu.mx</div><div class="celda-sub">Dominio</div></td><td>Desactivar dominio</td><td>ana@rlvo.com.mx</td><td>La universidad no usa este subdominio para estudiantes.</td><td class="suave">Activo → Desactivado</td></tr>
+            <tr><td class="suave">2 oct, 16:05</td><td><div class="celda-titulo">alumnos.uanl.edu.mx</div><div class="celda-sub">Dominio</div></td><td>Agregar dominio</td><td>ana@rlvo.com.mx</td><td>Lo pidió la coordinación de servicios escolares.</td><td class="suave">Alta</td></tr>
+            <tr><td class="suave">30 sep, 10:12</td><td><div class="celda-titulo">Campus Linares</div><div class="celda-sub">Campus</div></td><td>Agregar campus</td><td>ana@rlvo.com.mx</td><td>Alta del campus de Linares.</td><td class="suave">Alta</td></tr>
+          </tbody>
+        </table>
+        <div class="pie-tabla"><span>Incluye la universidad, sus campus y sus dominios, del más reciente al más antiguo. Los nombres son los actuales.</span><span class="btn ghost-btn">Ver más</span></div>
       </main>
     </div>
   </div>
   <div class="variante-doc">
-    <div class="variante-doc-titulo">Variantes (doc): universidad sin campus · sin dominios · cambios guardados</div>
+    <div class="variante-doc-titulo">Variantes (doc): la sección Auditoría completa (al final de la página, debajo del pliegue) · universidad sin campus · sin dominios · auditoría vacía · cambios guardados</div>
+    <div class="variante-caja completa">
+      <div class="titulo-seccion">Auditoría</div>
+      <table class="tabla">
+        <thead><tr><th>Fecha</th><th>Objeto</th><th>Acción</th><th>Admin</th><th>Motivo</th><th>Cambio</th></tr></thead>
+        <tbody>
+          <tr><td class="suave">5 oct, 11:40</td><td><div class="celda-titulo">alumnos.uanl.edu.mx</div><div class="celda-sub">Dominio</div></td><td>Desactivar dominio</td><td>ana@rlvo.com.mx</td><td>La universidad no usa este subdominio para estudiantes.</td><td class="suave">Activo → Desactivado</td></tr>
+          <tr><td class="suave">2 oct, 16:05</td><td><div class="celda-titulo">alumnos.uanl.edu.mx</div><div class="celda-sub">Dominio</div></td><td>Agregar dominio</td><td>ana@rlvo.com.mx</td><td>Lo pidió la coordinación de servicios escolares.</td><td class="suave">Alta</td></tr>
+          <tr><td class="suave">30 sep, 10:12</td><td><div class="celda-titulo">Campus Linares</div><div class="celda-sub">Campus</div></td><td>Agregar campus</td><td>ana@rlvo.com.mx</td><td>Alta del campus de Linares.</td><td class="suave">Alta</td></tr>
+        </tbody>
+      </table>
+      <div class="pie-tabla"><span>Incluye la universidad, sus campus y sus dominios, del más reciente al más antiguo. Los nombres son los actuales.</span><span class="btn ghost-btn">Ver más</span></div>
+    </div>
     <div class="variante-caja">
       <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Agrega un campus antes de agregar un dominio: sin campus, quien se registre no podría completar su perfil.</div></div>
       <div class="texto-suave">En lugar de la tabla de campus: «Esta universidad todavía no tiene campus.» y el botón «Agregar campus».</div>
     </div>
     <div class="variante-caja">
       <div class="texto-suave">En lugar de la tabla de dominios: «Sin dominios: nadie de esta universidad puede registrarse todavía.» y el botón «Agregar dominio».</div>
+    </div>
+    <div class="variante-caja">
+      <div class="texto-suave">Auditoría vacía: «Sin movimientos en la auditoría.» Sin «Ver más» cuando ya no hay filas anteriores.</div>
     </div>
     <div class="variante-caja">
       <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Cambios guardados.</div></div>
@@ -1904,6 +1978,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Catálogo</div>
@@ -1978,6 +2053,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Catálogo</div>
@@ -2070,6 +2146,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Catálogo</div>
@@ -2138,6 +2215,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Catálogo</div>
@@ -2187,6 +2265,157 @@
 </div>
 
 <!-- =====================================================================
+     MÉTRICAS (Ola 6)
+     Solo agregados: el panel nunca recibe quién estuvo activo, solo cuántos.
+     Fuentes: admin.metricas (una fila por día) y admin.metricas_resumen
+     (totales del rango y la cobertura de los activos). Hora de México. No
+     cuentan las cuentas de administración.
+     Usuarios activos por día: «Sin datos» antes del inicio del registro o
+     fuera de los 90 días que se guarda la actividad; dentro, el conteo real,
+     0 incluido. El total del rango cuenta PERSONAS DISTINTAS en el periodo
+     cubierto: nunca es la suma de los días.
+     Altas, publicaciones y contactos bajan si una cuenta se elimina (sus
+     datos se borran con ella).
+     ===================================================================== -->
+
+<div class="desk-block" data-cat="metricas">
+  <div class="desk-label">Métricas — 30 días (actividad completa)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Métricas</div>
+        <div class="sub-pagina">Cómo se usa Relevo, día por día. No incluye cuentas de administración.</div>
+        <div class="controles">
+          <div class="chips"><span class="chip">7 días</span><span class="chip active">30 días</span><span class="chip">90 días</span></div>
+          <span class="selector">Todas las universidades <svg width="14" height="14"><use href="#i-chevron"/></svg></span>
+          <span class="texto-suave">16 nov – 15 dic 2026 · hora de México</span>
+        </div>
+        <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text"><b>Usuarios activos</b> cuenta a quien abrió la app ese día. Esa actividad se guarda 90 días: los días anteriores, y los anteriores al inicio del registro (10 oct 2026), aparecen como «Sin datos», no como cero actividad. Antes del lanzamiento, las cifras son del equipo y de testers.</div></div>
+        <div class="metricas-tarjetas">
+          <div class="metrica"><div class="metrica-nombre">Altas</div><div class="metrica-valor">19</div><div class="metrica-nota">Cuentas nuevas en el rango.</div></div>
+          <div class="metrica"><div class="metrica-nombre">Usuarios activos</div><div class="metrica-valor">186</div><div class="metrica-nota">Personas distintas en el rango, no la suma de los días.</div></div>
+          <div class="metrica"><div class="metrica-nombre">Publicaciones creadas</div><div class="metrica-valor">112</div><div class="metrica-nota">En cualquier estado.</div></div>
+          <div class="metrica"><div class="metrica-nombre">Contactos</div><div class="metrica-valor">287</div><div class="metrica-nota">Toques en «Contactar por WhatsApp».</div></div>
+        </div>
+        <table class="tabla">
+          <thead><tr><th>Día</th><th class="num">Altas</th><th class="num">Usuarios activos</th><th class="num">Publicaciones creadas</th><th class="num">Contactos</th></tr></thead>
+          <tbody>
+            <tr><td>Mar 15 dic</td><td class="num">1</td><td class="num">38</td><td class="num">4</td><td class="num">9</td></tr>
+            <tr><td>Lun 14 dic</td><td class="num">0</td><td class="num">41</td><td class="num">6</td><td class="num">11</td></tr>
+            <tr><td>Dom 13 dic</td><td class="num">0</td><td class="num">17</td><td class="num">1</td><td class="num">2</td></tr>
+            <tr><td>Sáb 12 dic</td><td class="num">2</td><td class="num">22</td><td class="num">3</td><td class="num">5</td></tr>
+            <tr><td>Vie 11 dic</td><td class="num">1</td><td class="num">44</td><td class="num">5</td><td class="num">13</td></tr>
+            <tr><td>Jue 10 dic</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td>Mié 9 dic</td><td class="num">3</td><td class="num">39</td><td class="num">7</td><td class="num">10</td></tr>
+            <tr><td>Mar 8 dic</td><td class="num">1</td><td class="num">36</td><td class="num">2</td><td class="num">8</td></tr>
+          </tbody>
+        </table>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): una universidad · rango que el servidor rechaza · universidad que ya no existe · error de carga</div>
+    <div class="variante-caja">
+      <span class="selector">UANL <svg width="14" height="14"><use href="#i-chevron"/></svg></span>
+      <br><br>
+      <div class="texto-suave">Con una universidad elegida, las cuatro cifras se filtran por ella: las altas y los activos por la universidad de la cuenta; las publicaciones y los contactos por la universidad de la publicación.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">No pudimos calcular ese rango de fechas. Recarga la página e inténtalo de nuevo.</div></div>
+      <div class="texto-suave">El rango siempre termina hoy (hora de México), así que con el selector no debería pasar. Sale si el reloj del equipo va adelantado o si cambió el día con la página abierta.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Esa universidad ya no está en el catálogo. Elige otra o «Todas las universidades».</div></div>
+    </div>
+    <div class="variante-caja">
+      <div class="empty-state compacto">
+        <div class="empty-icon error"><svg width="30" height="30"><use href="#i-wifi"/></svg></div>
+        <div class="empty-title">No pudimos cargar las métricas</div>
+        <div class="empty-sub">Revisa tu conexión e inténtalo de nuevo.</div>
+        <span class="btn ghost-btn">Reintentar</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="metricas">
+  <div class="desk-label">Métricas — registro de actividad reciente («Sin datos»)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Métricas</div>
+        <div class="sub-pagina">Cómo se usa Relevo, día por día. No incluye cuentas de administración.</div>
+        <div class="controles">
+          <div class="chips"><span class="chip">7 días</span><span class="chip active">30 días</span><span class="chip">90 días</span></div>
+          <span class="selector">Todas las universidades <svg width="14" height="14"><use href="#i-chevron"/></svg></span>
+          <span class="texto-suave">10 sep – 9 oct 2026 · hora de México</span>
+        </div>
+        <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text"><b>Usuarios activos</b> cuenta a quien abrió la app ese día. Esa actividad se guarda 90 días: los días anteriores, y los anteriores al inicio del registro (6 oct 2026), aparecen como «Sin datos», no como cero actividad. Antes del lanzamiento, las cifras son del equipo y de testers.</div></div>
+        <div class="metricas-tarjetas">
+          <div class="metrica"><div class="metrica-nombre">Altas</div><div class="metrica-valor">4</div><div class="metrica-nota">Cuentas nuevas en el rango.</div></div>
+          <div class="metrica"><div class="metrica-nombre">Usuarios activos</div><div class="metrica-valor">5</div><div class="metrica-nota">Personas distintas del 6 al 9 oct: el registro empezó el 6 oct.</div></div>
+          <div class="metrica"><div class="metrica-nombre">Publicaciones creadas</div><div class="metrica-valor">23</div><div class="metrica-nota">En cualquier estado.</div></div>
+          <div class="metrica"><div class="metrica-nombre">Contactos</div><div class="metrica-valor">31</div><div class="metrica-nota">Toques en «Contactar por WhatsApp».</div></div>
+        </div>
+        <table class="tabla">
+          <thead><tr><th>Día</th><th class="num">Altas</th><th class="num">Usuarios activos</th><th class="num">Publicaciones creadas</th><th class="num">Contactos</th></tr></thead>
+          <tbody>
+            <tr><td>Vie 9 oct</td><td class="num">0</td><td class="num">3</td><td class="num">1</td><td class="num">2</td></tr>
+            <tr><td>Jue 8 oct</td><td class="num">1</td><td class="num">2</td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td>Mié 7 oct</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr>
+            <tr><td>Mar 6 oct</td><td class="num">0</td><td class="num">2</td><td class="num">2</td><td class="num">3</td></tr>
+            <tr><td>Lun 5 oct</td><td class="num">1</td><td class="num"><span class="sin-datos">Sin datos</span></td><td class="num">1</td><td class="num">0</td></tr>
+            <tr><td>Dom 4 oct</td><td class="num">0</td><td class="num"><span class="sin-datos">Sin datos</span></td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td>Sáb 3 oct</td><td class="num">0</td><td class="num"><span class="sin-datos">Sin datos</span></td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td>Vie 2 oct</td><td class="num">0</td><td class="num"><span class="sin-datos">Sin datos</span></td><td class="num">3</td><td class="num">4</td></tr>
+          </tbody>
+        </table>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): la tarjeta de activos según la cobertura</div>
+    <div class="variante-caja">
+      <div class="metrica"><div class="metrica-nombre">Usuarios activos</div><div class="metrica-valor">186</div><div class="metrica-nota">Personas distintas en el rango, no la suma de los días.</div></div>
+      <br>
+      <div class="texto-suave">Cobertura completa: todo el rango tiene registro de actividad.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="metrica"><div class="metrica-nombre">Usuarios activos</div><div class="metrica-valor">5</div><div class="metrica-nota">Personas distintas del 6 al 9 oct: el registro empezó el 6 oct.</div></div>
+      <br>
+      <div class="texto-suave">Cobertura parcial: el total solo cubre los días con registro y lo dice.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="metrica"><div class="metrica-nombre">Usuarios activos</div><div class="metrica-valor sin-datos">Sin datos</div><div class="metrica-nota">No hay registro de actividad para este rango.</div></div>
+      <br>
+      <div class="texto-suave">Sin cobertura. Con el selector de 7, 30 y 90 días (el rango termina hoy y la actividad se guarda 90 días) el panel no llega a este caso; se dibuja porque la base lo puede devolver.</div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
      SISTEMA
      ===================================================================== -->
 
@@ -2203,6 +2432,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Reportes</div>
@@ -2250,6 +2480,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Reportes</div>
@@ -2283,6 +2514,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Reportes</div>
@@ -2315,6 +2547,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
