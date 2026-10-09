@@ -238,10 +238,11 @@ vez validado.
 - **RF-17** Panel de administración web propio para revisar reportes,
   moderar publicaciones, suspender usuarios y ver métricas básicas de uso. Lo
   usan 3 admins y dos no son técnicos, así que no puede exigir Supabase Studio
-  ni SQL. (Antes decía "vive en Supabase Studio".) **Estado (2026-10-05):** el
-  panel está EN PRODUCCIÓN con reportes, detalle de publicación, bloqueo y
-  usuarios (Olas 1-3); la cola de moderación, aprobar, el catálogo y las métricas
-  siguen en Studio hasta las Olas 4-6. **Fase 1:**
+  ni SQL. (Antes decía "vive en Supabase Studio".) **Estado (2026-10-09):** el
+  panel está EN PRODUCCIÓN con reportes, detalle de publicación, bloqueo,
+  usuarios, la cola de moderación con aprobar, restablecer la app autenticadora
+  de otro admin y el catálogo institucional (Olas 1-5 y 3b); las métricas
+  siguen en Studio hasta la Ola 6. **Fase 1:**
   (a) reportes: listar, ver el objetivo (publicación o usuario) y resolver o
   descartar; (b) cola de moderación: publicaciones en `pendiente` con sus
   fotos y el veredicto de moderación, aprobar o bloquear — bloquear también
@@ -257,11 +258,12 @@ vez validado.
   admin adentro y MFA (aal2) exigido en la base, y deja fila en una tabla de
   auditoría; el panel nunca escribe directo y la `service_role` key nunca llega
   al navegador.
-  **Estado (2026-10-08): en producción por olas — `CLAUDE.md` §8, pendiente 0k.**
-  Las Olas 0 a 4 y la 3b (corrección de un trigger, login con MFA, usuarios,
-  reportes, despliegue y alta de los 3 admins, cola de moderación y restablecer
-  la app autenticadora de otro admin) están en producción; faltan las Olas 5 y
-  6 (catálogo y métricas).
+  **Estado (2026-10-09): en producción por olas — `CLAUDE.md` §8, pendiente 0k.**
+  Las Olas 0 a 5 y la 3b (corrección de un trigger, login con MFA, usuarios,
+  reportes, despliegue y alta de los 3 admins, cola de moderación, restablecer
+  la app autenticadora de otro admin y catálogo institucional) están en
+  producción; la Ola 5 quedó CERRADA el 2026-10-09. Falta la Ola 6
+  (métricas).
 - **RF-18** Moderación automática de contenido antes de publicarse: fotos de
   publicaciones y de perfil analizadas con Google Cloud Vision (SafeSearch +
   detección de texto en imagen); título y descripción analizados con OpenAI
@@ -372,7 +374,7 @@ generosa.
 | App móvil | React Native + Expo | Un solo código Android/iOS, builds sin Mac (EAS Build) |
 | Backend/BD | Supabase (Postgres) | Auth + BD relacional + Storage + RLS incluidos |
 | Notificaciones | Expo Notifications | Integración directa, sin servicio adicional |
-| Admin | Panel web propio (RF-17) en producción (Olas 1-3, a 2026-10-05); Supabase Studio para el resto | Studio: cero desarrollo para arrancar. El panel existe porque 2 de los 3 admins no pueden usar Studio ni SQL |
+| Admin | Panel web propio (RF-17) en producción (Olas 1-5 y 3b, a 2026-10-09); Supabase Studio para el resto | Studio: cero desarrollo para arrancar. El panel existe porque 2 de los 3 admins no pueden usar Studio ni SQL |
 | Distribución | EAS Build/Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Alternativas consideradas y descartadas:**
@@ -403,7 +405,7 @@ React Native + Expo · iOS / Android
 Expo Push Notification Service
 
 Contacto comprador ↔ vendedor: deep link wa.me — fuera del backend
-Moderación (a 2026-10-05): panel web propio (RF-17) en producción para reportes, bloqueo y usuarios; Supabase Studio (uso directo del equipo) para la cola de moderación hasta la Ola 4
+Moderación (a 2026-10-09): panel web propio (RF-17) en producción para reportes, la cola de moderación (aprobar y bloquear) y usuarios
 ```
 
 ### Modelo de datos — entidades principales

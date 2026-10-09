@@ -8,10 +8,10 @@ La versión técnica vive en `admin/CLAUDE.md` y en `docs/rf17-plan-admin.md`.
 El panel está en **https://admin.rlvo.com.mx**.
 
 *Estado a 2026-10-08 (secciones 2, 3, 5, 6 y 7) y 2026-10-05 (el resto), más la
-Ola 5 (catálogo, 2026-10-09): **implementada y probada en local, pendiente de
-despliegue**; lo que se dice aquí del catálogo vale cuando esté en producción. Lo
-que dice este documento sobre qué cubre el panel y sobre los respaldos cambia con
-la Ola 6 y con la estrategia de respaldos: cuando cambie, se actualiza aquí.*
+Ola 5 (catálogo): **en producción desde el 2026-10-09 y CERRADA**. La sección 8
+(respaldos) está al 2026-10-09. Lo que dice este documento sobre qué cubre el
+panel y sobre los respaldos cambia con la Ola 6 y con la estrategia de
+respaldos: cuando cambie, se actualiza aquí.*
 
 ## 1. Entrar al panel
 
@@ -62,9 +62,8 @@ administradores con correo personal lo aceptaron.
 - Si dice que la revisión automática "sigue en curso", espera unos minutos y
   vuelve a intentarlo.
 
-**Catálogo** (Ola 5; **pendiente de despliegue** a 2026-10-09: hasta entonces sigue
-en Studio): universidades, sus campus y los dominios de correo con los que sus
-estudiantes se registran.
+**Catálogo** (Ola 5; en producción desde el 2026-10-09): universidades, sus campus
+y los dominios de correo con los que sus estudiantes se registran.
 - **Universidades y campus** se dan de alta y se editan; **no se borran ni se
   desactivan** desde el panel. Un campus no se puede mover a otra universidad.
 - **Dominios:** se agregan, se **desactivan** y se **reactivan**. Desactivar un
@@ -90,8 +89,7 @@ estudiantes se registran.
 - Como todo, cada cambio pide motivo (3 a 500 caracteres) y queda en la
   auditoría; el panel todavía no muestra la auditoría del catálogo (Ola 6).
 
-**Lo que todavía no está en el panel:** las métricas (Ola 6). Hasta el despliegue
-de la Ola 5, también el catálogo.
+**Lo que todavía no está en el panel:** las métricas (Ola 6).
 
 No escribas datos personales en los motivos: son texto libre y la base no puede
 impedirlo.
@@ -261,16 +259,25 @@ restablecerlo, o el panel muestra un aviso de restablecimiento pendiente:**
 
 - **A 2026-10-05, el proyecto de Supabase no tiene respaldos automáticos ni
   recuperación a un punto en el tiempo.**
-- Existe una copia cifrada del esquema y de los datos tomada la noche del
-  **2026-10-01** (hora de Monterrey), antes de resolver las cuatro publicaciones pendientes y de crear a los tres
-  administradores. Es una fotografía que envejece cada día, **no** una estrategia de
-  respaldo, y no incluye los archivos de Storage ni los secretos.
-- Hechos puntuales verificados en el equipo del admin técnico (no garantías
-  permanentes; pueden cambiar): FileVault activado; sin destinos de Time Machine ni
-  snapshots locales de APFS al momento de la comprobación; la copia está fuera de
-  iCloud Drive y de las carpetas sincronizadas comprobadas; su frase de paso está
-  en un gestor de contraseñas; la imagen se montó y se comprobó contra los SHA-256
-  originales, y los `.sql` en claro se borraron después. **No hay fecha límite ni
-  política para borrar o reemplazar la copia: es una decisión pendiente.**
+- Existen **dos** copias cifradas manuales del esquema y de los datos. Las dos son
+  fotografías que envejecen cada día, **no** una estrategia de respaldo, y ninguna
+  incluye los archivos de Storage (solo sus filas), los secretos de Vault ni el
+  historial de migraciones:
+  - la de la noche del **2026-10-01** (hora de Monterrey), antes de resolver las
+    cuatro publicaciones pendientes y de crear a los tres administradores;
+  - la del **2026-10-09**, tomada antes de desplegar la Ola 5 (catálogo): esquema
+    y datos de antes de ese cambio (10 usuarios, 3 administradores con su app
+    autenticadora y 13 filas de auditoría), más la herramienta de recuperación
+    del registro (`docs/rf17-ola5-recuperacion.sql`). La imagen se montó en
+    solo lectura, sus cuatro archivos coincidieron con su manifiesto SHA-256 y
+    la copia en claro se borró después.
+- Hechos puntuales verificados en el equipo del admin técnico para la copia del
+  2026-10-01 (no garantías permanentes; pueden cambiar): FileVault activado; sin
+  destinos de Time Machine ni snapshots locales de APFS al momento de la
+  comprobación; la copia está fuera de iCloud Drive y de las carpetas
+  sincronizadas comprobadas; su frase de paso está en un gestor de contraseñas; la
+  imagen se montó y se comprobó contra los SHA-256 originales, y los `.sql` en
+  claro se borraron después. **No hay fecha límite ni política para borrar o
+  reemplazar ninguna de las dos copias: es una decisión pendiente.**
 - Definir una estrategia de respaldos (plan con respaldos diarios o un volcado
   cifrado periódico) es una deuda abierta.
