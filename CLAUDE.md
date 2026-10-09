@@ -120,7 +120,7 @@ Cuando código y documentación discrepen:
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Moderación de imagen | Google Cloud Vision (SafeSearch + OCR) **+ Amazon Rekognition** (`DetectModerationLabels`) | Dos proveedores porque cubren cosas distintas: SafeSearch no mira drogas/alcohol/gambling y Rekognition no hace OCR. Rekognition **no batchea** (una llamada por imagen) y acepta **solo JPEG/PNG**, al revés de Vision — ver §3 |
-| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins), desde el 2026-10-08 la 4 (cola de moderación y aprobar publicaciones) y la 3b (restablecer la app autenticadora de otro admin), y desde el 2026-10-09 la 5 (catálogo: universidades, campus y dominios; despliegue y aceptación completados, cierre pendiente de K-14). Supabase Studio para lo que el panel aún no cubre | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **A 2026-10-09, las métricas (Ola 6) siguen en Studio** |
+| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins), desde el 2026-10-08 la 4 (cola de moderación y aprobar publicaciones) y la 3b (restablecer la app autenticadora de otro admin), y desde el 2026-10-09 la 5 (catálogo: universidades, campus y dominios; CERRADA el 2026-10-09). Supabase Studio para lo que el panel aún no cubre | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **A 2026-10-09, las métricas (Ola 6) siguen en Studio** |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Nomenclatura de API keys (Supabase renombró su sistema en 2026):** usamos las
@@ -1681,7 +1681,7 @@ Lo que no se ve en la tabla:
 **Panel de admin, Olas 1 a 5 y 3b de RF-17 (`20260930000477` + `20260930000478`
 + `20260930000479`, EN PRODUCCIÓN desde el 2026-10-02; `20261007000480` a
 `…482` y `20261008000483`, desde el 2026-10-08; `20261008000484`, desde el
-2026-10-09, con el cierre de la Ola 5 pendiente de K-14).** Plan en `docs/rf17-plan-admin.md`; las reglas
+2026-10-09; RF-17 Ola 5 — CERRADA).** Plan en `docs/rf17-plan-admin.md`; las reglas
 del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
 
 - **Quién es admin: `private.admins`**, una fila con `activado_at` puesto. No
@@ -1749,7 +1749,7 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   (medido en remoto el 2026-10-09): las 7 de escritura del catálogo, cada una con
   el nombre de su RPC.
 - **Catálogo (`20261008000484`, Ola 5): en producción desde el 2026-10-09;
-  despliegue y aceptación completados, cierre pendiente de K-14** (evidencia
+  RF-17 Ola 5 — CERRADA** (evidencia
   en §8, "Hecho"). Plan, decisiones y orden de despliegue en
   `docs/rf17-ola5-plan.md`; qué cambió al implementarla, en
   `docs/rf17-plan-admin.md`. En corto:
@@ -4121,8 +4121,8 @@ de los route groups).
     la Ola 5 y el propietario lo confirmó; desde entonces la línea base es 3
     admins, 3 factores y 10/10 usuarios (bloque siguiente).
 
-- **Panel de admin (RF-17), Ola 5 EN PRODUCCIÓN (2026-10-09, UTC): despliegue
-  y aceptación completados, cierre pendiente de K-14.** Catálogo
+- **Panel de admin (RF-17), Ola 5 EN PRODUCCIÓN, CERRADA (2026-10-09, UTC):
+  RF-17 Ola 5 — CERRADA tras K-14.** Catálogo
   institucional: universidades, campus y dominios (con borrado lógico) desde
   el panel. Plan v3.2 y orden K en `docs/rf17-ola5-plan.md`; qué cambió al
   implementarla, en `docs/rf17-plan-admin.md`. Commits `d9e5300` a `d42a503`
@@ -4210,6 +4210,12 @@ de los route groups).
     universidades (`31b8779c…`), campus (`a80db2b1…`), asignaciones de
     usuarios (`1b07b419…`), admins (`8c60a45c…`) y factores (`917cea64…`),
     iguales a K-6.
+  - **K-14 (cierre, GO):** al comprobarlo, `HEAD = main = origin/main =
+    9f2f434` (publicado con `git push origin 9f2f434:refs/heads/main`), 0/0
+    por delante y por detrás; 48 migraciones en el repo y 48 en remoto, la
+    última `20261008000484`; `supabase db push --dry-run`: remoto al día,
+    `migrations: []`. El único archivo sin trackear era
+    `design/rlvo-feed-variants.html`, ajeno a RF-17 y no tocado.
 
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
@@ -4442,14 +4448,11 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      (`…481` + Edge Function `eliminar-publicacion`) y el registro mínimo
      retenido con pg_cron (`…482`); panel desplegado (`2bb8f280`, `d4cf591`) y
      aceptación manual A-F pasada. Evidencia en "Hecho".
-   - **Ola 5 — EN PRODUCCIÓN (2026-10-09): despliegue y aceptación
-     completados, cierre pendiente de K-14** (commits `d9e5300` a `d42a503` y
+   - **Ola 5 — CERRADA, EN PRODUCCIÓN (2026-10-09)** (commits `d9e5300` a `d42a503` y
      `014f7f0`; plan v3.2 en `docs/rf17-ola5-plan.md`): 35 frames, migración
      `20261008000484` (48 = 48 en remoto), T37 (`rls.sql` en 606),
      `probe-registro` 55, `probe-admin` 94, el panel de Catálogo en el
-     deployment `3259ea7f` y K-1 a K-12 en GO (evidencia en "Hecho"). Falta
-     K-14: Git limpio, `HEAD = origin/main` con el commit de cierre publicado
-     y 48 = 48 remedido; solo entonces se escribe "CERRADA".
+     deployment `3259ea7f` y K-1 a K-14 en GO (evidencia en "Hecho").
      **Corrección del plan, no regresión:** un cambio de NOMBRE de universidad
      o campus se ve en el chip del Feed y en el Selector de campus al reabrir
      la app (el catálogo se lee una vez por sesión,
@@ -4464,9 +4467,9 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
    hechas (T36 (g)-(i) y el trigger de `resolved_at`), y la de la Ola 4 también
    (las fixtures, corregidas en `…480`). Sigue la de la Ola 6 de
    `docs/rf17-plan-admin.md`.
-   Pendientes: K-14 de la Ola 5, la Ola 6, una estrategia de respaldos
+   Pendientes: la Ola 6, una estrategia de respaldos
    (índice de deuda, abajo) y los secretos de Vault de `send-push`
-   (pendiente 1). Ninguno de los de las Olas 3, 3b y 4 queda abierto.
+   (pendiente 1). Ninguno de los de las Olas 3, 3b, 4 y 5 queda abierto.
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que

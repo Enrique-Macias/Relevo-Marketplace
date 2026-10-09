@@ -9,8 +9,7 @@
 `f7ee579`; Ola 3: `887fc72` a `da097ac`). **Ola 4 CERRADA en producción el
 2026-10-08** (`26d0e62` a `d4cf591`). **Ola 3b CERRADA en producción el
 2026-10-08** (`e5f498a` a `c45009d`). **Ola 5 (catálogo, `20261008000484`)
-en producción desde el 2026-10-09: despliegue y aceptación completados,
-cierre pendiente de K-14** (`d9e5300` a `d42a503` y `014f7f0`; deployment
+en producción desde el 2026-10-09: RF-17 Ola 5 — CERRADA** (`d9e5300` a `d42a503` y `014f7f0`; deployment
 `3259ea7f`); plan en `docs/rf17-ola5-plan.md` (v3.2) y evidencia en
 `CLAUDE.md` §8, "Hecho". La Ola 6 sigue pendiente.
 Las seis secciones siguientes ganan sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
@@ -30,10 +29,11 @@ evidencia y el orden de despliegue con sus paradas, es
 (2026-10-09, UTC):** la `…484` se aplicó a las 17:31:27 (48 = 48 migraciones),
 los tipos `--linked` son `014f7f0` y el panel es el deployment
 `3259ea7f-ff80-45ed-8817-ea37a63f45ca` (fuente `014f7f0`, `index-DKEG9wmp.js`).
-K-1 a K-12 dieron GO y K-6b no fue necesaria; el detalle de cada paso, sus
+K-1 a K-14 dieron GO y K-6b no fue necesaria; el detalle de cada paso, sus
 hashes y sus límites (K-7B no ejecuta el hook bajo `supabase_auth_admin` en
 remoto; la copia de K-2 no trae Storage, Vault ni `supabase_migrations`) está
-en `CLAUDE.md` §8, "Hecho". **El cierre ("CERRADA") espera a K-14.** El
+en `CLAUDE.md` §8, "Hecho". **RF-17 Ola 5 — CERRADA** tras K-14 (`HEAD =
+origin/main = 9f2f434`, 0/0, 48 = 48, `db push --dry-run` al día). El
 preflight K-1 encontró una diferencia ajena a la ola: el propietario borró, el
 2026-10-08 y después del cierre de la Ola 3b, la cuenta temporal
 `contacto@rlvo.com.mx`; la línea base pasó a 3 admins, 3 factores y 10/10
@@ -1432,7 +1432,7 @@ rechazado" (control: la rama sin el chequeo de existencia).
 | 3 | Despliegue (Cloudflare Pages) y alta de los 3 admins | **En producción** (2026-10-02 al 2026-10-05, ver "Ola 3: lo que cambió") |
 | 3b | `admin-reset-mfa` (con su frame primero) | **Cerrada en producción** (2026-10-08, ver "Ola 3b: lo que cambió") |
 | 4 | Moderación (cola, aprobar, trigger de dueño activo, policy del dueño) | **Cerrada en producción** (2026-10-08, ver "Ola 4: lo que cambió") |
-| 5 | Catálogo institucional | **En producción desde el 2026-10-09; despliegue y aceptación completados, cierre pendiente de K-14** (ver "Ola 5: lo que cambió" y `docs/rf17-ola5-plan.md`) |
+| 5 | Catálogo institucional | **CERRADA, en producción desde el 2026-10-09** (ver "Ola 5: lo que cambió" y `docs/rf17-ola5-plan.md`) |
 | 6 | Métricas y `actividad_diaria` | Pendiente |
 
 ### Ola 0 — sin panel (EN PRODUCCIÓN)

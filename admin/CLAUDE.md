@@ -125,11 +125,11 @@ la busca por `listings_select`, que esconde la `bloqueada`). Es deuda aceptada
 (`CLAUDE.md` §3, "Panel de admin"); antes de bloquear una vendida con una
 calificación pendiente, avísale al comprador por el canal de soporte.
 
-## Catálogo (Ola 5, `20261008000484`): en producción desde el 2026-10-09; cierre pendiente de K-14
+## Catálogo (Ola 5, `20261008000484`): en producción desde el 2026-10-09; RF-17 Ola 5 — CERRADA
 
-Despliegue y aceptación completados (K-1 a K-12 del plan v3.2, evidencia en
-`CLAUDE.md` §8, "Hecho"): migración en remoto (48 = 48), tipos `--linked`
-(`014f7f0`) y deployment `3259ea7f`. Falta K-14 para escribir "CERRADA".
+Despliegue, aceptación y cierre completados (K-1 a K-14 del plan v3.2,
+evidencia en `CLAUDE.md` §8, "Hecho"): migración en remoto (48 = 48), tipos
+`--linked` (`014f7f0`), deployment `3259ea7f` y cierre en `9f2f434`.
 
 - **Pantallas:** `pantallas/Catalogo.tsx` (lista) y `pantallas/DetalleUniversidad.tsx`
   (campus y dominios, con las variantes sin campus y sin dominios), y los modales
