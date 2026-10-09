@@ -120,7 +120,7 @@ Cuando código y documentación discrepen:
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Moderación de imagen | Google Cloud Vision (SafeSearch + OCR) **+ Amazon Rekognition** (`DetectModerationLabels`) | Dos proveedores porque cubren cosas distintas: SafeSearch no mira drogas/alcohol/gambling y Rekognition no hace OCR. Rekognition **no batchea** (una llamada por imagen) y acepta **solo JPEG/PNG**, al revés de Vision — ver §3 |
-| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins), desde el 2026-10-08 la 4 (cola de moderación y aprobar publicaciones) y la 3b (restablecer la app autenticadora de otro admin). Supabase Studio para lo que el panel aún no cubre | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **A 2026-10-08, el catálogo y las métricas (Olas 5-6) siguen en Studio** |
+| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins), desde el 2026-10-08 la 4 (cola de moderación y aprobar publicaciones) y la 3b (restablecer la app autenticadora de otro admin), y desde el 2026-10-09 la 5 (catálogo: universidades, campus y dominios; despliegue y aceptación completados, cierre pendiente de K-14). Supabase Studio para lo que el panel aún no cubre | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **A 2026-10-09, las métricas (Ola 6) siguen en Studio** |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Nomenclatura de API keys (Supabase renombró su sistema en 2026):** usamos las
@@ -217,8 +217,8 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 ## 3. Modelo de datos — esquema implementado
 
 Definido en 48 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-10-09; la 48 es `…484`, en el repo y
-pendiente de push; decía "46", "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
+`ls supabase/migrations | wc -l` el 2026-10-09; la 48 es `…484`, también en
+remoto desde ese día; decía "46", "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
@@ -233,6 +233,12 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 48 y 48 (medido el 2026-10-09) — a la par.** `ls
+supabase/migrations | wc -l` da **48**; `supabase_migrations.schema_migrations`
+en remoto también da **48**, con `20261008000484` como última, aplicada el
+2026-10-09 a las 17:31:27 UTC (K-5 de `docs/rf17-ola5-plan.md`; evidencia en
+§8, "Hecho"). La historia de antes, tal como estaba:
 
 **Repo y remoto: 48 y 47 (medido el 2026-10-09).** `ls supabase/migrations |
 wc -l` da **48**; `mcp__supabase__list_migrations` da **47**. La que falta en
@@ -419,7 +425,7 @@ campus          (id, universidad_id → universidades, nombre, ciudad,
 categories      (id, nombre único) — 12 filas sembradas, ver seed.sql
 universidad_dominios (dominio text PK, universidad_id → universidades on delete
                  cascade, created_at, activo boolean not null default true
-                 desde `…484`, en el repo y pendiente de push) — con qué
+                 desde `…484`, en producción desde el 2026-10-09) — con qué
                  dominios de correo se puede REGISTRAR una cuenta; uno
                  inactivo no admite altas nuevas y no toca a las cuentas que
                  ya existen. Check: minúsculas, sin espacios, sin '@'.
@@ -1489,8 +1495,8 @@ fila.
   permite; todo lo demás rechaza, incluido un email NULL. El rechazo es
   `{"error":{"http_code":403,"message":"dominio_no_participante"}}`, y GoTrue lo
   entrega como `403` con `msg` = ese código. El copy lo pone el cliente.
-  **Desde `20261008000484` (Ola 5 de RF-17; implementada y probada en local,
-  pendiente de despliegue)** el match exige además `activo`, en el hook y en
+  **Desde `20261008000484` (Ola 5 de RF-17; en producción desde el
+  2026-10-09)** el match exige además `activo`, en el hook y en
   `handle_new_user()`, las dos copiadas literalmente de `…474` y `…466` con
   solo ese cambio. Un dominio inactivo da el MISMO 403 que uno inexistente.
   `supabase_auth_admin` lee `activo` sin grant nuevo: su grant y su policy son
@@ -1672,9 +1678,10 @@ Lo que no se ve en la tabla:
   desde `listings`, que el borrado se lleva. Detalle de la función (auth,
   reautenticación por `amr`, idempotencia) en §8 y en §9.
 
-**Panel de admin, Olas 1 a 4 y 3b de RF-17 (`20260930000477` + `20260930000478`
+**Panel de admin, Olas 1 a 5 y 3b de RF-17 (`20260930000477` + `20260930000478`
 + `20260930000479`, EN PRODUCCIÓN desde el 2026-10-02; `20261007000480` a
-`…482` y `20261008000483`, desde el 2026-10-08).** Plan en `docs/rf17-plan-admin.md`; las reglas
+`…482` y `20261008000483`, desde el 2026-10-08; `20261008000484`, desde el
+2026-10-09, con el cierre de la Ola 5 pendiente de K-14).** Plan en `docs/rf17-plan-admin.md`; las reglas
 del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
 
 - **Quién es admin: `private.admins`**, una fila con `activado_at` puesto. No
@@ -1713,9 +1720,9 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `reactivar_usuario` (Ola 1), `listar_reportes`, `resolver_reporte`,
   `detalle_listing` y `bloquear_listing` (Ola 2), `cola_moderacion` y
   `aprobar_listing` (Ola 4), y `restablecer_mfa_iniciar` y
-  `restablecer_mfa_completar` (Ola 3b). **En LOCAL son 21** (medido en
-  `pg_proc` el 2026-10-09), con las 8 del catálogo de la `…484` (Ola 5,
-  pendiente de push): `catalogo`, `crear_universidad`, `editar_universidad`,
+  `restablecer_mfa_completar` (Ola 3b). **Desde `…484` son 21** (medido en
+  `pg_proc` de remoto el 2026-10-09, md5 conjunto igual al de local), con las
+  8 del catálogo (Ola 5): `catalogo`, `crear_universidad`, `editar_universidad`,
   `crear_campus`, `editar_campus`, `agregar_dominio`, `desactivar_dominio` y
   `reactivar_dominio`.
 - **Reportes y bloqueo (`20260930000479`, Ola 2).** `listar_reportes` usa solo
@@ -1738,11 +1745,12 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `activar_admin`), `resolver_reporte` y `bloquear_listing` (Ola 2) y
   `desactivar_admin`, sumada a la 479 antes de su push (T35 (j3)). **Desde
   `…481` son 7**, con `aprobar_listing`, y **desde `…483` son 9**, con
-  `restablecer_mfa` y `factores_mfa_borrados`. **En el repo, con `…484`
-  (pendiente de push), son 16**: las 7 de escritura del catálogo, cada una con
+  `restablecer_mfa` y `factores_mfa_borrados`. **Desde `…484` son 16**
+  (medido en remoto el 2026-10-09): las 7 de escritura del catálogo, cada una con
   el nombre de su RPC.
-- **Catálogo (`20261008000484`, Ola 5): implementada y probada en local,
-  pendiente de despliegue.** Plan, decisiones y orden de despliegue en
+- **Catálogo (`20261008000484`, Ola 5): en producción desde el 2026-10-09;
+  despliegue y aceptación completados, cierre pendiente de K-14** (evidencia
+  en §8, "Hecho"). Plan, decisiones y orden de despliegue en
   `docs/rf17-ola5-plan.md`; qué cambió al implementarla, en
   `docs/rf17-plan-admin.md`. En corto:
   - `universidad_dominios.activo` (borrado lógico de dominios, D12, sin
@@ -2704,7 +2712,7 @@ aserción, porque el `ERR:…` de un rechazo se casteaba a jsonb;
 regla cayó.
 
 Y a **606** con las 77 de T37 (catálogo institucional, Ola 5 de RF-17,
-`20261008000484`, implementada y probada en local, pendiente de despliegue),
+`20261008000484`, en producción desde el 2026-10-09),
 autocontenida con su propia universidad sin campus, dos dominios propios, un
 admin activado y un no-admin. T28 (a3) suma un dominio DESACTIVADO al amarre
 hook ⇔ trigger sin cambiar la cuenta. **(b) prueba la LÓGICA del hook como
@@ -3376,7 +3384,7 @@ en "Verificación (correo no participante)".
      pasa por el hook. Importa `src/lib/registro.ts`, que es el amarre entre el
      código de rechazo de SQL y el que reconoce el cliente. **55 pruebas**
      (34 antes de la Ola 5 de RF-17): el caso 10 cubre `universidad_dominios.activo`
-     (`…484`, pendiente de push) contra GoTrue real: dominio activo, desactivado,
+     (`…484`) contra GoTrue real: dominio activo, desactivado,
      inexistente y reactivado; una cuenta existente cuyo dominio se desactiva
      sigue entrando y recuperando su contraseña; `/admin/users` con un dominio
      inactivo nace sin universidad; y `correo_bloqueado` sigue antes que el
@@ -4103,6 +4111,105 @@ de los route groups).
     desactivada; 4 factores, todos TOTP verified; 0 restablecimientos
     pendientes; 11 `auth.users` y 11 `public.users`; auditoría de 13 filas, id
     máximo 13 (9-13 son del E2E).
+  - **Después del cierre (no lo cambia):** el 2026-10-08 a las 22:11:41 UTC
+    el propietario eliminó a propósito la cuenta temporal
+    `contacto@rlvo.com.mx` desde el Dashboard de Supabase (`DELETE
+    /auth/v1/admin/users/…` por la management API, como `service_role`,
+    según los logs de Auth). Se llevó su fila de `public.users`, la de
+    `private.admins` y su factor TOTP; `admin_acciones` conserva sus filas
+    9-13, y `correos_bloqueados` sigue vacía. Lo detectó el preflight K-1 de
+    la Ola 5 y el propietario lo confirmó; desde entonces la línea base es 3
+    admins, 3 factores y 10/10 usuarios (bloque siguiente).
+
+- **Panel de admin (RF-17), Ola 5 EN PRODUCCIÓN (2026-10-09, UTC): despliegue
+  y aceptación completados, cierre pendiente de K-14.** Catálogo
+  institucional: universidades, campus y dominios (con borrado lógico) desde
+  el panel. Plan v3.2 y orden K en `docs/rf17-ola5-plan.md`; qué cambió al
+  implementarla, en `docs/rf17-plan-admin.md`. Commits `d9e5300` a `d42a503`
+  (publicados con `git push origin d42a503:refs/heads/main`) y `014f7f0`
+  (tipos). A diferencia de las Olas 3 a 4, en esta ola el usuario autorizó
+  explícitamente, paso por paso, que Claude corriera el `git push`, el
+  `db push` y el `wrangler pages deploy`; la copia cifrada (K-2) y el smoke
+  (K-11) los hizo el usuario:
+  - **K-1 (preflight, solo lectura):** remoto en 47 migraciones (última
+    `…483`), 6 dominios sin `activo`, hook `b6e6a8a7…` y `handle_new_user`
+    `87e685cf…` con sus ACL, 0 nombres o dominios que violaran los checks
+    nuevos. Única diferencia con la línea base del plan: la cuenta
+    `contacto@rlvo.com.mx` borrada después de la Ola 3b (bloque anterior);
+    nueva línea base aceptada: 3 admins activos (md5 `8c60a45c…`), 3 factores
+    TOTP verificados (md5 `917cea64…`), 10/10 usuarios y 13 auditorías.
+  - **K-2 (copia cifrada, la hizo el usuario):** `supabase db dump --linked`
+    de esquema, esquema completo (`public`, `private`, `auth`, `storage`) y
+    datos, más `docs/rf17-ola5-recuperacion.sql`, en una imagen AES-256
+    (`relevo-respaldo-2026-10-09.dmg`, 254,976 B, una frase de paso) con su
+    manifiesto SHA-256. Antes de cifrar: el volcado es anterior a la `…484`
+    (sin `activo`), con 10/10 usuarios, 3 admins, 3 factores y 13
+    auditorías; la herramienta, byte-idéntica al repo. Montada en solo
+    lectura: los 4 SHA-256 OK y byte-idénticos a la copia en claro, que
+    después se borró. **Límites:** como la del 2026-10-01, no trae los
+    archivos de Storage (solo las filas de `storage.objects`), ni Vault, ni
+    `supabase_migrations`.
+  - **K-4/K-5 (push de la migración):** el dry-run, repetido justo antes,
+    listó solo `20261008000484_catalogo_admin.sql`; `supabase db push --yes`
+    la aplicó el 2026-10-09 a las 17:31:27 UTC sin errores, sin seeds ni
+    roles. Remoto en **48 = 48**.
+  - **K-6 (readback, GO; K-6b no fue necesaria):** `activo` boolean, default
+    `true`, NOT NULL, 6 de 6 activos; hook `cc0b0bbe…` y `handle_new_user`
+    `f11e4416…`, iguales a local, y al quitarles `and d.activo` sus md5
+    vuelven exactamente a `b6e6a8a7…`/`87e685cf…` (único cambio); ACL y
+    atributos de las dos sin cambios; CHECK de 16 acciones (`309b4d12…`),
+    checks de nombres (`9c702565…`) e índices (`c91e8e69…`) iguales a local;
+    21 funciones `admin.*` (md5 conjunto `2c3d584a…`, igual a local; las 13
+    anteriores sin cambios) y 39 de `private` (`5e5f9696…`; las 36 que no
+    debían cambiar, sin cambios). Las 8 RPC: definer, `search_path=""`,
+    EXECUTE solo `authenticated`, con `exigir_admin()`; las 2 helpers sin
+    EXECUTE para el cliente.
+  - **K-7B (registro sin crear usuarios, GO):** la lógica del hook, ejecutada
+    como `postgres`, da `{}` para los 6 dominios y 403 para uno inexistente y
+    para `gmail.com`; `supabase_auth_admin` conserva SELECT de tabla y de la
+    columna `activo`, con su única policy (`qual = true`); `correo_bloqueado`
+    sigue antes que el dominio; `on_auth_user_created` intacto. Desde el push
+    no hubo ninguna petición de Auth ni ningún error en Postgres (los 44
+    registros posteriores son la propia migración). **Límite:** no demuestra
+    una ejecución real del hook bajo `supabase_auth_admin` después de la
+    `…484` (en remoto `postgres` no puede hacer `set role`); esa ejecución
+    está probada en local (commit b y `probe-registro` 55/55, con md5 local =
+    remoto) y quedará en los logs `run_hook` de la primera alta real.
+  - **K-8 (tipos `--linked`):** `014f7f0`. En `public`, solo
+    `universidad_dominios.activo`; en `admin`, solo el formato `--linked`
+    (§9), con las 8 RPC y 21 funciones.
+  - **K-9 (build y preflight, GO):** dos builds limpios byte-idénticos;
+    `index-DKEG9wmp.js` (490,477 B, SHA-256 `674eb80b…`),
+    `index-CmD0Xqra.css` (`f2fe719a…`), `index.html` (`7196db94…`) y
+    `_headers` (`80c9304e…`); 0 `.map`, 0 JWT, 0 `service_role`, 0 llaves
+    secretas, solo la URL y la publishable del remoto, 0 beacon; los 6
+    headers iguales a los del deployment anterior.
+  - **K-10 (deploy, GO):** `npx wrangler pages deploy admin/dist
+    --project-name rlvo-admin --branch main --commit-hash 014f7f0` (tras
+    publicar `014f7f0`). Deployment
+    **`3259ea7f-ff80-45ed-8817-ea37a63f45ca`**
+    (`https://3259ea7f.rlvo-admin.pages.dev`), Production, rama `main`, fuente
+    `014f7f0`. En los 3 hosts: el HTML de `/` y de una ruta profunda,
+    byte-idéntico a `dist/index.html` en las 24 peticiones de la batería de 4
+    variantes y sin beacon; JS, CSS, fuentes y licencias byte-idénticos
+    (18/18); los 6 headers iguales a `_headers` (90/90); los `.map` dan el
+    fallback de SPA. Observaciones: wrangler avisó de cambios sin commitear
+    (un archivo ajeno, sin trackear, fuera de `dist`), y el dominio propio
+    todavía sirve el JS anterior pedido directo (caché del borde, ya
+    documentada).
+  - **K-11 (smoke manual del usuario, GO):** Catálogo con sus conteos, y tres
+    rechazos que no escriben. Llegaron a la base (logs del gateway y de
+    Postgres): `agregar_dominio` de `tec.mx` → `dominio_existe_activo` (HTTP
+    500, SQLSTATE 55000), de `gmail.com` → `dominio_no_permitido` (400,
+    22023), y guardar Tec sin cambios → `sin_cambios` (500, 55000). El panel
+    elige el texto por el mensaje, no por el status.
+  - **K-12 (readback final, GO):** `admin_acciones` 13 filas, id máximo 13
+    (ninguna escritura del catálogo, tampoco de K-11); 5 universidades, 13
+    campus y 6 dominios, todos activos y con los mismos pares; 10/10
+    usuarios, Tec con 7; 3 admins activos y 3 TOTP verificados; md5 de
+    universidades (`31b8779c…`), campus (`a80db2b1…`), asignaciones de
+    usuarios (`1b07b419…`), admins (`8c60a45c…`) y factores (`917cea64…`),
+    iguales a K-6.
 
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
@@ -4335,17 +4442,14 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      (`…481` + Edge Function `eliminar-publicacion`) y el registro mínimo
      retenido con pg_cron (`…482`); panel desplegado (`2bb8f280`, `d4cf591`) y
      aceptación manual A-F pasada. Evidencia en "Hecho".
-   - **Ola 5 — implementada y probada en local, pendiente de despliegue**
-     (commits `d9e5300` a `1f2d9ca`; plan v3.2 en `docs/rf17-ola5-plan.md`):
-     35 frames, migración `20261008000484`, T37 (`rls.sql` en 606),
-     `probe-registro` 55, `probe-admin` 94, el panel de Catálogo y la prueba
-     manual en local (I-local) aprobada por el usuario el 2026-10-09. **En
-     remoto no hay nada todavía** (47 migraciones). Lo que falta es el orden K
-     del plan, cada paso con su ⛔: preflight de solo lectura (K-1), copia
-     cifrada obligatoria junto con `docs/rf17-ola5-recuperacion.sql` (K-2),
-     push de Git, `db push --dry-run` y `db push` (los corre el usuario),
-     readback, regresión de registro sin crear usuario, tipos `--linked`,
-     deploy del panel, smoke y cierre.
+   - **Ola 5 — EN PRODUCCIÓN (2026-10-09): despliegue y aceptación
+     completados, cierre pendiente de K-14** (commits `d9e5300` a `d42a503` y
+     `014f7f0`; plan v3.2 en `docs/rf17-ola5-plan.md`): 35 frames, migración
+     `20261008000484` (48 = 48 en remoto), T37 (`rls.sql` en 606),
+     `probe-registro` 55, `probe-admin` 94, el panel de Catálogo en el
+     deployment `3259ea7f` y K-1 a K-12 en GO (evidencia en "Hecho"). Falta
+     K-14: Git limpio, `HEAD = origin/main` con el commit de cierre publicado
+     y 48 = 48 remedido; solo entonces se escribe "CERRADA".
      **Corrección del plan, no regresión:** un cambio de NOMBRE de universidad
      o campus se ve en el chip del Feed y en el Selector de campus al reabrir
      la app (el catálogo se lee una vez por sesión,
@@ -4360,9 +4464,9 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
    hechas (T36 (g)-(i) y el trigger de `resolved_at`), y la de la Ola 4 también
    (las fixtures, corregidas en `…480`). Sigue la de la Ola 6 de
    `docs/rf17-plan-admin.md`.
-   Pendientes: las Olas 5 y 6, una estrategia de respaldos (índice de
-   deuda, abajo) y los secretos de Vault de `send-push` (pendiente 1). Ninguno
-   de los de las Olas 3, 3b y 4 queda abierto.
+   Pendientes: K-14 de la Ola 5, la Ola 6, una estrategia de respaldos
+   (índice de deuda, abajo) y los secretos de Vault de `send-push`
+   (pendiente 1). Ninguno de los de las Olas 3, 3b y 4 queda abierto.
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que
@@ -4441,7 +4545,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - Compartir comparte solo texto plano, sin ningún link — en LAS DOS pantallas que lo tienen → `compartir-deeplinks.md`
 - ~~`reports.resolved_at` existe y NADIE la escribe~~ **[CERRADA]** por `20260930000479` (trigger `reports_sella_resolved_at`, en producción desde 2026-10-02) → `notificaciones-push.md`
 - Bloquear una `vendida` deja a su comprador sin camino en la UI para calificar (`listings_select` esconde la `bloqueada`) → CLAUDE.md §3, "Panel de admin"
-- **El proyecto NO tiene backups ni PITR**: el único respaldo es una copia cifrada del 2026-10-01 (anterior a A1a y a los 3 admins), con ciclo de vida sin decidir y su efecto en el aviso de privacidad sin comprobar → CLAUDE.md §8, "Hecho", Panel de admin
+- **El proyecto NO tiene backups ni PITR**: los únicos respaldos son dos copias cifradas manuales, la del 2026-10-01 (anterior a A1a y a los 3 admins) y la del 2026-10-09 (K-2 de la Ola 5, anterior a la `…484`), con ciclo de vida sin decidir y su efecto en el aviso de privacidad sin comprobar → CLAUDE.md §8, "Hecho", Panel de admin
 - Los correos personales de 2 admins quedan en `admin_acciones.admin_correo`, una tabla append-only; falta reflejarlo en el aviso de privacidad y en el trámite ARCO → `docs/auditoria-lanzamiento-2026-09-22.md`, §6
 - `listing_photos` con `storage_path` en forma de URL completa (publicaciones 1 y 2, pausadas, anteriores a `…445`) y objetos de Storage sin fila: Storage responde "Object not found" a esas rutas (medido en local) y, por el código, el panel mostraría "La foto no está disponible"; hoy ningún reporte apunta a esas publicaciones → `publicar-fotos.md` y `docs/admin-runbook.md`
 - La landing (otro repo) podría cargar el snippet de Cloudflare Web Analytics: sin verificar si lo hace, y el aviso de privacidad no lo menciona → `docs/auditoria-lanzamiento-2026-09-22.md`, §6

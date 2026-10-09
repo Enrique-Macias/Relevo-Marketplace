@@ -125,7 +125,11 @@ la busca por `listings_select`, que esconde la `bloqueada`). Es deuda aceptada
 (`CLAUDE.md` §3, "Panel de admin"); antes de bloquear una vendida con una
 calificación pendiente, avísale al comprador por el canal de soporte.
 
-## Catálogo (Ola 5, `20261008000484`): implementado y probado en local, pendiente de despliegue
+## Catálogo (Ola 5, `20261008000484`): en producción desde el 2026-10-09; cierre pendiente de K-14
+
+Despliegue y aceptación completados (K-1 a K-12 del plan v3.2, evidencia en
+`CLAUDE.md` §8, "Hecho"): migración en remoto (48 = 48), tipos `--linked`
+(`014f7f0`) y deployment `3259ea7f`. Falta K-14 para escribir "CERRADA".
 
 - **Pantallas:** `pantallas/Catalogo.tsx` (lista) y `pantallas/DetalleUniversidad.tsx`
   (campus y dominios, con las variantes sin campus y sin dominios), y los modales
@@ -273,8 +277,11 @@ la secret key temporal y la contraseña de la base; ver la cabecera del script).
 ## Producción (Ola 3)
 
 *Estado a 2026-10-05, salvo el deployment vigente; si algo de esto cambia, se
-cambia aquí.* Deployment de Production vigente a 2026-10-08: `f0e7e467`
-(fuente `c45009d`, Ola 3b). **Si el HEAD local tiene commits que no son del
+cambia aquí.* Deployment de Production vigente a 2026-10-09:
+`3259ea7f-ff80-45ed-8817-ea37a63f45ca` (fuente `014f7f0`, Ola 5;
+`index-DKEG9wmp.js`, SHA-256 `674eb80b…`), desplegado con
+`npx wrangler pages deploy admin/dist --project-name rlvo-admin --branch main
+--commit-hash 014f7f0`; el anterior era `f0e7e467` (fuente `c45009d`, Ola 3b). **Si el HEAD local tiene commits que no son del
 panel, se despliega con `--commit-hash` del commit que corresponde**: wrangler
 etiqueta el deployment con el HEAD.
 

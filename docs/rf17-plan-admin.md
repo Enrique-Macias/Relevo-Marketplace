@@ -1,6 +1,6 @@
 # RF-17 — Plataforma web de administración: plan de arquitectura
 
-**Estado (2026-10-08):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
+**Estado (2026-10-09):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
 (`7574b01`; remedido en remoto el 2026-09-29, cuando había 40 migraciones con
 `20260930000476` y el `WHEN` de `reports_notify_resolved` con
 `reporter_id IS NOT NULL`). **Olas 1, 2 y 3 en producción desde el 2026-10-02**
@@ -8,10 +8,11 @@
 `6278a0a` a `b11865c`; Ola 2: frames `5466752`/`2e3ab12` y código `3f49263` a
 `f7ee579`; Ola 3: `887fc72` a `da097ac`). **Ola 4 CERRADA en producción el
 2026-10-08** (`26d0e62` a `d4cf591`). **Ola 3b CERRADA en producción el
-2026-10-08** (`e5f498a` a `c45009d`). **Ola 5 (catálogo, `20261008000484`):
-implementada y probada en local, pendiente de despliegue** (`d9e5300` a
-`1f2d9ca`, más la documentación); plan y evidencia en `docs/rf17-ola5-plan.md`
-(v3.2). La Ola 6 sigue pendiente.
+2026-10-08** (`e5f498a` a `c45009d`). **Ola 5 (catálogo, `20261008000484`)
+en producción desde el 2026-10-09: despliegue y aceptación completados,
+cierre pendiente de K-14** (`d9e5300` a `d42a503` y `014f7f0`; deployment
+`3259ea7f`); plan en `docs/rf17-ola5-plan.md` (v3.2) y evidencia en
+`CLAUDE.md` §8, "Hecho". La Ola 6 sigue pendiente.
 Las seis secciones siguientes ganan sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
 chocan, prevalece v2.1** (`is_admin()` con `jsonb_typeof`, la lista de claves de
 auditoría por tipo, el orden de las olas). El resumen operativo vive en
@@ -19,15 +20,24 @@ auditoría por tipo, el orden de las olas). El resumen operativo vive en
 
 ## Ola 5: lo que cambió al implementarla (gana sobre el resto del archivo)
 
-Implementada y probada en local entre el 2026-10-08 y el 2026-10-09 (UTC),
-**pendiente de despliegue**: frames `d9e5300` y `e980157`, migración `d890966`,
+Implementada y probada en local entre el 2026-10-08 y el 2026-10-09 (UTC):
+frames `d9e5300` y `e980157`, migración `d890966`,
 T37 `eb7a019`, `probe-registro` `f2c4625`, textos y `probe-admin` `438bb5f`,
 tipos `--local` `1863a28` y panel `1f2d9ca`. El plan aprobado, con todas sus
 decisiones (L1-L10, L-A a L-F, enmiendas v3.1 y la corrección v3.2), la
 evidencia y el orden de despliegue con sus paradas, es
-**`docs/rf17-ola5-plan.md`**; lo que sigue es el resumen. **Esta sección no
-afirma nada de producción**: el remoto sigue en 47 migraciones (medido el
-2026-10-09 con `list_migrations`).
+**`docs/rf17-ola5-plan.md`**; lo que sigue es el resumen. **Producción
+(2026-10-09, UTC):** la `…484` se aplicó a las 17:31:27 (48 = 48 migraciones),
+los tipos `--linked` son `014f7f0` y el panel es el deployment
+`3259ea7f-ff80-45ed-8817-ea37a63f45ca` (fuente `014f7f0`, `index-DKEG9wmp.js`).
+K-1 a K-12 dieron GO y K-6b no fue necesaria; el detalle de cada paso, sus
+hashes y sus límites (K-7B no ejecuta el hook bajo `supabase_auth_admin` en
+remoto; la copia de K-2 no trae Storage, Vault ni `supabase_migrations`) está
+en `CLAUDE.md` §8, "Hecho". **El cierre ("CERRADA") espera a K-14.** El
+preflight K-1 encontró una diferencia ajena a la ola: el propietario borró, el
+2026-10-08 y después del cierre de la Ola 3b, la cuenta temporal
+`contacto@rlvo.com.mx`; la línea base pasó a 3 admins, 3 factores y 10/10
+usuarios (aquel cierre sigue diciendo 4 y 11, que era cierto entonces).
 
 1. **Frames:** `design/admin-panel.html` de 29 a 35 (seis de `catalogo`) y el
    ítem «Catálogo» en la barra lateral de todos.
@@ -1240,7 +1250,7 @@ consecutivo** (`CLAUDE.md` §6). El orden de v2.1 con los adelantos de D19:
 | 6 | `20261007000481_admin_moderacion.sql` | 4 — **en producción** | `admin.cola_moderacion`, `admin.aprobar_listing`, CHECK de 7 acciones, y las policies del dueño en `storage.objects` y en `listing_photos` según D5 |
 | 7 | `20261007000482_moderacion_retenida.sql` | 4 — **en producción** | `private.moderacion_retenida`, `private.minimo_moderacion`, el trigger `listings_retiene_moderacion`, pg_cron y su purga diaria, y `bloqueadas` en `admin.detalle_usuario` |
 | 8 | `20261008000483_admin_reset_mfa.sql` | 3b — **en producción** | CHECK de 9 acciones, `factores_totp` en las claves de `admin`, `admin.restablecer_mfa_iniciar`/`_completar`, `private.cerrar_restablecer_mfa` y los campos nuevos de `admin.detalle_usuario` |
-| 9 | `20261008000484_catalogo_admin.sql` | 5 — **en el repo, pendiente de push** | `universidad_dominios.activo`; hook y `handle_new_user()` (`create or replace`); CHECK de 16 acciones; checks e índices de nombres; `proveedores_correo_publico` y `normaliza_texto`; las 8 RPC de catálogo |
+| 9 | `20261008000484_catalogo_admin.sql` | 5 — **en producción desde el 2026-10-09** | `universidad_dominios.activo`; hook y `handle_new_user()` (`create or replace`); CHECK de 16 acciones; checks e índices de nombres; `proveedores_correo_publico` y `normaliza_texto`; las 8 RPC de catálogo |
 | 10 | `…485_actividad_diaria_y_metricas.sql` (fecha real al crearla) | 6 | `public.actividad_diaria`, `admin.metricas`, `admin.auditoria` |
 
 La Ola 3 no tiene migración (despliegue). La 3b sí (`…483`, con la Edge
@@ -1422,7 +1432,7 @@ rechazado" (control: la rama sin el chequeo de existencia).
 | 3 | Despliegue (Cloudflare Pages) y alta de los 3 admins | **En producción** (2026-10-02 al 2026-10-05, ver "Ola 3: lo que cambió") |
 | 3b | `admin-reset-mfa` (con su frame primero) | **Cerrada en producción** (2026-10-08, ver "Ola 3b: lo que cambió") |
 | 4 | Moderación (cola, aprobar, trigger de dueño activo, policy del dueño) | **Cerrada en producción** (2026-10-08, ver "Ola 4: lo que cambió") |
-| 5 | Catálogo institucional | **Implementada y probada en local, pendiente de despliegue** (ver "Ola 5: lo que cambió" y `docs/rf17-ola5-plan.md`) |
+| 5 | Catálogo institucional | **En producción desde el 2026-10-09; despliegue y aceptación completados, cierre pendiente de K-14** (ver "Ola 5: lo que cambió" y `docs/rf17-ola5-plan.md`) |
 | 6 | Métricas y `actividad_diaria` | Pendiente |
 
 ### Ola 0 — sin panel (EN PRODUCCIÓN)
