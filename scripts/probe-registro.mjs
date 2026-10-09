@@ -2,6 +2,8 @@
 // Relevo — el registro solo admite dominios institucionales (Auth Hook
 // "Before User Created", migración 20260923000465), y la universidad del perfil
 // la asigna el trigger de alta desde ese mismo dominio (20260924000466, caso 8).
+// Desde 20261008000484 (RF-17 Ola 5) solo cuentan los dominios ACTIVOS en las
+// dos copias (hook y trigger): caso 10.
 //
 // Cómo correrlo (local, con el stack arriba y el hook activo en config.toml):
 //     supabase start           # o supabase db reset
@@ -180,6 +182,9 @@ async function main() {
     .split('\n').filter((l) => l.startsWith('GOTRUE_HOOK_BEFORE_USER_CREATED_')).join(' ');
   console.log(`  GoTrue: ${hook || '(sin hook configurado)'}`);
   const uniTec = sql("select universidad_id from public.universidad_dominios where dominio = 'tec.mx'");
+  console.log(`  dominios con activo: [${sql("select string_agg(dominio || '=' || activo, ', ' order by dominio) from public.universidad_dominios")}]`);
+  console.log(`  hook filtra activo: ${sql("select (prosrc like '%d.activo%')::text from pg_proc where proname = 'hook_before_user_created'")}`
+    + ` · trigger filtra activo: ${sql("select (prosrc like '%d.activo%')::text from pg_proc where proname = 'handle_new_user'")}`);
   console.log(`  trigger de alta asigna universidad: ${sql(
     "select (prosrc like '%universidad_dominios%')::text from pg_proc where proname = 'handle_new_user'")} (tec.mx → ${uniTec || '∅'})`);
 
@@ -188,6 +193,13 @@ async function main() {
   const gmail = `probe-reg-${RUN}@gmail.com`;
   const existente = `probe-reg-existente-${RUN}@gmail.com`;
   const PASS = 'probe-1234';
+
+  // Caso 10 (Ola 5): su propia universidad, con campus y un dominio que el
+  // probe activa y desactiva. Se siembran como `postgres` (la lógica de las
+  // RPC la prueba T37); aquí se mide el camino REAL de GoTrue.
+  const dom10 = `probe-ola5-${RUN}.mx`;
+  let uni10;
+  const activo10 = (v) => sql(`update public.universidad_dominios set activo = ${v} where dominio = '${dom10}'`);
 
   try {
     console.log('\n== 1. Un dominio sembrado se registra ==');
@@ -305,6 +317,85 @@ async function main() {
       esCorreoBloqueado(r9.error) && !esDominioNoParticipante(r9.error));
     ok('…sin fila en auth.users', filas(vetada) === 0);
     ok('…sin correo', (await esperarCorreos(E, vetada, 1, 2000)).length === 0);
+
+    console.log('\n== 10. Dominios activos e inactivos (20261008000484) ==');
+    // Dentro del try para que el finally limpie aunque la siembra falle. El
+    // id sale de un SELECT sobre el CTE: `psql -At` imprime la etiqueta
+    // `INSERT 0 1` junto al `returning` (CLAUDE.md §9).
+    uni10 = sql(`with u as (insert into public.universidades (nombre) values ('Probe Ola5 ${RUN}') returning id) select id from u`);
+    sql(`insert into public.campus (universidad_id, nombre, ciudad) values (${uni10}, 'Campus Probe', 'Monterrey')`);
+    sql(`insert into public.universidad_dominios (dominio, universidad_id) values ('${dom10}', ${uni10})`);
+    // 10a. Activo: se registra y nace con su universidad.
+    const c10a = `probe-reg-10a-${RUN}@${dom10}`;
+    const r10a = await registrar(E, c10a);
+    ok('10a dominio activo → 200', r10a.status === 200, `status ${r10a.status} ${r10a.error?.message ?? ''}`);
+    ok('10a …existe la fila en auth.users', filas(c10a) === 1);
+    ok('10a …llega el correo con el código', (await esperarCorreos(E, c10a, 1)).length === 1);
+    ok('10a …nace con la universidad del dominio', universidadDe(c10a) === uni10,
+      `universidad_id ${universidadDe(c10a)}, esperado ${uni10}`);
+
+    // Siembra de 10e: una cuenta con contraseña creada MIENTRAS el dominio
+    // está activo; se usa después de desactivarlo.
+    const c10e = `probe-reg-10e-${RUN}@${dom10}`;
+    const alta10e = await crearConAdmin(E, c10e, PASS);
+    if (alta10e.status !== 200) throw new Error(`no se pudo sembrar la cuenta 10e: ${alta10e.status}`);
+
+    // 10b. Desactivado: el MISMO dominio se rechaza como uno no participante.
+    activo10(false);
+    const c10b = `probe-reg-10b-${RUN}@${dom10}`;
+    const r10b = await registrar(E, c10b);
+    ok('10b dominio desactivado → 403', r10b.status === 403, `status ${r10b.status}`);
+    ok('10b …esDominioNoParticipante() lo reconoce', esDominioNoParticipante(r10b.error),
+      `recibido: ${r10b.error?.message}`);
+    ok('10b …sin fila en auth.users', filas(c10b) === 0);
+    ok('10b …sin correo', (await esperarCorreos(E, c10b, 1, 2000)).length === 0);
+
+    // 10e. Quien ya existía sigue entrando y recuperando, con su universidad.
+    const l10e = await login(E, c10e, PASS);
+    ok('10e cuenta existente, dominio desactivado: signInWithPassword → 200',
+      l10e.status === 200 && Boolean((await l10e.json()).access_token), `status ${l10e.status}`);
+    const rec10e = await recuperar(E, c10e);
+    const buzon10e = await esperarCorreos(E, c10e, 1);
+    ok('10e …resetPasswordForEmail → 200 y llega el correo', rec10e.status === 200 && buzon10e.length === 1,
+      `status ${rec10e.status}, correos ${buzon10e.length}`);
+    const cod10e = buzon10e[0] ? await codigoDe(E, buzon10e[0]) : undefined;
+    const ver10e = cod10e ? await verificarRecuperacion(E, c10e, cod10e) : { status: 0, json: {} };
+    ok('10e …verifyOtp({type:"recovery"}) → sesión', ver10e.status === 200 && Boolean(ver10e.json.access_token),
+      `status ${ver10e.status} ${ver10e.error?.message ?? ''}`);
+    await esperar(1100); // max_frequency = "1s" de [auth.email]
+    const otp10e = await registrar(E, c10e);
+    ok('10e …signInWithOtp sobre la cuenta existente → 200, sin fila nueva',
+      otp10e.status === 200 && filas(c10e) === 1, `status ${otp10e.status} ${otp10e.error?.message ?? ''}`);
+    ok('10e …su universidad no cambió', universidadDe(c10e) === uni10, `universidad_id ${universidadDe(c10e)}`);
+
+    // 10f. El admin API (no pasa por el hook) con el dominio desactivado: el
+    // trigger tampoco le asigna universidad.
+    const c10f = `probe-reg-10f-${RUN}@${dom10}`;
+    const r10f = await crearConAdmin(E, c10f, PASS);
+    ok('10f /admin/users con dominio desactivado → 200', r10f.status === 200, `status ${r10f.status}`);
+    ok('10f …el perfil nace sin universidad', universidadDe(c10f) === 'null', `universidad_id ${universidadDe(c10f)}`);
+
+    // 10c. Un dominio que nunca existió: el mismo rechazo.
+    const c10c = `probe-reg-10c-${RUN}@probe-nunca-${RUN}.mx`;
+    const r10c = await registrar(E, c10c);
+    ok('10c dominio inexistente → 403 dominio_no_participante', esDominioNoParticipante(r10c.error),
+      `status ${r10c.status} ${r10c.error?.message ?? ''}`);
+    ok('10c …sin fila', filas(c10c) === 0);
+
+    // 10d. Reactivado: vuelve a registrar.
+    activo10(true);
+    const c10d = `probe-reg-10d-${RUN}@${dom10}`;
+    const r10d = await registrar(E, c10d);
+    ok('10d dominio reactivado → 200', r10d.status === 200, `status ${r10d.status} ${r10d.error?.message ?? ''}`);
+    ok('10d …nace con la universidad', universidadDe(c10d) === uni10, `universidad_id ${universidadDe(c10d)}`);
+
+    // 10g. correo_bloqueado se sigue evaluando antes que el dominio activo.
+    const c10g = `probe-reg-10g-${RUN}@${dom10}`;
+    sql(`insert into public.correos_bloqueados (correo_hash) values (sha256(convert_to('${c10g}', 'UTF8')))`);
+    const r10g = await registrar(E, c10g);
+    ok('10g correo bloqueado con dominio activo → 403 correo_bloqueado',
+      r10g.status === 403 && r10g.error?.message === CORREO_BLOQUEADO, `status ${r10g.status} ${r10g.error?.message ?? ''}`);
+    ok('10g …sin fila', filas(c10g) === 0);
   } finally {
     // Por patrón y no por la lista de `creados`: bajo un control negativo, los
     // correos que DEBÍAN rechazarse sí crean fila, y también hay que borrarlos.
@@ -312,6 +403,11 @@ async function main() {
     // El hash del caso 9 no cuelga de ninguna FK: se borra aparte.
     sql(`delete from public.correos_bloqueados
           where correo_hash = sha256(convert_to('probe-reg-vetada-${RUN}@tec.mx', 'UTF8'))`);
+    // Caso 10: el hash de 10g y el catálogo del probe (después de las cuentas,
+    // que referencian el campus y la universidad).
+    sql(`delete from public.correos_bloqueados
+          where correo_hash = sha256(convert_to('probe-reg-10g-${RUN}@probe-ola5-${RUN}.mx', 'UTF8'))`);
+    sql(`delete from public.universidades where nombre = 'Probe Ola5 ${RUN}'`);
   }
 
   console.log(`\n${'='.repeat(43)}`);
