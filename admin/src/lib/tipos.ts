@@ -78,6 +78,16 @@ export interface FilaCola {
   ultimo_detalle: Record<string, unknown> | null; ultima_evaluacion_at: string | null;
 }
 
+/** `admin.catalogo()` (`20261008000484`): universidades con sus campus y dominios. Sin admins ni correos. */
+export interface CampusCatalogo {
+  id: number; nombre: string; ciudad: string; latitud: number | null; longitud: number | null;
+  usuarios: number; publicaciones: number;
+}
+export interface DominioCatalogo { dominio: string; activo: boolean; created_at: string }
+export interface UniversidadCatalogo {
+  id: number; nombre: string; usuarios: number; campus: CampusCatalogo[]; dominios: DominioCatalogo[];
+}
+
 /** Adónde puede ir el panel. Sin router: un estado en el Panel. */
 export type Vista =
   | { tipo: 'reportes' }
@@ -85,4 +95,6 @@ export type Vista =
   | { tipo: 'moderacion' }
   | { tipo: 'listing'; id: number; desde?: number | 'moderacion' }
   | { tipo: 'usuarios' }
-  | { tipo: 'usuario'; id: string; desde?: number };
+  | { tipo: 'usuario'; id: string; desde?: number }
+  | { tipo: 'catalogo' }
+  | { tipo: 'universidad'; id: number };

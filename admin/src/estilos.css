@@ -148,6 +148,9 @@ body{
 .field-help{font-size:11px; line-height:1.5; color:var(--ink-soft); margin-top:6px;}
 .buscador{display:flex; gap:10px; align-items:stretch;}
 .buscador .text-field{flex:1; display:flex; align-items:center; gap:10px;}
+/* Catálogo (Ola 5): ayuda y error de un par de campos en .rejilla.dos, que ya trae su propio margen inferior. */
+.field-help.bajo-rejilla{margin:-8px 0 14px;}
+.field-error.bajo-rejilla{margin:-10px 0 14px;}
 
 /* ---------- Botones ---------- */
 .acciones{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
@@ -228,6 +231,7 @@ body{
 .empty-icon.error{background:var(--brick-tint); border-color:transparent; color:var(--brick);}
 .empty-title{font-family:var(--font-display), serif; font-weight:500; font-size:19px; color:var(--ink); margin-bottom:9px;}
 .empty-sub{font-size:13px; color:var(--ink-soft); line-height:1.55; max-width:360px; margin-bottom:20px;}
+.empty-state.compacto{padding:20px 10px;}
 
 .skeleton{background:linear-gradient(90deg, var(--line) 25%, rgba(0,0,0,0.05) 37%, var(--line) 63%); background-size:400% 100%; animation:skeleton-pulse 1.4s ease infinite; border-radius:8px;}
 @keyframes skeleton-pulse{0%{background-position:100% 50%;} 100%{background-position:0 50%;}}

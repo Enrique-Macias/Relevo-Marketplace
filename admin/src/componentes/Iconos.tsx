@@ -50,6 +50,10 @@ export const IconWifi = ({ tam = 30, clase }: P) => (
 export const IconEye = ({ tam = 18, clase }: P) => (
   <svg {...base(tam, clase)}><g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></g></svg>
 );
+/** `i-building` (Ola 5): Catálogo en la navegación y en los modales de universidad y campus. */
+export const IconBuilding = ({ tam = 18, clase }: P) => (
+  <svg {...base(tam, clase)}><g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18" /><path d="M5 21V10M19 21V10" /><path d="M9.5 21v-5h5v5" /><path d="M2 10l10-6 10 6" /></g></svg>
+);
 /** `i-check` en `currentColor` (el ícono del modal "Aprobar"); `IconCheck` es el blanco de los avisos. */
 export const IconCheckColor = ({ tam = 24, clase }: P) => (
   <svg {...base(tam, clase)}><path stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" d="M6 12.5l4 4 8-9" /></svg>
