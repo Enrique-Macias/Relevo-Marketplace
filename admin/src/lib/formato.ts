@@ -52,6 +52,15 @@ export const ACCION: Record<string, string> = {
   desactivar_admin: 'Desactivar admin',
   restablecer_mfa: 'Restablecer app autenticadora',
   factores_mfa_borrados: 'App autenticadora eliminada',
+  // Ola 5 (catálogo). El panel aún no muestra esta auditoría (Ola 6), pero
+  // así ninguna pantalla pinta el nombre crudo de la acción.
+  crear_universidad: 'Agregar universidad',
+  editar_universidad: 'Editar universidad',
+  crear_campus: 'Agregar campus',
+  editar_campus: 'Editar campus',
+  agregar_dominio: 'Agregar dominio',
+  desactivar_dominio: 'Desactivar dominio',
+  reactivar_dominio: 'Reactivar dominio',
 };
 
 const ESTADO_LEGIBLE: Record<string, string> = {

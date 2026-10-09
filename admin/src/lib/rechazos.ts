@@ -31,9 +31,10 @@ export function clasificarRechazo(err: ErrorRpc | null | undefined): AccionRecha
 
 /**
  * Texto para el admin. Los códigos los fijan 20260930000478 (guardas G1-G6),
- * 20260930000479 (reportes y bloqueo), 20261007000481 (aprobar) y 20261008000483 (restablecer la
- * app autenticadora, más los dos de la Edge Function `admin-reset-mfa`). Es copy PERSISTENTE (un `.notice`), así
- * que cada texto está dibujado en `design/admin-panel.html`.
+ * 20260930000479 (reportes y bloqueo), 20261007000481 (aprobar), 20261008000483 (restablecer la
+ * app autenticadora, más los dos de la Edge Function `admin-reset-mfa`) y 20261008000484 (catálogo). Es
+ * copy PERSISTENTE (un `.notice` o un `.field-error`), así que cada texto está dibujado en
+ * `design/admin-panel.html`.
  */
 const TEXTOS: Record<string, string> = {
   motivo_invalido: 'El motivo debe tener entre 3 y 500 caracteres.',
@@ -51,6 +52,22 @@ const TEXTOS: Record<string, string> = {
   objetivo_no_es_admin: 'Esta cuenta ya no es de admin. Recarga el detalle.',
   factores_pendientes: 'Su acceso quedó desactivado, pero no pudimos eliminar la app autenticadora registrada en su cuenta. Inténtalo otra vez.',
   cierre_pendiente: 'La app autenticadora ya se eliminó, pero el restablecimiento quedó pendiente. Inténtalo de nuevo para completarlo.',
+  // Ola 5 (20261008000484, catálogo): copy de los frames "Universidad", "Campus",
+  // "Agregar dominio" y "Desactivar o reactivar dominio" de `design/admin-panel.html`.
+  // `nombre_duplicado` cambia de sujeto con el campus (abajo).
+  nombre_invalido: 'El nombre debe tener entre 2 y 100 caracteres.',
+  ciudad_invalida: 'La ciudad debe tener entre 2 y 100 caracteres.',
+  nombre_duplicado: 'Ya existe una universidad con ese nombre.',
+  sin_cambios: 'No hay cambios que guardar.',
+  coordenadas_invalidas: 'Escribe latitud y longitud juntas (latitud entre -90 y 90, longitud entre -180 y 180), o deja las dos vacías.',
+  dominio_invalido: 'Escribe solo el dominio, sin @ ni espacios (por ejemplo, uanl.edu.mx).',
+  dominio_no_permitido: 'Es un proveedor de correo público: no identifica a ninguna universidad.',
+  universidad_sin_campus: 'Agrega un campus antes de agregar un dominio: sin campus, quien se registre no podría completar su perfil.',
+  dominio_existe_activo: 'Ese dominio ya está dado de alta y activo.',
+  dominio_existe_inactivo: 'Ese dominio ya existe y está desactivado. Para volver a usarlo, reactívalo en la lista de dominios.',
+  dominio_de_otra_universidad: 'Ese dominio ya pertenece a otra universidad.',
+  dominio_ya_inactivo: 'El dominio ya estaba desactivado. Recarga el detalle.',
+  dominio_ya_activo: 'El dominio ya estaba activo. Recarga el detalle.',
   [NO_ADMIN]: 'Esta cuenta no es admin del panel.',
   [MFA_REQUERIDO]: 'Falta confirmar tu código de la app autenticadora.',
   [TOTP_VENCIDO]: 'Tu código de la app autenticadora venció. Confírmalo otra vez.',
@@ -68,6 +85,9 @@ export const SIN_TEXTO_PROPIO: readonly string[] = [
   // `admin.restablecer_mfa_*`: el panel solo manda ids de intento que la base le dio
   // (las filas de auditoría no se borran), así que no lo provoca.
   'intento_no_existe',
+  // `admin.*` del catálogo (Ola 5): el panel solo manda ids y dominios que trajo
+  // `admin.catalogo()`; solo los provocaría un borrado por Studio a media sesión.
+  'universidad_no_existe', 'campus_no_existe', 'dominio_no_existe',
 ];
 
 export function tieneTextoDecidido(mensaje: string): boolean {
@@ -76,12 +96,15 @@ export function tieneTextoDecidido(mensaje: string): boolean {
 
 /** `estado_inesperado` cambia de sujeto según qué cambió de estado. */
 const ESTADO_INESPERADO_PUBLICACION = 'La publicación cambió de estado mientras tanto. Recarga el detalle.';
+/** `nombre_duplicado` también: el de TEXTOS es el de una universidad. */
+const NOMBRE_DUPLICADO_CAMPUS = 'Esta universidad ya tiene un campus con ese nombre.';
 
 export function textoDeRechazo(
   err: ErrorRpc | null | undefined,
-  sujeto: 'cuenta' | 'publicacion' = 'cuenta',
+  sujeto: 'cuenta' | 'publicacion' | 'campus' = 'cuenta',
 ): string {
   const m = err?.message ?? '';
   if (m === 'estado_inesperado' && sujeto === 'publicacion') return ESTADO_INESPERADO_PUBLICACION;
+  if (m === 'nombre_duplicado' && sujeto === 'campus') return NOMBRE_DUPLICADO_CAMPUS;
   return TEXTOS[m] ?? `No se pudo completar la acción (${err?.code ?? 'sin código'}).`;
 }

@@ -47,11 +47,16 @@
 //      cuenta existente (del marketplace) no se convierte en admin; (f) un
 //      correo mal formado se rechaza antes de cualquier llamada; (g) un
 //      @rlvo.com.mx no pide confirmación.
+//  10. Catálogo (Ola 5): `admin.catalogo()` por HTTP, una escritura por cada
+//      RPC con su fila de auditoría y el actor real, y la carrera de
+//      `agregar_dominio` hecha determinista con otra sesión que inserta el
+//      mismo dominio sin confirmar (dominio_existe_activo, sin 23505 crudo).
 //
-// Limpia lo suyo al final (sus cuentas; la auditoría es append-only y se
-// queda, como en cualquier borrado de cuenta de admin).
+// Limpia lo suyo al final (sus cuentas y su universidad de prueba, con sus
+// campus y dominios; la auditoría es append-only y se queda, como en
+// cualquier borrado de cuenta de admin).
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { inspect } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
@@ -328,6 +333,70 @@ async function main() {
     const intervalos = [...fuenteAprobar.matchAll(/interval '(\d+) seconds'/g)].map((m) => Number(m[1]) * 1000);
     ok(`7d el TTL del reclamo coincide: moderar-contenido ${ttlFuncion} ms, aprobar_listing ${intervalos.join(',')} ms`,
       Number.isFinite(ttlFuncion) && intervalos.length === 1 && intervalos[0] === ttlFuncion);
+
+    // -------------------------------------------------------------------
+    // 10. Catálogo (Ola 5, 20261008000484) por HTTP, con la sesión aal2 de
+    // `c5`. T37 prueba los contratos con claims fabricados; esto prueba que
+    // PostgREST expone las 8 RPC, que cada escritura audita con el actor real
+    // y que una carrera en `agregar_dominio` no deja escapar un 23505 crudo
+    // (sin advisory lock, deciden `on conflict` y la PK).
+    console.log('\n== 10. catálogo (Ola 5) ==');
+    const cat = await c5.schema('admin').rpc('catalogo');
+    ok('10a catalogo() por HTTP trae el catálogo, con tec.mx activo',
+      !cat.error && cat.data.universidades.some((u) => u.dominios.some((d) => d.dominio === 'tec.mx' && d.activo === true)),
+      cat.error?.message);
+    const audita = (accion, objetivo) => sql(`select count(*) from private.admin_acciones
+      where accion = '${accion}' and objetivo_id = '${objetivo}' and admin_id = '${idA}'`) === '1';
+    const nomU = `Probe Cat ${RUN}`;
+    const rU = await c5.schema('admin').rpc('crear_universidad', { p_nombre: nomU, p_motivo: 'probe 10' });
+    ok('10b crear_universidad → id, auditado con el actor', !rU.error && audita('crear_universidad', String(rU.data)),
+      rU.error?.message);
+    const rC = await c5.schema('admin').rpc('crear_campus', {
+      p_universidad_id: rU.data, p_nombre: 'Campus Probe', p_ciudad: 'Monterrey',
+      p_latitud: 25.65, p_longitud: -100.29, p_motivo: 'probe 10' });
+    ok('10c crear_campus → id, auditado', !rC.error && audita('crear_campus', String(rC.data)), rC.error?.message);
+    const rEU = await c5.schema('admin').rpc('editar_universidad', { p_id: rU.data, p_nombre: `${nomU} Dos`, p_motivo: 'probe 10' });
+    ok('10d editar_universidad → ok, auditado', !rEU.error && audita('editar_universidad', String(rU.data)), rEU.error?.message);
+    const rEC = await c5.schema('admin').rpc('editar_campus', {
+      p_id: rC.data, p_nombre: 'Campus Probe', p_ciudad: 'Monterrey', p_latitud: null, p_longitud: null, p_motivo: 'probe 10' });
+    ok('10e editar_campus → ok, auditado', !rEC.error && audita('editar_campus', String(rC.data)), rEC.error?.message);
+    const dom = `probe-cat-${RUN}.mx`;
+    const rD = await c5.schema('admin').rpc('agregar_dominio', { p_universidad_id: rU.data, p_dominio: dom, p_motivo: 'probe 10' });
+    ok('10f agregar_dominio → ok, auditado', !rD.error && audita('agregar_dominio', dom), rD.error?.message);
+    const rDes = await c5.schema('admin').rpc('desactivar_dominio', { p_dominio: dom, p_motivo: 'probe 10' });
+    ok('10g desactivar_dominio → ok, auditado y activo=false',
+      !rDes.error && audita('desactivar_dominio', dom)
+        && sql(`select activo::text from public.universidad_dominios where dominio = '${dom}'`) === 'false', rDes.error?.message);
+    const rRe = await c5.schema('admin').rpc('reactivar_dominio', { p_dominio: dom, p_motivo: 'probe 10' });
+    ok('10h reactivar_dominio → ok, auditado y activo=true',
+      !rRe.error && audita('reactivar_dominio', dom)
+        && sql(`select activo::text from public.universidad_dominios where dominio = '${dom}'`) === 'true', rRe.error?.message);
+    // 10i. La carrera de agregar_dominio, DETERMINISTA. Dos llamadas HTTP
+    // "simultáneas" casi nunca se solapan (medido: sin el `on conflict`, la
+    // versión con Promise.all seguía en verde), así que no probaban nada. Aquí
+    // otra sesión inserta el MISMO dominio y espera 2 s sin confirmar: el
+    // pre-chequeo de la RPC no ve la fila, su INSERT se bloquea en la PK y, al
+    // confirmar la otra sesión, `on conflict do nothing` da 0 filas →
+    // dominio_existe_activo. Sin el `on conflict` sería un 23505 crudo.
+    const dom2 = `probe-cat2-${RUN}.mx`;
+    const otraSesion = spawn('docker', ['exec', DB, 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c',
+      `begin; insert into public.universidad_dominios (dominio, universidad_id) values ('${dom2}', ${rU.data}); select pg_sleep(2); commit;`],
+      { stdio: 'ignore' });
+    const terminoOtra = new Promise((r) => otraSesion.on('exit', r));
+    await esperar(600);
+    const enCarrera = await c5.schema('admin').rpc('agregar_dominio', { p_universidad_id: rU.data, p_dominio: dom2, p_motivo: 'probe 10i' });
+    const codigoOtra = await terminoOtra;
+    ok('10i carrera: otra sesión inserta el mismo dominio sin confirmar → la RPC espera y responde dominio_existe_activo',
+      codigoOtra === 0 && enCarrera.error?.code === '55000' && enCarrera.error?.message === 'dominio_existe_activo',
+      `otra sesión exit ${codigoOtra}; rpc ${enCarrera.error?.code}:${enCarrera.error?.message}`);
+    ok('10i …sin 23505 crudo, una sola fila y sin auditoría de la RPC',
+      enCarrera.error?.code !== '23505'
+        && sql(`select count(*) from public.universidad_dominios where dominio = '${dom2}'`) === '1'
+        && sql(`select count(*) from private.admin_acciones where accion = 'agregar_dominio' and objetivo_id = '${dom2}'`) === '0',
+      `${enCarrera.error?.code}:${enCarrera.error?.message}`);
+    // El catálogo vuelve a su estado ANTES de los casos 8 y 9: el 9c compara
+    // `universidad_dominios` contra la foto del arranque (el finally es respaldo).
+    sql(`delete from public.universidades where nombre like 'Probe Cat ${RUN}%'`);
 
     // -------------------------------------------------------------------
     // 8. El camino de `--remoto` (Ola 3), contra el stack LOCAL: una conexión
@@ -684,6 +753,8 @@ async function main() {
     for (const c of creadas) {
       sql(`delete from auth.users where email = '${c.replace(/'/g, "''")}'`);
     }
+    // Caso 10: la universidad de prueba (cascade a sus campus y dominios).
+    sql(`delete from public.universidades where nombre like 'Probe Cat ${RUN}%'`);
   }
 
   console.log('');
