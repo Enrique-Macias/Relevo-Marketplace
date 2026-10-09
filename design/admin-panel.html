@@ -185,6 +185,9 @@
   .field-help{font-size:11px; line-height:1.5; color:var(--ink-soft); margin-top:6px;}
   .buscador{display:flex; gap:10px; align-items:stretch;}
   .buscador .text-field{flex:1; display:flex; align-items:center; gap:10px;}
+  /* Catálogo (Ola 5): ayuda y error de un par de campos en .rejilla.dos, que ya trae su propio margen inferior. */
+  .field-help.bajo-rejilla{margin:-8px 0 14px;}
+  .field-error.bajo-rejilla{margin:-10px 0 0;}
 
   /* ---------- Botones ---------- */
   .acciones{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
@@ -265,6 +268,7 @@
   .empty-icon.error{background:var(--brick-tint); border-color:transparent; color:var(--brick);}
   .empty-title{font-family:var(--font-display), serif; font-weight:500; font-size:19px; color:var(--ink); margin-bottom:9px;}
   .empty-sub{font-size:13px; color:var(--ink-soft); line-height:1.55; max-width:360px; margin-bottom:20px;}
+  .empty-state.compacto{padding:20px 10px;}
 
   .skeleton{background:linear-gradient(90deg, var(--line) 25%, rgba(0,0,0,0.05) 37%, var(--line) 63%); background-size:400% 100%; animation:skeleton-pulse 1.4s ease infinite; border-radius:8px;}
   @keyframes skeleton-pulse{0%{background-position:100% 50%;} 100%{background-position:0 50%;}}
@@ -310,6 +314,7 @@
     <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M6 12.5l4 4 8-9"/></symbol>
     <symbol id="i-inbox" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/></g></symbol>
     <symbol id="i-wifi" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 9a12 12 0 0 1 16 0"/><path d="M7 12.5a7.5 7.5 0 0 1 10 0"/><path d="M10 16a3 3 0 0 1 4 0"/><path d="M12 19.5h.01"/></g></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V10M19 21V10"/><path d="M9.5 21v-5h5v5"/><path d="M2 10l10-6 10 6"/></g></symbol>
   </defs>
 </svg>
 
@@ -321,6 +326,7 @@
     <div class="filter-chip" data-filter="moderacion">Moderación</div>
     <div class="filter-chip" data-filter="publicacion">Publicación</div>
     <div class="filter-chip" data-filter="usuarios">Usuarios</div>
+    <div class="filter-chip" data-filter="catalogo">Catálogo</div>
     <div class="filter-chip" data-filter="sistema">Sistema</div>
     <div class="filter-count" id="filter-count"></div>
   </div>
@@ -535,6 +541,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Reportes</div>
@@ -607,6 +614,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Reportes</div>
@@ -636,6 +644,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -718,6 +727,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -784,6 +794,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -840,6 +851,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -898,6 +910,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -965,6 +978,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
@@ -1025,6 +1039,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Moderación</div>
@@ -1095,6 +1110,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Moderación</div>
@@ -1131,6 +1147,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Moderación</div>
@@ -1191,6 +1208,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reporte #131</div>
@@ -1289,6 +1307,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Moderación</div>
@@ -1385,6 +1404,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Usuarios</div>
@@ -1419,6 +1439,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Usuarios</div>
@@ -1449,6 +1470,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
@@ -1517,6 +1539,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
@@ -1590,6 +1613,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
@@ -1689,6 +1713,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Resultados</div>
@@ -1741,6 +1766,427 @@
 </div>
 
 <!-- =====================================================================
+     CATÁLOGO (Ola 5)
+     Universidades, campus y dominios de registro. Universidades y campus
+     solo se dan de alta y se editan (D12: no se borran ni se desactivan);
+     los dominios se desactivan y reactivan (borrado lógico, `activo`).
+     Toda escritura lleva motivo (3-500) y queda en la auditoría; el panel
+     no la muestra en esta ola (admin.auditoria llega en la Ola 6).
+     Un dominio desactivado solo afecta a las altas NUEVAS: las cuentas ya
+     registradas conservan su universidad y siguen entrando.
+     ===================================================================== -->
+
+<div class="desk-block" data-cat="catalogo">
+  <div class="desk-label">Catálogo — universidades</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Catálogo</div>
+        <div class="sub-pagina">Universidades, sus campus y los dominios de correo con los que sus estudiantes se registran.</div>
+        <div class="acciones"><span class="btn primary-btn">Agregar universidad</span></div>
+        <br>
+        <table class="tabla">
+          <thead><tr><th>Universidad</th><th class="num">Campus</th><th>Dominios</th><th class="num">Usuarios</th></tr></thead>
+          <tbody>
+            <tr class="seleccionable"><td class="celda-titulo">Tec de Monterrey</td><td class="num">1</td><td>2 activos</td><td class="num">7</td></tr>
+            <tr class="seleccionable"><td class="celda-titulo">Tecmilenio</td><td class="num">4</td><td>1 activo</td><td class="num">0</td></tr>
+            <tr class="seleccionable"><td class="celda-titulo">U-ERRE</td><td class="num">1</td><td>1 activo</td><td class="num">0</td></tr>
+            <tr class="seleccionable"><td class="celda-titulo">UANL</td><td class="num">6</td><td>1 activo · <span class="suave">1 desactivado</span></td><td class="num">0</td></tr>
+            <tr class="seleccionable"><td class="celda-titulo">UDEM</td><td class="num">1</td><td>1 activo</td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): una universidad sin campus ni dominios · error de carga</div>
+    <div class="variante-caja ancha">
+      <table class="tabla">
+        <thead><tr><th>Universidad</th><th class="num">Campus</th><th>Dominios</th><th class="num">Usuarios</th></tr></thead>
+        <tbody>
+          <tr class="seleccionable"><td class="celda-titulo">Universidad Nueva</td><td class="num suave">0</td><td class="suave">Sin dominios</td><td class="num">0</td></tr>
+        </tbody>
+      </table>
+      <br>
+      <div class="texto-suave">Recién dada de alta: no aparece en el selector de campus de la app hasta que tenga al menos un campus, y nadie puede registrarse hasta que tenga un dominio activo.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="empty-state compacto">
+        <div class="empty-icon error"><svg width="30" height="30"><use href="#i-wifi"/></svg></div>
+        <div class="empty-title">No pudimos cargar el catálogo</div>
+        <div class="empty-sub">Revisa tu conexión e inténtalo de nuevo.</div>
+        <span class="btn ghost-btn">Reintentar</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="catalogo">
+  <div class="desk-label">Universidad — detalle (campus y dominios)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Catálogo</div>
+        <div class="titulo-pagina">UANL</div>
+        <div class="sub-pagina">6 campus · 0 usuarios</div>
+        <div class="acciones"><span class="btn ghost-btn">Editar nombre</span></div>
+
+        <div class="titulo-seccion">Campus</div>
+        <table class="tabla">
+          <thead><tr><th>Campus</th><th>Ciudad</th><th>Coordenadas</th><th class="num">Usuarios</th><th class="num">Publicaciones</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="celda-titulo">Ciudad Universitaria</td><td>San Nicolás de los Garza</td><td>Sí</td><td class="num">0</td><td class="num">0</td><td><span class="enlace">Editar</span></td></tr>
+            <tr><td class="celda-titulo">Campus Área Médica</td><td>Monterrey</td><td>Sí</td><td class="num">0</td><td class="num">0</td><td><span class="enlace">Editar</span></td></tr>
+            <tr><td class="celda-titulo">Campus Linares</td><td>Linares</td><td class="suave">—</td><td class="num">0</td><td class="num">0</td><td><span class="enlace">Editar</span></td></tr>
+          </tbody>
+        </table>
+        <div class="pie-tabla"><span>Sin coordenadas, un campus no participa en «Detectar campus más cercano»; se puede elegir a mano.</span><span class="btn ghost-btn">Agregar campus</span></div>
+
+        <div class="titulo-seccion">Dominios de registro</div>
+        <table class="tabla">
+          <thead><tr><th>Dominio</th><th>Estado</th><th>Alta</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="celda-titulo">uanl.edu.mx</td><td><span class="estado ok">Activo</span></td><td class="suave">24 sep 2026</td><td><span class="enlace">Desactivar</span></td></tr>
+            <tr><td class="celda-titulo">alumnos.uanl.edu.mx</td><td><span class="estado apagado">Desactivado</span></td><td class="suave">2 oct 2026</td><td><span class="enlace">Reactivar</span></td></tr>
+          </tbody>
+        </table>
+        <div class="pie-tabla"><span>Solo un dominio activo permite registrarse. Desactivarlo no cambia las cuentas que ya existen.</span><span class="btn ghost-btn">Agregar dominio</span></div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): universidad sin campus · sin dominios · cambios guardados</div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Agrega un campus antes de agregar un dominio: sin campus, quien se registre no podría completar su perfil.</div></div>
+      <div class="texto-suave">En lugar de la tabla de campus: «Esta universidad todavía no tiene campus.» y el botón «Agregar campus».</div>
+    </div>
+    <div class="variante-caja">
+      <div class="texto-suave">En lugar de la tabla de dominios: «Sin dominios: nadie de esta universidad puede registrarse todavía.» y el botón «Agregar dominio».</div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Cambios guardados.</div></div>
+      <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Dominio desactivado. Nadie nuevo podrá registrarse con @alumnos.uanl.edu.mx.</div></div>
+      <div class="notice is-info"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-check"/></svg></div><div class="notice-text">Dominio reactivado. Ya se puede registrar con @alumnos.uanl.edu.mx.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="catalogo">
+  <div class="desk-label">Universidad (modal: agregar o editar)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Catálogo</div>
+        <div class="sub-pagina">Universidades, sus campus y los dominios de correo con los que sus estudiantes se registran.</div>
+        <div class="tarjeta"><div class="sk-line skeleton"></div></div>
+      </main>
+    </div>
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-icon neutro"><svg width="24" height="24"><use href="#i-building"/></svg></div>
+        <div class="modal-title">Agregar universidad</div>
+        <div class="modal-sub">Aparece en la app cuando tenga al menos un campus. Para que sus estudiantes se registren, agrega después un dominio.</div>
+        <div class="field">
+          <span class="field-label">Nombre</span>
+          <div class="text-field">Universidad Nueva</div>
+        </div>
+        <div class="field">
+          <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+          <div class="text-field area placeholder">Por qué la das de alta</div>
+          <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+        </div>
+        <div class="modal-actions">
+          <span class="btn ghost-btn">Cancelar</span>
+          <span class="btn primary-btn disabled">Agregar</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): editar · nombre duplicado · nombre no válido · sin cambios · guardando</div>
+    <div class="variante-caja">
+      <div class="modal-title">Editar universidad</div>
+      <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">El nombre nuevo se verá en todas las publicaciones y perfiles de esta universidad.</div></div>
+      <div class="field">
+        <span class="field-label">Nombre</span>
+        <div class="text-field">UANL</div>
+      </div>
+      <div class="texto-suave">Precargado con el nombre actual. «Guardar» se puede pulsar aunque no cambie nada: lo decide la base.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="field">
+        <span class="field-label">Nombre</span>
+        <div class="text-field is-invalid">udem</div>
+        <div class="field-error">Ya existe una universidad con ese nombre.</div>
+      </div>
+      <div class="field">
+        <span class="field-label">Nombre</span>
+        <div class="text-field is-invalid">U</div>
+        <div class="field-error">El nombre debe tener entre 2 y 100 caracteres.</div>
+      </div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">No hay cambios que guardar.</div></div>
+      <div class="modal-actions">
+        <span class="btn ghost-btn disabled">Cancelar</span>
+        <span class="btn primary-btn"><span class="splash-dots"><span class="splash-dot"></span><span class="splash-dot"></span><span class="splash-dot"></span></span>Guardando</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="catalogo">
+  <div class="desk-label">Campus (modal: agregar o editar)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Catálogo</div>
+        <div class="titulo-pagina">UANL</div>
+        <div class="sub-pagina">6 campus · 0 usuarios</div>
+        <div class="tarjeta"><div class="sk-line skeleton"></div></div>
+      </main>
+    </div>
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-icon neutro"><svg width="24" height="24"><use href="#i-building"/></svg></div>
+        <div class="modal-title">Agregar campus a UANL</div>
+        <div class="modal-sub">El campus queda en la universidad donde lo creas: no se puede mover a otra.</div>
+        <div class="field">
+          <span class="field-label">Nombre</span>
+          <div class="text-field">Campus Mederos</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Ciudad</span>
+          <div class="text-field">Monterrey</div>
+        </div>
+        <div class="rejilla dos">
+          <div class="field">
+            <span class="field-label">Latitud (opcional)</span>
+            <div class="text-field">25.6378</div>
+          </div>
+          <div class="field">
+            <span class="field-label">Longitud (opcional)</span>
+            <div class="text-field">-100.2867</div>
+          </div>
+        </div>
+        <div class="field-help bajo-rejilla">Las dos o ninguna. Sin coordenadas, el campus no participa en «Detectar campus más cercano».</div>
+        <div class="field">
+          <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+          <div class="text-field area placeholder">Por qué lo das de alta</div>
+          <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+        </div>
+        <div class="modal-actions">
+          <span class="btn ghost-btn">Cancelar</span>
+          <span class="btn primary-btn disabled">Agregar</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): editar · coordenadas no válidas · nombre duplicado · nombre o ciudad no válidos</div>
+    <div class="variante-caja">
+      <div class="modal-title">Editar campus</div>
+      <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">El nombre y la ciudad se ven en las publicaciones de este campus. Cambiar las coordenadas cambia qué campus detecta la app como el más cercano.</div></div>
+      <div class="texto-suave">Precargado con los valores actuales. Dejar las dos coordenadas vacías las quita. No hay campo de universidad.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="rejilla dos">
+        <div class="field">
+          <span class="field-label">Latitud (opcional)</span>
+          <div class="text-field is-invalid">95</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Longitud (opcional)</span>
+          <div class="text-field is-invalid placeholder">vacía</div>
+        </div>
+      </div>
+      <div class="field-error bajo-rejilla">Escribe latitud y longitud juntas (latitud entre -90 y 90, longitud entre -180 y 180), o deja las dos vacías.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="field">
+        <span class="field-label">Nombre</span>
+        <div class="text-field is-invalid">campus mederos</div>
+        <div class="field-error">Esta universidad ya tiene un campus con ese nombre.</div>
+      </div>
+      <div class="field">
+        <span class="field-label">Ciudad</span>
+        <div class="text-field is-invalid">M</div>
+        <div class="field-error">La ciudad debe tener entre 2 y 100 caracteres.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="catalogo">
+  <div class="desk-label">Agregar dominio (modal)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Catálogo</div>
+        <div class="titulo-pagina">UANL</div>
+        <div class="sub-pagina">6 campus · 0 usuarios</div>
+        <div class="tarjeta"><div class="sk-line skeleton"></div></div>
+      </main>
+    </div>
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-icon neutro"><svg width="24" height="24"><use href="#i-lock"/></svg></div>
+        <div class="modal-title">Agregar dominio a UANL</div>
+        <div class="modal-sub">Quien tenga un correo con este dominio podrá registrarse en la app y quedará en esta universidad.</div>
+        <div class="field">
+          <span class="field-label">Dominio</span>
+          <div class="text-field">uanl.edu.mx</div>
+          <div class="field-help">Coincidencia exacta: un subdominio (por ejemplo, alumnos.uanl.edu.mx) necesita su propia fila.</div>
+        </div>
+        <div class="field">
+          <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+          <div class="text-field area placeholder">Por qué lo das de alta</div>
+          <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+        </div>
+        <div class="modal-actions">
+          <span class="btn ghost-btn">Cancelar</span>
+          <span class="btn primary-btn disabled">Agregar</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): dominio no válido · proveedor de correo público · universidad sin campus · ya existe (activo, desactivado o de otra universidad)</div>
+    <div class="variante-caja">
+      <div class="field">
+        <span class="field-label">Dominio</span>
+        <div class="text-field is-invalid">ana@uanl.edu.mx</div>
+        <div class="field-error">Escribe solo el dominio, sin @ ni espacios (por ejemplo, uanl.edu.mx).</div>
+      </div>
+      <div class="field">
+        <span class="field-label">Dominio</span>
+        <div class="text-field is-invalid">gmail.com</div>
+        <div class="field-error">Es un proveedor de correo público: no identifica a ninguna universidad.</div>
+      </div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Agrega un campus antes de agregar un dominio: sin campus, quien se registre no podría completar su perfil.</div></div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Ese dominio ya está dado de alta y activo.</div></div>
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Ese dominio ya existe y está desactivado. Para volver a usarlo, reactívalo en la lista de dominios.</div></div>
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Ese dominio ya pertenece a otra universidad.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="catalogo">
+  <div class="desk-label">Desactivar o reactivar dominio (modal)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+      </nav>
+      <main class="contenido">
+        <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Catálogo</div>
+        <div class="titulo-pagina">UANL</div>
+        <div class="sub-pagina">6 campus · 0 usuarios</div>
+        <div class="tarjeta"><div class="sk-line skeleton"></div></div>
+      </main>
+    </div>
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-icon"><svg width="24" height="24"><use href="#i-ban"/></svg></div>
+        <div class="modal-title">¿Desactivar @alumnos.uanl.edu.mx?</div>
+        <div class="modal-sub">Nadie nuevo podrá registrarse con @alumnos.uanl.edu.mx. Las cuentas existentes no cambian: conservan su universidad y siguen entrando.</div>
+        <div class="field">
+          <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+          <div class="text-field area placeholder">Por qué lo desactivas</div>
+          <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+        </div>
+        <div class="modal-actions">
+          <span class="btn ghost-btn">Cancelar</span>
+          <span class="btn danger-btn disabled">Desactivar</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): reactivar · último dominio activo · el dominio cambió mientras tanto</div>
+    <div class="variante-caja">
+      <div class="modal-title">¿Reactivar @alumnos.uanl.edu.mx?</div>
+      <div class="modal-sub">Se podrá volver a registrar con @alumnos.uanl.edu.mx.</div>
+      <div class="modal-actions">
+        <span class="btn ghost-btn">Cancelar</span>
+        <span class="btn forest-btn">Reactivar</span>
+      </div>
+      <br>
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Agrega un campus antes de agregar un dominio: sin campus, quien se registre no podría completar su perfil.</div></div>
+      <div class="texto-suave">El mismo aviso si la universidad se quedó sin campus.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Es el <b>único dominio activo</b> de Tec de Monterrey: nadie nuevo de esta universidad podrá registrarse. Sus 7 cuentas siguen igual.</div></div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">El dominio ya estaba desactivado. Recarga el detalle.</div></div>
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">El dominio ya estaba activo. Recarga el detalle.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
      SISTEMA
      ===================================================================== -->
 
@@ -1756,6 +2202,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Reportes</div>
@@ -1802,6 +2249,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Reportes</div>
@@ -1834,6 +2282,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="titulo-pagina">Reportes</div>
@@ -1865,6 +2314,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
       </nav>
       <main class="contenido">
         <div class="volver"><svg width="14" height="14"><use href="#i-chevron"/></svg>Reportes</div>
