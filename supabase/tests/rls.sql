@@ -3187,6 +3187,11 @@ select pg_temp.assert(
 insert into public.universidades (nombre) values ('RLS T28 Universidad');
 insert into public.universidad_dominios (dominio, universidad_id)
 select 'rls-t28.mx', id from public.universidades where nombre = 'RLS T28 Universidad';
+-- Un dominio DESACTIVADO (20261008000484) para el amarre de (a3): el hook lo
+-- rechaza y el trigger no le asigna universidad. Filtrar `activo` en una sola
+-- de las dos copias rompe el amarre.
+insert into public.universidad_dominios (dominio, universidad_id, activo)
+select 'rls-t28-inactivo.mx', id, false from public.universidades where nombre = 'RLS T28 Universidad';
 insert into public.campus (universidad_id, nombre, ciudad)
 select id, c, 'Ciudad T28'
 from public.universidades, unnest(array['RLS T28 Campus A', 'RLS T28 Campus B']) as c
@@ -3270,8 +3275,10 @@ select pg_temp.assert(
   and pg_temp.amarre('x@gmail.com@rls-t28.mx')
   and pg_temp.amarre('x@rls-t28.mx@gmail.com')
   and pg_temp.amarre('x@sub.rls-t28.mx')
+  and pg_temp.amarre('x@rls-t28-inactivo.mx')
   and pg_temp.hook('Mayus@RLS-T28.MX') = '{}'::jsonb
-  and pg_temp.hook('x@sub.rls-t28.mx') = pg_temp.rechazo(),
+  and pg_temp.hook('x@sub.rls-t28.mx') = pg_temp.rechazo()
+  and pg_temp.hook('x@rls-t28-inactivo.mx') = pg_temp.rechazo(),
   '(a3) el hook permite un correo si y solo si el trigger le asigna universidad');
 
 -- (b) Nadie cambia su universidad desde el cliente: la columna salió del grant.
@@ -6996,6 +7003,470 @@ select pg_temp.assert(
   not has_function_privilege('authenticated', 'private.cerrar_restablecer_mfa(bigint)', 'execute')
   and not has_function_privilege('anon', 'private.cerrar_restablecer_mfa(bigint)', 'execute'),
   'T35f (r) private.cerrar_restablecer_mfa está revocada a authenticated y anon');
+
+\echo ''
+\echo '== T37 — catálogo institucional: dominios activos, universidades y campus (RF-17, Ola 5) =='
+-- 20261008000484. Autocontenida: sus propias cuentas (prefijo `rls-t37`), sus
+-- universidades, campus y dominios. Los rechazos se comparan con
+-- `ERR:<sqlstate>:<mensaje>` (helper `pg_temp.t37`), y cada acción va en una
+-- sentencia y su comprobación en otra (`\gset`, la lección de T28).
+--
+-- ALCANCE de (b): corre como `postgres`, así que prueba la LÓGICA del hook y
+-- del trigger, no el rol real. `postgres` no puede `set role
+-- supabase_auth_admin` (medido): la ejecución bajo `supabase_auth_admin` la
+-- cubren la verificación del commit de la migración (como `supabase_admin`) y
+-- `scripts/probe-registro.mjs` contra GoTrue.
+--
+-- Concurrencia: sin advisory lock (decisión del usuario), las carreras las
+-- deciden `on conflict`, CAS y los índices únicos. Una sola sesión no las
+-- puede provocar: lo mide `scripts/probe-admin.mjs` con dos llamadas HTTP.
+--
+--   :E37 admin activado      :N37 cuenta que no es admin
+--   :U37 usuario de `rls-t37b.mx` (Otra), con campus
+
+\set E37 '''37373737-0000-0000-0000-0000000000e1'''
+\set N37 '''37373737-0000-0000-0000-0000000000b1'''
+\set U37 '''37373737-0000-0000-0000-0000000000c1'''
+
+insert into public.universidades (nombre) values ('RLS T37 Uni'), ('RLS T37 Otra');
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T37 Campus Otra', 'Ciudad T37' from public.universidades where nombre = 'RLS T37 Otra';
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t37b.mx', id from public.universidades where nombre = 'RLS T37 Otra';
+-- Un dominio ya DESACTIVADO de Uni (para "existe inactivo" en (h)).
+insert into public.universidad_dominios (dominio, universidad_id, activo)
+select 'rls-t37c.mx', id, false from public.universidades where nombre = 'RLS T37 Uni';
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:E37, 'rls-t37-e@rls-t37.test'), (:N37, 'rls-t37-n@rls-t37.test'),
+               (:U37, 'rls-t37-u@rls-t37b.mx')) as v(u, e);
+insert into private.admins (user_id, nombre, activado_at) values (:E37::uuid, 'Admin T37', now());
+update public.users
+   set campus_id = (select id from public.campus where nombre = 'RLS T37 Campus Otra')
+ where id = :U37::uuid;
+
+create temp table t37 as
+select
+  (select id from public.universidades where nombre = 'RLS T37 Uni')  as uni,
+  (select id from public.universidades where nombre = 'RLS T37 Otra') as otra,
+  (select id from public.campus where nombre = 'RLS T37 Campus Otra') as campus_otra;
+grant select on t37 to authenticated;
+
+-- Escalar de p_sql como `authenticated` con aal y TOTP de hace p_horas, o
+-- `ERR:<sqlstate>:<mensaje>`. Una función `void` da '' (cadena vacía).
+create or replace function pg_temp.t37(
+  p_sql text, p_uid uuid default '37373737-0000-0000-0000-0000000000e1',
+  p_aal text default 'aal2', p_horas int default 1)
+returns text language plpgsql as $$
+declare v_out text;
+begin
+  perform set_config('request.jwt.claims',
+    pg_temp.claims_aal(p_uid, p_aal, pg_temp.amr_totp(p_horas)), true);
+  perform set_config('role', 'authenticated', true);
+  execute p_sql into v_out;
+  perform set_config('role', 'postgres', true);
+  return coalesce(v_out, '');
+exception when others then
+  perform set_config('role', 'postgres', true);
+  return 'ERR:' || sqlstate || ':' || sqlerrm;
+end $$;
+
+create or replace function pg_temp.hook37(p_email text) returns jsonb language sql as $$
+  select public.hook_before_user_created(
+    jsonb_build_object('user', jsonb_build_object('email', p_email)))
+$$;
+
+-- La última fila de auditoría de una acción, como la ve un revisor.
+create or replace function pg_temp.t37_audit(p_accion text)
+returns private.admin_acciones language sql as $$
+  select * from private.admin_acciones where accion = p_accion order by id desc limit 1
+$$;
+
+-- Regresión de admins (n): huella de `private.admins` y `auth.mfa_factors`
+-- ANTES de cualquier llamada de T37.
+select md5(coalesce((select string_agg(user_id::text || ':' || coalesce(activado_at::text, '-') || ':' || nombre, ',' order by user_id) from private.admins), '')) as t37_adm,
+       md5(coalesce((select string_agg(id::text || ':' || status::text, ',' order by id) from auth.mfa_factors), '')) as t37_mfa
+\gset
+
+-- pre ---------------------------------------------------------------------------
+select pg_temp.assert(
+  (select uni is not null and otra is not null and campus_otra is not null and uni <> otra from t37)
+  and not exists (select 1 from public.campus c, t37 where c.universidad_id = t37.uni)
+  and (select universidad_id from public.users where id = :U37::uuid) = (select otra from t37),
+  'T37 fixtures: Uni sin campus, Otra con campus y dominio, :U37 nació en Otra');
+
+-- (a) La columna --------------------------------------------------------------
+select pg_temp.assert(
+  exists (select 1 from information_schema.columns
+           where table_schema = 'public' and table_name = 'universidad_dominios'
+             and column_name = 'activo' and is_nullable = 'NO' and column_default = 'true'),
+  'T37 (a1) universidad_dominios.activo es NOT NULL con default true');
+select pg_temp.assert(
+  (select activo from public.universidad_dominios where dominio = 'rls-t37b.mx')
+  and (select activo from public.universidad_dominios where dominio = 'tec.mx'),
+  'T37 (a2) un dominio dado de alta sin `activo` (la semilla, los fixtures) nace activo');
+
+-- (b) Hook y trigger: LÓGICA (como postgres) -----------------------------------
+select pg_temp.hook37('x@rls-t37b.mx')::text as t37_b1a \gset
+update public.universidad_dominios set activo = false where dominio = 'rls-t37b.mx';
+select pg_temp.hook37('x@rls-t37b.mx')::text as t37_b1b \gset
+update public.universidad_dominios set activo = true where dominio = 'rls-t37b.mx';
+select pg_temp.hook37('X@RLS-T37B.MX')::text as t37_b1c \gset
+select pg_temp.assert(:'t37_b1a' = '{}', 'T37 (b1) hook: dominio activo → {}');
+select pg_temp.assert(
+  :'t37_b1b' = '{"error": {"message": "dominio_no_participante", "http_code": 403}}',
+  'T37 (b2) hook: el MISMO dominio desactivado → dominio_no_participante');
+select pg_temp.assert(:'t37_b1c' = '{}', 'T37 (b3) hook: reactivado (y en mayúsculas) → {}');
+
+update public.universidad_dominios set activo = false where dominio = 'rls-t37b.mx';
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values ('37373737-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-000000000000',
+        'authenticated', 'authenticated', 'rls-t37-d1@rls-t37b.mx', '', now(), now(), now());
+update public.universidad_dominios set activo = true where dominio = 'rls-t37b.mx';
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values ('37373737-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-000000000000',
+        'authenticated', 'authenticated', 'rls-t37-d2@rls-t37b.mx', '', now(), now(), now());
+select pg_temp.assert(
+  (select universidad_id from public.users where id = '37373737-0000-0000-0000-0000000000d1') is null,
+  'T37 (b4) trigger: un alta con dominio DESACTIVADO nace sin universidad (y el alta no aborta)');
+select pg_temp.assert(
+  (select universidad_id from public.users where id = '37373737-0000-0000-0000-0000000000d2') = (select otra from t37),
+  'T37 (b5) trigger: un alta con dominio activo nace con su universidad');
+
+insert into public.correos_bloqueados (correo_hash)
+values (sha256(convert_to('rls-t37-bloq@rls-t37b.mx', 'UTF8')));
+select pg_temp.assert(
+  pg_temp.hook37('rls-t37-bloq@rls-t37b.mx') = '{"error": {"message": "correo_bloqueado", "http_code": 403}}'::jsonb,
+  'T37 (b6) correo_bloqueado se sigue evaluando ANTES que el dominio (activo)');
+
+select pg_temp.assert(
+  (select proacl::text from pg_proc where oid = 'public.hook_before_user_created(jsonb)'::regprocedure)
+    = '{postgres=X/postgres,service_role=X/postgres,supabase_auth_admin=X/postgres}'
+  and (select proacl::text from pg_proc where oid = 'private.handle_new_user()'::regprocedure)
+    = '{postgres=X/postgres}',
+  'T37 (b7) el ACL del hook y del trigger de alta no cambió');
+
+-- (c) Autorización ------------------------------------------------------------
+select
+  pg_temp.t37('select admin.catalogo()::text', :N37) as t37_c1,
+  pg_temp.t37('select admin.crear_universidad(''RLS T37 X'', ''motivo c'')::text', :N37) as t37_c2,
+  pg_temp.t37(format('select admin.editar_universidad(%s, ''RLS T37 X'', ''motivo c'')::text', (select uni from t37)), :N37) as t37_c3,
+  pg_temp.t37(format('select admin.crear_campus(%s, ''RLS T37 X'', ''Ciudad'', null, null, ''motivo c'')::text', (select uni from t37)), :N37) as t37_c4,
+  pg_temp.t37(format('select admin.editar_campus(%s, ''RLS T37 X'', ''Ciudad'', null, null, ''motivo c'')::text', (select campus_otra from t37)), :N37) as t37_c5,
+  pg_temp.t37(format('select admin.agregar_dominio(%s, ''rls-t37x.mx'', ''motivo c'')::text', (select otra from t37)), :N37) as t37_c6,
+  pg_temp.t37('select admin.desactivar_dominio(''rls-t37b.mx'', ''motivo c'')::text', :N37) as t37_c7,
+  pg_temp.t37('select admin.reactivar_dominio(''rls-t37c.mx'', ''motivo c'')::text', :N37) as t37_c8,
+  pg_temp.t37('select admin.catalogo()::text', :E37, 'aal1') as t37_c9,
+  pg_temp.t37(format('select admin.agregar_dominio(%s, ''rls-t37x.mx'', ''motivo c'')::text', (select otra from t37)), :E37, 'aal1') as t37_c10,
+  pg_temp.t37('select admin.catalogo()::text', :E37, 'aal2', 13) as t37_c11,
+  pg_temp.t37(format('select admin.agregar_dominio(%s, ''rls-t37x.mx'', ''motivo c'')::text', (select otra from t37)), :E37, 'aal2', 13) as t37_c12,
+  pg_temp.t37('select admin.catalogo()::text') as t37_c13
+\gset
+select pg_temp.assert(:'t37_c1' = 'ERR:42501:no_admin', 'T37 (c1) no admin → catalogo 42501:no_admin');
+select pg_temp.assert(:'t37_c2' = 'ERR:42501:no_admin', 'T37 (c2) no admin → crear_universidad 42501:no_admin');
+select pg_temp.assert(:'t37_c3' = 'ERR:42501:no_admin', 'T37 (c3) no admin → editar_universidad 42501:no_admin');
+select pg_temp.assert(:'t37_c4' = 'ERR:42501:no_admin', 'T37 (c4) no admin → crear_campus 42501:no_admin');
+select pg_temp.assert(:'t37_c5' = 'ERR:42501:no_admin', 'T37 (c5) no admin → editar_campus 42501:no_admin');
+select pg_temp.assert(:'t37_c6' = 'ERR:42501:no_admin', 'T37 (c6) no admin → agregar_dominio 42501:no_admin');
+select pg_temp.assert(:'t37_c7' = 'ERR:42501:no_admin', 'T37 (c7) no admin → desactivar_dominio 42501:no_admin');
+select pg_temp.assert(:'t37_c8' = 'ERR:42501:no_admin', 'T37 (c8) no admin → reactivar_dominio 42501:no_admin');
+select pg_temp.assert(:'t37_c9' = 'ERR:42501:mfa_requerido', 'T37 (c9) admin aal1 → catalogo 42501:mfa_requerido');
+select pg_temp.assert(:'t37_c10' = 'ERR:42501:mfa_requerido', 'T37 (c10) admin aal1 → agregar_dominio 42501:mfa_requerido');
+select pg_temp.assert(:'t37_c11' = 'ERR:42501:totp_vencido', 'T37 (c11) TOTP de hace 13 h → catalogo 42501:totp_vencido');
+select pg_temp.assert(:'t37_c12' = 'ERR:42501:totp_vencido', 'T37 (c12) TOTP de hace 13 h → agregar_dominio 42501:totp_vencido');
+select pg_temp.assert(
+  :'t37_c13' not like 'ERR:%'
+  and (:'t37_c13')::jsonb @? '$.universidades[*] ? (@.nombre == "RLS T37 Otra")'
+  and :'t37_c13' not like '%@%',
+  'T37 (c13) un admin válido lee catalogo(): trae el catálogo y ningún correo ni admin');
+
+-- (d) crear_universidad -------------------------------------------------------
+select pg_temp.t37('select admin.crear_universidad(''  RLS   T37  Nueva '', ''  alta de prueba  '')::text') as t37_d1 \gset
+select pg_temp.assert(
+  :'t37_d1' ~ '^[0-9]+$'
+  -- id::text contra el texto, NO `(:'t37_d1')::bigint`: con un literal, el
+  -- cast se resuelve al planear y un `ERR:…` moriría crudo antes del assert.
+  and (select nombre from public.universidades where id::text = :'t37_d1') = 'RLS T37 Nueva',
+  'T37 (d1) crear_universidad normaliza el nombre y devuelve el id');
+select pg_temp.assert(
+  (select a.objetivo_tipo = 'universidad' and a.objetivo_id = :'t37_d1' and a.antes is null
+          and a.despues = '{"nombre": "RLS T37 Nueva"}'::jsonb and a.motivo = 'alta de prueba'
+          and a.admin_id = :E37::uuid
+     from pg_temp.t37_audit('crear_universidad') a),
+  'T37 (d2) auditoría de crear_universidad: universidad, id, null → {nombre}, motivo con btrim');
+select pg_temp.assert(
+  pg_temp.t37('select admin.crear_universidad(''RLS T37 Y'', '' ok '')::text') = 'ERR:22023:motivo_invalido',
+  'T37 (d3) motivo de 2 caracteres tras btrim → 22023:motivo_invalido');
+select pg_temp.assert(
+  pg_temp.t37('select admin.crear_universidad('''', ''motivo d'')::text') = 'ERR:22023:nombre_invalido'
+  and pg_temp.t37('select admin.crear_universidad(''   '', ''motivo d'')::text') = 'ERR:22023:nombre_invalido'
+  and pg_temp.t37('select admin.crear_universidad(''X'', ''motivo d'')::text') = 'ERR:22023:nombre_invalido'
+  and pg_temp.t37(format('select admin.crear_universidad(%L, ''motivo d'')::text', repeat('a', 101))) = 'ERR:22023:nombre_invalido',
+  'T37 (d4) nombre vacío, en blanco, de 1 o de 101 caracteres → 22023:nombre_invalido');
+select pg_temp.assert(
+  pg_temp.t37('select admin.crear_universidad(''rls t37 NUEVA'', ''motivo d'')::text') = 'ERR:23505:nombre_duplicado',
+  'T37 (d5) el mismo nombre en otras mayúsculas → 23505:nombre_duplicado (sin 23505 crudo)');
+
+-- (e) editar_universidad ------------------------------------------------------
+select pg_temp.t37(format('select admin.editar_universidad(%s, ''RLS T37 Nueva Dos'', ''renombre'')::text', :'t37_d1')) as t37_e1 \gset
+select pg_temp.assert(
+  :'t37_e1' = ''
+  and (select nombre from public.universidades where id = (:'t37_d1')::bigint) = 'RLS T37 Nueva Dos',
+  'T37 (e1) editar_universidad cambia el nombre');
+select pg_temp.assert(
+  (select a.objetivo_id = :'t37_d1' and a.antes = '{"nombre": "RLS T37 Nueva"}'::jsonb
+          and a.despues = '{"nombre": "RLS T37 Nueva Dos"}'::jsonb
+     from pg_temp.t37_audit('editar_universidad') a),
+  'T37 (e2) auditoría de editar_universidad: {nombre} → {nombre}');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.editar_universidad(%s, '' RLS T37  Nueva Dos '', ''renombre'')::text', :'t37_d1')) = 'ERR:55000:sin_cambios',
+  'T37 (e3) el mismo nombre tras normalizar → 55000:sin_cambios');
+select pg_temp.assert(
+  pg_temp.t37('select admin.editar_universidad(999999999, ''RLS T37 Z'', ''renombre'')::text') = 'ERR:P0002:universidad_no_existe'
+  and pg_temp.t37(format('select admin.editar_universidad(%s, ''rls t37 otra'', ''renombre'')::text', :'t37_d1')) = 'ERR:23505:nombre_duplicado',
+  'T37 (e4) universidad inexistente → P0002; el nombre de OTRA universidad → 23505:nombre_duplicado');
+select pg_temp.t37(format('select admin.editar_universidad(%s, ''RLS T37 NUEVA DOS'', ''solo mayúsculas'')::text', :'t37_d1')) as t37_e5 \gset
+select pg_temp.assert(
+  :'t37_e5' = ''
+  and (select nombre from public.universidades where id = (:'t37_d1')::bigint) = 'RLS T37 NUEVA DOS',
+  'T37 (e5) cambiar solo las mayúsculas sobre la MISMA universidad se permite (excluye su propio id)');
+
+-- (f) crear_campus --------------------------------------------------------------
+select
+  pg_temp.t37(format('select admin.crear_campus(%s, '' RLS T37  Campus Uno '', '' Monterrey '', 25.6, -100.3, ''alta campus'')::text', (select uni from t37))) as t37_f1,
+  pg_temp.t37(format('select admin.crear_campus(%s, ''RLS T37 Campus Dos'', ''Monterrey'', null, null, ''alta campus'')::text', (select uni from t37))) as t37_f2
+\gset
+select pg_temp.assert(
+  :'t37_f1' ~ '^[0-9]+$'
+  and coalesce((select nombre = 'RLS T37 Campus Uno' and ciudad = 'Monterrey' and latitud = 25.6 and longitud = -100.3
+                  and universidad_id = (select uni from t37)
+                  from public.campus where id::text = :'t37_f1'), false),
+  'T37 (f1) crear_campus con coordenadas: normaliza nombre y ciudad');
+select pg_temp.assert(
+  :'t37_f2' ~ '^[0-9]+$'
+  and coalesce((select latitud is null and longitud is null from public.campus where id::text = :'t37_f2'), false),
+  'T37 (f2) crear_campus sin coordenadas');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.crear_campus(%s, ''RLS T37 C3'', ''Monterrey'', 25, null, ''alta campus'')::text', (select uni from t37))) = 'ERR:22023:coordenadas_invalidas'
+  and pg_temp.t37(format('select admin.crear_campus(%s, ''RLS T37 C3'', ''Monterrey'', null, 10, ''alta campus'')::text', (select uni from t37))) = 'ERR:22023:coordenadas_invalidas',
+  'T37 (f3) una sola coordenada → 22023:coordenadas_invalidas');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.crear_campus(%s, ''RLS T37 C4'', ''Monterrey'', 95, 0, ''alta campus'')::text', (select uni from t37))) = 'ERR:22023:coordenadas_invalidas'
+  and pg_temp.t37(format('select admin.crear_campus(%s, ''RLS T37 C4'', ''Monterrey'', 0, -181, ''alta campus'')::text', (select uni from t37))) = 'ERR:22023:coordenadas_invalidas'
+  and pg_temp.t37(format('select admin.crear_campus(%s, ''RLS T37 C4'', ''Monterrey'', ''NaN'', 0, ''alta campus'')::text', (select uni from t37))) = 'ERR:22023:coordenadas_invalidas'
+  and pg_temp.t37(format('select admin.crear_campus(%s, ''RLS T37 C4'', ''M'', null, null, ''alta campus'')::text', (select uni from t37))) = 'ERR:22023:ciudad_invalida',
+  'T37 (f4) latitud 95, longitud -181 o NaN → coordenadas_invalidas; ciudad de 1 → ciudad_invalida');
+select pg_temp.assert(
+  pg_temp.t37('select admin.crear_campus(999999999, ''RLS T37 C5'', ''Monterrey'', null, null, ''alta campus'')::text') = 'ERR:P0002:universidad_no_existe',
+  'T37 (f5) universidad inexistente → P0002:universidad_no_existe');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.crear_campus(%s, ''rls t37 campus UNO'', ''Monterrey'', null, null, ''alta campus'')::text', (select uni from t37))) = 'ERR:23505:nombre_duplicado',
+  'T37 (f6) el mismo campus en otras mayúsculas, en la misma universidad → 23505:nombre_duplicado');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.crear_campus(%s, ''RLS T37 Campus Uno'', ''Monterrey'', null, null, ''alta campus'')::text', (select otra from t37))) ~ '^[0-9]+$',
+  'T37 (f7) el mismo nombre de campus en OTRA universidad se permite');
+select pg_temp.assert(
+  (select a.objetivo_tipo = 'campus' and a.objetivo_id = :'t37_f2' and a.antes is null
+          and a.despues = jsonb_build_object('nombre', 'RLS T37 Campus Dos', 'ciudad', 'Monterrey',
+                                             'latitud', null, 'longitud', null,
+                                             'universidad_id', (select uni from t37))
+     from private.admin_acciones a
+    where a.accion = 'crear_campus' and a.objetivo_id = :'t37_f2'),
+  'T37 (f8) auditoría de crear_campus: las 5 claves, con coordenadas null');
+
+-- (g) editar_campus -------------------------------------------------------------
+select pg_temp.assert(
+  (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'admin' and p.proname = 'editar_campus') = 1
+  and not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'admin' and p.proname = 'editar_campus'
+                     and 'p_universidad_id' = any (p.proargnames)),
+  'T37 (g1) editar_campus es UNA sola firma y no recibe universidad_id');
+select pg_temp.t37(format('select admin.editar_campus(%s, ''RLS T37 Campus Uno'', ''Monterrey'', null, null, ''quita coordenadas'')::text', :'t37_f1')) as t37_g2 \gset
+select pg_temp.assert(
+  :'t37_g2' = ''
+  and (select latitud is null and longitud is null and universidad_id = (select uni from t37)
+         from public.campus where id = (:'t37_f1')::bigint),
+  'T37 (g2) null/null borra las coordenadas y el campus sigue en su universidad');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.editar_campus(%s, ''RLS T37 Campus Uno'', ''Monterrey'', null, null, ''otra vez'')::text', :'t37_f1')) = 'ERR:55000:sin_cambios',
+  'T37 (g3) sin ningún cambio → 55000:sin_cambios');
+select pg_temp.assert(
+  (select a.antes = '{"latitud": 25.6, "longitud": -100.3}'::jsonb
+          and a.despues = '{"latitud": null, "longitud": null}'::jsonb
+     from pg_temp.t37_audit('editar_campus') a),
+  'T37 (g4) auditoría de editar_campus: SOLO las claves que cambiaron');
+select pg_temp.assert(
+  pg_temp.t37('select admin.editar_campus(999999999, ''RLS T37 X'', ''Monterrey'', null, null, ''motivo g'')::text') = 'ERR:P0002:campus_no_existe',
+  'T37 (g5) campus inexistente → P0002:campus_no_existe');
+
+-- (h) agregar_dominio -----------------------------------------------------------
+select pg_temp.t37(format('select admin.agregar_dominio(%s, ''  @RLS-T37.MX '', ''alta dominio'')::text', (select uni from t37))) as t37_h1 \gset
+select pg_temp.assert(
+  :'t37_h1' = ''
+  and (select activo and universidad_id = (select uni from t37)
+         from public.universidad_dominios where dominio = 'rls-t37.mx'),
+  'T37 (h1) agregar_dominio normaliza (minúsculas, sin espacios ni @ inicial) y nace activo');
+select pg_temp.assert(
+  (select a.objetivo_tipo = 'dominio' and a.objetivo_id = 'rls-t37.mx' and a.antes is null
+          and a.despues = jsonb_build_object('dominio', 'rls-t37.mx',
+                                             'universidad_id', (select uni from t37), 'activo', true)
+     from pg_temp.t37_audit('agregar_dominio') a),
+  'T37 (h2) auditoría de agregar_dominio: null → {dominio, universidad_id, activo}');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.agregar_dominio(%s, ''a@b.mx'', ''motivo h'')::text', (select uni from t37))) = 'ERR:22023:dominio_invalido'
+  and pg_temp.t37(format('select admin.agregar_dominio(%s, ''sinpunto'', ''motivo h'')::text', (select uni from t37))) = 'ERR:22023:dominio_invalido'
+  and pg_temp.t37(format('select admin.agregar_dominio(%s, ''a b.mx'', ''motivo h'')::text', (select uni from t37))) = 'ERR:22023:dominio_invalido'
+  and pg_temp.t37(format('select admin.agregar_dominio(%s, ''-x.mx'', ''motivo h'')::text', (select uni from t37))) = 'ERR:22023:dominio_invalido',
+  'T37 (h3) dominio con @, sin punto, con espacio o que empieza con guion → 22023:dominio_invalido');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.agregar_dominio(%s, ''gmail.com'', ''motivo h'')::text', (select uni from t37))) = 'ERR:22023:dominio_no_permitido'
+  and pg_temp.t37(format('select admin.agregar_dominio(%s, ''Proton.ME'', ''motivo h'')::text', (select uni from t37))) = 'ERR:22023:dominio_no_permitido',
+  'T37 (h4) un proveedor de correo público → 22023:dominio_no_permitido');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.agregar_dominio(%s, ''rls-t37n.mx'', ''motivo h'')::text', :'t37_d1')) = 'ERR:55000:universidad_sin_campus',
+  'T37 (h5) una universidad sin campus → 55000:universidad_sin_campus');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.agregar_dominio(%s, ''rls-t37.mx'', ''motivo h'')::text', (select uni from t37))) = 'ERR:55000:dominio_existe_activo',
+  'T37 (h6) un dominio que ya existe y está activo → 55000:dominio_existe_activo');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.agregar_dominio(%s, ''rls-t37c.mx'', ''motivo h'')::text', (select uni from t37))) = 'ERR:55000:dominio_existe_inactivo',
+  'T37 (h7) un dominio que ya existe desactivado → 55000:dominio_existe_inactivo');
+select pg_temp.assert(
+  not (select activo from public.universidad_dominios where dominio = 'rls-t37c.mx')
+  and not exists (select 1 from private.admin_acciones where objetivo_id = 'rls-t37c.mx'),
+  'T37 (h8) agregar NUNCA reactiva: rls-t37c.mx sigue desactivado y sin auditoría');
+select pg_temp.assert(
+  pg_temp.t37(format('select admin.agregar_dominio(%s, ''rls-t37b.mx'', ''motivo h'')::text', (select uni from t37))) = 'ERR:55000:dominio_de_otra_universidad',
+  'T37 (h9) un dominio de otra universidad → 55000:dominio_de_otra_universidad');
+
+-- (i) desactivar / reactivar ----------------------------------------------------
+select pg_temp.t37('select admin.desactivar_dominio('' RLS-T37.MX '', ''baja temporal'')::text') as t37_i1 \gset
+select pg_temp.assert(
+  :'t37_i1' = '' and not (select activo from public.universidad_dominios where dominio = 'rls-t37.mx'),
+  'T37 (i1) desactivar_dominio lo deja inactivo');
+select pg_temp.assert(
+  (select a.objetivo_id = 'rls-t37.mx' and a.antes = '{"activo": true}'::jsonb
+          and a.despues = '{"activo": false}'::jsonb
+     from pg_temp.t37_audit('desactivar_dominio') a),
+  'T37 (i2) auditoría de desactivar: {activo: true} → {activo: false}');
+select pg_temp.assert(
+  pg_temp.t37('select admin.desactivar_dominio(''rls-t37.mx'', ''otra vez'')::text') = 'ERR:55000:dominio_ya_inactivo'
+  and (select count(*) from private.admin_acciones where accion = 'desactivar_dominio' and objetivo_id = 'rls-t37.mx') = 1,
+  'T37 (i3) desactivar uno ya inactivo → 55000:dominio_ya_inactivo, sin auditoría doble');
+select pg_temp.assert(
+  pg_temp.t37('select admin.desactivar_dominio(''noexiste-t37.mx'', ''motivo i'')::text') = 'ERR:P0002:dominio_no_existe',
+  'T37 (i4) un dominio inexistente → P0002:dominio_no_existe');
+select pg_temp.t37('select admin.reactivar_dominio(''rls-t37.mx'', ''vuelve'')::text') as t37_i5 \gset
+select pg_temp.assert(
+  :'t37_i5' = '' and (select activo from public.universidad_dominios where dominio = 'rls-t37.mx'),
+  'T37 (i5) reactivar_dominio lo deja activo');
+select pg_temp.assert(
+  (select a.antes = '{"activo": false}'::jsonb and a.despues = '{"activo": true}'::jsonb
+     from pg_temp.t37_audit('reactivar_dominio') a),
+  'T37 (i6) auditoría de reactivar: {activo: false} → {activo: true}');
+select pg_temp.assert(
+  pg_temp.t37('select admin.reactivar_dominio(''rls-t37.mx'', ''otra vez'')::text') = 'ERR:55000:dominio_ya_activo',
+  'T37 (i7) reactivar uno ya activo → 55000:dominio_ya_activo');
+insert into public.universidad_dominios (dominio, universidad_id, activo)
+values ('rls-t37d.mx', (:'t37_d1')::bigint, false);
+select pg_temp.assert(
+  pg_temp.t37('select admin.reactivar_dominio(''rls-t37d.mx'', ''motivo i'')::text') = 'ERR:55000:universidad_sin_campus'
+  and not (select activo from public.universidad_dominios where dominio = 'rls-t37d.mx'),
+  'T37 (i8) reactivar el dominio de una universidad sin campus → 55000:universidad_sin_campus');
+
+-- (j) Desactivar no toca a quien ya está registrado -----------------------------
+select pg_temp.t37('select admin.desactivar_dominio(''rls-t37b.mx'', ''prueba j'')::text') as t37_j \gset
+select pg_temp.assert(
+  :'t37_j' = ''
+  and (select universidad_id from public.users where id = :U37::uuid) = (select otra from t37)
+  and (select campus_id from public.users where id = :U37::uuid) = (select campus_otra from t37),
+  'T37 (j1) desactivar el dominio no cambia la universidad ni el campus de una cuenta existente');
+select pg_temp.t37('select admin.reactivar_dominio(''rls-t37b.mx'', ''fin prueba j'')::text') as t37_j2 \gset
+
+-- (k) El CHECK de auditoría -----------------------------------------------------
+select pg_temp.assert(
+  (select count(*) from pg_constraint c, regexp_matches(pg_get_constraintdef(c.oid), '''([a-z_]+)''::text', 'g')
+    where c.conname = 'admin_acciones_accion_check') = 16
+  and (select pg_get_constraintdef(c.oid) from pg_constraint c where c.conname = 'admin_acciones_accion_check')
+      ~ 'crear_universidad.*editar_universidad.*crear_campus.*editar_campus.*agregar_dominio.*desactivar_dominio.*reactivar_dominio',
+  'T37 (k1) admin_acciones_accion_check admite exactamente 16 acciones, con las 7 del catálogo');
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format($q$insert into private.admin_acciones
+    (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+    values (%L, 'x', 'borrar_universidad', 'universidad', '1', null, null, 'motivo')$q$, :E37))
+    = '23514:admin_acciones_accion_check',
+  'T37 (k2) una acción inventada (borrar_universidad) → 23514');
+
+-- (l) Un campus con referencias no se borra -------------------------------------
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format('delete from public.campus where id = %s', (select campus_otra from t37)))
+    = '23503:users_campus_universidad_fkey',
+  'T37 (l1) un campus con usuarios no se borra ni siendo postgres → 23503');
+
+-- (m) Forma de los nombres, en la base ------------------------------------------
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, 'insert into public.universidades (nombre) values ('' RLS T37 M1 '')')
+    = '23514:universidades_nombre_normalizado',
+  'T37 (m1) universidades: espacios al borde → 23514');
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format('insert into public.campus (universidad_id, nombre, ciudad) values (%s, ''RLS  T37 M2'', ''Monterrey'')', (select otra from t37)))
+    = '23514:campus_nombre_normalizado',
+  'T37 (m2) campus: espacios repetidos en el nombre → 23514');
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format('insert into public.campus (universidad_id, nombre, ciudad) values (%s, ''RLS T37 M3'', ''M'')', (select otra from t37)))
+    = '23514:campus_ciudad_normalizada',
+  'T37 (m3) campus: ciudad de 1 carácter → 23514');
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, 'insert into public.universidades (nombre) values (''rls t37 otra'')')
+    = '23505:universidades_nombre_lower_key',
+  'T37 (m4) universidades: el mismo nombre en otras mayúsculas → 23505 del índice lower()');
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format('insert into public.campus (universidad_id, nombre, ciudad) values (%s, ''rls t37 campus otra'', ''Monterrey'')', (select otra from t37)))
+    = '23505:campus_universidad_nombre_lower_key',
+  'T37 (m5) campus: el mismo nombre en otras mayúsculas en la misma universidad → 23505');
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format('insert into public.universidades (nombre) values (%L)', 'RLS' || chr(160) || 'T37 M6'))
+    = '23514:universidades_nombre_normalizado',
+  'T37 (m6) un NBSP en el nombre → 23514 (cuenta como espacio)');
+select pg_temp.assert(
+  pg_temp.rechazo_de(null, format('insert into public.universidades (nombre) values (%L)', 'RLS' || chr(9) || 'T37 M7'))
+    = '23514:universidades_nombre_normalizado',
+  'T37 (m7) un tabulador en el nombre → 23514');
+select pg_temp.assert(
+  (select bool_and(pg_temp.rechazo_de(null, format('insert into public.universidades (nombre) values (%L)',
+                     private.normaliza_texto(x))) = 'ok')
+     from unnest(array['  RLS T37 M8a  ', 'RLS' || chr(160) || 'T37 M8b', 'RLS' || chr(9) || chr(9) || 'T37 M8c',
+                       'RLS   T37' || chr(10) || 'M8d']) as x),
+  'T37 (m8) lo que produce normaliza_texto() siempre cumple el check');
+
+-- (n) Regresión de admins -------------------------------------------------------
+select pg_temp.assert(
+  md5(coalesce((select string_agg(user_id::text || ':' || coalesce(activado_at::text, '-') || ':' || nombre, ',' order by user_id) from private.admins), '')) = :'t37_adm'
+  and md5(coalesce((select string_agg(id::text || ':' || status::text, ',' order by id) from auth.mfa_factors), '')) = :'t37_mfa',
+  'T37 (n1) ninguna RPC del catálogo escribió private.admins ni auth.mfa_factors');
+
+-- (o) Ventana hook → trigger (riesgo aceptado, L-D) -------------------------------
+-- El hook ya dejó pasar el correo; el dominio se desactiva antes del INSERT
+-- de GoTrue. Resultado: la cuenta EXISTE y nace sin universidad ("sin
+-- universidad asignada" en Completar perfil). Diagnóstico y escalamiento en
+-- docs/admin-runbook.md.
+select pg_temp.hook37('rls-t37-o@rls-t37b.mx')::text as t37_o_hook \gset
+update public.universidad_dominios set activo = false where dominio = 'rls-t37b.mx';
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+values ('37373737-0000-0000-0000-0000000000d3', '00000000-0000-0000-0000-000000000000',
+        'authenticated', 'authenticated', 'rls-t37-o@rls-t37b.mx', '', now(), now(), now());
+update public.universidad_dominios set activo = true where dominio = 'rls-t37b.mx';
+select pg_temp.assert(
+  :'t37_o_hook' = '{}'
+  and exists (select 1 from public.users where id = '37373737-0000-0000-0000-0000000000d3' and universidad_id is null),
+  'T37 (o1) ventana hook→trigger: el hook permitió, el dominio se desactivó y la cuenta nace sin universidad');
 
 \echo ''
 \echo '==========================================='
