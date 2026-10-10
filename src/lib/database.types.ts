@@ -14,6 +14,29 @@ export type Database = {
   }
   public: {
     Tables: {
+      actividad_diaria: {
+        Row: {
+          dia: string
+          user_id: string
+        }
+        Insert: {
+          dia?: string
+          user_id: string
+        }
+        Update: {
+          dia?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "actividad_diaria_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       avatar_moderacion: {
         Row: {
           created_at: string
