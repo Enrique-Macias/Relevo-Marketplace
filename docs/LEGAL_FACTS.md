@@ -363,7 +363,19 @@ RLVO registra de forma limitada:
 
 - contactos iniciados;
 - favoritos;
-- publicaciones creadas.
+- publicaciones creadas;
+- una señal diaria de actividad por usuario.
+
+Señal diaria de actividad:
+
+- contiene únicamente el identificador del usuario y el día calendario, determinado conforme a la zona horaria America/Mexico_City; no contiene la hora de uso;
+- se registra como máximo una vez por usuario y día, al abrir la aplicación o al volver a ella;
+- su única finalidad es calcular métricas agregadas de usuarios activos;
+- no se muestra individualmente a los administradores a través del panel de administración; el panel utiliza esta información únicamente para presentar métricas agregadas;
+- no se utiliza para recomendaciones y es independiente de la ventana de 90 días de personalización;
+- no es un historial de navegación: no contiene pantallas, publicaciones vistas ni búsquedas;
+- se conserva durante 90 días calendario y se elimina mediante una purga automática diaria;
+- se elimina antes si se elimina la cuenta.
 
 ---
 
@@ -398,6 +410,8 @@ RLVO no utiliza actualmente:
 - Google Analytics;
 - Firebase Analytics;
 - PostHog.
+
+RLVO sí genera internamente una señal diaria mínima de uso para calcular métricas agregadas de usuarios activos (ver sección 14).
 
 ---
 
@@ -672,6 +686,7 @@ Al eliminar una cuenta desaparecen:
 - favoritos;
 - contactos;
 - intereses;
+- señal diaria de actividad;
 - tokens de notificación;
 - reseñas recibidas;
 - registro de comprador;

@@ -44,6 +44,7 @@ The deletion flow must remove the user's personal account information, including
 - favorites;
 - contact records attributable to the user;
 - interests;
+- daily activity signal;
 - push notification tokens;
 - reviews received;
 - buyer record;
@@ -181,6 +182,7 @@ Before production verify that deletion actually removes:
 - favorites;
 - contact records;
 - interests;
+- daily activity signal (`actividad_diaria`);
 - push tokens;
 - received reviews;
 - buyer relationships;

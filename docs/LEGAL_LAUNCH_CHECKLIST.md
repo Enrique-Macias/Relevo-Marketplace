@@ -32,14 +32,14 @@ Pre-launch
 
 # Privacy Notice
 
-- [x] Document categories of data.
-- [x] Document product purposes.
+- [ ] Document categories of data. (Reopened: daily activity signal not yet in the published notice.)
+- [ ] Document product purposes. (Reopened: aggregate active-user metrics.)
 - [x] Document profile visibility.
 - [x] Document WhatsApp behavior.
 - [x] Document location behavior.
 - [x] Document personalization.
 - [x] Document moderation providers.
-- [x] Document retention decisions.
+- [ ] Document retention decisions. (Reopened: daily activity signal, 90 calendar days.)
 - [x] Document account deletion.
 - [x] Document privacy contact.
 - [ ] Confirm legal responsible party.
@@ -126,12 +126,14 @@ Pre-launch
 - [x] Reports: 12 months after resolution.
 - [x] Moderation records: 12 months.
 - [x] Recommendations: 90-day activity window.
+- [x] Daily activity signal: 90 calendar days, daily automatic purge (separate from the recommendation window).
 - [x] Define review anonymization.
 - [ ] Validate indefinite suspended-email hash.
 - [ ] Verify actual Supabase implementation.
 - [ ] Verify actual Storage deletion.
 - [ ] Verify Sentry retention/configuration.
 - [ ] Verify provider retention/configuration where configurable.
+- [ ] Verify the `purga-actividad-diaria` job runs in production.
 
 ---
 

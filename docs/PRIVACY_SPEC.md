@@ -106,7 +106,8 @@ Se entrega únicamente cuando otro usuario activo selecciona la función de cont
 - publicaciones creadas;
 - relación comprador/vendedor cuando se registra una venta;
 - reseñas;
-- reportes.
+- reportes;
+- señal diaria de actividad: identificador del usuario y día calendario, como máximo una por día, sin la hora de uso.
 
 ## Información técnica
 
@@ -139,6 +140,7 @@ Las finalidades deberán incluir, según corresponda:
 - enviar notificaciones operativas;
 - prestar soporte;
 - mantener seguridad y estabilidad técnica;
+- medir el uso agregado del servicio (usuarios activos) mediante la señal diaria de actividad;
 - cumplir obligaciones legales aplicables.
 
 No añadir finalidades publicitarias que no existan.
@@ -167,7 +169,8 @@ Privados:
 - teléfono hasta que exista una acción explícita de contacto;
 - tokens push;
 - información administrativa;
-- registros internos de moderación.
+- registros internos de moderación;
+- señal diaria de actividad (el panel de administración no la muestra individualmente; solo presenta métricas agregadas).
 
 ---
 
@@ -310,6 +313,14 @@ Registro mínimo:
 Contactos/favoritos relevantes:
 ventana de 90 días para la personalización descrita.
 
+## Señal diaria de actividad
+
+Se conserva durante 90 días calendario y se elimina mediante una purga automática diaria.
+
+Es independiente de la ventana de recomendaciones: no se utiliza para personalizar.
+
+Se elimina antes si se elimina la cuenta.
+
 ## Cuenta suspendida eliminada
 
 Puede conservarse indefinidamente un hash SHA-256 del correo para impedir re-registro.
@@ -340,6 +351,7 @@ Al eliminar:
 - favoritos;
 - contactos;
 - intereses;
+- señal diaria de actividad;
 - push tokens;
 - reseñas recibidas;
 - registro de comprador;
