@@ -15,7 +15,9 @@
 import type { Session } from '@supabase/supabase-js';
 import { Redirect } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { AppState } from 'react-native';
 
+import { registrarActividad } from '@/lib/actividad';
 import { borrarPushToken, registrarPushToken } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
 
@@ -165,6 +167,23 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!userId) return;
     void registrarPushToken(userId);
+  }, [userId]);
+
+  /**
+   * Señal diaria de uso (RF-17 Ola 6): al arrancar con sesión y cada vez que la
+   * app vuelve a primer plano. `registrarActividad` deduplica por cuenta y día
+   * en memoria y se traga sus errores, así que llamarla de más es barato y
+   * nunca frena nada. Mismo criterio que el push de arriba: un efecto aparte,
+   * fuera del callback de `onAuthStateChange` (deadlock de supabase-js).
+   * El patrón del listener es el de `confianza.ts`.
+   */
+  useEffect(() => {
+    if (!userId) return;
+    void registrarActividad(userId);
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void registrarActividad(userId);
+    });
+    return () => sub.remove();
   }, [userId]);
 
   // Sin sesión el perfil es null y está resuelto por definición. Con sesión,
