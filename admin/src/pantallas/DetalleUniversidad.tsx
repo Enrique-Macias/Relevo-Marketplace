@@ -9,6 +9,7 @@ import { ModalUniversidad } from '../componentes/ModalUniversidad.tsx';
 import { ModalCampus } from '../componentes/ModalCampus.tsx';
 import { ModalAgregarDominio } from '../componentes/ModalAgregarDominio.tsx';
 import { ModalEstadoDominio } from '../componentes/ModalEstadoDominio.tsx';
+import { Auditoria } from '../componentes/Auditoria.tsx';
 
 type Modal =
   | { tipo: 'nombre' }
@@ -137,6 +138,10 @@ export function DetalleUniversidad({ id, ir }: { id: number; ir: (v: Vista) => v
           </div>
         </>
       )}
+
+      {/* Ola 6: universidad + sus campus + sus dominios en una llamada; se
+          vuelve a leer después de cada cambio (`recarga`). */}
+      <Auditoria tipo="universidad" id={String(uni.id)} recarga={recarga} />
 
       {modal?.tipo === 'nombre' && (
         <ModalUniversidad universidad={{ id: uni.id, nombre: uni.nombre }}

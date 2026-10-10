@@ -11,6 +11,9 @@ const base = (tam: number, clase?: string) => ({
 export const IconFlag = ({ tam = 18, clase }: P) => (
   <svg {...base(tam, clase)}><path stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M5 21V4M5 4h11l-2 4 2 4H5" /></svg>
 );
+export const IconChart = ({ tam = 18, clase }: P) => (
+  <svg {...base(tam, clase)}><g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 20h16" /><path d="M7 16v-4M12 16V7M17 16v-7" /></g></svg>
+);
 export const IconUser = ({ tam = 18, clase }: P) => (
   <svg {...base(tam, clase)}><g stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5" /></g></svg>
 );

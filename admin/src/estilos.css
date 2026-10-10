@@ -287,3 +287,22 @@ input.text-field::placeholder, textarea.text-field::placeholder{color:#A8A29A;}
 .icono-suave{color:var(--ink-soft); flex-shrink:0;}
 .buscador-input{flex:1; border:none; background:none; font:inherit; color:var(--ink); outline:none; padding:0;}
 .buscador .text-field:focus-within{border-color:var(--ink-soft);}
+
+/* ---------- Métricas (Ola 6) ----------
+   Solo agregados. «Sin datos» (activos fuera de la cobertura: antes del
+   inicio del registro o fuera de los 90 días retenidos) se pinta distinto
+   del 0, que es un conteo real. */
+.controles{display:flex; align-items:center; gap:14px; margin-bottom:18px; flex-wrap:wrap;}
+.controles .chips{margin-bottom:0;}
+.selector{display:inline-flex; align-items:center; justify-content:space-between; gap:10px; width:250px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:9px 14px; font-size:13px; color:var(--ink);}
+.selector svg{transform:rotate(-90deg); color:var(--ink-soft);}
+.metricas-tarjetas{display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:18px;}
+.metrica{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px 20px;}
+.metrica-nombre{font-size:11.5px; color:var(--ink-soft); margin-bottom:8px;}
+.metrica-valor{font-family:var(--font-display), serif; font-weight:600; font-size:30px; color:var(--ink); line-height:1; font-variant-numeric:tabular-nums;}
+.metrica-valor.sin-datos{font-family:var(--font-body), sans-serif; font-weight:500; font-size:15px; color:var(--ink-soft); line-height:30px;}
+.metrica-nota{font-size:11.5px; color:var(--ink-soft); margin-top:8px; line-height:1.45;}
+.tabla .sin-datos{color:var(--ink-soft); font-size:12px; font-style:italic;}
+/* Solo del panel (no del prototipo): el `.selector` del frame es un <select> real. */
+.selector select{appearance:none; -webkit-appearance:none; border:none; background:transparent; font:inherit; color:inherit; flex:1; cursor:pointer; outline:none;}
+.selector:focus-within{border-color:var(--ink-soft);}

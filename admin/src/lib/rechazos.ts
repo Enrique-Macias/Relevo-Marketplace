@@ -103,13 +103,20 @@ export function tieneTextoDecidido(mensaje: string): boolean {
 const ESTADO_INESPERADO_PUBLICACION = 'La publicación cambió de estado mientras tanto. Recarga el detalle.';
 /** `nombre_duplicado` también: el de TEXTOS es el de una universidad. */
 const NOMBRE_DUPLICADO_CAMPUS = 'Esta universidad ya tiene un campus con ese nombre.';
+/**
+ * `universidad_no_existe` tiene copy propio SOLO en Métricas (frame "Métricas",
+ * variante): ahí la provoca el selector. En el catálogo sigue siendo el texto
+ * genérico (está en SIN_TEXTO_PROPIO), porque allá el panel no la provoca.
+ */
+const UNIVERSIDAD_NO_EXISTE_METRICAS = 'Esa universidad ya no está en el catálogo. Elige otra o «Todas las universidades».';
 
 export function textoDeRechazo(
   err: ErrorRpc | null | undefined,
-  sujeto: 'cuenta' | 'publicacion' | 'campus' = 'cuenta',
+  sujeto: 'cuenta' | 'publicacion' | 'campus' | 'metricas' = 'cuenta',
 ): string {
   const m = err?.message ?? '';
   if (m === 'estado_inesperado' && sujeto === 'publicacion') return ESTADO_INESPERADO_PUBLICACION;
   if (m === 'nombre_duplicado' && sujeto === 'campus') return NOMBRE_DUPLICADO_CAMPUS;
+  if (m === 'universidad_no_existe' && sujeto === 'metricas') return UNIVERSIDAD_NO_EXISTE_METRICAS;
   return TEXTOS[m] ?? `No se pudo completar la acción (${err?.code ?? 'sin código'}).`;
 }

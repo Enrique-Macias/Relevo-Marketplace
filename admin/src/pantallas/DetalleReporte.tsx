@@ -8,6 +8,7 @@ import { Aviso, CampoMotivo, Chip, ErrorCarga, Esqueleto, Volver } from '../comp
 import { IconTag, IconUser } from '../componentes/Iconos.tsx';
 import { FotoListing } from '../componentes/FotoListing.tsx';
 import { ModalBloquear } from '../componentes/ModalBloquear.tsx';
+import { Auditoria } from '../componentes/Auditoria.tsx';
 
 const iniciales = (n: string | null) =>
   (n ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('') || '?';
@@ -115,6 +116,8 @@ export function DetalleReporte({ id, ir }: { id: number; ir: (v: Vista) => void 
               : <div className="texto-suave">Sin comentario.</div>}
           </div>
 
+          {/* Ola 6: frame "Reporte resuelto (solo lectura)". */}
+          {!pendiente && <Auditoria tipo="reporte" id={String(reporte.id)} recarga={recarga} />}
           {pendiente && (
             <div className="tarjeta">
               <div className="titulo-seccion">Resolver</div>

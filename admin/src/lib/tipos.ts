@@ -32,6 +32,27 @@ export interface Auditoria {
   antes: Record<string, unknown> | null; despues: Record<string, unknown> | null; created_at: string;
 }
 
+/**
+ * Ola 6 (20261009000485/486). Tipos ESCRITOS AQUÍ y no tomados de
+ * `db/admin.types.ts`: el generador declara no nulas columnas que el contrato
+ * SQL devuelve NULL por diseño (fuera de cobertura: «Sin datos», nunca 0).
+ */
+export interface MetricaDia {
+  dia: string; altas: number; usuarios_activos: number | null;
+  publicaciones_creadas: number; contactos: number;
+}
+
+export interface MetricasResumen {
+  desde: string; hasta: string; altas: number; publicaciones_creadas: number; contactos: number;
+  usuarios_activos_distintos: number | null; inicio_tracking: string; retencion_dias: number;
+  activos_desde: string | null; activos_hasta: string | null;
+  activos_cobertura: 'completa' | 'parcial' | 'sin_datos';
+}
+
+export interface AuditoriaFila extends Auditoria {
+  objetivo_tipo: string; objetivo_id: string; objetivo_etiqueta: string | null;
+}
+
 export interface DetalleListing {
   id: number;
   titulo: string;
@@ -97,4 +118,5 @@ export type Vista =
   | { tipo: 'usuarios' }
   | { tipo: 'usuario'; id: string; desde?: number }
   | { tipo: 'catalogo' }
-  | { tipo: 'universidad'; id: number };
+  | { tipo: 'universidad'; id: number }
+  | { tipo: 'metricas' };
