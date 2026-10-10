@@ -51,6 +51,13 @@
 //      RPC con su fila de auditoría y el actor real, y la carrera de
 //      `agregar_dominio` hecha determinista con otra sesión que inserta el
 //      mismo dominio sin confirmar (dominio_existe_activo, sin 23505 crudo).
+//  11. Métricas y auditoría (Ola 6): `admin.metricas` (filas por día y null
+//      fuera de cobertura), `admin.metricas_resumen` (cobertura esperada según
+//      el inicio del registro y retención 90; resumen = suma de los diarios),
+//      `admin.auditoria` de la universidad del caso 10 (universidad + campus +
+//      dominio en una llamada, etiquetas, cursor), y los rechazos por HTTP con
+//      su texto en `rechazos.ts`. Corre DENTRO del caso 10, antes de borrar su
+//      universidad.
 //
 // Limpia lo suyo al final (sus cuentas y su universidad de prueba, con sus
 // campus y dominios; la auditoría es append-only y se queda, como en
@@ -63,7 +70,7 @@ import { createClient } from '@supabase/supabase-js';
 import { crear, activar, desactivar, conexionPg, conexionRemota, REF_REMOTO } from './crear-admin.mjs';
 import { totp, siguienteVentana } from './totp.mjs';
 import {
-  clasificarRechazo, NO_ADMIN, MFA_REQUERIDO, TOTP_VENCIDO, tieneTextoDecidido,
+  clasificarRechazo, NO_ADMIN, MFA_REQUERIDO, TOTP_VENCIDO, tieneTextoDecidido, textoDeRechazo,
 } from '../admin/src/lib/rechazos.ts';
 
 const DB = 'supabase_db_relevo-marketplace';
@@ -394,6 +401,93 @@ async function main() {
         && sql(`select count(*) from public.universidad_dominios where dominio = '${dom2}'`) === '1'
         && sql(`select count(*) from private.admin_acciones where accion = 'agregar_dominio' and objetivo_id = '${dom2}'`) === '0',
       `${enCarrera.error?.code}:${enCarrera.error?.message}`);
+    // -------------------------------------------------------------------
+    // 11. Métricas y auditoría (Ola 6, 20261009000485/486) por HTTP. Va aquí,
+    // antes de borrar la universidad del caso 10, para leer su auditoría REAL
+    // (universidad, campus y dominio escritos por las RPC de arriba). Lo que se
+    // espera de la cobertura se calcula en SQL con `actividad_parametros.inicio`
+    // del stack local (que vale el día del `migration up`), no se supone.
+    console.log('\n== 11. métricas y auditoría (Ola 6) ==');
+    const hoy = sql("select (now() at time zone 'America/Mexico_City')::date");
+    const desde7 = sql(`select '${hoy}'::date - 6`);
+    const desde30 = sql(`select '${hoy}'::date - 29`);
+    const nulos7 = Number(sql(`select count(*) from generate_series('${desde7}'::date, '${hoy}'::date, '1 day') g
+      where g::date < greatest((select inicio from private.actividad_parametros), '${hoy}'::date - 89)`));
+    const m7 = await c5.schema('admin').rpc('metricas', { p_desde: desde7, p_hasta: hoy });
+    const columnas = ['altas', 'contactos', 'dia', 'publicaciones_creadas', 'usuarios_activos'];
+    ok('11a metricas(7 días) → 7 filas, día a día hasta hoy, con sus 5 columnas',
+      !m7.error && m7.data.length === 7 && m7.data[6].dia === hoy && m7.data[0].dia === desde7
+        && m7.data.every((f) => JSON.stringify(Object.keys(f).sort()) === JSON.stringify(columnas)),
+      m7.error?.message ?? `${m7.data?.length} filas, ${m7.data?.[0]?.dia}…${m7.data?.[6]?.dia}`);
+    ok(`11b metricas: ${nulos7} días sin cobertura son null (no 0) y el resto son números`,
+      !m7.error && m7.data.filter((f) => f.usuarios_activos === null).length === nulos7
+        && m7.data.slice(nulos7).every((f) => typeof f.usuarios_activos === 'number'),
+      JSON.stringify(m7.data?.map((f) => f.usuarios_activos)));
+    const r30 = await c5.schema('admin').rpc('metricas_resumen', { p_desde: desde30, p_hasta: hoy });
+    const fila = r30.data?.[0];
+    const esperado = sql(`with c as (select greatest('${desde30}'::date, (select inicio from private.actividad_parametros),
+                                                 '${hoy}'::date - 89) d)
+      select (select inicio from private.actividad_parametros) || '|' ||
+             (case when d > '${hoy}'::date then 'NULL' else d::text end) || '|' ||
+             (case when d > '${hoy}'::date then 'sin_datos' when d = '${desde30}'::date then 'completa' else 'parcial' end)
+        from c`);
+    ok('11c metricas_resumen(30 días) → una fila con inicio_tracking, activos_desde y activos_cobertura esperados, retención 90',
+      !r30.error && r30.data.length === 1 && fila.retencion_dias === 90 && fila.desde === desde30 && fila.hasta === hoy
+        && `${fila.inicio_tracking}|${fila.activos_desde ?? 'NULL'}|${fila.activos_cobertura}` === esperado
+        && (fila.activos_cobertura === 'sin_datos' ? fila.activos_hasta === null : fila.activos_hasta === hoy),
+      r30.error?.message ?? `${JSON.stringify(fila)} vs ${esperado}`);
+    const m30 = await c5.schema('admin').rpc('metricas', { p_desde: desde30, p_hasta: hoy });
+    const suma = (k) => m30.data?.reduce((s, f) => s + f[k], 0);
+    ok('11d resumen = suma de los diarios en altas, publicaciones y contactos (por HTTP)',
+      !m30.error && fila && suma('altas') === fila.altas && suma('publicaciones_creadas') === fila.publicaciones_creadas
+        && suma('contactos') === fila.contactos,
+      `${suma('altas')}|${suma('publicaciones_creadas')}|${suma('contactos')} vs ${fila?.altas}|${fila?.publicaciones_creadas}|${fila?.contactos}`);
+    // Auditoría de la universidad del caso 10: crear y editar la universidad,
+    // crear y editar su campus, agregar, desactivar y reactivar su dominio = 7.
+    const au = await c5.schema('admin').rpc('auditoria', { p_objetivo_tipo: 'universidad', p_objetivo_id: String(rU.data) });
+    const ids = au.data?.map((f) => f.id) ?? [];
+    ok('11e auditoria(universidad) → las 7 filas del caso 10 en UNA llamada: universidad, campus y dominio, id desc',
+      !au.error && au.data.length === 7
+        && JSON.stringify([...new Set(au.data.map((f) => f.objetivo_tipo))].sort()) === '["campus","dominio","universidad"]'
+        && ids.every((v, i) => i === 0 || ids[i - 1] > v)
+        && au.data.every((f) => f.admin_correo === A),
+      au.error?.message ?? `${au.data?.length} filas: ${au.data?.map((f) => f.objetivo_tipo).join(',')}`);
+    ok('11f objetivo_etiqueta: el nombre actual de la universidad y del campus, y el dominio tal cual',
+      !au.error && au.data.filter((f) => f.objetivo_tipo === 'universidad').every((f) => f.objetivo_etiqueta === `${nomU} Dos`)
+        && au.data.filter((f) => f.objetivo_tipo === 'campus').every((f) => f.objetivo_etiqueta === 'Campus Probe')
+        && au.data.filter((f) => f.objetivo_tipo === 'dominio').every((f) => f.objetivo_etiqueta === dom),
+      [...new Set(au.data?.map((f) => `${f.objetivo_tipo}=${f.objetivo_etiqueta}`))].join(' | '));
+    const p1 = await c5.schema('admin').rpc('auditoria', { p_objetivo_tipo: 'universidad', p_objetivo_id: String(rU.data), p_limit: 3 });
+    const p2 = await c5.schema('admin').rpc('auditoria', {
+      p_objetivo_tipo: 'universidad', p_objetivo_id: String(rU.data), p_cursor: p1.data?.[2]?.id, p_limit: 10 });
+    ok('11g cursor por HTTP: 3 + 4 filas, sin repetir ni saltar, en el mismo orden',
+      !p1.error && !p2.error && JSON.stringify([...p1.data, ...p2.data].map((f) => f.id)) === JSON.stringify(ids),
+      `${p1.data?.length}+${p2.data?.length}`);
+    // Rechazos por HTTP, y su amarre con el panel (rechazos.ts).
+    const inv11 = await c5.schema('admin').rpc('metricas', { p_desde: hoy, p_hasta: desde7 });
+    ok('11h rango invertido → 22023 rango_invalido; el panel solo lo muestra, con el copy del frame "Métricas"',
+      inv11.error?.code === '22023' && inv11.error?.message === 'rango_invalido' && clasificarRechazo(inv11.error) === 'mostrar'
+        && textoDeRechazo(inv11.error) === 'No pudimos calcular ese rango de fechas. Recarga la página e inténtalo de nuevo.',
+      `${inv11.error?.code}:${inv11.error?.message}`);
+    const ti = await c5.schema('admin').rpc('auditoria', { p_objetivo_tipo: 'usuario', p_objetivo_id: idA });
+    ok('11i auditoria con un tipo no admitido → 22023 objetivo_tipo_invalido (texto genérico a propósito)',
+      ti.error?.code === '22023' && ti.error?.message === 'objetivo_tipo_invalido' && tieneTextoDecidido(ti.error.message),
+      `${ti.error?.code}:${ti.error?.message}`);
+    const na = await Promise.all([
+      cB.schema('admin').rpc('metricas', { p_desde: hoy, p_hasta: hoy }),
+      cB.schema('admin').rpc('metricas_resumen', { p_desde: hoy, p_hasta: hoy }),
+      cB.schema('admin').rpc('auditoria', { p_objetivo_tipo: 'reporte', p_objetivo_id: '1' }),
+    ]);
+    ok('11j una cuenta sin activar → no_admin en las tres RPC', na.every((r) => r.error?.message === NO_ADMIN),
+      na.map((r) => r.error?.message).join(','));
+    const a1 = await Promise.all([
+      cAal1.schema('admin').rpc('metricas', { p_desde: hoy, p_hasta: hoy }),
+      cAal1.schema('admin').rpc('metricas_resumen', { p_desde: hoy, p_hasta: hoy }),
+      cAal1.schema('admin').rpc('auditoria', { p_objetivo_tipo: 'reporte', p_objetivo_id: '1' }),
+    ]);
+    ok('11k una sesión aal1 → mfa_requerido en las tres RPC', a1.every((r) => r.error?.message === MFA_REQUERIDO),
+      a1.map((r) => r.error?.message).join(','));
+
     // El catálogo vuelve a su estado ANTES de los casos 8 y 9: el 9c compara
     // `universidad_dominios` contra la foto del arranque (el finally es respaldo).
     sql(`delete from public.universidades where nombre like 'Probe Cat ${RUN}%'`);

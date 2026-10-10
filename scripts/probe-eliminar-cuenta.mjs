@@ -239,6 +239,18 @@ async function main() {
                 ('${C.id}', '${X.id}', ${X.listing}, 5, null)`);
     const promC = sql(`select rating_promedio from public.users where id = '${C.id}'`);
     const resenaXC = sql(`select id from public.ratings where from_user_id = '${X.id}' and to_user_id = '${C.id}'`);
+    // RF-17 Ola 6: X y B registran su señal de actividad por HTTP con su propia
+    // sesión, como la app (`insert({ user_id })` plano, 20261009000485).
+    const actividadHttp = async (s) => (await fetch(`${E.API_URL}/rest/v1/actividad_diaria`, {
+      method: 'POST',
+      headers: { apikey: E.PUBLISHABLE, Authorization: `Bearer ${s.tok}`, 'Content-Type': 'application/json',
+                 Prefer: 'return=minimal' },
+      body: JSON.stringify({ user_id: s.id }),
+    })).status;
+    const actX = await actividadHttp(X);
+    const actB = await actividadHttp(B);
+    const filasActividad = (uid) => n(`select count(*) from public.actividad_diaria where user_id = '${uid}'`);
+    const actividadAntes = `${actX}/${actB} ${filasActividad(X.id)}/${filasActividad(B.id)}`;
 
     // Reautenticación reciente: lo que hará el cliente justo antes de llamar.
     const re = await login(E, X.correo);
@@ -253,6 +265,11 @@ async function main() {
       `quedan ${objetosDe(X.id, [X.listing])}`);
     ok('…X: su push token se fue con la cascada',
       n(`select count(*) from public.push_tokens where user_id = '${X.id}' or token like '%probe-del-x-${RUN}%'`) === 0);
+    // ACCOUNT_DELETION.md, "Required implementation verification": la señal de
+    // actividad atribuible se borra con la cuenta, y solo la de esa cuenta.
+    ok('…X: su actividad diaria se fue con la cascada, y la de B sigue',
+      actividadAntes === '201/201 1/1' && filasActividad(X.id) === 0 && filasActividad(B.id) === 1,
+      `antes (http X/B, filas X/B) ${actividadAntes}; después ${filasActividad(X.id)}/${filasActividad(B.id)}`);
     ok('…la reseña que X escribió sigue, anónima, con sus 4 estrellas',
       sql(`select coalesce(from_user_id::text, 'null') || '|' || estrellas || '|' || coalesce(comentario, 'null')
              from public.ratings where id = ${resenaXC}`) === 'null|4|null');

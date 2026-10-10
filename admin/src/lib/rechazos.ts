@@ -68,6 +68,8 @@ const TEXTOS: Record<string, string> = {
   dominio_de_otra_universidad: 'Ese dominio ya pertenece a otra universidad.',
   dominio_ya_inactivo: 'El dominio ya estaba desactivado. Recarga el detalle.',
   dominio_ya_activo: 'El dominio ya estaba activo. Recarga el detalle.',
+  // Ola 6 (20261009000485, métricas): copy de la variante del frame "Métricas".
+  rango_invalido: 'No pudimos calcular ese rango de fechas. Recarga la página e inténtalo de nuevo.',
   [NO_ADMIN]: 'Esta cuenta no es admin del panel.',
   [MFA_REQUERIDO]: 'Falta confirmar tu código de la app autenticadora.',
   [TOTP_VENCIDO]: 'Tu código de la app autenticadora venció. Confírmalo otra vez.',
@@ -88,6 +90,9 @@ export const SIN_TEXTO_PROPIO: readonly string[] = [
   // `admin.*` del catálogo (Ola 5): el panel solo manda ids y dominios que trajo
   // `admin.catalogo()`; solo los provocaría un borrado por Studio a media sesión.
   'universidad_no_existe', 'campus_no_existe', 'dominio_no_existe',
+  // Ola 6 (20261009000485/486): el selector del panel no pide más de 90 días, y
+  // la auditoría solo se pide con un tipo y un id que el panel ya tiene.
+  'rango_demasiado_largo', 'objetivo_tipo_invalido', 'objetivo_invalido',
 ];
 
 export function tieneTextoDecidido(mensaje: string): boolean {
