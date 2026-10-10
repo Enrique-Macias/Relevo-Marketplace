@@ -2900,6 +2900,68 @@ select pg_temp.assert(
                                        where oid = 'public.users'::regtype))),
   'ninguna función de public ni admin devuelve la fila completa de public.users');
 
+-- RF-17, Ola 6 (20261009000485): `public.actividad_diaria`. El cliente solo
+-- puede insertar su `user_id` (el día lo pone el servidor); nada de SELECT,
+-- UPDATE ni DELETE, y nada para anon. Se mira tabla Y columna (un `grant
+-- select (dia)` no aparece en `table_privileges`), la policy única y que no
+-- esté en Realtime. El comportamiento (RLS, 23505, día arbitrario) vive en T38.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where table_schema = 'public' and table_name = 'actividad_diaria'
+                and grantee in ('authenticated', 'anon', 'PUBLIC'))
+  and (select array_agg(grantee || ':' || column_name || ':' || privilege_type order by 1)
+         from information_schema.column_privileges
+        where table_schema = 'public' and table_name = 'actividad_diaria'
+          and grantee in ('authenticated', 'anon', 'PUBLIC'))
+      = array['authenticated:user_id:INSERT']
+  and (select array_agg(policyname || ':' || cmd || ':' || array_to_string(roles, ','))
+         from pg_policies where schemaname = 'public' and tablename = 'actividad_diaria')
+      = array['actividad_diaria_insert_own:INSERT:authenticated']
+  and (select relrowsecurity from pg_class where oid = 'public.actividad_diaria'::regclass)
+  and not exists (select 1 from pg_publication_tables
+                  where schemaname = 'public' and tablename = 'actividad_diaria'),
+  'actividad_diaria: solo INSERT(user_id) para authenticated, una policy de INSERT, RLS y fuera de Realtime');
+
+-- `private.actividad_parametros` (el inicio del registro) y la función del
+-- corte de 90 días: nada para el cliente. Mismo patrón que `moderacion_retenida`.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+              where table_schema = 'private' and table_name = 'actividad_parametros'
+                and grantee in ('authenticated', 'anon', 'PUBLIC'))
+  and not exists (select 1 from information_schema.column_privileges
+                  where table_schema = 'private' and table_name = 'actividad_parametros'
+                    and grantee in ('authenticated', 'anon', 'PUBLIC'))
+  and not exists (select 1 from pg_policies
+                  where schemaname = 'private' and tablename = 'actividad_parametros')
+  and (select relrowsecurity from pg_class where oid = 'private.actividad_parametros'::regclass),
+  'private.actividad_parametros: sin privilegios para el cliente, sin policies y con RLS');
+
+select pg_temp.assert(
+  not has_function_privilege('authenticated', 'private.actividad_retenida_desde()', 'execute')
+  and not has_function_privilege('anon', 'private.actividad_retenida_desde()', 'execute')
+  and not exists (select 1 from pg_proc p,
+                         aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                   where p.oid = 'private.actividad_retenida_desde()'::regprocedure
+                     and a.grantee = 0)
+  and (select proconfig @> array['search_path=""']
+         from pg_proc where oid = 'private.actividad_retenida_desde()'::regprocedure),
+  'private.actividad_retenida_desde: EXECUTE revocado a authenticated, anon y PUBLIC, con search_path fijo');
+
+-- Las tres RPC de la Ola 6, una por una (la invariante genérica de arriba no
+-- dice si existen): definer de `postgres`, `stable`, `search_path` vacío,
+-- EXECUTE solo para authenticated.
+select pg_temp.assert(
+  (select count(*) from pg_proc p
+    where p.oid in ('admin.metricas(date,date,bigint)'::regprocedure,
+                    'admin.metricas_resumen(date,date,bigint)'::regprocedure,
+                    'admin.auditoria(text,text,bigint,integer)'::regprocedure)
+      and p.prosecdef and p.provolatile = 's'
+      and p.proowner = 'postgres'::regrole
+      and p.proconfig = array['search_path=""']
+      and has_function_privilege('authenticated', p.oid, 'execute')
+      and not has_function_privilege('anon', p.oid, 'execute')) = 3,
+  'admin.metricas, metricas_resumen y auditoria: definer de postgres, stable, search_path vacío, EXECUTE solo authenticated');
+
 -- Todas las tablas de public tienen RLS activo.
 select pg_temp.assert(
   not exists (select 1 from pg_tables t
@@ -7467,6 +7529,594 @@ select pg_temp.assert(
   :'t37_o_hook' = '{}'
   and exists (select 1 from public.users where id = '37373737-0000-0000-0000-0000000000d3' and universidad_id is null),
   'T37 (o1) ventana hook→trigger: el hook permitió, el dominio se desactivó y la cuenta nace sin universidad');
+
+\echo '== T38 — actividad diaria y métricas del panel (RF-17, Ola 6) =='
+-- 20261009000485. Autocontenida: sus propias universidades (`rls-t38*.mx`),
+-- cuentas, publicaciones, contactos y actividad. Todo se compara con el
+-- filtro de SU universidad: sin filtro, las métricas suman también los
+-- fixtures de otras secciones.
+--
+-- Dentro de la transacción de la suite `now()` es constante, así que "hoy"
+-- (`:'t38_hoy'`) es fijo. `private.actividad_parametros.inicio` se fija aquí
+-- mismo (en local vale el día del `migration up`) y se cambia donde una
+-- aserción lo pide; cada cambio va en su propia sentencia.
+--
+--   :E38 admin activado (quien llama)   :P38, :Q38 usuarios de Uni
+--   :S38 usuario de Uni SUSPENDIDO      :X38 usuario de Uni con fila en admins (sin activar)
+--   :O38 usuario de Otra
+
+\set E38 '''38383838-0000-0000-0000-0000000000e1'''
+\set P38 '''38383838-0000-0000-0000-0000000000a1'''
+\set Q38 '''38383838-0000-0000-0000-0000000000a2'''
+\set S38 '''38383838-0000-0000-0000-0000000000a3'''
+\set X38 '''38383838-0000-0000-0000-0000000000a4'''
+\set O38 '''38383838-0000-0000-0000-0000000000b1'''
+
+select (now() at time zone 'America/Mexico_City')::date as t38_hoy \gset
+
+insert into public.universidades (nombre) values ('RLS T38 Uni'), ('RLS T38 Otra');
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T38 Campus ' || nombre, 'Ciudad T38' from public.universidades where nombre like 'RLS T38 %';
+insert into public.universidad_dominios (dominio, universidad_id)
+select case nombre when 'RLS T38 Uni' then 'rls-t38.mx' else 'rls-t38b.mx' end, id
+  from public.universidades where nombre like 'RLS T38 %';
+
+select (select id from public.universidades where nombre = 'RLS T38 Uni')  as t38_uni,
+       (select id from public.universidades where nombre = 'RLS T38 Otra') as t38_otra \gset
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:E38, 'rls-t38-e@rls-t38.test'), (:P38, 'rls-t38-p@rls-t38.mx'),
+               (:Q38, 'rls-t38-q@rls-t38.mx'), (:S38, 'rls-t38-s@rls-t38.mx'),
+               (:X38, 'rls-t38-x@rls-t38.mx'), (:O38, 'rls-t38-o@rls-t38b.mx')) as v(u, e);
+insert into private.admins (user_id, nombre, activado_at) values (:E38::uuid, 'Admin T38', now());
+-- :X38 tiene fila en admins SIN activar: las métricas excluyen a toda cuenta
+-- con fila, activada o no.
+insert into private.admins (user_id, nombre, activado_at) values (:X38::uuid, 'Admin T38 sin activar', null);
+update public.users set estado = 'suspendido', suspendido_at = now(), suspension_motivo = 'Prueba T38'
+ where id = :S38::uuid;
+
+-- Altas: todas el día hoy-3 a mediodía (hora de México).
+update public.users
+   set created_at = ((:'t38_hoy'::date - 3)::timestamp + time '12:00') at time zone 'America/Mexico_City'
+ where id in (:P38::uuid, :Q38::uuid, :S38::uuid, :X38::uuid, :O38::uuid);
+
+-- Publicaciones (pausadas: no pasan por los triggers de activación), hoy-3:
+--   L1 de :P38 en Uni · L2 de :O38 en Otra · L3 de :X38 (admin) en Uni.
+insert into public.listings (user_id, universidad_id, campus_id, categoria_id, titulo,
+                             precio, condicion, estado, created_at)
+select v.u::uuid, v.uni, (select c.id from public.campus c where c.universidad_id = v.uni),
+       (select min(id) from public.categories), v.t, 100, 'usado', 'pausada',
+       ((:'t38_hoy'::date - 3)::timestamp + time '12:00') at time zone 'America/Mexico_City'
+  from (values (:P38, :t38_uni, 'RLS T38 L1'), (:O38, :t38_otra, 'RLS T38 L2'),
+               (:X38, :t38_uni, 'RLS T38 L3')) as v(u, uni, t);
+
+select (select id from public.listings where titulo = 'RLS T38 L1') as t38_l1,
+       (select id from public.listings where titulo = 'RLS T38 L2') as t38_l2 \gset
+
+-- Contactos (taps), hoy-3:
+--   :O38 (Otra) → L1 (Uni) DOS veces: cuentan para Uni (D-9: la universidad es
+--     la de la publicación). Son dos a propósito: con la semántica equivocada
+--     (la universidad de quien contacta) Otra daría 2 y no 1, y (p2) lo distingue
+--   :Q38 → L1 dos veces: dos taps, dos contactos (D-8)
+--   :P38 (Uni) → L2 (Otra): cuenta para Otra
+--   :X38 (admin) → L1: excluido
+insert into public.listing_contacts (user_id, listing_id, created_at)
+select v.u::uuid, v.l, ((:'t38_hoy'::date - 3)::timestamp + time '12:00') at time zone 'America/Mexico_City'
+  from (values (:O38, :t38_l1), (:O38, :t38_l1), (:Q38, :t38_l1), (:Q38, :t38_l1),
+               (:P38, :t38_l2), (:X38, :t38_l1)) as v(u, l);
+
+-- Actividad, sembrada como postgres con `dia` explícito (el cliente no puede):
+--   :P38 hoy, hoy-1, hoy-2, hoy-90 y hoy-200 (vencidas, presentes)
+--   :Q38 hoy, hoy-89 (la ÚNICA fila de hoy-89: es la más antigua que sobrevive
+--     a la purga, y por eso (n2) puede probar que borrarla no mueve el inicio)
+--   :S38 hoy-1 · :X38 hoy-2 (admin) · :O38 hoy (Otra)
+-- :X38 solo tiene hoy-2 a propósito: así la exclusión de admins en activos la
+-- prueba (e4) sola, y (f2) prueba solo al suspendido.
+-- La de :S38 de hoy la inserta él mismo en (f), por RLS.
+insert into public.actividad_diaria (user_id, dia)
+select v.u::uuid, :'t38_hoy'::date - v.k
+  from (values (:P38, 0), (:P38, 1), (:P38, 2), (:P38, 90), (:P38, 200),
+               (:Q38, 0), (:Q38, 89), (:S38, 1), (:X38, 2), (:O38, 0)) as v(u, k);
+
+update private.actividad_parametros set inicio = :'t38_hoy'::date - 200;
+
+-- `'ok'` o `<sqlstate>:<mensaje>`, como el rol y la cuenta dados (claims sin aal).
+create or replace function pg_temp.t38_rol(p_rol text, p_uid uuid, p_sql text)
+returns text language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', p_rol)::text, true);
+  perform set_config('role', p_rol, true);
+  execute p_sql;
+  perform set_config('role', 'postgres', true);
+  return 'ok';
+exception when others then
+  perform set_config('role', 'postgres', true);
+  return sqlstate || ':' || sqlerrm;
+end $$;
+
+-- Escalar de p_sql como `authenticated` con aal y TOTP de hace p_horas, o
+-- `ERR:<sqlstate>:<mensaje>`. Gemela de `pg_temp.t37`, propia para que T38
+-- corra aislada.
+create or replace function pg_temp.t38(
+  p_sql text, p_uid uuid default '38383838-0000-0000-0000-0000000000e1',
+  p_aal text default 'aal2', p_horas int default 1)
+returns text language plpgsql as $$
+declare v_out text;
+begin
+  perform set_config('request.jwt.claims',
+    pg_temp.claims_aal(p_uid, p_aal, pg_temp.amr_totp(p_horas)), true);
+  perform set_config('role', 'authenticated', true);
+  execute p_sql into v_out;
+  perform set_config('role', 'postgres', true);
+  return coalesce(v_out, '');
+exception when others then
+  perform set_config('role', 'postgres', true);
+  return 'ERR:' || sqlstate || ':' || sqlerrm;
+end $$;
+
+-- Una columna de `admin.metricas` para UN día y una universidad ('NULL' si es null).
+create or replace function pg_temp.t38_dia(p_col text, p_dia date, p_uni bigint)
+returns text language sql as $$
+  select pg_temp.t38(format(
+    'select coalesce(%I::text, ''NULL'') from admin.metricas(%L::date, %L::date, %s)',
+    p_col, p_dia, p_dia, coalesce(p_uni::text, 'null')))
+$$;
+
+-- La fila de `admin.metricas_resumen` como texto:
+-- altas|publicaciones|contactos|distintos|inicio|retencion|activos_desde|activos_hasta|cobertura
+create or replace function pg_temp.t38_res(p_desde date, p_hasta date, p_uni bigint)
+returns text language sql as $$
+  select pg_temp.t38(format(
+    'select concat_ws(''|'', altas, publicaciones_creadas, contactos,
+                      coalesce(usuarios_activos_distintos::text, ''NULL''), inicio_tracking,
+                      retencion_dias, coalesce(activos_desde::text, ''NULL''),
+                      coalesce(activos_hasta::text, ''NULL''), activos_cobertura)
+       from admin.metricas_resumen(%L::date, %L::date, %s)',
+    p_desde, p_hasta, coalesce(p_uni::text, 'null')))
+$$;
+
+-- (a) Escritura del cliente -------------------------------------------------------
+select pg_temp.assert(
+  pg_temp.t38_rol('authenticated', :P38::uuid,
+    format('insert into public.actividad_diaria (user_id, dia) values (auth.uid(), %L)', :'t38_hoy'::date - 5))
+    = '42501:permission denied for table actividad_diaria',
+  'T38 (a1) el cliente no puede fijar un día arbitrario (sin grant sobre dia)');
+
+-- El duplicado: :P38 ya tiene fila de hoy. (El insert propio que SÍ entra lo
+-- prueba (f1) con :S38, la única cuenta sin fila de hoy: el día lo pone el
+-- servidor, así que no se puede elegir otro.)
+select pg_temp.assert(
+  pg_temp.t38_rol('authenticated', :P38::uuid,
+    'insert into public.actividad_diaria (user_id) values (auth.uid())')
+    = '23505:duplicate key value violates unique constraint "actividad_diaria_pkey"',
+  'T38 (a2) la segunda señal del mismo día es 23505 (el cliente la trata como éxito)');
+
+-- (b) Nadie inserta a nombre de otro (RLS, no grant).
+select pg_temp.assert(
+  pg_temp.t38_rol('authenticated', :P38::uuid,
+    format('insert into public.actividad_diaria (user_id) values (%L)', :S38))
+    like '42501:new row violates row-level security policy%',
+  'T38 (b) insertar con el user_id de otra cuenta lo rechaza RLS');
+
+-- (s) TRIPWIRE contra una regresión del cliente --------------------------------
+-- Va ANTES de (c) y DESPUÉS de (a2)/(b): si alguien le diera SELECT a la tabla
+-- para que funcione un upsert, el primer síntoma tiene que ser este, con su
+-- nombre; y quitar la PK tiene que caer en (a2), no aquí. Lo que emite
+-- PostgREST para `upsert(...)` / `ignoreDuplicates` es un ON CONFLICT con
+-- target, y `.select()` es un RETURNING de columnas: los dos exigen SELECT y
+-- dan 42501. El cliente hace `insert({ user_id })` plano y trata el 23505
+-- como éxito (docs/rf17-ola6-plan.md, anexo C).
+select pg_temp.assert(
+  pg_temp.t38_rol('authenticated', :P38::uuid,
+    'insert into public.actividad_diaria (user_id) values (auth.uid()) on conflict (user_id, dia) do nothing')
+    like '42501:%'
+  and pg_temp.t38_rol('authenticated', :P38::uuid,
+    'insert into public.actividad_diaria (user_id) values (auth.uid()) on conflict (user_id, dia) do update set user_id = excluded.user_id')
+    like '42501:%'
+  and pg_temp.t38_rol('authenticated', :Q38::uuid,
+    'insert into public.actividad_diaria (user_id) values (auth.uid()) returning user_id, dia')
+    like '42501:%',
+  'T38 (s) tripwire: upsert/ignoreDuplicates (ON CONFLICT con target) y .select() (RETURNING) dan 42501');
+
+-- (c) Ni leer, ni corregir, ni borrar. El DELETE va SIN `where` (CLAUDE.md §9:
+-- con `where`, la policy de SELECT filtraría y no probaría el DELETE).
+select pg_temp.assert(
+  pg_temp.t38_rol('authenticated', :P38::uuid, 'select count(*) from public.actividad_diaria')
+    = '42501:permission denied for table actividad_diaria'
+  and pg_temp.t38_rol('authenticated', :P38::uuid, 'update public.actividad_diaria set dia = dia')
+    = '42501:permission denied for table actividad_diaria'
+  and pg_temp.t38_rol('authenticated', :P38::uuid, 'delete from public.actividad_diaria')
+    = '42501:permission denied for table actividad_diaria',
+  'T38 (c) el cliente no puede leer, actualizar ni borrar actividad_diaria');
+
+-- (c2) anon: nada.
+select pg_temp.assert(
+  pg_temp.t38_rol('anon', null,
+    format('insert into public.actividad_diaria (user_id) values (%L)', :P38))
+    = '42501:permission denied for table actividad_diaria'
+  and pg_temp.t38_rol('anon', null, 'select count(*) from public.actividad_diaria')
+    = '42501:permission denied for table actividad_diaria',
+  'T38 (c2) anon no puede insertar ni leer actividad_diaria');
+
+-- (d) El default del día es la fecha de MÉXICO: a las 23:30 hora local sigue
+-- siendo ese día (con `current_date`, en UTC, ya sería el siguiente). Se
+-- mira la expresión viva del default, porque `now()` es fijo en la suite.
+select pg_temp.assert(
+  (select pg_get_expr(d.adbin, d.adrelid) from pg_attrdef d
+     join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum
+    where d.adrelid = 'public.actividad_diaria'::regclass and a.attname = 'dia')
+    = '((now() AT TIME ZONE ''America/Mexico_City''::text))::date'
+  and (timestamptz '2026-10-09 23:30 America/Mexico_City' at time zone 'America/Mexico_City')::date
+      = date '2026-10-09',
+  'T38 (d) el default de dia es la fecha de America/Mexico_City (23:30 MX sigue siendo ese día)');
+
+-- (f) Un SUSPENDIDO inserta su propia señal (D-5) y cuenta como activo. Es
+-- también la prueba del insert propio: :S38 no tenía fila de hoy.
+-- La acción y su comprobación en sentencias distintas (la lección de T28: el
+-- `exists` de la misma sentencia no vería la fila recién insertada).
+select pg_temp.t38_rol('authenticated', :S38::uuid,
+  'insert into public.actividad_diaria (user_id) values (auth.uid())') as t38_f1 \gset
+select pg_temp.assert(
+  :'t38_f1' = 'ok'
+  and exists (select 1 from public.actividad_diaria
+               where user_id = :S38::uuid and dia = :'t38_hoy'::date),
+  'T38 (f1) el insert propio funciona, también para un suspendido, y el día es hoy (México)');
+
+-- (p) Filtro por universidad (D-9). Va antes de (f2) y de (e), que leen Uni:
+-- un filtro roto tiene que caer aquí. Otra, hoy-3: alta :O38; publicación L2;
+-- contacto :P38→L2 (la universidad es la de la PUBLICACIÓN, no la de quien
+-- contacta: los dos taps de :O38→L1 cuentan en Uni y aquí no). Activos de hoy
+-- en Otra: :O38.
+select pg_temp.assert(
+  pg_temp.t38_dia('altas', :'t38_hoy'::date - 3, :t38_otra) = '1'
+  and pg_temp.t38_dia('publicaciones_creadas', :'t38_hoy'::date - 3, :t38_otra) = '1'
+  and pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date, :t38_otra) = '1',
+  'T38 (p1) altas, publicaciones y activos se filtran por su universidad');
+select pg_temp.assert(
+  pg_temp.t38_dia('contactos', :'t38_hoy'::date - 3, :t38_otra) = '1',
+  'T38 (p2) un contacto cuenta para la universidad de la publicación (D-9)');
+
+-- Hoy en Uni: :P38, :Q38 y :S38 (suspendido). (:X38 no tiene actividad hoy.)
+select pg_temp.assert(
+  pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date, :t38_uni) = '3',
+  'T38 (f2) el suspendido cuenta como activo (hoy, Uni = 3)');
+
+-- (e) Admins excluidos en las cuatro métricas. Día hoy-3, Uni: altas
+-- :P38/:Q38/:S38 (no :X38); publicaciones L1 (no L3); contactos: dos taps de
+-- :O38→L1 y dos de :Q38→L1 (no :X38→L1). Activos de hoy-2: :P38 (no :X38).
+select pg_temp.assert(pg_temp.t38_dia('altas', :'t38_hoy'::date - 3, :t38_uni) = '3',
+  'T38 (e1) altas excluye a la cuenta con fila en admins');
+select pg_temp.assert(pg_temp.t38_dia('publicaciones_creadas', :'t38_hoy'::date - 3, :t38_uni) = '1',
+  'T38 (e2) publicaciones_creadas excluye las de dueños admin');
+select pg_temp.assert(pg_temp.t38_dia('contactos', :'t38_hoy'::date - 3, :t38_uni) = '4',
+  'T38 (e3) contactos excluye los de admins y cuenta cada tap');
+select pg_temp.assert(pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date - 2, :t38_uni) = '1',
+  'T38 (e4) usuarios_activos excluye a la cuenta con fila en admins');
+
+-- (r1)-(r4) La frontera de retención, con inicio = hoy-200 (fuera de juego).
+select pg_temp.assert(
+  pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date - 89, :t38_uni) = '1',
+  'T38 (r1) hoy-89 (exactamente dentro de los 90 días) cuenta: :Q38');
+select pg_temp.assert(
+  exists (select 1 from public.actividad_diaria where user_id = :P38::uuid and dia = :'t38_hoy'::date - 90)
+  and pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date - 90, :t38_uni) = 'NULL',
+  'T38 (r2) hoy-90 es NULL aunque la fila vencida siga presente (sin purgar)');
+select pg_temp.assert(
+  pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date - 150, :t38_uni) = 'NULL'
+  and pg_temp.t38_dia('altas', :'t38_hoy'::date - 150, :t38_uni) = '0',
+  'T38 (r3) un día purgado sin filas es NULL en activos (no 0), y 0 en las demás métricas');
+select pg_temp.assert(
+  pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date - 50, :t38_uni) = '0',
+  'T38 (r4) un día dentro de la cobertura sin actividad es 0, no NULL');
+
+-- (l) Personas distintas, nunca la suma de los días. [hoy-2, hoy] en Uni:
+-- diarios 1 (:P38) + 2 (:P38, :S38) + 3 (:P38, :Q38, :S38) = 6; personas = 3.
+select pg_temp.t38(format(
+  'select sum(usuarios_activos)::text from admin.metricas(%L::date, %L::date, %s)',
+  :'t38_hoy'::date - 2, :'t38_hoy'::date, :t38_uni)) as t38_l_suma \gset
+select pg_temp.assert(
+  split_part(pg_temp.t38_res(:'t38_hoy'::date - 2, :'t38_hoy'::date, :t38_uni), '|', 4) = '3'
+  and :'t38_l_suma' = '6',
+  'T38 (l) usuarios_activos_distintos = 3 personas en 3 días; la suma de los diarios (6) sería incorrecta');
+
+-- (m) Amarre: en el resumen, altas, publicaciones y contactos son la suma de
+-- los diarios (activos no: ver (l)). Rango [hoy-10, hoy] en Uni.
+select pg_temp.t38(format(
+  'select concat_ws(''|'', sum(altas), sum(publicaciones_creadas), sum(contactos)) from admin.metricas(%L::date, %L::date, %s)',
+  :'t38_hoy'::date - 10, :'t38_hoy'::date, :t38_uni)) as t38_m_diarios \gset
+select pg_temp.assert(
+  array_to_string((string_to_array(pg_temp.t38_res(:'t38_hoy'::date - 10, :'t38_hoy'::date, :t38_uni), '|'))[1:3], '|')
+    = :'t38_m_diarios'
+  and :'t38_m_diarios' = '3|1|4',
+  'T38 (m) en el resumen, altas|publicaciones|contactos = la suma de los diarios (3|1|4)');
+
+-- (r7) Cobertura del resumen, con inicio = hoy-200: completa, parcial y sin_datos.
+select pg_temp.assert(
+  pg_temp.t38_res(:'t38_hoy'::date - 29, :'t38_hoy'::date, :t38_uni)
+    like format('%%|%s|90|%s|%s|completa', :'t38_hoy'::date - 200, :'t38_hoy'::date - 29, :'t38_hoy'::date),
+  'T38 (r7a) 30 días con registro completo: completa, activos_desde = desde, retencion_dias = 90');
+select pg_temp.assert(
+  pg_temp.t38_res(:'t38_hoy'::date - 119, :'t38_hoy'::date, :t38_uni)
+    like format('%%|%s|90|%s|%s|parcial', :'t38_hoy'::date - 200, :'t38_hoy'::date - 89, :'t38_hoy'::date),
+  'T38 (r7b) 120 días: parcial, activos_desde = hoy-89 (el corte de retención)');
+select pg_temp.assert(
+  pg_temp.t38_res(:'t38_hoy'::date - 150, :'t38_hoy'::date - 120, :t38_uni)
+    like format('%%|NULL|%s|90|NULL|NULL|sin_datos', :'t38_hoy'::date - 200),
+  'T38 (r7c) un rango anterior al corte: sin_datos, distintos y activos_desde/hasta NULL');
+
+-- (r8) Inicio del registro posterior al corte: gana el más reciente. NULL
+-- antes del inicio aunque el día esté dentro de los 90 días.
+update private.actividad_parametros set inicio = :'t38_hoy'::date - 10;
+select pg_temp.assert(
+  pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date - 11, :t38_uni) = 'NULL'
+  and pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date - 10, :t38_uni) = '0',
+  'T38 (g) NULL antes de inicio_tracking (hoy-11) y 0 real desde el inicio (hoy-10)');
+select pg_temp.assert(
+  pg_temp.t38_res(:'t38_hoy'::date - 29, :'t38_hoy'::date, :t38_uni)
+    like format('%%|%s|90|%s|%s|parcial', :'t38_hoy'::date - 10, :'t38_hoy'::date - 10, :'t38_hoy'::date),
+  'T38 (r8) con inicio = hoy-10, activos_desde = inicio (el más reciente de inicio y corte)');
+update private.actividad_parametros set inicio = :'t38_hoy'::date - 200;
+
+-- (q) Guardas de rango y universidad, en las dos RPC.
+select pg_temp.assert(
+  pg_temp.t38(format('select count(*) from admin.metricas(%L::date, %L::date)', :'t38_hoy', :'t38_hoy'::date - 1))
+    = 'ERR:22023:rango_invalido'
+  and pg_temp.t38('select count(*) from admin.metricas(null, current_date)') = 'ERR:22023:rango_invalido'
+  and pg_temp.t38(format('select count(*) from admin.metricas(%L::date, %L::date)', :'t38_hoy', :'t38_hoy'::date + 1))
+    = 'ERR:22023:rango_invalido'
+  and pg_temp.t38(format('select count(*) from admin.metricas_resumen(%L::date, %L::date)', :'t38_hoy', :'t38_hoy'::date - 1))
+    = 'ERR:22023:rango_invalido'
+  and pg_temp.t38(format('select count(*) from admin.metricas_resumen(%L::date, %L::date)', :'t38_hoy', :'t38_hoy'::date + 1))
+    = 'ERR:22023:rango_invalido',
+  'T38 (q1) rango invertido, nulo o que termina después de hoy (México) → 22023 rango_invalido');
+select pg_temp.assert(
+  pg_temp.t38(format('select count(*) from admin.metricas(%L::date, %L::date)', :'t38_hoy'::date - 366, :'t38_hoy'))
+    = 'ERR:22023:rango_demasiado_largo'
+  and pg_temp.t38(format('select count(*) from admin.metricas_resumen(%L::date, %L::date)', :'t38_hoy'::date - 366, :'t38_hoy'))
+    = 'ERR:22023:rango_demasiado_largo'
+  and pg_temp.t38(format('select count(*) from admin.metricas(%L::date, %L::date)', :'t38_hoy'::date - 365, :'t38_hoy'))
+    = '366',
+  'T38 (q2) 367 días → rango_demasiado_largo; 366 días exactos se aceptan');
+select pg_temp.assert(
+  pg_temp.t38(format('select count(*) from admin.metricas(%L::date, %L::date, -1)', :'t38_hoy', :'t38_hoy'))
+    = 'ERR:P0002:universidad_no_existe'
+  and pg_temp.t38(format('select count(*) from admin.metricas_resumen(%L::date, %L::date, -1)', :'t38_hoy', :'t38_hoy'))
+    = 'ERR:P0002:universidad_no_existe',
+  'T38 (q3) una universidad que no existe → P0002 universidad_no_existe');
+
+-- (t) Autorización: no-admin, aal1 y TOTP vencido, en las dos RPC.
+select pg_temp.assert(
+  pg_temp.t38(format('select count(*) from admin.metricas(%L::date, %L::date)', :'t38_hoy', :'t38_hoy'), :P38::uuid)
+    = 'ERR:42501:no_admin'
+  and pg_temp.t38(format('select count(*) from admin.metricas_resumen(%L::date, %L::date)', :'t38_hoy', :'t38_hoy'), :P38::uuid)
+    = 'ERR:42501:no_admin',
+  'T38 (t1) una cuenta que no es admin → no_admin');
+select pg_temp.assert(
+  pg_temp.t38(format('select count(*) from admin.metricas(%L::date, %L::date)', :'t38_hoy', :'t38_hoy'), :E38::uuid, 'aal1')
+    = 'ERR:42501:mfa_requerido'
+  and pg_temp.t38(format('select count(*) from admin.metricas_resumen(%L::date, %L::date)', :'t38_hoy', :'t38_hoy'), :E38::uuid, 'aal2', 13)
+    = 'ERR:42501:totp_vencido',
+  'T38 (t2) aal1 → mfa_requerido; TOTP de hace 13 h → totp_vencido');
+
+-- (r5) La purga: el comando EXACTO del job (leído de cron.job, no transcrito).
+do $$
+begin
+  execute (select command from cron.job where jobname = 'purga-actividad-diaria');
+end $$;
+select pg_temp.assert(
+  not exists (select 1 from public.actividad_diaria
+               where user_id = :P38::uuid and dia in (:'t38_hoy'::date - 90, :'t38_hoy'::date - 200))
+  and exists (select 1 from public.actividad_diaria
+               where user_id = :Q38::uuid and dia = :'t38_hoy'::date - 89)
+  and exists (select 1 from public.actividad_diaria where user_id = :P38::uuid and dia = :'t38_hoy'::date),
+  'T38 (r5) el comando del job borra hoy-90 y hoy-200 y conserva hoy-89 y hoy');
+
+-- (r6) El job y su comando, y el de la Ola 4 intacto.
+select pg_temp.assert(
+  (select count(*) from cron.job
+    where jobname = 'purga-actividad-diaria' and schedule = '23 6 * * *' and active
+      and command = 'delete from public.actividad_diaria where dia < private.actividad_retenida_desde()'
+      and command !~ '\m(89|90)\M') = 1,
+  'T38 (r6) cron purga-actividad-diaria: 23 6 * * *, activo, con el corte de la función (sin literal 89/90)');
+select pg_temp.assert(
+  (select count(*) from cron.job
+    where jobname = 'purga-moderacion-retenida' and schedule = '17 4 * * *' and active
+      and command = 'delete from private.moderacion_retenida where retener_hasta < now()') = 1,
+  'T38 (r6b) cron purga-moderacion-retenida sigue intacto');
+
+-- (n) Eliminar la cuenta borra en el acto su actividad y las cifras bajan (el
+-- sesgo aceptado del cascade); el inicio del registro NO se mueve. La fila de
+-- :Q38 de hoy-89 es la más antigua que queda tras la purga: si el inicio se
+-- derivara de `min(dia)`, borrar a :Q38 lo movería. (n2) va antes que (n1)
+-- porque un inicio movido también cambiaría lo que (n1) lee.
+select inicio as t38_inicio_antes from private.actividad_parametros \gset
+select pg_temp.rechazo_de(null, format('delete from auth.users where id = %L', :Q38)) as t38_n \gset
+select pg_temp.assert(
+  (select inicio from private.actividad_parametros) = :'t38_inicio_antes'::date,
+  'T38 (n2) el inicio del registro no cambia al eliminar una cuenta con actividad antigua');
+
+select pg_temp.assert(
+  :'t38_n' = 'ok'
+  and not exists (select 1 from public.actividad_diaria where user_id = :Q38::uuid)
+  and pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date, :t38_uni) = '2'
+  and pg_temp.t38_dia('usuarios_activos', :'t38_hoy'::date - 89, :t38_uni) = '0'
+  and pg_temp.t38_dia('altas', :'t38_hoy'::date - 3, :t38_uni) = '2',
+  'T38 (n1) eliminar la cuenta borra su actividad y baja sus cifras (hoy 3→2, hoy-89 1→0, altas 3→2)');
+
+\echo ''
+
+\echo '== T39 — auditoría de solo lectura del panel (RF-17, Ola 6) =='
+-- 20261009000486. Autocontenida: sus universidades, campus y dominios, y filas
+-- de `private.admin_acciones` sembradas como postgres (la tabla admite INSERT;
+-- es append-only para UPDATE/DELETE/TRUNCATE). Los ids de objetivo son nuevos
+-- (secuencias y textos `9139xx`), así que no chocan con filas de otras
+-- secciones ni de corridas anteriores.
+
+\set E39 '''39393939-0000-0000-0000-0000000000e1'''
+\set N39 '''39393939-0000-0000-0000-0000000000b1'''
+
+insert into public.universidades (nombre) values ('RLS T39 Uni'), ('RLS T39 Otra');
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T39 Campus ' || nombre, 'Ciudad T39' from public.universidades where nombre like 'RLS T39 %';
+insert into public.universidad_dominios (dominio, universidad_id)
+select case nombre when 'RLS T39 Uni' then 'rls-t39.mx' else 'rls-t39b.mx' end, id
+  from public.universidades where nombre like 'RLS T39 %';
+
+select (select id from public.universidades where nombre = 'RLS T39 Uni')  as t39_uni,
+       (select id from public.universidades where nombre = 'RLS T39 Otra') as t39_otra,
+       (select id from public.campus where nombre = 'RLS T39 Campus RLS T39 Uni')  as t39_cu,
+       (select id from public.campus where nombre = 'RLS T39 Campus RLS T39 Otra') as t39_co \gset
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:E39, 'rls-t39-e@rls-t39.test'), (:N39, 'rls-t39-n@rls-t39.test')) as v(u, e);
+insert into private.admins (user_id, nombre, activado_at) values (:E39::uuid, 'Admin T39', now());
+
+-- Filas de auditoría, en este orden (los ids crecen):
+--   r1 universidad Uni · r2 campus de Uni · r3 dominio de Uni
+--   r4 universidad Otra · r5 campus de Otra · r6 dominio de Otra
+--   r7, r8, r9 reporte 913901 · r10 reporte 913902 · 105 del reporte 913903
+create temp table t39_filas (n int primary key, id bigint);
+grant select on t39_filas to authenticated;
+insert into private.admin_acciones (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+values ('00000000-0000-0000-0000-000000000039', 'rls-t39@rlvo.com.mx', 'editar_universidad', 'universidad', :t39_uni::text,  '{"nombre":"a"}', '{"nombre":"b"}', 'T39 r1');
+insert into t39_filas select 1, max(id) from private.admin_acciones;
+insert into private.admin_acciones (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+values ('00000000-0000-0000-0000-000000000039', 'rls-t39@rlvo.com.mx', 'editar_campus', 'campus', :t39_cu::text, '{"nombre":"a"}', '{"nombre":"b"}', 'T39 r2');
+insert into t39_filas select 2, max(id) from private.admin_acciones;
+insert into private.admin_acciones (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+values ('00000000-0000-0000-0000-000000000039', 'rls-t39@rlvo.com.mx', 'desactivar_dominio', 'dominio', 'rls-t39.mx', '{"activo":true}', '{"activo":false}', 'T39 r3');
+insert into t39_filas select 3, max(id) from private.admin_acciones;
+insert into private.admin_acciones (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+values ('00000000-0000-0000-0000-000000000039', 'rls-t39@rlvo.com.mx', 'editar_universidad', 'universidad', :t39_otra::text, '{"nombre":"a"}', '{"nombre":"b"}', 'T39 r4');
+insert into t39_filas select 4, max(id) from private.admin_acciones;
+insert into private.admin_acciones (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+values ('00000000-0000-0000-0000-000000000039', 'rls-t39@rlvo.com.mx', 'editar_campus', 'campus', :t39_co::text, '{"nombre":"a"}', '{"nombre":"b"}', 'T39 r5');
+insert into t39_filas select 5, max(id) from private.admin_acciones;
+insert into private.admin_acciones (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+values ('00000000-0000-0000-0000-000000000039', 'rls-t39@rlvo.com.mx', 'desactivar_dominio', 'dominio', 'rls-t39b.mx', '{"activo":true}', '{"activo":false}', 'T39 r6');
+insert into t39_filas select 6, max(id) from private.admin_acciones;
+insert into private.admin_acciones (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+select '00000000-0000-0000-0000-000000000039', 'rls-t39@rlvo.com.mx', 'resolver_reporte', 'reporte', '913901',
+       '{"estado":"pendiente"}', '{"estado":"resuelto"}', 'T39 r' || g
+  from generate_series(7, 9) g order by g;
+insert into t39_filas
+select 6 + row_number() over (order by id), id from private.admin_acciones
+ where objetivo_tipo = 'reporte' and objetivo_id = '913901';
+insert into private.admin_acciones (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+values ('00000000-0000-0000-0000-000000000039', 'rls-t39@rlvo.com.mx', 'resolver_reporte', 'reporte', '913902',
+        '{"estado":"pendiente"}', '{"estado":"resuelto"}', 'T39 r10');
+insert into private.admin_acciones (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+select '00000000-0000-0000-0000-000000000039', 'rls-t39@rlvo.com.mx', 'resolver_reporte', 'reporte', '913903',
+       '{"estado":"pendiente"}', '{"estado":"resuelto"}', 'T39 tope'
+  from generate_series(1, 105);
+
+-- Escalar como admin (o la cuenta dada), o `ERR:<sqlstate>:<mensaje>`.
+create or replace function pg_temp.t39(
+  p_sql text, p_uid uuid default '39393939-0000-0000-0000-0000000000e1',
+  p_aal text default 'aal2', p_horas int default 1)
+returns text language plpgsql as $$
+declare v_out text;
+begin
+  perform set_config('request.jwt.claims',
+    pg_temp.claims_aal(p_uid, p_aal, pg_temp.amr_totp(p_horas)), true);
+  perform set_config('role', 'authenticated', true);
+  execute p_sql into v_out;
+  perform set_config('role', 'postgres', true);
+  return coalesce(v_out, '');
+exception when others then
+  perform set_config('role', 'postgres', true);
+  return 'ERR:' || sqlstate || ':' || sqlerrm;
+end $$;
+
+-- Los ids que devuelve auditoria(...), en el orden de emisión.
+create or replace function pg_temp.t39_ids(p_tipo text, p_id text, p_cursor bigint default null, p_limit int default 50)
+returns text language sql as $$
+  select pg_temp.t39(format(
+    'select coalesce(string_agg(x.id::text, '','' order by o), '''') from admin.auditoria(%L, %L, %s, %s) with ordinality x(id, accion, objetivo_tipo, objetivo_id, objetivo_etiqueta, admin_correo, motivo, antes, despues, created_at, o)',
+    p_tipo, p_id, coalesce(p_cursor::text, 'null'), coalesce(p_limit::text, 'null')))
+$$;
+
+-- Lo esperado: ids de t39_filas, en orden descendente.
+create or replace function pg_temp.t39_esperado(p_ns int[]) returns text language sql as $$
+  select coalesce(string_agg(id::text, ',' order by id desc), '') from t39_filas where n = any(p_ns)
+$$;
+
+select count(*) as t39_acciones_antes from private.admin_acciones \gset
+
+-- (a) Reporte: solo sus filas, de la más reciente a la más antigua, sin etiqueta.
+select pg_temp.assert(
+  pg_temp.t39_ids('reporte', '913901') = pg_temp.t39_esperado(array[7, 8, 9])
+  and pg_temp.t39(
+    'select count(*) from admin.auditoria(''reporte'', ''913901'') where objetivo_etiqueta is not null') = '0',
+  'T39 (a) la auditoría de un reporte trae solo sus filas, id desc, sin etiqueta');
+
+-- (b) Universidad: la universidad, sus campus y sus dominios; nada de Otra.
+select pg_temp.t39_ids('universidad', :t39_uni::text) as t39_b \gset
+select pg_temp.assert(
+  (select id::text from t39_filas where n = 1) = any(string_to_array(:'t39_b', ',')),
+  'T39 (b1) el ámbito universidad incluye las filas de la universidad');
+select pg_temp.assert(
+  (select id::text from t39_filas where n = 2) = any(string_to_array(:'t39_b', ',')),
+  'T39 (b2) el ámbito universidad incluye las filas de sus campus');
+select pg_temp.assert(
+  (select id::text from t39_filas where n = 3) = any(string_to_array(:'t39_b', ',')),
+  'T39 (b3) el ámbito universidad incluye las filas de sus dominios');
+select pg_temp.assert(
+  :'t39_b' = pg_temp.t39_esperado(array[1, 2, 3]),
+  'T39 (b4) y nada más: ni la universidad, ni el campus, ni el dominio de otra');
+
+-- (c) Etiqueta: el nombre actual de la universidad y del campus; el dominio tal cual.
+select pg_temp.assert(
+  pg_temp.t39(format(
+    'select string_agg(objetivo_tipo || ''='' || objetivo_etiqueta, '','' order by id) from admin.auditoria(''universidad'', %L)',
+    :t39_uni::text)) = 'universidad=RLS T39 Uni,campus=RLS T39 Campus RLS T39 Uni,dominio=rls-t39.mx',
+  'T39 (c) objetivo_etiqueta: nombre de la universidad, nombre del campus y el dominio');
+
+-- (d) Paginación: la página 1 y la 2 (cursor = último id de la 1) no se
+-- repiten ni se saltan filas.
+select pg_temp.t39_ids('reporte', '913901', null, 2) as t39_p1 \gset
+select pg_temp.assert(
+  :'t39_p1' = pg_temp.t39_esperado(array[8, 9])
+  and pg_temp.t39_ids('reporte', '913901', split_part(:'t39_p1', ',', 2)::bigint, 2)
+      = pg_temp.t39_esperado(array[7]),
+  'T39 (d) cursor: página 1 = r9,r8; página 2 desde r8 = r7; sin repetir ni saltar');
+
+-- (e) Tope: p_limit se acota a 1..100; NULL vale 50.
+select pg_temp.assert(
+  pg_temp.t39('select count(*) from admin.auditoria(''reporte'', ''913903'', null, 10000)') = '100'
+  and pg_temp.t39('select count(*) from admin.auditoria(''reporte'', ''913903'', null, null)') = '50'
+  and pg_temp.t39('select count(*) from admin.auditoria(''reporte'', ''913903'', null, 0)') = '1',
+  'T39 (e) p_limit 10000 → 100, null → 50, 0 → 1');
+
+-- (f) Guardas: tipo no admitido o nulo, id vacío, id de universidad no numérico
+-- (22023 limpio: la regex va antes del cast).
+select pg_temp.assert(
+  pg_temp.t39('select count(*) from admin.auditoria(''usuario'', ''x'')') = 'ERR:22023:objetivo_tipo_invalido'
+  and pg_temp.t39('select count(*) from admin.auditoria(null, ''x'')') = 'ERR:22023:objetivo_tipo_invalido'
+  and pg_temp.t39('select count(*) from admin.auditoria(''reporte'', ''  '')') = 'ERR:22023:objetivo_invalido'
+  and pg_temp.t39('select count(*) from admin.auditoria(''universidad'', ''abc'')') = 'ERR:22023:objetivo_invalido',
+  'T39 (f) tipo inválido → objetivo_tipo_invalido; id vacío o no numérico → objetivo_invalido (22023)');
+
+-- (g) Autorización.
+select pg_temp.assert(
+  pg_temp.t39('select count(*) from admin.auditoria(''reporte'', ''913901'')', :N39::uuid) = 'ERR:42501:no_admin'
+  and pg_temp.t39('select count(*) from admin.auditoria(''reporte'', ''913901'')', :E39::uuid, 'aal1')
+      = 'ERR:42501:mfa_requerido',
+  'T39 (g) no-admin → no_admin; aal1 → mfa_requerido');
+
+-- (h) Solo lectura: ninguna llamada escribió auditoría.
+select pg_temp.assert(
+  (select count(*) from private.admin_acciones) = :t39_acciones_antes,
+  'T39 (h) leer la auditoría no escribe en admin_acciones');
+
+\echo ''
 
 \echo ''
 \echo '==========================================='
