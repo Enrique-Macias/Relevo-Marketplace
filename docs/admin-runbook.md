@@ -8,10 +8,12 @@ La versión técnica vive en `admin/CLAUDE.md` y en `docs/rf17-plan-admin.md`.
 El panel está en **https://admin.rlvo.com.mx**.
 
 *Estado a 2026-10-08 (secciones 2, 3, 5, 6 y 7) y 2026-10-05 (el resto), más la
-Ola 5 (catálogo): **en producción desde el 2026-10-09 y CERRADA**. La sección 8
-(respaldos) está al 2026-10-09. Lo que dice este documento sobre qué cubre el
-panel y sobre los respaldos cambia con la Ola 6 y con la estrategia de
-respaldos: cuando cambie, se actualiza aquí.*
+Ola 5 (catálogo): **en producción desde el 2026-10-09 y CERRADA**, y la Ola 6
+(métricas y auditoría): **en producción desde el 2026-10-10 y CERRADA el
+2026-10-11**. Con ella el panel de administración (RF-17 fase 1) está
+terminado. Las secciones 2, 7 y 8 están al 2026-10-11. Lo que dice este
+documento sobre los respaldos cambia con la estrategia de respaldos (sigue
+pendiente): cuando cambie, se actualiza aquí.*
 
 ## 1. Entrar al panel
 
@@ -87,9 +89,47 @@ y los dominios de correo con los que sus estudiantes se registran.
   - el nombre de un **campus** se ve en el detalle de una publicación de ese
     campus, al abrirla.
 - Como todo, cada cambio pide motivo (3 a 500 caracteres) y queda en la
-  auditoría; el panel todavía no muestra la auditoría del catálogo (Ola 6).
+  auditoría; desde la Ola 6 el detalle de cada universidad la muestra (ver
+  «Auditoría en el panel», abajo).
 
-**Lo que todavía no está en el panel:** las métricas (Ola 6).
+**Métricas** (Ola 6, desde el 2026-10-10). En el menú, «Métricas»:
+
+- Muestra, por día, **altas** (cuentas nuevas), **usuarios activos** (personas
+  que abrieron la app ese día), **publicaciones creadas** (en cualquier estado) y
+  **contactos** (toques en «Contactar por WhatsApp»). Arriba, las tarjetas con
+  los totales del periodo.
+- Eliges **7, 30 o 90 días** (30 por defecto); el periodo **siempre termina hoy,
+  en hora de México**. Puedes ver todas las universidades o una.
+- **«Sin datos» no es cero.** La app empezó a registrar la actividad el **10 de
+  octubre de 2026**, y esa actividad se guarda **90 días**: los días anteriores
+  al inicio del registro, y los de hace más de 90 días, aparecen como «Sin
+  datos». Un **0** sí es un conteo real: ese día nadie abrió la app.
+- La tarjeta de **usuarios activos** cuenta **personas distintas** en el
+  periodo, no la suma de los días: alguien que abrió la app tres días cuenta
+  una vez. Si el periodo solo está cubierto en parte, la tarjeta dice de qué día
+  a qué día.
+- **Las cuentas de administración no cuentan** en ninguna cifra. Una cuenta
+  suspendida que abre la app sí cuenta como activa.
+- **Sesgos que hay que tener en mente:**
+  - cuando alguien **elimina su cuenta**, sus altas, publicaciones, contactos y
+    días activos desaparecen también de las cifras **pasadas**: un número de
+    ayer puede bajar hoy. Ninguna cifra es un histórico inmutable;
+  - **antes del lanzamiento**, las cifras son sobre todo del equipo y de los
+    testers.
+- No hay gráfica, a propósito. Si una cifra no te cuadra, avisa al admin
+  técnico; no se corrige desde el panel.
+
+**Auditoría en el panel** (Ola 6). Solo lectura:
+
+- En el detalle de un **reporte resuelto o descartado**, la sección
+  «Auditoría» muestra quién lo resolvió, cuándo y con qué motivo. Si dice
+  «Este reporte no tiene movimientos en la auditoría: se resolvió fuera del
+  panel», es que se resolvió desde Studio, que no deja rastro.
+- En el detalle de una **universidad**, la auditoría reúne la universidad, sus
+  campus y sus dominios, con los nombres actuales, del más reciente al más
+  antiguo. «Ver más» trae los movimientos anteriores.
+- A 2026-10-11, en producción solo se ha visto vacía: todavía no hay acciones
+  del panel sobre reportes ni sobre el catálogo.
 
 No escribas datos personales en los motivos: son texto libre y la base no puede
 impedirlo.
@@ -244,6 +284,33 @@ restablecerlo, o el panel muestra un aviso de restablecimiento pendiente:**
      de la base quién, cuándo y por qué (Studio no audita); solo entonces se hace
      el UPDATE de `universidad_id`, y después se confirma que la persona termine su
      perfil.
+- **El registro de actividad (Ola 6) y su purga.** La app manda como mucho una
+  señal por persona y día; la tabla `actividad_diaria` guarda 90 días y un
+  trabajo automático (`purga-actividad-diaria`) borra lo más viejo **cada día a
+  las 06:23 UTC, que son las 00:23 en México**. Su primera corrida en
+  producción fue el 2026-10-11 y terminó bien. Si alguna vez falla, las cifras
+  del panel **no cambian** (las métricas usan el mismo corte de 90 días), pero
+  se estaría guardando actividad más tiempo del declarado en la documentación
+  de privacidad: es un incidente que se diagnostica, sin tocar las métricas.
+  Se revisa en Studio, solo leyendo, en `cron.job_run_details`.
+- **El inicio del registro (`inicio_tracking`) normalmente no se toca.** Es la
+  fecha (2026-10-10 en producción) que hace que los días anteriores digan «Sin
+  datos» y no 0, y vive en `private.actividad_parametros`. Moverla solo se hace
+  ante una necesidad demostrada, como un procedimiento excepcional: se decide
+  explícitamente, se anota aquí quién, cuándo y por qué, y se ejecuta en Studio
+  sabiendo que cambia lo que el panel muestra para esos días. Cambiar los **90
+  días** no es un ajuste de Studio: exige una migración y actualizar la
+  documentación legal.
+- **Consultar logs de producción:** al agrupar o mostrar rutas de los logs de
+  Auth, **quitar primero el identificador del factor MFA** que traen las rutas
+  de desafío y verificación del TOTP. Ese identificador no se copia en reportes
+  ni en chats.
+- **Si el panel de Métricas o la auditoría se rompen después de la Ola 6**:
+  existe `docs/rf17-ola6-recuperacion.sql` (con copia junto al respaldo
+  cifrado del 2026-10-10). **No es un rollback que se ejecute en Studio:** se usa
+  solo copiando el bloque que corresponda en una migración correctiva NUEVA,
+  con `db push --dry-run` y aprobación, y **el bloque de la Ola 6 borra para
+  siempre la actividad registrada**. Antes: STOP y diagnóstico.
 - **Si el registro de la app se rompe después del despliegue de la Ola 5**:
   existe una herramienta de recuperación **solo para el hook de registro**,
   `docs/rf17-ola5-recuperacion.sql` (con copia junto al respaldo cifrado). **No es
@@ -259,10 +326,10 @@ restablecerlo, o el panel muestra un aviso de restablecimiento pendiente:**
 
 - **A 2026-10-05, el proyecto de Supabase no tiene respaldos automáticos ni
   recuperación a un punto en el tiempo.**
-- Existen **dos** copias cifradas manuales del esquema y de los datos. Las dos son
-  fotografías que envejecen cada día, **no** una estrategia de respaldo, y ninguna
-  incluye los archivos de Storage (solo sus filas), los secretos de Vault ni el
-  historial de migraciones:
+- Existen **tres** copias cifradas manuales del esquema y de los datos. Las tres
+  son fotografías que envejecen cada día, **no** una estrategia de respaldo, y
+  ninguna incluye los archivos de Storage (solo sus filas), los secretos de
+  Vault ni el historial de migraciones:
   - la de la noche del **2026-10-01** (hora de Monterrey), antes de resolver las
     cuatro publicaciones pendientes y de crear a los tres administradores;
   - la del **2026-10-09**, tomada antes de desplegar la Ola 5 (catálogo): esquema
@@ -270,7 +337,13 @@ restablecerlo, o el panel muestra un aviso de restablecimiento pendiente:**
     autenticadora y 13 filas de auditoría), más la herramienta de recuperación
     del registro (`docs/rf17-ola5-recuperacion.sql`). La imagen se montó en
     solo lectura, sus cuatro archivos coincidieron con su manifiesto SHA-256 y
-    la copia en claro se borró después.
+    la copia en claro se borró después;
+  - la del **2026-10-10**, tomada antes de desplegar la Ola 6 (métricas): cinco
+    archivos, incluida la herramienta de recuperación de la Ola 6
+    (`docs/rf17-ola6-recuperacion.sql`). Un `.sha256` aparte verifica la imagen
+    cifrada y un manifiesto dentro de ella verifica los cinco archivos; se
+    montó en solo lectura, todo coincidió, y la copia en claro se borró
+    después con un borrado normal (no un borrado seguro).
 - Hechos puntuales verificados en el equipo del admin técnico para la copia del
   2026-10-01 (no garantías permanentes; pueden cambiar): FileVault activado; sin
   destinos de Time Machine ni snapshots locales de APFS al momento de la
@@ -278,6 +351,7 @@ restablecerlo, o el panel muestra un aviso de restablecimiento pendiente:**
   sincronizadas comprobadas; su frase de paso está en un gestor de contraseñas; la
   imagen se montó y se comprobó contra los SHA-256 originales, y los `.sql` en
   claro se borraron después. **No hay fecha límite ni política para borrar o
-  reemplazar ninguna de las dos copias: es una decisión pendiente.**
+  reemplazar ninguna de las tres copias: es una decisión pendiente.**
 - Definir una estrategia de respaldos (plan con respaldos diarios o un volcado
-  cifrado periódico) es una deuda abierta.
+  cifrado periódico) es una deuda abierta (D-17 de la Ola 6). La copia del
+  2026-10-10 **no** la resuelve: es un respaldo puntual antes de un cambio.

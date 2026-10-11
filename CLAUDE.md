@@ -120,7 +120,7 @@ Cuando código y documentación discrepen:
 | Fotos | `expo-image-picker` + `expo-image-manipulator` | El picker elige; el manipulator **normaliza a JPEG comprimido antes de subir**. No es opcional: el bucket corta en 5 MiB y el `quality` del picker no comprime PNG (§9), así que sin esto cualquier screenshot falla siempre |
 | Notificaciones | `expo-notifications` + tabla `notifications` como outbox | Integración directa, disparadas desde la Edge Function `send-push` vía un trigger propio con `net.http_post` — **no** el Database Webhook del Dashboard, aunque la migración se llame `..._notifications_webhook` (§3). El inbox in-app NO es un espejo del push: es lo que hace que un aviso sobreviva a un push que no llegó (§3, `notificaciones-push.md`) |
 | Moderación de imagen | Google Cloud Vision (SafeSearch + OCR) **+ Amazon Rekognition** (`DetectModerationLabels`) | Dos proveedores porque cubren cosas distintas: SafeSearch no mira drogas/alcohol/gambling y Rekognition no hace OCR. Rekognition **no batchea** (una llamada por imagen) y acepta **solo JPEG/PNG**, al revés de Vision — ver §3 |
-| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins), desde el 2026-10-08 la 4 (cola de moderación y aprobar publicaciones) y la 3b (restablecer la app autenticadora de otro admin), y desde el 2026-10-09 la 5 (catálogo: universidades, campus y dominios; CERRADA el 2026-10-09). Supabase Studio para lo que el panel aún no cubre | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **A 2026-10-09, las métricas (Ola 6) siguen en Studio** |
+| Admin / moderación | Panel web propio en `admin/` (RF-17, Vite + React + TS, solo publishable key) **EN PRODUCCIÓN desde el 2026-10-02** en `https://admin.rlvo.com.mx` (Cloudflare Pages, despliegue manual): las Olas 1 (login con MFA, alta de admins y suspender/reactivar), 2 (reportes, detalle de publicación y bloqueo) y 3 (despliegue y alta de los 3 admins), desde el 2026-10-08 la 4 (cola de moderación y aprobar publicaciones) y la 3b (restablecer la app autenticadora de otro admin), desde el 2026-10-09 la 5 (catálogo: universidades, campus y dominios; CERRADA el 2026-10-09) y desde el 2026-10-10 la 6 (métricas y auditoría de solo lectura; CERRADA el 2026-10-11). Supabase Studio para lo que el panel aún no cubre (p. ej., desbloquear: D10) | Studio no lo pueden usar 2 de los 3 admins (ni SQL), de ahí el panel. Plan por olas en §8, pendiente 0k. **Desde el 2026-10-10 las métricas (Ola 6) están en el panel; "Admin (RF-17 fase 1) terminado" el 2026-10-11** (§8, "Hecho") |
 | Distribución | EAS Build / Submit | Publicar a ambas tiendas sin infraestructura nativa propia |
 
 **Nomenclatura de API keys (Supabase renombró su sistema en 2026):** usamos las
@@ -216,11 +216,19 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 48 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-10-09; la 48 es `…484`, también en
-remoto desde ese día; decía "46", "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 19 tablas más
+Definido en 50 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-10-11; la 50 es `…486`, también en
+remoto desde el 2026-10-10; decía "48", "46", "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 20 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
+
+**Desde `20261009000485` (Ola 6 de RF-17) son 20: 17 con policies más las
+mismas 3 sin policies.** `actividad_diaria` suma una a las "con policies" (su
+única policy es de INSERT para `authenticated`; bloque "Actividad diaria y
+métricas", más abajo). **Ese 20 es DERIVADO, no remedido con
+`relrowsecurity`:** el 19 de abajo más la tabla nueva, cuya RLS y policy se
+leyeron en remoto (F18 de `docs/rf17-ola6-plan.md`). El párrafo de antes, tal
+como estaba:
 
 **Ese 19 son 16 con policies más `listing_moderacion`,
 `listing_moderacion_reclamos` y `avatar_moderacion`, que tienen RLS habilitado
@@ -233,6 +241,18 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 50 y 50 (medido el 2026-10-11) — a la par.** `ls
+supabase/migrations | wc -l` da **50**; `mcp__supabase__list_migrations` también
+da **50**, con la misma secuencia de versiones y nombres (`diff` vacío), y
+`20261009000485` y `20261009000486` como penúltima y última. Las dos se
+aplicaron el 2026-10-10 con un solo `supabase db push --linked --skip-vault`
+(F17 de `docs/rf17-ola6-plan.md`; la hora exacta no se midió), y `supabase db
+push --linked --dry-run --skip-vault` da `upToDate: true`, `migrations: []`
+(F27). Evidencia en §8, "Hecho". Las tablas de `private` son cuatro desde
+`…485` (`admins`, `admin_acciones`, `moderacion_retenida` y
+`actividad_parametros`) y no cuentan en el 20 de arriba, que es de `public`.
+La historia de antes, tal como estaba:
 
 **Repo y remoto: 48 y 48 (medido el 2026-10-09) — a la par.** `ls
 supabase/migrations | wc -l` da **48**; `supabase_migrations.schema_migrations`
@@ -440,6 +460,12 @@ user_intereses  (user_id → users on delete cascade, categoria_id → categorie
                  on delete cascade, created_at, PK (user_id, categoria_id)) —
                  las categorías que el usuario ELIGE. Cada quien lee y escribe
                  solo las suyas; sin UPDATE. Ver "Intereses y recomendados".
+actividad_diaria (user_id → users on delete cascade, dia date default hoy en
+                 America/Mexico_City, PK (user_id, dia)) — como máximo una
+                 señal de uso por usuario y día, para las métricas agregadas
+                 del panel (Ola 6 de RF-17). El cliente solo INSERTA
+                 (user_id); nadie la lee desde la app. 90 días de retención.
+                 Ver "Actividad diaria y métricas", abajo.
 
 **`campus.latitud`/`longitud` son para "Detectar campus más cercano" (fase
 2C, `20260925000467`).** Nullables a propósito: un campus sin coordenadas
@@ -1678,10 +1704,11 @@ Lo que no se ve en la tabla:
   desde `listings`, que el borrado se lleva. Detalle de la función (auth,
   reautenticación por `amr`, idempotencia) en §8 y en §9.
 
-**Panel de admin, Olas 1 a 5 y 3b de RF-17 (`20260930000477` + `20260930000478`
+**Panel de admin, Olas 1 a 6 y 3b de RF-17 (`20260930000477` + `20260930000478`
 + `20260930000479`, EN PRODUCCIÓN desde el 2026-10-02; `20261007000480` a
 `…482` y `20261008000483`, desde el 2026-10-08; `20261008000484`, desde el
-2026-10-09; RF-17 Ola 5 — CERRADA).** Plan en `docs/rf17-plan-admin.md`; las reglas
+2026-10-09; RF-17 Ola 5 — CERRADA; `20261009000485` y `…486`, desde el
+2026-10-10; RF-17 Ola 6 — CERRADA el 2026-10-11).** Plan en `docs/rf17-plan-admin.md`; las reglas
 del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
 
 - **Quién es admin: `private.admins`**, una fila con `activado_at` puesto. No
@@ -1713,7 +1740,7 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   'script:crear-admin.mjs'`.
 - **Schema `admin`** (D3): USAGE solo para `authenticated`; sus funciones son
   definer con `search_path` fijo y sin EXECUTE para `anon`/PUBLIC. No cuentan
-  entre "las TRES definer de `public`": viven en otro schema. Hoy son 13
+  entre "las TRES definer de `public`": viven en otro schema. A 2026-10-08 eran 13
   (medido en `pg_proc` de remoto el 2026-10-08, tras el push de `…483`; antes
   11 y antes 9): `sesion` (la única que no lanza: gating
   de UX), `buscar_usuarios`, `detalle_usuario`, `suspender_usuario` y
@@ -1724,7 +1751,11 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `pg_proc` de remoto el 2026-10-09, md5 conjunto igual al de local), con las
   8 del catálogo (Ola 5): `catalogo`, `crear_universidad`, `editar_universidad`,
   `crear_campus`, `editar_campus`, `agregar_dominio`, `desactivar_dominio` y
-  `reactivar_dominio`.
+  `reactivar_dominio`. **Desde `…486` son 24** (DERIVADO: las 21 medidas en
+  remoto en F13 de `docs/rf17-ola6-plan.md` más las 3 nuevas, cuya definición
+  se leyó en remoto en F18 y que los tipos `--linked` de `83af816` listan, 21 →
+  24): `metricas`, `metricas_resumen` (Ola 6, `…485`) y `auditoria` (`…486`),
+  las tres de SOLO LECTURA, así que no auditan y el CHECK de acciones sigue en 16.
 - **Reportes y bloqueo (`20260930000479`, Ola 2).** `listar_reportes` usa solo
   left joins y nunca esconde un reporte: los 4 `objetivo_tipo`
   (`publicacion`, `usuario`, `publicacion_eliminada`, `cuenta_eliminada`).
@@ -1747,7 +1778,19 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `…481` son 7**, con `aprobar_listing`, y **desde `…483` son 9**, con
   `restablecer_mfa` y `factores_mfa_borrados`. **Desde `…484` son 16**
   (medido en remoto el 2026-10-09): las 7 de escritura del catálogo, cada una con
-  el nombre de su RPC.
+  el nombre de su RPC. **La Ola 6 no lo cambia** (`…485`/`…486` solo leen;
+  md5 de CHECKs en remoto igual antes y después, F13 = F18).
+- **Métricas y auditoría (`20261009000485` + `…486`, Ola 6): en producción
+  desde el 2026-10-10; RF-17 Ola 6 — CERRADA el 2026-10-11.** El esquema, en
+  el bloque "Actividad diaria y métricas", más abajo; la evidencia, en §8,
+  "Hecho". `admin.auditoria(p_objetivo_tipo, p_objetivo_id, p_cursor,
+  p_limit)` lee `private.admin_acciones` para `'reporte'` y `'universidad'`
+  (la universidad, SUS campus y SUS dominios en una llamada, resueltos contra
+  el catálogo porque desactivar/reactivar un dominio no guarda
+  `universidad_id` en la auditoría), con `objetivo_etiqueta` = el nombre
+  ACTUAL, orden `id desc`, cursor y `p_limit` de 1 a 100; `22023
+  objetivo_tipo_invalido`/`objetivo_invalido` con la regex antes del cast.
+  Límite documentado: un objeto borrado desde Studio desaparece del ámbito.
 - **Catálogo (`20261008000484`, Ola 5): en producción desde el 2026-10-09;
   RF-17 Ola 5 — CERRADA** (evidencia
   en §8, "Hecho"). Plan, decisiones y orden de despliegue en
@@ -1895,8 +1938,85 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   foto (`listings_enforce_activation_has_photos`). La suspensión solo pausa las
   `activa` (`20260917000457:86-89`): una `pendiente` se queda `pendiente`.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 606 aserciones (medido con el
-`grep` de §8 el 2026-10-09; antes decía 529, 501, 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Actividad diaria y métricas (`20261009000485` + `20261009000486`, Ola 6 de
+RF-17; en producción desde el 2026-10-10, CERRADA el 2026-10-11).** Plan,
+decisiones D-1..D-19 y checkpoints F0-F28 en `docs/rf17-ola6-plan.md`; qué
+cambió al implementarla, en `docs/rf17-plan-admin.md`; la evidencia de
+producción, en §8, "Hecho". Lo que vive en la base:
+
+- **`public.actividad_diaria (user_id, dia)`**: como máximo una señal de uso
+  por usuario y día de México, para contar usuarios activos. `revoke all` y
+  después `grant insert (user_id)` a `authenticated`
+  (`20261009000485:48-49`): el cliente **no puede fijar `dia`** (el default lo
+  pone el servidor en `America/Mexico_City`) y no tiene SELECT, UPDATE ni
+  DELETE; `anon`, nada. Una sola policy, `actividad_diaria_insert_own`, `with
+  check (user_id = (select auth.uid()))`, **sin `is_active_user()`**: un
+  suspendido registra actividad y cuenta como activo (D-5). Fuera de Realtime.
+  `on delete cascade` desde `users`: la baja borra en el acto todo lo
+  atribuible.
+- **La forma del insert es load-bearing** (anexo C del plan, medido en SQL y
+  por HTTP): `insert({ user_id })` PLANO, y `201` o `23505`/409 son éxito.
+  `upsert` (con o sin `onConflict`), `ignoreDuplicates` e `insert().select()`
+  dan **`42501`**, porque `ON CONFLICT` y `RETURNING` exigen SELECT, que el
+  cliente no tiene. "Simplificar" el cliente a `upsert` dejaría la métrica en
+  cero EN SILENCIO (`src/lib/actividad.ts` traga el error con un
+  `console.warn`). Lo vigilan T38, el tripwire de `scripts/probe-actividad.mjs`
+  y el comentario de `src/lib/actividad.ts`. La app lo llama al arrancar con
+  sesión y en cada vuelta a primer plano, deduplicando SOLO en memoria por
+  `{userId, día de México}`.
+- **`inicio_tracking` = `private.actividad_parametros.inicio`**, un renglón
+  fijado por la migración con el día de México en que se aplicó. **En
+  producción es 2026-10-10** (F18). Sin privilegios para el cliente y con RLS
+  sin policies (de ahí el aviso `rls_enabled_no_policy` esperado, abajo). Es
+  la fuente estable que hace verdaderos los NULL antes del registro (D-4):
+  **normalmente no se toca**; moverlo es un procedimiento excepcional,
+  decidido explícitamente y anotado en el runbook. Guarda solo `inicio`, no la
+  retención.
+- **Retención de 90 días con una sola fuente para el corte:**
+  `private.actividad_retenida_desde()` = hoy en México − 89 (`sql`, EXECUTE
+  revocado). Se conserva una fila mientras `dia >= hoy − 89`. La purga es el
+  job de pg_cron **`purga-actividad-diaria`, `23 6 * * *`** (`delete … where
+  dia < private.actividad_retenida_desde()`), o sea **06:23 UTC = 00:23 en
+  México en esta configuración** (America/Mexico_City, UTC−6 sin horario de
+  verano). **Primera corrida natural en producción: 2026-10-11 06:23:00 UTC,
+  `succeeded`, 0 filas** (F26). Las métricas filtran con la MISMA función,
+  así que una purga retrasada no cambia ninguna cifra: el riesgo es solo de
+  minimización. `purga-moderacion-retenida` (`17 4 * * *`) no se tocó:
+  `cron.job` tiene 2 jobs.
+- **`admin.metricas` y `admin.metricas_resumen`** (`plpgsql stable security
+  definer`, `search_path = ''`, `exigir_admin()` primero, EXECUTE solo
+  `authenticated`): rango que termina como mucho hoy en México y de hasta 366
+  días (`22023 rango_invalido`/`rango_demasiado_largo`), universidad opcional
+  (`P0002 universidad_no_existe`). Altas (`public.users`, D-7), publicaciones
+  creadas (todas, D-10), contactos (taps de `listing_contacts`, por la
+  universidad de la publicación, D-8/D-9) y usuarios activos; **admins
+  excluidos en las cuatro**. Los activos de un día son **NULL ("Sin datos")
+  antes de `inicio_tracking` o fuera de la retención, y un conteo real
+  (incluido 0) dentro**: nunca se convierte NULL en 0. El resumen devuelve
+  `activos_desde`/`activos_hasta`/`activos_cobertura`
+  (`completa`/`parcial`/`sin_datos`) y `usuarios_activos_distintos` =
+  `count(distinct user_id)`, **nunca la suma de los días**.
+- **Nulabilidad: los tipos generados mienten en estas RPC.** `gen types`
+  declara no nulas `usuarios_activos`, `usuarios_activos_distintos`,
+  `activos_desde`, `activos_hasta` y (en `admin.auditoria`)
+  `objetivo_etiqueta`, que semánticamente pueden ser NULL. No se editan los
+  generados: el consumidor maneja NULL (el panel usa los tipos manuales de
+  `admin/src/lib/tipos.ts`).
+- **Sesgos, aceptados y explicados en pantalla:** el `ON DELETE CASCADE` hace
+  que las cifras pasadas bajen cuando se elimina una cuenta (lo corregiría el
+  snapshot de D11, que queda **después**; índice de deuda), y antes del
+  lanzamiento los datos son del equipo y de testers (D-16).
+- **Sin índices nuevos**: medido en local (F4 del plan); se agregan solo si el
+  volumen o la latencia lo justifican (índice de deuda).
+- **Recuperación:** `docs/rf17-ola6-recuperacion.sql` (NO es una migración;
+  su contrato está en su cabecera). No se usó: producción quedó en el estado 1.
+- **Declarado en la documentación legal antes del push** (F12, `e77ba66`):
+  `docs/LEGAL_FACTS.md` §14 y §27, `PRIVACY_SPEC.md`, `DATA_RETENTION.md`,
+  `ACCOUNT_DELETION.md` y `LEGAL_LAUNCH_CHECKLIST.md`. El aviso de privacidad
+  PUBLICADO (fuera de este repo) sigue sin actualizarse: pendiente 0i.
+
+**Regresión de RLS:** `supabase/tests/rls.sql`, 657 aserciones (medido con el
+`grep` de §8 el 2026-10-11; antes decía 606, 529, 501, 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2731,6 +2851,22 @@ acciones moría con un error crudo de cast en vez de en (d1), porque el cast
 de un literal se resuelve al planear. Ahora compara `id::text` contra el
 texto.
 
+Y a **657** con la Ola 6 de RF-17 (`20261009000485`/`…486`, en producción
+desde el 2026-10-10; medido con el `grep` de §8 el 2026-10-11): 4 en T12
+(`actividad_diaria` solo con `INSERT (user_id)` para `authenticated`, una
+policy de INSERT, RLS y fuera de Realtime; `actividad_parametros` sin
+privilegios ni policies; `actividad_retenida_desde()` revocada; las tres RPC
+definer, stable, `search_path` vacío y EXECUTE solo `authenticated`), 36 de
+T38 (escritura del cliente, el tripwire contra `on conflict`, suspendido
+activo, admins excluidos, D-9, la frontera hoy/−89/−90 con la fila vencida
+presente, NULL fuera de cobertura y 0 dentro, `completa`/`parcial`/`sin_datos`,
+distintos ≠ suma, guardas, autorización, el comando y el horario de la purga,
+cascade e `inicio` que no se mueve) y 11 de T39 (auditoría de reporte y de
+universidad). 55 controles negativos, uno por uno contra la suite completa y
+contra la sección aislada: 44 caen en su aserción en las dos corridas y 11
+caen antes en T12 o T35e por el orden de la suite; el detalle, en el mensaje
+de `880db76`.
+
 **Gotcha: la suite espera 3 usuarios en local.** Una cuenta de prueba (la del
 admin de la prueba manual del panel) la rompe en T1; se arregla con
 `supabase db reset`.
@@ -3297,8 +3433,8 @@ en "Verificación (correo no participante)".
   quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son CATORCE pasos, no uno (decía "TRECE" antes de la
-  Ola 3b del panel, "DOCE" antes de la Ola 4, "ONCE" antes de la
+  `postgres`/superusuario. Son QUINCE pasos, no uno (decía "CATORCE" antes de la
+  Ola 6 del panel, "TRECE" antes de la Ola 3b del panel, "DOCE" antes de la Ola 4, "ONCE" antes de la
   Ola 2 del panel, "DIEZ" antes del panel de admin, "NUEVE" antes de eliminar cuenta, y "SIETE" con ocho en la
   lista):
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
@@ -3429,7 +3565,10 @@ en "Verificación (correo no participante)".
      tras el borrado, la reseña anónima con sus estrellas y el promedio
      intacto, y que reintentar da 200. Sus cuatro controles (sin chequeo de
      `amr`, uid del body, sin Storage, 404 como error) caen cada uno en su caso.
-     No repite la semántica de la base: eso es T33.
+     No repite la semántica de la base: eso es T33. **26 pruebas** desde la
+     Ola 6 de RF-17, que sumó una: la actividad diaria de la cuenta eliminada se
+     va con la cascada y la de otra cuenta sigue (su control, la FK sin
+     cascade, cae ahí).
   11. `node scripts/probe-admin.mjs`: el panel de admin (RF-17) contra GoTrue,
      PostgREST y Mailpit locales. Lo que T35 no puede ver porque allá los claims
      se fabrican: el `aal`/`amr` REAL que emite GoTrue (el refresh conserva el
@@ -3442,7 +3581,12 @@ en "Verificación (correo no participante)".
      TOTP encendido y `admin` en `[api] schemas`. Tarda unos minutos por las
      esperas de ventana TOTP. Del lado del código, `npm run check:admin` hace
      el typecheck y el lint del panel, que el `tsc` y el `lint` de la raíz no
-     miran. **94 pruebas** (84 en la Ola 4, 83 en la Ola 3, 47 en la Ola 2;
+     miran. **105 pruebas** (94 en la Ola 5, 84 en la Ola 4, 83 en la Ola 3,
+     47 en la Ola 2; el caso 11 de la Ola 6 cubre por HTTP `metricas` con NULL
+     fuera de cobertura, `metricas_resumen` con la cobertura esperada y
+     retención 90, el resumen = suma de los diarios, `auditoria` de la
+     universidad del caso 10 con su cursor, y los rechazos `no_admin` y
+     `mfa_requerido` en las tres RPC;
      el caso 10 de la Ola 5 cubre el catálogo por HTTP: `catalogo()`, una
      escritura por RPC con su auditoría, y dos `agregar_dominio` concurrentes
      forzados a solaparse, uno con 200 y el otro con `dominio_existe_activo`,
@@ -3491,7 +3635,20 @@ en "Verificación (correo no participante)".
      mfa_factor_not_found` de `deleteFactor` solo se alcanza en una carrera
      real, y el probe no la reproduce de forma determinista (su control
      negativo no cae).
-  Los probes 2, 3, 6, 7, 9, 10, 11, 13 y 14 necesitan el stack local arriba y limpian lo suyo (el
+  15. `node scripts/probe-actividad.mjs`: `public.actividad_diaria` (RF-17
+     Ola 6, `20261009000485`) por HTTP, 15 pruebas, con la misma
+     `@supabase/supabase-js` que la app, contra PostgREST local. Prueba la forma
+     EXACTA del cliente: `insert({ user_id })` plano da 201 con el día puesto
+     por el servidor y la segunda señal del día 409/23505; y el **tripwire**:
+     `upsert` con y sin `onConflict`, con `ignoreDuplicates`, e
+     `insert().select()` dan 403/42501 (§3, "Actividad diaria y métricas").
+     Además: día arbitrario, otro `user_id`, leer, actualizar y borrar
+     rechazados; `anon` sin nada; un suspendido sí registra (D-5). T38 prueba la
+     semántica en SQL; esto, lo que PostgREST emite para cada forma. Necesita
+     solo el stack (sin `functions serve`), pasa por `_guarda-relevo.mjs` y
+     limpia lo suyo (borra sus cuentas y el cascade se lleva las filas). Sus
+     cuatro controles caen cada uno en su caso.
+  Los probes 2, 3, 6, 7, 9, 10, 11, 13, 14 y 15 necesitan el stack local arriba y limpian lo suyo (el
   9, con un rollback); si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4, 5, 8 y 12 no necesitan nada: ni stack, ni red, ni credenciales.
 
@@ -4217,6 +4374,124 @@ de los route groups).
     `migrations: []`. El único archivo sin trackear era
     `design/rlvo-feed-variants.html`, ajeno a RF-17 y no tocado.
 
+- **Panel de admin (RF-17), Ola 6 EN PRODUCCIÓN, CERRADA (2026-10-10 al
+  2026-10-11, UTC): métricas y auditoría de solo lectura. Con ella, "Admin
+  (RF-17 fase 1) terminado"** (condiciones al final de este bloque). Plan v1
+  FINAL (D-1..D-19, checkpoints F0-F28) en `docs/rf17-ola6-plan.md`; qué
+  cambió al implementarla, en `docs/rf17-plan-admin.md`; el esquema, en §3,
+  "Actividad diaria y métricas". Commits `b0f212e` (F1) a `83af816` (F19). Como
+  en la Ola 5, el usuario autorizó cada paso; el `db push`, la copia cifrada y
+  las pruebas en dispositivo y en el panel los hizo él. Evidencia, separando
+  lo medido en local de lo medido en producción:
+  - **Local (F1-F12):** F1 (`b0f212e`) corrigió C1, C8 y C9 de la
+    documentación (D-19). F3: frames de Métricas y auditoría (`ed00c7a`; 37
+    frames). F4: `explain analyze` como `authenticated` con volumen sintético;
+    ningún índice nuevo. F5: `…485` (`fbb6ec7`) y `…486` (`54f84dd`), con el
+    ensayo de la frontera del CLI (una migración rota a propósito revirtió
+    entera y la anterior quedó aplicada). F6: `rls.sql` 657 (`880db76`). F7:
+    `probe-actividad` 15, `probe-admin` 105 y `probe-eliminar-cuenta` 26
+    (`c3f97be`). F8-F10: tipos `--local`, app (`acf59c1`) y panel
+    (`e93521f`), con la no regresión local completa y la prueba manual del
+    usuario en el panel local. F11: `docs/rf17-ola6-recuperacion.sql`
+    (`b2fc591`), 13 escenarios en `begin … rollback`. F12: la señal declarada
+    en la documentación legal interna ANTES del push (`e77ba66`).
+    **Desviación de F9:** sin prueba en simulador, por la trampa de
+    `.env.local` (índice de deuda); la integración se probó después en
+    dispositivo (F20/F21).
+  - **F13 (preflight, solo lectura):** 48 = 48; 12 md5 estructurales de
+    referencia (funciones `admin` 21, `private` 39 y `public` 6, policies 44,
+    CHECKs 28, constraints 90, índices 60, grants de tabla 22 y de columna 33,
+    ACL de schemas, `cron.job` 1 y triggers 36); 10/10 usuarios, 3 admins, 3
+    TOTP, 13 auditorías, 72 publicaciones y 24 taps de contacto; advisors: 24
+    `authenticated_security_definer_function_executable`, 6
+    `rls_enabled_no_policy`, 2 de `search_path` y 1 de leaked password (D-18).
+    Dos diferencias local ⇔ remoto clasificadas como de plataforma (USAGE de
+    `supabase_auth_admin` sobre `public`, y las particiones diarias de
+    `realtime.messages`).
+  - **F14 (copia cifrada, la hizo el usuario):** `relevo-respaldo-2026-10-10.dmg`
+    (262,656 B, AES-256, SHA-256 `a63ae38e…`), anterior a `…485`/`…486`, con
+    cinco archivos verificados por su `MANIFEST.sha256` interno (incluida la
+    herramienta de F11). El staging en claro se borró con un borrado normal
+    de APFS, **no** un borrado seguro. **Es una fotografía puntual: D-17
+    (respaldos/PITR) sigue abierta.**
+  - **F15-F17:** push selectivo a `e77ba66`; `db push --dry-run` con
+    exactamente `…485` y `…486`; `supabase db push --linked --skip-vault` el
+    2026-10-10, sin errores (lo corrió el usuario).
+  - **F18 (readback, estado 1):** 50 migraciones; los objetos nuevos con la
+    definición de local (14 md5 iguales); **`inicio_tracking` = 2026-10-10**;
+    `cron.job` con 2 jobs; los 12 md5 de F13 sin cambios; el ÚNICO privilegio
+    nuevo del cliente es `INSERT (user_id)` de `authenticated` más el EXECUTE
+    de las 3 RPC. **Advisors:** `authenticated_security_definer_function_executable`
+    pasó de 24 a 27 (exactamente las 3 RPC nuevas) y **`rls_enabled_no_policy`
+    de 6 a 7: el adicional, esperado, es `private.actividad_parametros`** (RLS
+    sin policies a propósito). El §7 del plan decía "ninguno de RLS": se
+    conserva como registro histórico y el resultado real es este. Lo demás,
+    igual que en F13.
+  - **F19:** tipos `--linked` (`83af816`; `admin` de 21 a 24 funciones).
+  - **F20:** el JS nuevo por Metro en el iPhone del usuario; la primera señal
+    llegó: 1 fila de 1 cuenta, con `dia` 2026-10-10.
+  - **F21 (dispositivo real): PASS PARCIAL.** F21-A (primer plano) **PASS**;
+    F21-B (arranque en frío: un POST, 409, tratado como éxito) **PASS**; F21-B2
+    (la vuelta a primer plano siguiente no hace POST) **PASS**; **F21-C (modo
+    avión) SKIPPED / NO EJECUTADO**, con revisión estática del código y el
+    **riesgo residual aceptado manualmente** por el usuario. Evidencia por
+    `edge_logs` (solo hora, método, ruta y estado) y el log de Metro.
+  - **F22-F24 (panel):** dos builds byte-idénticos y preflight limpio;
+    `wrangler pages deploy … --commit-hash 83af816…`, deployment
+    **`2b1016db-ef9d-4d5e-8e12-9ededb5204d6`** (Production, `main`,
+    `index-C8GP050S.js`); batería de 4 variantes × 3 hosts: HTML 24/24,
+    assets 18/18 y headers 90/90, sin beacon. Rollback de referencia:
+    `3259ea7f` (`014f7f0`), no usado.
+  - **F25 (aceptación manual en producción): PASS**, con estas salvedades,
+    que no se convierten en evidencia completa:
+    - Métricas 7/30/90, el filtro por universidad y "0" ≠ «Sin datos»,
+      cotejados contra `SELECT` agregados;
+    - **TOTP vencido: NO se repitió en F25.** Se acepta con E6 de producción
+      (Ola 3) y el caso 3 de `probe-admin`;
+    - **Auditoría en producción: validada ÚNICAMENTE en su estado vacío** (no
+      hay acciones de reporte ni de catálogo, y crearlas sería escribir);
+    - **«Ver más»: no probado en producción**; lo cubren en local T39 y el
+      caso 11 de `probe-admin`;
+    - `admin_acciones` 13/13 antes y después; las únicas escrituras fueron las
+      incidentales de Auth del inicio de sesión y del TOTP.
+  - **F26 (no regresión, 2026-10-11): PASS.** Los 12 md5 de F13 sin cambios;
+    `supabase_realtime` = `aef320ec05e65fa4d042748f6a49a836` y las tablas
+    nuevas en 0 publicaciones; los 14 md5 de los objetos nuevos iguales a
+    F18; `admin_acciones` 13/13; **`purga-actividad-diaria`: primera corrida
+    natural el 2026-10-11 a las 06:23:00 UTC, `succeeded`, 0 filas**;
+    `purga-moderacion-retenida` `succeeded` el 10-09, 10-10 y 10-11.
+    **`run_hook`: SIN EVIDENCIA NUEVA**: no hubo altas naturales desde el push
+    (0 entradas del hook, 0 errores, y los logs de Auth sí registraban
+    actividad). NO es una ejecución verificada del hook después de
+    `…485`/`…486`.
+  - **F27 (cierre técnico, 2026-10-11): PASS.** HEAD = `origin/main` =
+    GitHub = `83af816`, 0/0; 50 = 50 migraciones con la misma secuencia;
+    `supabase db push --linked --dry-run --skip-vault` → `upToDate: true`,
+    `migrations: []`; Production = `2b1016db` (`main`, `83af816`).
+  - **Notas de método, para no re-descubrirlas:**
+    - el md5 global de las publicaciones (R9) incluye las particiones diarias
+      de `realtime.messages`, que rotan solas: es **solo histórico**. La
+      invariante estable es `supabase_realtime` =
+      `aef320ec05e65fa4d042748f6a49a836`;
+    - una consulta de control de F26 agrupó rutas de los logs de Auth y
+      devolvió internamente rutas de MFA con el **identificador del factor**
+      (no se reprodujo). Toda consulta futura de logs debe **quitar ese
+      segmento de la ruta antes de agrupar o mostrar**;
+    - el dry-run de F27 imprimió `Initialising login role...`. Es
+      comportamiento observado del CLI (v2.116.0); **no se verificó si
+      modificó `pg_roles`** y no se afirma. No hubo cambios de esquema ni
+      migraciones.
+  - **"Admin (RF-17 fase 1) terminado" (2026-10-11)**, por la condición
+    literal de `docs/rf17-ola6-plan.md:265`: L1 (métricas) y L2 (auditoría)
+    cerradas por F18-F26, L3 (documentos) por F1, F12 hecha, y la lectura
+    cruzada de los cuatro documentos de Admin (`CLAUDE.md`, `admin/CLAUDE.md`,
+    `docs/rf17-plan-admin.md` y `docs/admin-runbook.md`) sin pendientes
+    BLOQUEANTES. **Siguen abiertos, como el plan los clasifica:** D-17
+    (estrategia real de respaldos/PITR: operación), D-18 (leaked password
+    protection: endurecimiento), el aviso de privacidad publicado (pendiente
+    0i, lista de lanzamiento) y los secretos de Vault de `send-push`
+    (pendiente 1).
+
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
    CLAUDE.md §8 arriba).** Los pasos 0-5 ya corrieron y están en "Hecho"
@@ -4432,9 +4707,10 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      y detalle de reportes, resolver y descartar, bloquear desde el reporte y
      desde la publicación, las fotos y el modal de TOTP), con datos sembrados
      por un script local fuera de git, ya borrados.
-     **Pendiente de diseño:** el detalle de un reporte resuelto no muestra su
-     auditoría (el frame sí): no hay RPC que la devuelva para el tipo
-     `reporte` hasta `admin.auditoria` (Ola 6).
+     **Pendiente de diseño, CERRADO en la Ola 6:** el detalle de un reporte
+     resuelto no mostraba su auditoría (el frame sí) porque no había RPC que
+     la devolviera; desde `…486` la muestra con `admin.auditoria`
+     (`e93521f`, en producción desde el 2026-10-10).
    - **Ola 3 — HECHA, EN PRODUCCIÓN (2026-10-02 al 2026-10-05):** push de las 3
      migraciones, schema `admin` expuesto, tipos regenerados, panel desplegado en
      Cloudflare Pages (`admin.rlvo.com.mx`) y los 3 admins activados. Detalle,
@@ -4458,18 +4734,28 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      la app (el catálogo se lee una vez por sesión,
      `src/lib/explorar-state.tsx:161-174`), no con pull-to-refresh; detalle en
      `docs/admin-runbook.md` §2.
-   - **Ola 6 (la siguiente):** métricas
-     y `actividad_diaria` (`…485`). Se renumeraron en la Ola 4 (D17) y otra vez
-     en la Ola 3b, que tomó `…483`.
+   - **Ola 6 — CERRADA, EN PRODUCCIÓN (2026-10-10 al 2026-10-11)** (commits
+     `b0f212e` a `83af816`; plan v1 FINAL en `docs/rf17-ola6-plan.md`):
+     `actividad_diaria` con 90 días de retención y su purga, `admin.metricas`,
+     `admin.metricas_resumen` y `admin.auditoria` (`…485` y `…486`, 50 = 50 en
+     remoto), T38 y T39 (`rls.sql` en 657), `probe-actividad` 15,
+     `probe-admin` 105, la señal en la app y el panel de Métricas en el
+     deployment `2b1016db`. F1-F27 en PASS salvo **F21, PASS PARCIAL (C no
+     ejecutado)**, con las salvedades de F25 y F26 escritas en "Hecho".
    **Notas que las olas heredan:** las dos de la Ola 1 ya están hechas (T35
    (d3), "timestamp basura", con su control; y el aviso del `DETAIL` del CHECK
    de `admin_acciones` en `admin/CLAUDE.md`). Las de la Ola 2 también están
    hechas (T36 (g)-(i) y el trigger de `resolved_at`), y la de la Ola 4 también
-   (las fixtures, corregidas en `…480`). Sigue la de la Ola 6 de
-   `docs/rf17-plan-admin.md`.
-   Pendientes: la Ola 6, una estrategia de respaldos
-   (índice de deuda, abajo) y los secretos de Vault de `send-push`
-   (pendiente 1). Ninguno de los de las Olas 3, 3b, 4 y 5 queda abierto.
+   (las fixtures, corregidas en `…480`). La de la Ola 6 también está hecha:
+   `ignoreDuplicates` sobre `actividad_diaria` sin SELECT se midió y da
+   `42501`, así que el cliente hace un insert plano (§3, "Actividad diaria y
+   métricas").
+   **"Admin (RF-17 fase 1) terminado" el 2026-10-11** (condiciones y evidencia
+   en "Hecho"). Siguen abiertos, fuera de la fase 1 y sin bloquearla: una
+   estrategia real de respaldos/PITR (D-17; índice de deuda, abajo), leaked
+   password protection (D-18; índice de deuda), los secretos de Vault de
+   `send-push` (pendiente 1) y el aviso de privacidad publicado (pendiente
+   0i). Ninguno de los de las Olas 3, 3b, 4, 5 y 6 queda abierto.
 0i. **Publicación en tiendas: lo que falta para someter la app.** El
    inventario completo es `docs/auditoria-lanzamiento-2026-09-22.md` (eas.json,
    versiones, íconos, permisos, aviso de privacidad). Se anota aquí lo que
@@ -4548,12 +4834,16 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - Compartir comparte solo texto plano, sin ningún link — en LAS DOS pantallas que lo tienen → `compartir-deeplinks.md`
 - ~~`reports.resolved_at` existe y NADIE la escribe~~ **[CERRADA]** por `20260930000479` (trigger `reports_sella_resolved_at`, en producción desde 2026-10-02) → `notificaciones-push.md`
 - Bloquear una `vendida` deja a su comprador sin camino en la UI para calificar (`listings_select` esconde la `bloqueada`) → CLAUDE.md §3, "Panel de admin"
-- **El proyecto NO tiene backups ni PITR**: los únicos respaldos son dos copias cifradas manuales, la del 2026-10-01 (anterior a A1a y a los 3 admins) y la del 2026-10-09 (K-2 de la Ola 5, anterior a la `…484`), con ciclo de vida sin decidir y su efecto en el aviso de privacidad sin comprobar → CLAUDE.md §8, "Hecho", Panel de admin
+- **El proyecto NO tiene backups ni PITR (D-17 de la Ola 6, abierta)**: los únicos respaldos son tres copias cifradas manuales, la del 2026-10-01 (anterior a A1a y a los 3 admins), la del 2026-10-09 (K-2 de la Ola 5, anterior a la `…484`) y la del 2026-10-10 (F14 de la Ola 6, anterior a la `…485`); son fotografías puntuales, no una estrategia de backup/PITR, con ciclo de vida sin decidir y su efecto en el aviso de privacidad sin comprobar → CLAUDE.md §8, "Hecho", Panel de admin
 - Los correos personales de 2 admins quedan en `admin_acciones.admin_correo`, una tabla append-only; falta reflejarlo en el aviso de privacidad y en el trámite ARCO → `docs/auditoria-lanzamiento-2026-09-22.md`, §6
 - `listing_photos` con `storage_path` en forma de URL completa (publicaciones 1 y 2, pausadas, anteriores a `…445`) y objetos de Storage sin fila: Storage responde "Object not found" a esas rutas (medido en local) y, por el código, el panel mostraría "La foto no está disponible"; hoy ningún reporte apunta a esas publicaciones → `publicar-fotos.md` y `docs/admin-runbook.md`
 - La landing (otro repo) podría cargar el snippet de Cloudflare Web Analytics: sin verificar si lo hace, y el aviso de privacidad no lo menciona → `docs/auditoria-lanzamiento-2026-09-22.md`, §6
 - El panel se despliega a mano (`wrangler pages deploy`, sin CI/CD) y Cloudflare le agrega `access-control-allow-origin: *`, `nel` y `report-to`, que no se quitan desde `_headers`; las fuentes `.woff2` se sirven sin `content-type` → `admin/CLAUDE.md`, "Producción"
-- Leaked password protection de Auth desactivado (advisor de seguridad); se decide en el Dashboard → CLAUDE.md §8, "Hecho", Panel de admin
+- Leaked password protection de Auth desactivado (advisor de seguridad; D-18 de la Ola 6, deuda de endurecimiento, abierta); se decide en el Dashboard → CLAUDE.md §8, "Hecho", Panel de admin
+- Snapshot diario de métricas (D11, aprobado como "después"): sin él, el `ON DELETE CASCADE` hace que altas, publicaciones, contactos y activos pasados bajen al eliminarse una cuenta; la pantalla y el runbook lo explican. **Revisar cuando:** se necesiten cifras históricas inmutables (p. ej., tras el lanzamiento). **Fix:** `private.metricas_diarias` agregada con pg_cron → `docs/rf17-plan-admin.md` §9, CLAUDE.md §3 ("Actividad diaria y métricas")
+- `actividad_diaria` y las RPC de métricas sin índices nuevos (F4 de la Ola 6, medido en local con volumen sintético): se agregan solo si el volumen o la latencia lo justifican. **Revisar cuando:** `admin.metricas` de 90 días tarde de forma apreciable en el panel o crezca mucho la tabla → `docs/rf17-ola6-plan.md` (F4)
+- En dev, `expo/virtual/env.js` empaqueta `.env.local` y sus valores prevalecen sobre las variables del proceso (también con `EXPO_NO_DOTENV=1`): la app no se puede apuntar al stack local sin crear archivos, y un `.env.local` con producción hace que el JS de desarrollo hable con producción → mensaje de `acf59c1` (F9 de la Ola 6)
+- Los tipos generados (`gen types`) declaran no nulos campos de RPC que pueden ser NULL (`usuarios_activos`, `usuarios_activos_distintos`, `activos_desde`, `activos_hasta`, `objetivo_etiqueta`): cualquier consumidor nuevo debe manejar NULL; el panel usa `admin/src/lib/tipos.ts` → CLAUDE.md §3, "Actividad diaria y métricas"
 - Sin receipts de Expo → `notificaciones-push.md`
 - `pg_net` es fire-and-forget → `notificaciones-push.md`
 - El inbox no pagina → `notificaciones-push.md`
@@ -5522,9 +5812,13 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   los advisors mostraban 3 definer (las de `public`) aunque las 9 RPC de `admin.*`
   ya existían; al exponerlo pasaron a 12. No es una regresión: es el lint
   empezando a ver lo que ya estaba. Esos 9 WARN son intencionales (cada RPC
-  llama `exigir_admin()` primero). El 12 es la cifra de 2026-10-05 (9 de
-  `admin.*` y 3 de `public`): un número distinto sin una función nueva es la
-  señal.
+  llama `exigir_admin()` primero). El 12 era la cifra de 2026-10-05 (9 de
+  `admin.*` y 3 de `public`). **La vigente es 27, medida en remoto en F18 de
+  la Ola 6 (2026-10-10): 24 de `admin.*` y 3 de `public`.** No son 27
+  problemas nuevos: cada ola sumó las suyas (11 y 13 en las Olas 4 y 3b, 21
+  en la 5 y 24 en la 6; F13 medía 24 avisos antes del push de la Ola 6 y F18
+  27, con exactamente `metricas`, `metricas_resumen` y `auditoria` de más). Un
+  número distinto sin una función nueva es la señal.
 - **Una fila de `auth.users` sembrada por SQL con las columnas de token en NULL
   rompe `auth.admin.listUsers`** (`500 Database error finding users`). GoTrue lee
   esas columnas como texto; las que crea él mismo van en cadena vacía. Mordió al

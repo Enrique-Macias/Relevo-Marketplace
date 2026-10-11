@@ -1,6 +1,6 @@
 # RF-17 — Plataforma web de administración: plan de arquitectura
 
-**Estado (2026-10-09):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
+**Estado (2026-10-11):** plan v2 + v2.1 APROBADO. **Ola 0 en producción**
 (`7574b01`; remedido en remoto el 2026-09-29, cuando había 40 migraciones con
 `20260930000476` y el `WHEN` de `reports_notify_resolved` con
 `reporter_id IS NOT NULL`). **Olas 1, 2 y 3 en producción desde el 2026-10-02**
@@ -11,11 +11,80 @@
 2026-10-08** (`e5f498a` a `c45009d`). **Ola 5 (catálogo, `20261008000484`)
 en producción desde el 2026-10-09: RF-17 Ola 5 — CERRADA** (`d9e5300` a `d42a503` y `014f7f0`; deployment
 `3259ea7f`); plan en `docs/rf17-ola5-plan.md` (v3.2) y evidencia en
-`CLAUDE.md` §8, "Hecho". La Ola 6 sigue pendiente.
-Las seis secciones siguientes ganan sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
+`CLAUDE.md` §8, "Hecho". **Ola 6 (métricas y auditoría, `20261009000485` y
+`…486`) en producción desde el 2026-10-10: RF-17 Ola 6 — CERRADA el
+2026-10-11** (`b0f212e` a `83af816`; deployment `2b1016db`); plan v1 FINAL en
+`docs/rf17-ola6-plan.md` y evidencia en `CLAUDE.md` §8, "Hecho". **Con ella,
+"Admin (RF-17 fase 1) terminado"**; siguen abiertos D-17 (respaldos/PITR),
+D-18 (leaked password protection) y el aviso de privacidad publicado.
+Las siete secciones siguientes ganan sobre el texto viejo de abajo. Este archivo es la consolidación de v2 y v2.1 tal como quedaron aprobados. **Donde v2 y v2.1
 chocan, prevalece v2.1** (`is_admin()` con `jsonb_typeof`, la lista de claves de
 auditoría por tipo, el orden de las olas). El resumen operativo vive en
 `CLAUDE.md` §8, pendiente 0k; el detalle, aquí.
+
+## Ola 6: lo que cambió al implementarla (gana sobre el resto del archivo)
+
+Implementada y probada en local entre el 2026-10-09 y el 2026-10-10 (UTC):
+documentos previos `b0f212e` (F1: C1, C8 y C9, D-19), plan `af3eb5b`, frames
+`ed00c7a`, migraciones `fbb6ec7` (`…485`) y `54f84dd` (`…486`), `rls.sql`
+`880db76`, probes `c3f97be`, tipos `--local` `be51f1e`, app `acf59c1`, panel
+`e93521f`, recuperación `b2fc591` y documentación legal `e77ba66` (F12, antes
+del push). El plan aprobado, con sus decisiones D-1..D-19, los riesgos y los
+checkpoints F0-F28, es **`docs/rf17-ola6-plan.md`** (se conserva como registro
+histórico, sin editar); lo que sigue es el resumen. **Producción
+(2026-10-10/11, UTC):** `…485` y `…486` en un solo `db push` (estado 1, 50 = 50
+migraciones), tipos `--linked` `83af816` y el panel en el deployment
+`2b1016db`. Lo que cambió respecto a §9, T38 y "Ola 6" de este archivo:
+
+- **Tres RPC, no una, en dos migraciones** (D-3, D-14): `admin.metricas` (una
+  fila por día) y `admin.metricas_resumen` (totales y cobertura) en `…485`, y
+  `admin.auditoria` de solo lectura en `…486`. Ninguna audita: el CHECK de
+  `admin_acciones` sigue en 16 acciones.
+- **La auditoría en el panel** (D-1): en «Reporte resuelto» y en el detalle de
+  universidad, que reúne la universidad, sus campus y sus dominios en una
+  llamada (resueltos contra el catálogo, porque desactivar o reactivar un
+  dominio no guarda `universidad_id`). Sin sección global. Cierra el
+  "pendiente de diseño" de la Ola 2.
+- **Retención de 90 días** (D-6, R2), que §9 no tenía: el registro atribuible
+  se conserva mientras `dia >= hoy MX − 89`, con una sola fuente
+  (`private.actividad_retenida_desde()`) para el corte, la purga diaria de
+  pg_cron (`purga-actividad-diaria`, `23 6 * * *` UTC = 00:23 en México en
+  esta configuración) y las métricas. Los días anteriores al inicio o fuera de
+  la retención son NULL («Sin datos»), nunca 0 (D-4); un día dentro sin filas
+  es 0. Sin snapshot agregado: D11 sigue "después".
+- **`inicio_tracking`** en `private.actividad_parametros` (un renglón fijado
+  al aplicar la migración; en producción, 2026-10-10). Es la fuente estable de
+  los NULL de D-4: normalmente no se toca, y moverlo es un procedimiento
+  excepcional y documentado (`docs/admin-runbook.md` §7).
+- **La forma del insert, medida (anexo C del plan):** el "insert … on conflict
+  do nothing" de §9 da **`42501`** sin SELECT (también `upsert`,
+  `ignoreDuplicates` e `insert().select()`). La app hace un insert plano y
+  trata `23505`/409 como éxito, con deduplicación solo en memoria (D-15).
+- **Semántica de las métricas** (D-5, D-7..D-11): admins excluidos en las
+  cuatro; un suspendido registra actividad y cuenta como activo; toda fila de
+  `public.users` (no admin) es un alta; contactos = `count(*)` de taps, por la
+  universidad de la publicación; todas las publicaciones por `created_at`, en
+  cualquier estado; días de `America/Mexico_City`. Ventas y calificaciones,
+  fuera (D-2).
+- **Panel** (D-12, D-13): 7/30/90 días (30 por defecto), universidad, tarjetas
+  y tabla diaria, sin gráfica. Los tipos manuales de `admin/src/lib/tipos.ts`
+  declaran nullable lo que los generados declaran no nulo.
+- **Pruebas:** T12 +4, **T38 con 36** aserciones (no las 5 de la tabla de
+  abajo: suma la frontera de la retención, la cobertura, la purga, el cascade
+  y la autorización) y **T39 con 11** (auditoría); `rls.sql` en 657, con 55
+  controles negativos. Probes: `probe-actividad` nuevo (15), `probe-admin`
+  caso 11 (105) y `probe-eliminar-cuenta` +1 (26).
+- **Producción, con sus límites** (detalle en `CLAUDE.md` §8, "Hecho"):
+  F21 (dispositivo) **PASS PARCIAL**: A, B y B2 PASS, **C (modo avión)
+  SKIPPED / NO EJECUTADO** con el riesgo residual aceptado manualmente; F25
+  PASS, con el **TOTP vencido NO repetido** (se acepta con E6 de la Ola 3 y el
+  caso 3 de `probe-admin`), la **auditoría validada solo en su estado vacío**
+  y **«Ver más» no probado en producción** (T39 y el caso 11 de `probe-admin`);
+  F26 PASS con **`run_hook` SIN EVIDENCIA NUEVA** (no hubo altas naturales
+  desde el push) y la **primera purga natural `succeeded` el 2026-10-11 a las
+  06:23 UTC**. Advisors tras el push: definer 24 → 27 (las 3 RPC) y
+  `rls_enabled_no_policy` 6 → 7 (`private.actividad_parametros`, esperado;
+  el §7 del plan decía "ninguno de RLS").
 
 ## Ola 5: lo que cambió al implementarla (gana sobre el resto del archivo)
 
@@ -400,7 +469,8 @@ Medido o decidido el 2026-10-01:
     ninguna RPC devuelve la auditoría del tipo `reporte` (`detalle_listing`
     trae la de `listing` y `detalle_usuario` la de `usuario`) hasta
     `admin.auditoria` (Ola 6). Decidir entonces si se adelanta o se quita del
-    frame.
+    frame. **Cerrado en la Ola 6:** se conservó en el frame y el panel la
+    muestra con `admin.auditoria` (`…486`, `e93521f`).
 
 ## Ola 1: lo que cambió al implementarla (gana sobre el resto del archivo)
 
@@ -1101,7 +1171,7 @@ reporte de una cuenta ya eliminada…"); lo vigilan T36 (a) y (a2).
 | Contactos generados | `listing_contacts.created_at` (`20260906000440:45-50`) | Igual |
 | Altas | `public.users.created_at`, sin admins | **Nunca `auth.users`** (fila de prueba sobrante, ver Contexto) |
 | Ventas / calificaciones (extra) | `listing_sales.created_at`, `ratings.created_at` | Igual |
-| **Usuarios activos** | **no hay fuente hoy** | `last_sign_in_at` solo cambia al hacer login y la sesión dura semanas |
+| **Usuarios activos** | ~~no hay fuente hoy~~ **`public.actividad_diaria`** (Ola 6, `…485`) | `last_sign_in_at` solo cambia al hacer login y la sesión dura semanas; por eso la señal diaria. Retención de 90 días: fuera de ella, «Sin datos» |
 
 **Propuesta (C5, D11 aprobada con "el snapshot después"; va en la Ola 6):
 `public.actividad_diaria`**
@@ -1124,6 +1194,15 @@ create table public.actividad_diaria (
   en local:** si `ignoreDuplicates` (`ON CONFLICT DO NOTHING`) funciona sin SELECT
   sobre la columna del conflicto ni policy de select; si no, el cliente hace un
   insert plano y se traga el `23505`.
+  **Medido en la Ola 6 (anexo C de `docs/rf17-ola6-plan.md`): NO funciona.**
+  `on conflict` con target, `upsert`, `ignoreDuplicates` e `insert().select()`
+  dan `42501`; la app hace el insert PLANO y trata `23505`/409 como éxito (al
+  arrancar y en cada vuelta a primer plano, deduplicando en memoria).
+- **Retención (Ola 6, D-6), que esta propuesta no tenía:** 90 días calendario
+  de México (`dia >= hoy − 89`), con `private.actividad_retenida_desde()` como
+  única fuente del corte y la purga diaria `purga-actividad-diaria` de
+  pg_cron. Las métricas pintan NULL («Sin datos») antes de `inicio_tracking`
+  (`private.actividad_parametros`) y fuera de la retención, y 0 real dentro.
 - No necesita definer: es invoker con su policy.
 - **Costo:** como mucho 1 fila por usuario activo al día (~40 B más el índice).
   Con 1 000 usuarios activos diarios son ~365 000 filas al año, muy dentro del plan
@@ -1374,6 +1453,10 @@ original: ver `docs/rf17-ola5-plan.md` (G) y el mensaje de `eb7a019`.
 
 ### T38 — actividad diaria (Ola 6)
 
+**Esta tabla es el plan original: T38 quedó con 36 aserciones (más T39, 11, de
+la auditoría), descritas en "Ola 6: lo que cambió al implementarla" y en el
+mensaje de `880db76`.**
+
 | Aserción | Control negativo |
 |---|---|
 | (a) insertar con `dia` explícito da `42501` | `grant insert (user_id, dia)` |
@@ -1583,7 +1666,10 @@ lo que cambió al implementarla", y el plan completo en `docs/rf17-ola5-plan.md`
 
 Migración `…484` (era `…482`; renumerada en la Ola 4 y en la 3b), T37 y el probe de registro (§10).
 
-### Ola 6 — métricas
+### Ola 6 — métricas (CERRADA en producción el 2026-10-11)
+
+**Esta sección es el plan original: lo que se implementó está arriba, en "Ola 6:
+lo que cambió al implementarla", y el plan completo en `docs/rf17-ola6-plan.md`.**
 
 Migración `…485` (era `…483`; renumerada en la Ola 4 y en la 3b), T38, el cambio en la app para `actividad_diaria` (con su build y
 el runbook de push) y la pantalla de métricas. El snapshot diario con `pg_cron`
@@ -1645,7 +1731,8 @@ queda **después** (D11).
   **Hecho en la Ola 4:** eran 6 fixtures (las de las 4 secciones más T35), corregidas en
   `…480`; `moderar-contenido` v9 se desplegó antes del push; D5 = (a).
 - **Ola 6:** `ignoreDuplicates` sobre `actividad_diaria` sin SELECT queda
-  pendiente de medir en local.
+  pendiente de medir en local. **Hecho en la Ola 6:** medido, da `42501` (anexo
+  C de `docs/rf17-ola6-plan.md`); la app hace un insert plano.
 
 ---
 

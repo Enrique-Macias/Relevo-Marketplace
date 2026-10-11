@@ -16,7 +16,7 @@ la sesión toca `admin/`.
    frames. Solo se reusan los TOKENS de color y
    tipografía de §2 raíz (`src/estilos.css`); nada de tamaños ni componentes
    de teléfono.
-   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 35 frames (24 hasta la Ola 3; la Ola 4 sumó tres de Moderación y el detalle "en revisión (aprobar)", aprobados por el usuario el 2026-10-07; la Ola 3b reemplazó "Usuario — cuenta de admin" por su versión con «Restablecer app autenticadora» y sumó el modal, aprobados el 2026-10-08; la Ola 5 sumó seis de Catálogo y el ítem «Catálogo» en la barra lateral de todos, aprobados el 2026-10-08) medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
+   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 37 frames (medido el 2026-10-11; 35 hasta la Ola 5, 24 hasta la Ola 3; la Ola 4 sumó tres de Moderación y el detalle "en revisión (aprobar)", aprobados por el usuario el 2026-10-07; la Ola 3b reemplazó "Usuario — cuenta de admin" por su versión con «Restablecer app autenticadora» y sumó el modal, aprobados el 2026-10-08; la Ola 5 sumó seis de Catálogo y el ítem «Catálogo» en la barra lateral de todos, aprobados el 2026-10-08; la Ola 6 sumó dos de Métricas, la auditoría en «Universidad — detalle», la variante de auditoría vacía en «Reporte resuelto» y el ítem «Métricas» en la barra lateral de todos, aprobados en F3, `ed00c7a`) medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
 2. **Autorización, siempre en la base** (§0 regla 7 raíz, esta sí aplica).
    Toda acción es una RPC `security definer` de `admin.*` cuya primera línea es
    `perform private.exigir_admin();`, y toda escritura se audita en
@@ -157,6 +157,46 @@ evidencia en `CLAUDE.md` §8, "Hecho"): migración en remoto (48 = 48), tipos
   es un rollback de la ola) están en `docs/admin-runbook.md` §7.
 - Plan completo, con decisiones y evidencia: `docs/rf17-ola5-plan.md` (v3.2).
 
+## Métricas y auditoría (Ola 6, `20261009000485` + `…486`): en producción desde el 2026-10-10; RF-17 Ola 6 — CERRADA
+
+Desplegada y cerrada (F1-F28 de `docs/rf17-ola6-plan.md`, evidencia en
+`CLAUDE.md` §8, "Hecho"; el esquema, en `CLAUDE.md` §3, "Actividad diaria y
+métricas"): migraciones en remoto (50 = 50), tipos `--linked` (`83af816`),
+deployment `2b1016db`. **Con ella, "Admin (RF-17 fase 1) terminado".** Límites
+de la evidencia de producción que no se borran: la auditoría solo se validó
+en su estado VACÍO y «Ver más» no se probó en producción (lo cubren T39 y el
+caso 11 de `probe-admin`); el TOTP vencido no se repitió en F25 (se acepta con
+E6 de la Ola 3 y el caso 3 de `probe-admin`).
+
+- **Pantallas:** `pantallas/Metricas.tsx` (rangos de 7/30/90 días, 30 por
+  defecto, que terminan HOY en hora de México: `hoyMexico()` de
+  `lib/formato.ts`, nunca la fecha del navegador; selector de universidad
+  sobre `admin.catalogo()`; `admin.metricas` y `admin.metricas_resumen` en
+  paralelo; aviso neutro con `retencion_dias` e `inicio_tracking`; tarjetas y
+  tabla, sin gráfica, D-13) y `componentes/Auditoria.tsx` (`admin.auditoria`,
+  páginas de 50 y «Ver más» por cursor; en universidad, columna «Objeto» y el
+  pie del frame), montado en `DetalleReporte.tsx` (solo si el reporte no está
+  pendiente) y `DetalleUniversidad.tsx`.
+- **NULL es «Sin datos», nunca 0.** Los activos NULL (antes del inicio del
+  registro o fuera de los 90 días) se pintan con su propio estilo; un 0 es un
+  conteo real. La nota de la tarjeta de activos sigue `activos_cobertura`
+  (`completa` / `parcial` «del X al Y» / `sin_datos`).
+- **Tipos manuales, a propósito.** `gen types` declara no nulas columnas que
+  pueden ser NULL (`usuarios_activos`, `usuarios_activos_distintos`,
+  `activos_desde`, `activos_hasta`, `objetivo_etiqueta`). Los generados no se
+  editan; `lib/tipos.ts` (`MetricaDia`, `MetricasResumen`, `AuditoriaFila`)
+  las declara nullable y es lo que usa el panel. Un consumidor nuevo de esas
+  RPC hace lo mismo.
+- **Rechazos:** `rango_invalido` con el copy del frame; `universidad_no_existe`
+  con texto propio solo con el sujeto `metricas`; `rango_demasiado_largo`,
+  `objetivo_tipo_invalido` y `objetivo_invalido` al genérico (el caso 7c de
+  `probe-admin` lo exige).
+- **Desviaciones aceptadas** (`e93521f`): el `select` nativo de universidad
+  lleva CSS propio; una edición de nombre del catálogo muestra «—» en
+  «Cambio» (el frame no tiene ejemplo); el error de la auditoría reutiliza
+  `ErrorCarga`.
+- **Solo lectura:** ninguna de las tres RPC audita ni escribe.
+
 ## Moderación y aprobar (Ola 4, en producción desde el 2026-10-08)
 
 - **Moderación** (`pantallas/Moderacion.tsx`) pinta `admin.cola_moderacion`:
@@ -277,11 +317,14 @@ la secret key temporal y la contraseña de la base; ver la cabecera del script).
 ## Producción (Ola 3)
 
 *Estado a 2026-10-05, salvo el deployment vigente; si algo de esto cambia, se
-cambia aquí.* Deployment de Production vigente a 2026-10-09:
-`3259ea7f-ff80-45ed-8817-ea37a63f45ca` (fuente `014f7f0`, Ola 5;
-`index-DKEG9wmp.js`, SHA-256 `674eb80b…`), desplegado con
-`npx wrangler pages deploy admin/dist --project-name rlvo-admin --branch main
---commit-hash 014f7f0`; el anterior era `f0e7e467` (fuente `c45009d`, Ola 3b). **Si el HEAD local tiene commits que no son del
+cambia aquí.* Deployment de Production vigente a 2026-10-11 (confirmado con
+`wrangler pages deployment list` en F27 de la Ola 6):
+`2b1016db-ef9d-4d5e-8e12-9ededb5204d6` (fuente `83af816`, Ola 6;
+`index-C8GP050S.js`, SHA-256 `d8d76d22…`; `_headers` sin cambios, `80c9304e…`),
+desplegado con `npx wrangler pages deploy admin/dist --project-name rlvo-admin
+--branch main --commit-hash 83af816573a989b8bf2a18876641f22ec3c744fe`; el
+anterior era `3259ea7f` (fuente `014f7f0`, Ola 5), y antes `f0e7e467` (fuente
+`c45009d`, Ola 3b). **Si el HEAD local tiene commits que no son del
 panel, se despliega con `--commit-hash` del commit que corresponde**: wrangler
 etiqueta el deployment con el HEAD.
 
@@ -349,11 +392,13 @@ responde 503. En remoto, el Dashboard se toca después del push de
 
 - `npm run check:admin` desde la raíz (typecheck + lint del panel). El
   `tsconfig.json` raíz excluye `admin/`: sin este comando, nadie lo mira.
-- `node scripts/probe-admin.mjs` (stack local + Mailpit): 94 pruebas a
-  2026-10-09 (84 a 2026-10-08), con el camino `--remoto`, los correos externos de
-  `crear-admin.mjs`, el amarre del TTL del reclamo (7d) y, desde la Ola 5, el
+- `node scripts/probe-admin.mjs` (stack local + Mailpit): 105 pruebas desde la
+  Ola 6 (94 a 2026-10-09, 84 a 2026-10-08), con el camino `--remoto`, los correos externos de
+  `crear-admin.mjs`, el amarre del TTL del reclamo (7d), desde la Ola 5 el
   catálogo por HTTP (caso 10, con la carrera de `agregar_dominio` hecha
-  determinista). `node scripts/probe-registro.mjs`: 55 (caso 10, dominios
+  determinista) y desde la Ola 6 las métricas y la auditoría (caso 11).
+  `node scripts/probe-actividad.mjs`: 15 (Ola 6; la forma del insert de la
+  app y el tripwire contra `upsert`/`ignoreDuplicates`/`.select()`). `node scripts/probe-registro.mjs`: 55 (caso 10, dominios
   activos e inactivos contra GoTrue). Y
   `node scripts/probe-puerta-totp.mjs` (11), `node scripts/probe-storage.mjs`
   (41), `node scripts/probe-eliminar-publicacion.mjs` (12) y
@@ -361,7 +406,8 @@ responde 503. En remoto, el Dashboard se toca después del push de
   `supabase functions serve`), también a 2026-10-08.
 - `supabase/tests/rls.sql`: T12, T35 y, desde la Ola 4, T35b, T35c (Ola 4),
   T35d y T35e; desde la Ola 3b, T35f (28); desde la Ola 5, T37 (77) y T28 (a3)
-  con un dominio inactivo.
+  con un dominio inactivo; desde la Ola 6, T38 (36) y T39 (11), más 4 en T12
+  (657 en total, medido el 2026-10-11).
 - Tipos: `npm run gen:types` (desde `admin/`) regenera `src/db/admin.types.ts`
   contra el stack **local** y es el default a propósito: las RPC nuevas se
   prueban en local antes del push. `--linked` produce el mismo contenido con
