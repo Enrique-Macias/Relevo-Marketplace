@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { BlinkingDots } from '@/components/BlinkingDots';
+import { ErrorState } from '@/components/ErrorState';
+import { Screen } from '@/components/Screen';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { getHasSeenOnboarding } from '@/lib/onboarding-flag';
 import { useSession } from '@/lib/session';
@@ -18,14 +20,23 @@ import { useSession } from '@/lib/session';
  * tarde la sesión en cargar, ni más ni menos.
  */
 export default function SplashScreen() {
-  const { status, session, isProfileComplete } = useSession();
+  const { status, session, isProfileComplete, profileError, refreshProfile } = useSession();
   const [vioCarrusel, setVioCarrusel] = useState<boolean | null>(null);
+  // Mientras "Reintentar" lee el perfil, el splash vuelve a su estado de
+  // espera: no se decide nada con un perfil todavía no resuelto.
+  const [reintentando, setReintentando] = useState(false);
 
   useEffect(() => {
     void getHasSeenOnboarding().then(setVioCarrusel);
   }, []);
 
-  const listo = status === 'ready' && vioCarrusel !== null;
+  const listo = status === 'ready' && vioCarrusel !== null && !reintentando;
+
+  const reintentar = async () => {
+    setReintentando(true);
+    await refreshProfile();
+    setReintentando(false);
+  };
 
   if (listo) {
     if (!session) {
@@ -33,6 +44,21 @@ export default function SplashScreen() {
       return <Redirect href={vioCarrusel ? '/iniciar-sesion' : '/bienvenida'} />;
     }
     if (!isProfileComplete) {
+      // Perfil incompleto ≠ error al leer el perfil (AUTH-1b): sin poder
+      // leerlo no se sabe si está completo, y mandar a "Completar perfil" a una
+      // cuenta completa le dejaría sobrescribir contraseña, nombre y campus.
+      if (profileError) {
+        return (
+          <Screen>
+            <StatusBar style="dark" />
+            <ErrorState
+              onRetry={() => void reintentar()}
+              title="No pudimos cargar tu perfil"
+              sub="Revisa tu conexión e intenta de nuevo."
+            />
+          </Screen>
+        );
+      }
       return <Redirect href="/completar-perfil" />;
     }
     return <Redirect href="/(tabs)" />;

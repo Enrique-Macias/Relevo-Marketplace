@@ -14,7 +14,7 @@
 
 import type { Session } from '@supabase/supabase-js';
 import { Redirect } from 'expo-router';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { registrarActividad } from '@/lib/actividad';
@@ -32,21 +32,30 @@ import { supabase } from '@/lib/supabase';
 const PROFILE_COLUMNS =
   'id, nombre, foto_url, universidad_id, campus_id, carrera, rating_promedio, estado, tiene_telefono';
 
-async function leerPerfil(userId: string): Promise<Profile | null> {
+/**
+ * Resultado EXPLÍCITO de la lectura (AUTH-1): "no hay fila" (`ok` con `perfil`
+ * null) y "la consulta falló" (`ok: false`) no son lo mismo. Con un error de
+ * red, tratar el perfil como incompleto mandaría a una cuenta completa a
+ * "Completar perfil", donde guardar le sobrescribe contraseña, nombre y campus.
+ */
+type LecturaPerfil = { ok: true; perfil: Profile | null } | { ok: false };
+
+async function leerPerfil(userId: string): Promise<LecturaPerfil> {
   const { data, error } = await supabase
     .from('users')
     .select(PROFILE_COLUMNS)
     .eq('id', userId)
-    // `maybeSingle` y no `single`: justo después de verificar el OTP hay una
-    // ventana en la que el trigger puede no haber insertado la fila todavía.
-    // Sin fila = perfil incompleto, no un error que rompa el arranque.
+    // `maybeSingle` y no `single`: sin fila = perfil incompleto, no un error
+    // que rompa el arranque. En el alta por OTP la fila ya existe al verificar
+    // el código (el trigger es `after insert` en la misma transacción de
+    // `/otp`), pero una cuenta creada a mano podría no tenerla.
     .maybeSingle();
 
   if (error) {
     console.warn('[session] no se pudo leer el perfil:', error.message);
-    return null;
+    return { ok: false };
   }
-  return data as Profile | null;
+  return { ok: true, perfil: data as Profile | null };
 }
 
 export type Profile = {
@@ -78,6 +87,16 @@ type SessionState = {
   status: 'loading' | 'ready';
   /** El criterio de "perfil completo" del gating. */
   isProfileComplete: boolean;
+  /**
+   * La última lectura del perfil de ESTE usuario falló (red, 5xx, permisos).
+   * Perfil incompleto ≠ error al leer el perfil: con `true` e
+   * `isProfileComplete` en false, `profile` es null porque NO se pudo leer, no
+   * porque falte nombre o campus, y nadie debe mandar a "Completar perfil" por
+   * eso (`codigo.tsx`, `splash.tsx`, `(tabs)/_layout.tsx`). Con `true` e
+   * `isProfileComplete` en true, falló un `refreshProfile()` y se conservó el
+   * perfil válido que ya había de esta cuenta.
+   */
+  profileError: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -92,8 +111,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // da el "¿ya resolvió?" sin necesidad de un flag aparte que habría que
   // escribir sincrónicamente dentro del efecto.
   const [perfilCargadoPara, setPerfilCargadoPara] = useState<string | null>(null);
+  // De qué usuario falló la última lectura del perfil. Ligado al usuario por
+  // lo mismo que `perfilCargadoPara`: el error de la cuenta anterior no debe
+  // decidir nada sobre la nueva.
+  const [perfilErrorPara, setPerfilErrorPara] = useState<string | null>(null);
 
   const userId = session?.user.id ?? null;
+
+  // La cuenta vigente, para que `refreshProfile` (asíncrono) sepa si su
+  // resultado sigue siendo de la cuenta actual al terminar. Se asigna en un
+  // efecto, no en el render (`react-hooks/refs`); mismo patrón que
+  // `pathnameRef` en `src/lib/confianza.ts`.
+  const userIdActual = useRef(userId);
+  useEffect(() => {
+    userIdActual.current = userId;
+  });
 
   useEffect(() => {
     let activo = true;
@@ -136,9 +168,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
 
     let activo = true;
-    void leerPerfil(userId).then((p) => {
+    void leerPerfil(userId).then((r) => {
       if (!activo) return;
-      setProfile(p);
+      setProfile(r.ok ? r.perfil : null);
+      setPerfilErrorPara(r.ok ? null : userId);
       setPerfilCargadoPara(userId);
     });
 
@@ -202,7 +235,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
    */
   const refreshProfile = useCallback(async () => {
     if (!userId) return;
-    setProfile(await leerPerfil(userId));
+    const r = await leerPerfil(userId);
+    // La cuenta cambió mientras se leía: este resultado es de OTRA cuenta y no
+    // se escribe nada (ni perfil ni error). La carga de la cuenta nueva la hace
+    // el efecto de `userId`.
+    if (userIdActual.current !== userId) return;
+    if (r.ok) {
+      setProfile(r.perfil);
+      setPerfilErrorPara(null);
+      return;
+    }
+    // Un error de lectura NO destruye un perfil válido de esta misma cuenta
+    // (AUTH-1b): sin esto, un `refreshProfile()` fallido desde Perfil, Editar
+    // perfil o Publicar dejaba `profile` en null y `(tabs)/_layout` mandaba a
+    // una cuenta completa a "Completar perfil". Solo se conserva si su `id` es
+    // el de esta cuenta; si no hay uno así, queda null y `profileError` impide
+    // leer ese null como "perfil incompleto".
+    setProfile((anterior) => (anterior !== null && anterior.id === userId ? anterior : null));
+    setPerfilErrorPara(userId);
   }, [userId]);
 
   const signOut = useCallback(async () => {
@@ -230,10 +280,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // Y el campus implica universidad: la base no admite campus sin ella
       // (`users_campus_requiere_universidad`).
       isProfileComplete: Boolean(perfilVigente?.nombre && perfilVigente?.campus_id),
+      profileError: userId !== null && perfilErrorPara === userId,
       refreshProfile,
       signOut,
     }),
-    [session, perfilVigente, authResuelto, perfilResuelto, refreshProfile, signOut]
+    [session, perfilVigente, authResuelto, perfilResuelto, userId, perfilErrorPara, refreshProfile, signOut]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

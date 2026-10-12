@@ -1,8 +1,11 @@
 import { Redirect, usePathname } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { ErrorState } from '@/components/ErrorState';
 import { PublicarFab } from '@/components/PublicarFab';
+import { Screen } from '@/components/Screen';
 import { Colors } from '@/constants/theme';
 import { useAutoAbrirCalificarPendiente } from '@/lib/confianza';
 import { useRespuestaANotificacion } from '@/lib/push';
@@ -15,8 +18,9 @@ import { useSession } from '@/lib/session';
 // de design/relevo-app.html — NativeTabs.Trigger.Icon no acepta un <Svg> de
 // react-native-svg como `src` (solo VectorIcon), ver CLAUDE.md §9.
 export default function TabsLayout() {
-  const { status, session, isProfileComplete } = useSession();
+  const { status, session, isProfileComplete, profileError, refreshProfile } = useSession();
   const pathname = usePathname();
+  const [reintentando, setReintentando] = useState(false);
 
   /**
    * El tap sobre un push navega desde AQUÍ, y no desde el layout raíz. Y el
@@ -42,7 +46,30 @@ export default function TabsLayout() {
   // de notificaciones, que se visita justo cuando el perfil ya quedó completo.
   if (status === 'ready') {
     if (!session) return <Redirect href="/splash" />;
-    if (!isProfileComplete) return <Redirect href="/completar-perfil" />;
+    if (!isProfileComplete) {
+      // Defensa (AUTH-1b): perfil incompleto ≠ error al leer el perfil. Sin
+      // poder leerlo, no se manda a "Completar perfil"; se ofrece reintentar.
+      // `profileError` no se limpia hasta que llega el resultado, así que
+      // mientras se reintenta no hay navegación con un perfil sin resolver.
+      if (profileError) {
+        const reintentar = async () => {
+          if (reintentando) return;
+          setReintentando(true);
+          await refreshProfile();
+          setReintentando(false);
+        };
+        return (
+          <Screen>
+            <ErrorState
+              onRetry={() => void reintentar()}
+              title="No pudimos cargar tu perfil"
+              sub="Revisa tu conexión e intenta de nuevo."
+            />
+          </Screen>
+        );
+      }
+      return <Redirect href="/completar-perfil" />;
+    }
   }
 
   /**
