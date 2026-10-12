@@ -115,8 +115,9 @@ Detalles que no se ven en el diff:
     del runbook de `20260928000471`/`472`/`473` (2026-09-25, cerrado).
   - **El `sub` de "Notificaciones vacío"** pasó a resumir por familia; va igual
     en el frame.
-  - **Pruebas manuales que tocan en el INBOX**, no en el push (el push no llega
-    hoy; `expo-notifications` sigue excluido del autolinking):
+  - **Pruebas manuales que tocan en el INBOX**, no en el push (cuando se
+    escribieron, el push no llegaba; desde el 2026-10-12 sí llega en STAGING
+    con iOS, ver PL-020 en `docs/PRE_LAUNCH_DEBT.md`):
     1. Publicar algo que caiga en revisión y resolverlo en Studio a `activa` y,
        con otra, a `bloqueada` → aparece "Tu publicación ya está publicada" /
        "no fue aprobada". Publicar algo limpio → llega a "Publicación creada" y

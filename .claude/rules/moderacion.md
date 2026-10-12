@@ -467,6 +467,13 @@ podría cambiarlas sin que nada en el repo lo note. `send-push` solo usa
 `auth: 'secret'`, que es la forma más vieja y estable del API, así que su
 exposición es menor.
 
+**[CERRADO el 2026-10-12, `564bedd`]** `send-push` ya importa
+`npm:@supabase/server@1.7.0` (desplegada como v13, PUSH-7B), así que el párrafo
+de arriba describe el estado anterior. Queda un resto menor: el `declare module
+'npm:@supabase/server'` sin versión de `supabase/functions/shims.d.ts` ya no
+tiene consumidor y se puede borrar en un cambio propio. El texto de antes, tal
+como estaba:
+
 **Pendiente, con disparador:** pinear también el de `send-push`. **Revisar
 cuando:** se toque `send-push` por cualquier motivo, o salga un major de
 `@supabase/server`. **Fix:** agregarle `@<version>` al specifier, en un cambio

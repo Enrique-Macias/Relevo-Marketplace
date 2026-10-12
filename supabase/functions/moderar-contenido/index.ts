@@ -26,12 +26,11 @@
  * que sirva para los dos**. Quien autoriza es `auth: ['secret', 'user']` aquí
  * dentro. Ver supabase/config.toml.
  *
- * LA VERSIÓN DEL IMPORT VA PINEADA, al revés que `send-push:22`. Todo el
- * reparto de permisos de esta función depende de dos cosas del contrato de
- * `@supabase/server` —que `auth` acepte un arreglo y que `ctx.authMode`
- * exista—, y con un specifier sin versión un major futuro las cambiaría sin
- * que nada en el repo lo note. Pinear `send-push` también es un arreglo aparte,
- * anotado en `.claude/rules/moderacion.md`.
+ * LA VERSIÓN DEL IMPORT VA PINEADA. Todo el reparto de permisos de esta
+ * función depende de dos cosas del contrato de `@supabase/server` —que `auth`
+ * acepte un arreglo y que `ctx.authMode` exista—, y con un specifier sin
+ * versión un major futuro las cambiaría sin que nada en el repo lo note.
+ * `send-push` también la fija en 1.7.0 desde `564bedd`.
  *
  * ESTADO: Vision y OpenAI YA SE LLAMAN DE VERDAD, para publicaciones
  * (`evaluarListing()`, Olas 1.3-1.5) y para avatares (`moderarAvatar()`, Ola

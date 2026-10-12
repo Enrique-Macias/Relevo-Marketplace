@@ -4775,7 +4775,19 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
      verificado contra el tarball de un build real**: antes del primer build
      de EAS, confirmar que no sube `.env.local` ni `admin/`. Si `.gitignore`
      cambia, `.easignore` también.
-1. **Credenciales de push y prueba en dispositivo REAL (RF-16).** El código está
+1. **Credenciales de push y prueba en dispositivo REAL (RF-16).**
+   **[iOS VALIDADO DE PUNTA A PUNTA EN STAGING el 2026-10-12, PUSH-2 a PUSH-8;
+   NO en PROD, que todavía no existe.]** APNs Auth Key en EAS, `expo-notifications`
+   en el build (`f5a2648`), los dos secretos `send_push_*` en el Vault de
+   `ukxfnydfhmryrzhdqkvj` (copiados dentro de Vault, sin salir de la base) y
+   `send-push` v13 con `@supabase/server@1.7.0` (`564bedd`). Un INSERT en
+   `notifications` llegó como push a un iPhone físico (fila 39, request 47).
+   Desde entonces cada aviso nuevo de STAGING sale como push real a quien tenga
+   token. Falta Android (FCM V1) y repetir todo en PROD; el detalle, la evidencia
+   y la deuda que queda viven en PL-020, PL-049 a PL-051, PL-064 y PL-068 de
+   `docs/PRE_LAUNCH_DEBT.md`. El texto de antes, tal como estaba:
+
+   El código está
    completo y probado hasta el borde de la red de Expo, pero nada de esto ha
    entregado todavía una notificación a un teléfono:
    - **Android:** subir el service account JSON de **FCM V1** a las credenciales

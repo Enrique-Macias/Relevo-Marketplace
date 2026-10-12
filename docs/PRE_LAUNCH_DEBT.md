@@ -58,7 +58,10 @@ AUTH-2 y DEV-1A/B.
   `https://admin.rlvo.com.mx` (Cloudflare Pages) **apuntando a STAGING**, 3
   admins activos con TOTP, el Auth Hook de dominios activo (evidencia nueva de
   `run_hook`: 2026-10-12 02:15:05 UTC, C3). La app de desarrollo (Metro +
-  `.env.local`) apunta a STAGING.
+  `.env.local`) apunta a STAGING. **Push iOS validado de punta a punta en
+  STAGING** (2026-10-12, PL-020): `send-push` v13 y los dos secretos
+  `send_push_*` en Vault, así que cada INSERT en `notifications` envía un push
+  real a quien tenga token (hoy, solo el usuario de prueba).
 - **Documentación histórica:** `CLAUDE.md`, `admin/CLAUDE.md`,
   `docs/admin-runbook.md` y los planes de RF-17 llaman "producción" / "EN
   PRODUCCIÓN" a lo que hoy es STAGING. Se lee como "STAGING" hasta que PL-027
@@ -290,17 +293,40 @@ reconstruir y verificar:
 ## P1 — Requerido antes del lanzamiento público
 
 ### PL-020 — Push real (RF-16)
-- **Origen:** pendiente 1 de `CLAUDE.md` §8; auditoría §5 y §7 · **Estado:** ABIERTO · **Prioridad:** P1
-- **Por qué existe:** ningún push ha llegado a un teléfono. Además del
-  backend, `package.json` excluye `expo-notifications` del autolinking
-  (`expo.autolinking.exclude`, puesto para cuentas personales de Apple), así que
-  **ninguna build lleva el módulo nativo**.
-- **Qué falta:** cuenta de Apple Developer de pago (también necesaria para
-  TestFlight); quitar la exclusión; llave APNs; service account de FCM V1 en
-  EAS; secretos `send_push_*` en Vault (STAGING para pruebas, PROD en el
-  bootstrap); prueba en dispositivo físico iOS y Android.
-- **Criterio de cierre:** un aviso real llega como push a un iPhone y a un
-  Android, y `push_enviado_at` queda sellado.
+- **Origen:** pendiente 1 de `CLAUDE.md` §8; auditoría §5 y §7 · **Estado:** ABIERTO (iOS validado de punta a punta **en STAGING**; falta PROD y Android) · **Prioridad:** P1
+- **Por qué existe:** hasta el 2026-10-12 ningún push había llegado a un
+  teléfono: `expo-notifications` estaba excluido del autolinking (cuenta
+  personal de Apple) y no había APNs ni secretos `send_push_*`.
+- **Evidencia actual — STAGING, iOS (checkpoints PUSH-2 a PUSH-8, 2026-10-12):**
+  - PUSH-2: App ID `mx.com.rlvo.app` con Push (sin Broadcast), APNs Auth Key
+    (Sandbox & Production, Team Scoped) asociada en EAS.
+  - PUSH-3: `expo-notifications` habilitado (plugin y autolinking),
+    `expo-dev-client`, `eas.json` (`development`), SDK 57 alineado (`f5a2648`).
+  - PUSH-4: primer development build de EAS (Ad Hoc) instalado en un iPhone
+    físico; contexto del upload reducido (`76d3137`); cifrado exento
+    declarado (`d4e8d18`); CNG puro, sin `ios/` local.
+  - PUSH-5: permiso de iOS concedido, Expo Push Token en `push_tokens` (1 fila,
+    idempotente al reabrir), cierre/inicio de sesión: el token se borra y se
+    vuelve a registrar.
+  - PUSH-6: envío directo Expo → APNs → iPhone, ticket y receipt `ok`.
+  - PUSH-7: `@supabase/server@1.7.0` fijado en `send-push` (`564bedd`, v13);
+    `send_push_secret_key`/`send_push_function_url` en Vault; sin credencial →
+    401; autenticado con un `notification_id` inexistente → 404, cero pushes.
+  - PUSH-8: INSERT en `notifications` → trigger → Vault → `send-push` →
+    `push_tokens` → Expo → APNs → iPhone: **una** notificación visible
+    (fila 39, request de `pg_net` 47, `enviados: 1`), `push_enviado_at` sellado
+    solo en esa fila; las 35 históricas intactas.
+- **Qué falta:**
+  - **PROD (bloquea el lanzamiento):** desplegar `send-push`, crear los dos
+    secretos `send_push_*` en el Vault de PROD y repetir en PROD la prueba
+    física (PROD-BOOTSTRAP criterios 8 y 14). La build de tienda/TestFlight
+    registra tokens de APNs production; la key ya cubre los dos entornos.
+  - **Android:** service account de FCM V1 en EAS, build de Android y prueba
+    física — solo si el lanzamiento incluye Android (PL-011).
+  - Hardening de `send-push` y del ciclo de vida del token: PL-049 a PL-051
+    (P2) y PL-064/PL-068 (condicionales). No bloquean.
+- **Criterio de cierre:** en PROD, un aviso real llega como push a un iPhone
+  (y a un Android si se lanza en Android) y `push_enviado_at` queda sellado.
 - **Dependencias:** PL-011, PL-023; PL-001 para PROD.
 
 ### PL-021 — Leaked password protection (D-18)
@@ -406,6 +432,9 @@ reconstruir y verificar:
 | PL-046 | Cloudflare Access y CI de despliegue del panel; encabezados que añade Cloudflare | D13, L6, L8 | ABIERTO | Panel de PROD detrás de Access (o decisión de no hacerlo) y despliegue reproducible |
 | PL-047 | Ciclo de vida de las copias cifradas de STAGING | D-17 | DECISIÓN PENDIENTE | Decidir conservar/borrar las 3 copias (contienen correos personales de admins) |
 | PL-048 | Repetir en PROD lo que solo se vio en STAGING | 0b, F25, K-7B | EVIDENCIA PENDIENTE | En PROD: primer `run_hook`, TOTP vencido y, si aplica, timeout real del hook |
+| PL-049 | Observabilidad de `send-push` | PUSH-7A/8 | ABIERTO | Guarda el id de cada ticket (hoy no lo registra cuando sale `ok`); un HTTP no-2xx de Expo no sella `push_enviado_at` en silencio; los errores de ticket distintos de `DeviceNotRegistered` quedan visibles para alguien |
+| PL-050 | Ciclo de vida del token al cerrar sesión | PUSH-5A/5C | ABIERTO | `borrarPushToken()` revisa el `{ error }` del DELETE; si `getExpoPushTokenAsync` falla al cerrar sesión, la fila no se queda con el usuario anterior; una sesión vencida o un cierre forzado también limpian el token; probado en un dispositivo compartido (cambio de cuenta) |
+| PL-051 | El permiso de push se pide antes de la pantalla que lo explica | PUSH-5A | ABIERTO | `session.tsx` registra el token en cuanto hay sesión, así que el aviso de iOS sale antes de "Permiso de notificaciones". Decidir y aplicar cuándo se pide (UX; no viola reglas de tienda) |
 
 ---
 
@@ -421,6 +450,7 @@ reconstruir y verificar:
 | PL-065 | Timeout del hook de registro (0b) | El hook hace más que una búsqueda por PK o aparece `request_timeout` en `/otp` |
 | PL-066 | Snapshot diario de métricas (D11) | Se necesitan cifras históricas inmutables |
 | PL-067 | Umbral de Rekognition para bloquear | 50 publicaciones por categoría con su SQL (`.claude/rules/moderacion.md` §9) |
+| PL-068 | Tokens viejos de push (permiso revocado, rotación, reinstalación) y reintento de envíos | Se acumulan tokens sin `DeviceNotRegistered` o se reportan avisos perdidos por un fallo transitorio de Expo |
 
 ---
 
@@ -447,7 +477,8 @@ tiempo en limpiarlos como si fueran deuda de lanzamiento:
 - filas 1 y 2 de `listing_photos` con una URL completa como `storage_path`;
 - las ~20 publicaciones `activa` sin foto, anteriores a la subida;
 - las 5 cuentas gmail/hotmail/outlook anteriores al hook;
-- las 32 notificaciones con `push_enviado_at` NULL (decisión del 2026-10-06: no se reenvían);
+- las 35 notificaciones con `push_enviado_at` NULL, anteriores a activar Vault (decisión del 2026-10-06: no se reenvían; el trigger solo envía en INSERT);
+- la notificación 39, fixture de PUSH-8 creada a mano (no por un trigger) en el inbox del usuario de prueba, y su fila de `push_tokens`: se pueden limpiar junto con otros fixtures de STAGING, con autorización aparte;
 - cuentas y sesiones de prueba de C3 y AUTH-2 (ya eliminadas).
 
 **Sí permanece** como operación futura en PROD: el procedimiento de barrido
@@ -468,6 +499,7 @@ periódico de fotos huérfanas (`docs/admin-runbook.md` §7).
 | Purga de `actividad_diaria` en ejecución | CERRADO en STAGING | F26: `succeeded` 2026-10-11 06:23 UTC |
 | Fotos de una `bloqueada` legibles por su dueño | CERRADO | D5 = (a), Ola 4 (`…481`) |
 | Admin (RF-17 fase 1) | CERRADO | F28, `af2d862` |
+| Push iOS de punta a punta (PUSH-2 a PUSH-8) | CERRADO en STAGING (PL-020 sigue abierto para PROD) | `f5a2648`, `76d3137`, `d4e8d18`, `564bedd`; `send-push` v13; PUSH-6 ticket y receipt `ok`; PUSH-8 fila 39 / request 47, una notificación en el iPhone |
 
 ---
 

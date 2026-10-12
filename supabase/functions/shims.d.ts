@@ -44,10 +44,10 @@ declare const Deno: {
   };
 };
 
-// Los specifiers `npm:` de Deno. Sin versión (`send-push`) y pineado
-// (`moderar-contenido`) son módulos DISTINTOS para TypeScript, así que van los
-// dos. Ver `.claude/rules/moderacion.md` sobre el pendiente de pinear el de
-// `send-push`.
+// Los specifiers `npm:` de Deno. Sin versión y pineado son módulos DISTINTOS
+// para TypeScript. Desde `564bedd` las cinco funciones importan
+// `npm:@supabase/server@1.7.0`, así que la declaración sin versión ya no tiene
+// consumidor (se puede borrar en un cambio propio; no afecta al runtime).
 // La FORMA DE LA LLAMADA sí se declara —es visible en el código de las dos
 // funciones, no hay nada que adivinar—, y lo que queda sin tipar es el
 // CONTENIDO de `ctx`. Esa es la línea: el chequeo verifica que el handler tiene
