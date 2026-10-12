@@ -1,5 +1,6 @@
 # .easignore — EXISTE, EAS deja de leer .gitignore (rf17-plan-admin.md §1, C8).
-# Por eso esto es una COPIA LITERAL de .gitignore más el panel de admin.
+# Por eso empieza con una COPIA de .gitignore más el panel de admin, y al final
+# lleva lo que el build de la app móvil no necesita (PUSH-4D0).
 # Si cambias .gitignore, cambia esto también: si no, el build de EAS sube lo
 # que git ignora (.env.local incluido).
 
@@ -52,3 +53,25 @@ example
 admin/
 admin/node_modules/
 /admin/
+
+# PUSH-4D0: mínimo contenido en el upload de EAS. El build (CNG) solo necesita
+# src/, assets/, app.json, eas.json, package.json, package-lock.json y
+# tsconfig.json (Metro resuelve el alias "@/*" desde ahí). Nada de lo de abajo
+# lo importa src/, lo lee app.json ni lo corre un script de npm en el build.
+/.git
+/docs/
+/design/
+/supabase/
+/scripts/
+/.claude/
+/.agents/
+/.codex
+/.vscode/
+/.wrangler/
+/.mcp.json
+/CLAUDE.md
+/AGENTS.md
+/README.md
+/skills-lock.json
+/eslint.config.js
+/.env.example
