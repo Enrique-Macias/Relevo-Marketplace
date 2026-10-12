@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "relevo-marketplace",
+    "name": "RLVO",
     "slug": "enrique-macias",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.enrique-macias.relevo-marketplace",
+      "bundleIdentifier": "mx.com.rlvo.app",
       "infoPlist": {
         "NSLocationDefaultAccuracyReduced": true
       }
@@ -61,7 +61,15 @@
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#C1440E"
+        }
+      ],
+      "expo-image",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -16,12 +16,11 @@ import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 
 /**
- * `expo-notifications` está excluido del autolinking en builds locales de
- * personal team de Apple (no soportan la capability de Push — ver
- * `package.json` > `expo.autolinking.exclude` y CLAUDE.md pendiente #1). Sin
- * el módulo nativo, hasta el `import` revienta con "Cannot find native
- * module" — por eso va como `require()` dentro de un `try`, que sí se puede
- * atrapar (un `import` estático no). Todo lo de abajo se vuelve no-op mientras
+ * `expo-notifications` es un módulo NATIVO: un binario compilado sin él (un
+ * dev build anterior a que se agregara, o Expo Go) revienta con "Cannot find
+ * native module" desde el `import` — por eso va como `require()` dentro de un
+ * `try`, que sí se puede atrapar (un `import` estático no). Mismo patrón que
+ * `src/lib/geolocalizacion.ts`. Todo lo de abajo se vuelve no-op mientras
  * `Notifications` sea `null`.
  */
 let Notifications: typeof NotificationsType | null = null;
