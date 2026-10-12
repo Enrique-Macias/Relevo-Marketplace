@@ -11,7 +11,8 @@
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "mx.com.rlvo.app",
       "infoPlist": {
-        "NSLocationDefaultAccuracyReduced": true
+        "NSLocationDefaultAccuracyReduced": true,
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
