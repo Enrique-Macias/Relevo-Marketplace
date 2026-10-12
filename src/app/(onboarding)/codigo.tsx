@@ -43,6 +43,16 @@ export default function CodigoScreen() {
   // Completo → Feed. Va primero, igual que antes de AUTH-1.
   if (redirect) return redirect;
 
+  // Defensa (AUTH-2): el código ya se verificó, la resolución terminó y NO hay
+  // sesión (p. ej., la cuenta se borró justo después y `SessionProvider` cerró
+  // la sesión local). Sin esto la pantalla se quedaría en "Verificando…".
+  // No adelanta a la sesión: auth-js emite `SIGNED_IN` dentro de `verifyOtp`,
+  // antes de que `verificadoPara` se fije, así que en el camino normal la
+  // sesión ya existe cuando esto se evalúa. Splash decide a dónde va.
+  if (verificadoPara !== null && status === 'ready' && session === null) {
+    return <Redirect href="/splash" />;
+  }
+
   // El perfil resuelto es el de la cuenta recién verificada: `status` solo es
   // `ready` cuando el perfil cargado es el del `userId` actual, y aquí además
   // se exige que ese `userId` sea el que verificó.

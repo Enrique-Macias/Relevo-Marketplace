@@ -156,17 +156,32 @@ export default function CompletarPerfilScreen() {
     // 20260924000466—, aunque fuera sin cambiarlas, rechaza el statement
     // completo por privilegios de columna. Que el campus sea de SU universidad
     // lo garantiza la base (`users_campus_universidad_fkey`), no este cliente.
-    const { error: ePerfil } = await supabase
+    const { error: ePerfil, count } = await supabase
       .from('users')
-      .update({
-        nombre: normalizarNombre(nombre),
-        campus_id: campus!.id,
-      })
+      .update(
+        {
+          nombre: normalizarNombre(nombre),
+          campus_id: campus!.id,
+        },
+        { count: 'exact' }
+      )
       .eq('id', session.user.id);
 
     if (ePerfil) {
       setGuardando(false);
       setError(ePerfil.message);
+      return;
+    }
+
+    // Cero filas NO es éxito (AUTH-2): la cuenta no tiene fila de perfil
+    // (inconsistencia, estado E) o ya no existe (estado D), y PostgREST lo
+    // devuelve sin error (medido: 204 con `content-range: */0`). Seguir a
+    // Intereses dejaría un bucle de vuelta aquí. Se reclasifica la cuenta y
+    // decide splash: ErrorState en E, login en D.
+    if (count === 0) {
+      await refreshProfile();
+      setGuardando(false);
+      router.replace('/splash');
       return;
     }
 
