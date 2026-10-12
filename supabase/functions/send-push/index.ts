@@ -19,7 +19,7 @@
  * valida aquí dentro. Ver supabase/config.toml.
  */
 
-import { withSupabase } from 'npm:@supabase/server';
+import { withSupabase } from 'npm:@supabase/server@1.7.0';
 
 /** El endpoint de Expo. No requiere credenciales: el token ya identifica al aparato. */
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
