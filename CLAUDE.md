@@ -6156,3 +6156,17 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   con otros hostnames. **Antes de una prueba que dependa de qué cuenta está
   activa, comprueba la sesión en vez de suponer que el cambio de entorno la
   reinició.**
+- **`expo-location` enlaza `CMMotionActivityManager`, así que Apple exige
+  `NSMotionUsageDescription` aunque RLVO no use Motion/Fitness.** Lo destapó
+  TESTFLIGHT-2C (2026-10-16): Apple rechazó RLVO 1.0.0 (build 2) con
+  `ITMS-90683: Missing purpose string in Info.plist`. En `expo-location`
+  57.0.21, `ios/LocationModule.swift`, `Providers/MotionActivityStreamer.swift`
+  y `Requesters/MotionActivityPermissionRequester.swift` importan CoreMotion, y
+  el podspec compila `**/*.{h,m,swift}` sin opción para excluirlos. RLVO solo
+  llama a funciones de ubicación (`src/lib/geolocalizacion.ts`). La clave
+  faltaba porque `"motionUsagePermission": false` hace que el config plugin la
+  BORRE (`@expo/config-plugins/build/ios/Permissions.js:28-30`, `delete
+  infoPlist[permission]`). **Mientras `expo-location` siga enlazando esa API,
+  `motionUsagePermission` debe tener un texto válido en `app.json`, nunca
+  `false`.** RLVO no llama a `requestMotionActivity*`, así que iOS nunca le
+  muestra ese aviso al usuario.

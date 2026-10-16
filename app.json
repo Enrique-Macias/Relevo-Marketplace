@@ -60,7 +60,7 @@
           "locationWhenInUsePermission": "Relevo usa tu ubicación para sugerirte el campus más cercano.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
-          "motionUsagePermission": false,
+          "motionUsagePermission": "RLVO usa servicios de ubicación para ayudarte a detectar el campus más cercano.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
