@@ -17,7 +17,7 @@
  */
 
 import Constants from 'expo-constants';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useState } from 'react';
@@ -26,6 +26,7 @@ import { Linking, Platform, Share, StyleSheet, Text, View } from 'react-native';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { Field } from '@/components/Field';
 import {
+  IconBan,
   IconBell,
   IconChevronRight,
   IconDocument,
@@ -189,10 +190,11 @@ export default function ConfiguracionScreen() {
   const mostrarNotificaciones = filaVisible('notificaciones');
   const mostrarGeneral = filaVisible('calificar') || filaVisible('compartir');
   const mostrarLegal = filaVisible('privacidad') || filaVisible('terminos');
-  // "Soporte" (Contacto/Versión) siempre se pinta — es la PRIMERA sección
-  // solo cuando las tres de arriba están ocultas. Se calcula una sola vez
-  // para no repetir la misma condición en cada `SectionHead`.
-  const soporteEsPrimera = !mostrarNotificaciones && !mostrarGeneral && !mostrarLegal;
+  // "Privacidad" (UGC-1) siempre se pinta, entre General y Legal: es la PRIMERA
+  // sección solo cuando Notificaciones y General están ocultas. Desde que
+  // existe, ni Legal ni Soporte pueden ser la primera (antes Soporte lo era con
+  // las tres de arriba ocultas).
+  const privacidadEsPrimera = !mostrarNotificaciones && !mostrarGeneral;
 
   return (
     <>
@@ -247,12 +249,22 @@ export default function ConfiguracionScreen() {
           </>
         ) : null}
 
+        {/* UGC-1: "Usuarios bloqueados" en su propia sección. Sin contador: no
+            aporta y costaría una consulta más al abrir (frame "Configuración"). */}
+        <SectionHead title="Privacidad" style={privacidadEsPrimera ? styles.firstSection : undefined} />
+        <View style={styles.section}>
+          <StatusRow
+            icon={<IconBan size={16} color={Colors.inkSoft} />}
+            label="Usuarios bloqueados"
+            trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
+            onPress={() => router.push('/(cuenta)/usuarios-bloqueados')}
+            last
+          />
+        </View>
+
         {mostrarLegal ? (
           <>
-            <SectionHead
-              title="Legal"
-              style={!mostrarNotificaciones && !mostrarGeneral ? styles.firstSection : undefined}
-            />
+            <SectionHead title="Legal" />
             <View style={styles.section}>
               {filaVisible('privacidad') ? (
                 <StatusRow
@@ -276,7 +288,7 @@ export default function ConfiguracionScreen() {
           </>
         ) : null}
 
-        <SectionHead title="Soporte" style={soporteEsPrimera ? styles.firstSection : undefined} />
+        <SectionHead title="Soporte" />
         <View style={styles.section}>
           <StatusRow
             icon={<IconMail size={16} color={Colors.inkSoft} />}

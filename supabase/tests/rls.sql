@@ -8119,6 +8119,523 @@ select pg_temp.assert(
 \echo ''
 
 \echo ''
+\echo '== T40 — bloqueo entre usuarios (UGC-1, 20261013000487) =='
+-- Autocontenida: su propia universidad (dominio `rls-t40.mx`), un campus y
+-- sus propios usuarios, sin reutilizar fixtures de otras secciones.
+--
+--   :A40 — bloquea a :B40.
+--   :B40 — el bloqueado. Antes del bloqueo marcó favoritas y contactó
+--          publicaciones de :A40 (historial que debe sobrevivir).
+--   :T40 — tercero sin ningún bloqueo: el CONTROL de cada aserción, para que
+--          un null o un 0 no pueda venir de otra barrera.
+--   :S40 — suspendido: administra sus propios bloqueos.
+--   :D40 — cuenta que se borra (cascade de sus bloqueos).
+--
+-- Cada acción corre como `authenticated` y cada comprobación va en su propia
+-- sentencia (lección de T28). Los controles negativos, uno por uno, están en
+-- el resumen de UGC-1C.
+
+\set A40 '''40404040-0000-0000-0000-0000000040a0'''
+\set B40 '''40404040-0000-0000-0000-0000000040b0'''
+\set T40 '''40404040-0000-0000-0000-0000000040c0'''
+\set S40 '''40404040-0000-0000-0000-0000000040d0'''
+\set D40 '''40404040-0000-0000-0000-0000000040e0'''
+
+insert into public.universidades (nombre) values ('RLS T40 Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t40.mx', id from public.universidades where nombre = 'RLS T40 Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T40 Campus', 'Ciudad T40'
+  from public.universidades where nombre = 'RLS T40 Universidad';
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:A40, 'rls-t40-a@rls-t40.mx'), (:B40, 'rls-t40-b@rls-t40.mx'),
+               (:T40, 'rls-t40-t@rls-t40.mx'), (:S40, 'rls-t40-s@rls-t40.mx'),
+               (:D40, 'rls-t40-d@rls-t40.mx')) as x(u, e);
+
+select (select id from public.campus where nombre = 'RLS T40 Campus') as t40_campus,
+       (select id from public.categories order by id limit 1) as t40_cat \gset
+
+update public.users u
+   set campus_id = :t40_campus,
+       telefono = case u.id when :A40::uuid then '+528140000001'
+                            when :B40::uuid then '+528140000002'
+                            when :T40::uuid then '+528140000003' end
+ where u.id in (:A40::uuid, :B40::uuid, :T40::uuid, :S40::uuid, :D40::uuid);
+
+-- Publicaciones como postgres (la policy de insert obliga a `pendiente`).
+--   la  — de A, activa, con foto: la que B no debe ver.
+--   lb  — de B, activa, con foto: la que A no debe ver.
+--   lt  — de T, activa, con foto: el control.
+--   lap — de A, pausada: el dueño la sigue viendo.
+--   lv  — de A, activa: se marca vendida (aviso `favorito_vendido`).
+--   lsb — de A, activa: se le vende a B (aviso `compra_calificable`, bloqueado).
+--   lst — de A, activa: se le vende a T (control del mismo aviso).
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, descripcion, precio, condicion, estado)
+select v.dueno::uuid, :t40_cat, u.universidad_id, :t40_campus,
+       v.titulo, 'T40', 500, 'usado', v.estado::public.listing_status
+  from (values (1, :A40, 'RLS T40 Termodinamica A',   'activa'),
+               (2, :B40, 'RLS T40 Termodinamica B',   'activa'),
+               (3, :T40, 'RLS T40 Termodinamica T',   'activa'),
+               (4, :A40, 'RLS T40 A pausada',         'pausada'),
+               (5, :A40, 'RLS T40 A para vender',     'activa'),
+               (6, :A40, 'RLS T40 A venta a B',       'activa'),
+               (7, :A40, 'RLS T40 A venta a T',       'activa'))
+       as v(n, dueno, titulo, estado)
+  join public.users u on u.id = v.dueno::uuid
+ order by v.n;
+
+select (select id from public.listings where titulo = 'RLS T40 Termodinamica A') as t40_la,
+       (select id from public.listings where titulo = 'RLS T40 Termodinamica B') as t40_lb,
+       (select id from public.listings where titulo = 'RLS T40 Termodinamica T') as t40_lt,
+       (select id from public.listings where titulo = 'RLS T40 A pausada')       as t40_lap,
+       (select id from public.listings where titulo = 'RLS T40 A para vender')   as t40_lv,
+       (select id from public.listings where titulo = 'RLS T40 A venta a B')     as t40_lsb,
+       (select id from public.listings where titulo = 'RLS T40 A venta a T')     as t40_lst \gset
+
+insert into public.listing_photos (listing_id, storage_path, orden)
+values (:t40_la, :t40_la || '/foto.jpg', 0),
+       (:t40_lb, :t40_lb || '/foto.jpg', 0),
+       (:t40_lt, :t40_lt || '/foto.jpg', 0);
+
+insert into storage.buckets (id, name, public)
+values ('listing-photos', 'listing-photos', false)
+on conflict (id) do nothing;
+insert into storage.objects (bucket_id, name)
+values ('listing-photos', :t40_la || '/foto.jpg'),
+       ('listing-photos', :t40_lb || '/foto.jpg'),
+       ('listing-photos', :t40_lt || '/foto.jpg');
+
+-- Historial ANTERIOR al bloqueo, como postgres: favoritos, contactos y un aviso.
+insert into public.favorites (user_id, listing_id)
+values (:A40::uuid, :t40_lb),                                -- A guardó la de B
+       (:B40::uuid, :t40_la), (:T40::uuid, :t40_la),         -- precio_favorito
+       (:B40::uuid, :t40_lv), (:T40::uuid, :t40_lv);         -- favorito_vendido
+insert into public.listing_contacts (user_id, listing_id)
+values (:B40::uuid, :t40_la),                                -- contacto histórico
+       (:B40::uuid, :t40_lsb), (:T40::uuid, :t40_lst);       -- compradores
+insert into public.notifications (user_id, tipo, titulo, cuerpo, listing_id)
+values (:B40::uuid, 'precio_favorito', 'T40 histórico', 'T40 histórico', :t40_la);
+
+select pg_temp.assert(
+  (select count(*) from public.listings where titulo like 'RLS T40 %') = 7
+  and (select count(*) from storage.objects where name like any (array[
+         :t40_la || '/%', :t40_lb || '/%', :t40_lt || '/%'])) = 3,
+  'T40 precondición: 7 publicaciones y 3 objetos de Storage sembrados');
+
+-- Línea base SIN bloqueo, misma consulta que después: A ve la de B.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.listings where id = %s', :t40_lb)) = 1
+  and pg_temp.as_user_int(:B40::uuid, format('select count(*) from public.listings where id = %s', :t40_la)) = 1,
+  'T40 (base) sin bloqueo, A ve la publicación de B y B la de A');
+
+-- (a) A bloquea a B.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:A40::uuid, format(
+    'insert into public.user_bloqueos (user_id, bloqueado_id) values (%L, %L)', :A40::uuid, :B40::uuid)) = 'ok',
+  'T40 (a) A bloquea a B');
+
+-- (b) Listados por id, en las DOS direcciones, y los controles.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.listings where id = %s', :t40_lb)) = 0,
+  'T40 (b1) A ya no ve la publicación de B (Detalle por id = 0 filas)');
+select pg_temp.assert(
+  pg_temp.as_user_int(:B40::uuid, format('select count(*) from public.listings where id = %s', :t40_la)) = 0,
+  'T40 (b2) B ya no ve la publicación de A: el bloqueo es mutuo');
+select pg_temp.assert(
+  pg_temp.as_user_int(:T40::uuid, format('select count(*) from public.listings where id in (%s, %s)', :t40_la, :t40_lb)) = 2,
+  'T40 (b3) un tercero sigue viendo las dos');
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.listings where id = %s', :t40_lt)) = 1,
+  'T40 (b4) A sigue viendo la de un tercero (no bloquea de más)');
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.listings where id in (%s, %s)', :t40_la, :t40_lap)) = 2,
+  'T40 (b5) el dueño sigue viendo lo suyo, también la pausada');
+
+-- (b6) FAIL-CLOSED: si el helper devolviera null, el contenido bloqueado NO se
+-- vuelve visible. Se rompe el helper dentro de un savepoint (el DDL es
+-- transaccional) y se restaura con `rollback to savepoint`. La aserción NO pide
+-- que se vea lo demás: con un helper roto, esconder todo es lo correcto.
+savepoint t40_helper_null;
+create or replace function private.bloqueos_vigentes()
+returns uuid[] language sql stable security definer set search_path = ''
+as $$ select null::uuid[] $$;
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.listings where id = %s', :t40_lb)) = 0
+  and pg_temp.as_user_int(:B40::uuid, format('select count(*) from public.listings where id = %s', :t40_la)) = 0,
+  'T40 (b6) helper null: la publicación bloqueada sigue oculta en las dos direcciones (fail-closed)');
+rollback to savepoint t40_helper_null;
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.listings where id in (%s, %s)', :t40_lt, :t40_lb)) = 1,
+  'T40 (b7) el helper quedó restaurado: A ve la del tercero y sigue sin ver la de B');
+
+-- (c) Feed / Categoría: la consulta del catálogo por campus, categoría y estado.
+select pg_temp.assert(
+  pg_temp.as_user_text(:A40::uuid, format(
+    'select string_agg(titulo, '','' order by titulo) from public.listings
+      where campus_id = %s and categoria_id = %s and estado = ''activa'' and titulo like ''RLS T40 Termo%%''',
+    :t40_campus, :t40_cat)) = 'RLS T40 Termodinamica A,RLS T40 Termodinamica T'
+  and pg_temp.as_user_text(:B40::uuid, format(
+    'select string_agg(titulo, '','' order by titulo) from public.listings
+      where campus_id = %s and categoria_id = %s and estado = ''activa'' and titulo like ''RLS T40 Termo%%''',
+    :t40_campus, :t40_cat)) = 'RLS T40 Termodinamica B,RLS T40 Termodinamica T'
+  and pg_temp.as_user_text(:T40::uuid, format(
+    'select string_agg(titulo, '','' order by titulo) from public.listings
+      where campus_id = %s and categoria_id = %s and estado = ''activa'' and titulo like ''RLS T40 Termo%%''',
+    :t40_campus, :t40_cat)) = 'RLS T40 Termodinamica A,RLS T40 Termodinamica B,RLS T40 Termodinamica T',
+  'T40 (c) Feed/Categoría: A no ve la de B, B no ve la de A, el tercero ve las tres');
+
+-- (d) Búsqueda (buscar_listings, invoker).
+select pg_temp.assert(
+  pg_temp.as_user_text(:A40::uuid,
+    'select string_agg(titulo, '','' order by titulo) from public.buscar_listings(''termodinamica'') where titulo like ''RLS T40 %''')
+    = 'RLS T40 Termodinamica A,RLS T40 Termodinamica T'
+  and pg_temp.as_user_text(:B40::uuid,
+    'select string_agg(titulo, '','' order by titulo) from public.buscar_listings(''termodinamica'') where titulo like ''RLS T40 %''')
+    = 'RLS T40 Termodinamica B,RLS T40 Termodinamica T'
+  and pg_temp.as_user_text(:T40::uuid,
+    'select string_agg(titulo, '','' order by titulo) from public.buscar_listings(''termodinamica'') where titulo like ''RLS T40 %''')
+    = 'RLS T40 Termodinamica A,RLS T40 Termodinamica B,RLS T40 Termodinamica T',
+  'T40 (d) Búsqueda: bilateral, y el tercero ve las tres');
+
+-- (e) Recomendados (recomendar_listings, invoker): ids CRUDOS de la función.
+select pg_temp.assert(
+  not (:t40_lb = any (string_to_array(pg_temp.as_user_text(:A40::uuid, format(
+    'select string_agg(id::text, '','') from public.recomendar_listings(%s, null, null, null, null, 50)', :t40_campus)), ',')::bigint[]))
+  and (:t40_lt = any (string_to_array(pg_temp.as_user_text(:A40::uuid, format(
+    'select string_agg(id::text, '','') from public.recomendar_listings(%s, null, null, null, null, 50)', :t40_campus)), ',')::bigint[])),
+  'T40 (e1) Recomendados de A: sin la de B, con la del tercero');
+select pg_temp.assert(
+  not (:t40_la = any (string_to_array(pg_temp.as_user_text(:B40::uuid, format(
+    'select string_agg(id::text, '','') from public.recomendar_listings(%s, null, null, null, null, 50)', :t40_campus)), ',')::bigint[]))
+  and (:t40_lt = any (string_to_array(pg_temp.as_user_text(:B40::uuid, format(
+    'select string_agg(id::text, '','') from public.recomendar_listings(%s, null, null, null, null, 50)', :t40_campus)), ',')::bigint[])),
+  'T40 (e2) Recomendados de B: sin la de A, con la del tercero');
+
+-- (f) Publicaciones del Perfil público (`.eq('user_id', …)`).
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.listings where user_id = %L', :B40::uuid)) = 0
+  and pg_temp.as_user_int(:B40::uuid, format('select count(*) from public.listings where user_id = %L', :A40::uuid)) = 0
+  and pg_temp.as_user_int(:T40::uuid, format('select count(*) from public.listings where user_id = %L', :B40::uuid)) = 1,
+  'T40 (f) Perfil público: sin publicaciones entre bloqueados; el tercero sí');
+
+-- (g) Favoritos: la fila se CONSERVA, el `!inner` con listings la esconde.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.favorites where listing_id = %s', :t40_lb)) = 1
+  and pg_temp.as_user_int(:A40::uuid, format(
+    'select count(*) from public.favorites f join public.listings l on l.id = f.listing_id where f.listing_id = %s', :t40_lb)) = 0,
+  'T40 (g) Favoritos: la fila de A sobre la de B se conserva, pero el join con listings la esconde');
+
+-- (h) Fotos, tabla y Storage, en las dos direcciones y con control.
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.listing_photos where listing_id = %s', :t40_lb)) = 0
+  and pg_temp.as_user_int(:B40::uuid, format('select count(*) from public.listing_photos where listing_id = %s', :t40_la)) = 0
+  and pg_temp.as_user_int(:T40::uuid, format('select count(*) from public.listing_photos where listing_id in (%s, %s)', :t40_la, :t40_lb)) = 2,
+  'T40 (h1) listing_photos: bilateral, y el tercero ve las dos');
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from storage.objects where bucket_id = ''listing-photos'' and name = %L', :t40_lb || '/foto.jpg')) = 0
+  and pg_temp.as_user_int(:B40::uuid, format('select count(*) from storage.objects where bucket_id = ''listing-photos'' and name = %L', :t40_la || '/foto.jpg')) = 0
+  and pg_temp.as_user_int(:T40::uuid, format('select count(*) from storage.objects where bucket_id = ''listing-photos'' and name in (%L, %L)', :t40_la || '/foto.jpg', :t40_lb || '/foto.jpg')) = 2,
+  'T40 (h2) Storage: bilateral, y el tercero ve los dos objetos');
+
+-- (i) seller_whatsapp: null en las dos direcciones; los controles prueban que
+-- los dos números existen y que los dos están activos.
+select pg_temp.assert(
+  pg_temp.as_user_text(:A40::uuid, format('select public.seller_whatsapp(%L)', :B40::uuid)) is null
+  and pg_temp.as_user_text(:B40::uuid, format('select public.seller_whatsapp(%L)', :A40::uuid)) is null,
+  'T40 (i1) seller_whatsapp niega A→B y B→A');
+select pg_temp.assert(
+  pg_temp.as_user_text(:T40::uuid, format('select public.seller_whatsapp(%L)', :A40::uuid)) = '+528140000001'
+  and pg_temp.as_user_text(:T40::uuid, format('select public.seller_whatsapp(%L)', :B40::uuid)) = '+528140000002'
+  and pg_temp.as_user_text(:A40::uuid, format('select public.seller_whatsapp(%L)', :T40::uuid)) = '+528140000003',
+  'T40 (i2) control: el tercero recibe los dos números y A el del tercero');
+
+-- (j) interaccion_disponible: false en las dos direcciones, true sin bloqueo.
+select pg_temp.assert(
+  pg_temp.as_user_text(:A40::uuid, format('select public.interaccion_disponible(%L)::text', :B40::uuid)) = 'false'
+  and pg_temp.as_user_text(:B40::uuid, format('select public.interaccion_disponible(%L)::text', :A40::uuid)) = 'false'
+  and pg_temp.as_user_text(:A40::uuid, format('select public.interaccion_disponible(%L)::text', :T40::uuid)) = 'true'
+  and pg_temp.as_user_text(:T40::uuid, format('select public.interaccion_disponible(%L)::text', :A40::uuid)) = 'true',
+  'T40 (j) interaccion_disponible: false entre bloqueados (las dos direcciones), true con un tercero');
+
+-- (k) Contactos NUEVOS: rechazados en las dos direcciones; el control pasa.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:B40::uuid, format(
+    'insert into public.listing_contacts (user_id, listing_id) values (%L, %s)', :B40::uuid, :t40_la)) = '42501'
+  and pg_temp.rechazo_de(:A40::uuid, format(
+    'insert into public.listing_contacts (user_id, listing_id) values (%L, %s)', :A40::uuid, :t40_lb)) = '42501',
+  'T40 (k1) contacto nuevo entre bloqueados: rechazado B→A y A→B');
+select pg_temp.assert(
+  pg_temp.rechazo_de(:T40::uuid, format(
+    'insert into public.listing_contacts (user_id, listing_id) values (%L, %s)', :T40::uuid, :t40_la)) = 'ok',
+  'T40 (k2) control: el tercero sí registra un contacto en la de A');
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format(
+    'select count(*) from public.listing_contacts where listing_id = %s and user_id = %L', :t40_la, :B40::uuid)) = 1,
+  'T40 (k3) el contacto histórico de B sigue visible para A (dueño)');
+
+-- (l) Calificar (O-2): B califica a A por un contacto anterior al bloqueo.
+-- La reseña SE GUARDA; el aviso a A no nace. Control: el tercero califica a A
+-- y A sí recibe el aviso.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:B40::uuid, format(
+    'insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas) values (%L, %L, %s, 2)',
+    :B40::uuid, :A40::uuid, :t40_la)) = 'ok',
+  'T40 (l1) O-2: B sigue pudiendo calificar a A por una transacción anterior al bloqueo');
+select pg_temp.assert(
+  pg_temp.rechazo_de(:T40::uuid, format(
+    'insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas) values (%L, %L, %s, 5)',
+    :T40::uuid, :A40::uuid, :t40_la)) = 'ok',
+  'T40 (l2) control: el tercero califica a A');
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where user_id = :A40::uuid and tipo = 'calificacion_recibida' and cuerpo like '%2 estrellas%') = 0
+  and (select count(*) from public.notifications
+    where user_id = :A40::uuid and tipo = 'calificacion_recibida' and cuerpo like '%5 estrellas%') = 1,
+  'T40 (l3) notify_calificacion: sin aviso de B; con aviso del tercero');
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.ratings where to_user_id = %L', :A40::uuid)) = 2
+  and pg_temp.as_user_int(:B40::uuid, format('select count(*) from public.ratings where to_user_id = %L', :A40::uuid)) = 2,
+  'T40 (l4) reseñas KEEP: las dos se leen, también la de B, también por B');
+
+-- (m) Reportes: sin efecto. B reporta la publicación y la cuenta de A.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:B40::uuid, format(
+    'insert into public.reports (reporter_id, listing_id, motivo) values (%L, %s, ''spam_publicidad'')',
+    :B40::uuid, :t40_la)) = 'ok'
+  and pg_temp.rechazo_de(:B40::uuid, format(
+    'insert into public.reports (reporter_id, reported_user_id, motivo) values (%L, %L, ''otro'')',
+    :B40::uuid, :A40::uuid)) = 'ok',
+  'T40 (m) reportes NO EFFECT: B reporta la publicación y la cuenta de A');
+
+-- (n) notify_price_drop: A baja el precio; el tercero recibe aviso, B no.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:A40::uuid, format('update public.listings set precio = 400 where id = %s', :t40_la)) = 'ok',
+  'T40 (n0) A baja el precio de su publicación');
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where user_id = :B40::uuid and tipo = 'precio_favorito' and listing_id = :t40_la and titulo <> 'T40 histórico') = 0
+  and (select count(*) from public.notifications
+    where user_id = :T40::uuid and tipo = 'precio_favorito' and listing_id = :t40_la) = 1,
+  'T40 (n) notify_price_drop: sin aviso para B; con aviso para el tercero');
+
+-- (o) notify_favorito_vendido: A marca vendida una que B y T tenían guardada.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:A40::uuid, format('update public.listings set estado = ''vendida'' where id = %s', :t40_lv)) = 'ok',
+  'T40 (o0) A marca vendida su publicación');
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where user_id = :B40::uuid and tipo = 'favorito_vendido' and listing_id = :t40_lv) = 0
+  and (select count(*) from public.notifications
+    where user_id = :T40::uuid and tipo = 'favorito_vendido' and listing_id = :t40_lv) = 1,
+  'T40 (o) notify_favorito_vendido: sin aviso para B; con aviso para el tercero');
+
+-- (p) notify_compra_calificable: A registra la venta a B (contacto anterior)
+-- y a T. La venta a B SÍ se registra (historial); el aviso no nace.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:A40::uuid, format(
+    'insert into public.listing_sales (listing_id, comprador_id) values (%s, %L)', :t40_lsb, :B40::uuid)) = 'ok'
+  and pg_temp.rechazo_de(:A40::uuid, format(
+    'insert into public.listing_sales (listing_id, comprador_id) values (%s, %L)', :t40_lst, :T40::uuid)) = 'ok',
+  'T40 (p0) A registra las dos ventas');
+select pg_temp.assert(
+  (select count(*) from public.notifications
+    where user_id = :B40::uuid and tipo = 'compra_calificable' and listing_id = :t40_lsb) = 0
+  and (select count(*) from public.notifications
+    where user_id = :T40::uuid and tipo = 'compra_calificable' and listing_id = :t40_lst) = 1,
+  'T40 (p) notify_compra_calificable: sin aviso para B; con aviso para el tercero');
+
+-- (q) El aviso histórico se conserva.
+select pg_temp.assert(
+  (select count(*) from public.notifications where user_id = :B40::uuid and titulo = 'T40 histórico') = 1,
+  'T40 (q) el aviso anterior al bloqueo sigue en el inbox de B');
+
+-- (y) VISTAS — increment_listing_view (20261015000488). Es SECURITY DEFINER y
+-- salta `listings_select`, así que el bloqueo lo tiene que mirar ella. Cada
+-- lectura de `vistas_count` va como postgres y en su propia sentencia (\gset),
+-- separada de las llamadas: lección de T28. Aquí solo existe A→B; `lv` ya es
+-- vendida (o0) y `la` sigue activa.
+select (select vistas_count from public.listings where id = :t40_la) as t40_v_la,
+       (select vistas_count from public.listings where id = :t40_lv) as t40_v_lv,
+       (select vistas_count from public.listings where id = :t40_lb) as t40_v_lb \gset
+select pg_temp.as_user(:B40::uuid, format('select public.increment_listing_view(%s)', :t40_la));
+select pg_temp.as_user(:B40::uuid, format('select public.increment_listing_view(%s)', :t40_lv));
+select pg_temp.as_user(:A40::uuid, format('select public.increment_listing_view(%s)', :t40_lb));
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = :t40_la) = :t40_v_la
+  and (select vistas_count from public.listings where id = :t40_lv) = :t40_v_lv,
+  'T40 (y1a) A bloqueó a B: B no suma vistas a la activa ni a la vendida de A');
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = :t40_lb) = :t40_v_lb,
+  'T40 (y1b) A bloqueó a B: A tampoco suma vistas a la de B');
+-- (y1c) CONTROL: el tercero sí suma en las tres, la vendida incluida. Sin esto,
+-- (y1a)/(y1b) pasarían igual con una RPC que no contara nada.
+select pg_temp.as_user(:T40::uuid, format('select public.increment_listing_view(%s)', :t40_la));
+select pg_temp.as_user(:T40::uuid, format('select public.increment_listing_view(%s)', :t40_lv));
+select pg_temp.as_user(:T40::uuid, format('select public.increment_listing_view(%s)', :t40_lb));
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = :t40_la) = :t40_v_la + 1
+  and (select vistas_count from public.listings where id = :t40_lv) = :t40_v_lv + 1
+  and (select vistas_count from public.listings where id = :t40_lb) = :t40_v_lb + 1,
+  'T40 (y1c) control: el tercero sí suma vistas a las de A (activa y vendida) y a la de B');
+
+-- (y5) FAIL-CLOSED: si la helper devolviera NULL, nadie suma, ni el tercero. Se
+-- rompe dentro de un savepoint y se restaura, igual que (b6).
+select (select vistas_count from public.listings where id = :t40_la) as t40_v_la \gset
+savepoint t40_vistas_null;
+create or replace function private.bloqueo_entre(p_a uuid, p_b uuid)
+returns boolean language sql stable set search_path = ''
+as $$ select null::boolean $$;
+select pg_temp.as_user(:T40::uuid, format('select public.increment_listing_view(%s)', :t40_la));
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = :t40_la) = :t40_v_la,
+  'T40 (y5) helper null: la vista no se cuenta (fail-closed), ni siquiera la del tercero');
+rollback to savepoint t40_vistas_null;
+select pg_temp.as_user(:T40::uuid, format('select public.increment_listing_view(%s)', :t40_la));
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = :t40_la) = :t40_v_la + 1,
+  'T40 (y5b) la helper quedó restaurada: el tercero vuelve a sumar');
+
+-- (r) Integridad de la tabla.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:A40::uuid, format(
+    'insert into public.user_bloqueos (user_id, bloqueado_id) values (%L, %L)', :A40::uuid, :A40::uuid))
+    = '23514:user_bloqueos_no_a_si_mismo',
+  'T40 (r1) nadie se bloquea a sí mismo (check)');
+select pg_temp.assert(
+  pg_temp.rechazo_de(:A40::uuid, format(
+    'insert into public.user_bloqueos (user_id, bloqueado_id) values (%L, %L)', :A40::uuid, :B40::uuid))
+    = '23505:user_bloqueos_pkey',
+  'T40 (r2) el bloqueo duplicado choca con la PK');
+select pg_temp.assert(
+  pg_temp.rechazo_de(:B40::uuid, format(
+    'insert into public.user_bloqueos (user_id, bloqueado_id) values (%L, %L)', :A40::uuid, :T40::uuid)) = '42501',
+  'T40 (r3) nadie crea un bloqueo a nombre de otro');
+
+-- (s) Lectura y borrado ajenos. El DELETE va SIN where (CLAUDE.md §9: con
+-- where, la policy de SELECT también filtraría y probaría la equivocada).
+select pg_temp.assert(
+  pg_temp.as_user_int(:B40::uuid, 'select count(*) from public.user_bloqueos') = 0
+  and pg_temp.as_user_int(:T40::uuid, 'select count(*) from public.user_bloqueos') = 0
+  and pg_temp.as_user_int(:A40::uuid, 'select count(*) from public.user_bloqueos') = 1,
+  'T40 (s1) B no lee el bloqueo que lo nombra; el tercero tampoco; A lee el suyo');
+select pg_temp.as_user(:B40::uuid, 'delete from public.user_bloqueos');
+select pg_temp.assert(
+  (select count(*) from public.user_bloqueos where user_id = :A40::uuid and bloqueado_id = :B40::uuid) = 1,
+  'T40 (s2) B no puede borrar el bloqueo de A');
+
+-- (t) Privilegios.
+select pg_temp.assert(
+  not exists (select 1 from information_schema.table_privileges
+               where table_schema = 'public' and table_name = 'user_bloqueos' and grantee = 'anon')
+  and not exists (select 1 from information_schema.column_privileges
+               where table_schema = 'public' and table_name = 'user_bloqueos' and grantee = 'anon')
+  and (select string_agg(privilege_type, ',' order by privilege_type)
+         from information_schema.table_privileges
+        where table_schema = 'public' and table_name = 'user_bloqueos' and grantee = 'authenticated')
+      = 'DELETE,INSERT,SELECT'
+  and (select relrowsecurity from pg_class where oid = 'public.user_bloqueos'::regclass)
+  and not exists (select 1 from pg_publication_tables
+                   where pubname = 'supabase_realtime' and tablename = 'user_bloqueos'),
+  'T40 (t1) user_bloqueos: nada para anon; authenticated solo SELECT/INSERT/DELETE; RLS; fuera de Realtime');
+select pg_temp.assert(
+  has_function_privilege('authenticated', 'private.bloqueos_vigentes()', 'execute')
+  and has_function_privilege('authenticated', 'private.listing_con_bloqueo(bigint)', 'execute')
+  and has_function_privilege('authenticated', 'public.interaccion_disponible(uuid)', 'execute')
+  and not has_function_privilege('anon', 'private.bloqueos_vigentes()', 'execute')
+  and not has_function_privilege('anon', 'private.listing_con_bloqueo(bigint)', 'execute')
+  and not has_function_privilege('anon', 'public.interaccion_disponible(uuid)', 'execute')
+  and not has_function_privilege('authenticated', 'private.bloqueo_entre(uuid,uuid)', 'execute')
+  and not has_function_privilege('anon', 'private.bloqueo_entre(uuid,uuid)', 'execute'),
+  'T40 (t2) EXECUTE: las dos de la policy y la RPC para authenticated; bloqueo_entre (oráculo de terceros) para nadie');
+select pg_temp.assert(
+  (select bool_and(p.prosecdef and p.provolatile = 's' and p.proconfig = array['search_path=""'])
+     from pg_proc p
+    where p.oid in ('private.bloqueos_vigentes()'::regprocedure,
+                    'private.listing_con_bloqueo(bigint)'::regprocedure,
+                    'public.interaccion_disponible(uuid)'::regprocedure))
+  and (select pronargs from pg_proc where oid = 'private.bloqueos_vigentes()'::regprocedure) = 0,
+  'T40 (t3) las tres definer: stable, search_path vacío; bloqueos_vigentes sin parámetros');
+
+-- (u) Suspendido: administra sus propios bloqueos.
+update public.users
+   set estado = 'suspendido', suspendido_at = now(), suspension_motivo = 'T40 suspendido'
+ where id = :S40::uuid;
+select pg_temp.assert(
+  pg_temp.rechazo_de(:S40::uuid, format(
+    'insert into public.user_bloqueos (user_id, bloqueado_id) values (%L, %L)', :S40::uuid, :T40::uuid)) = 'ok'
+  and pg_temp.as_user_int(:S40::uuid, 'select count(*) from public.user_bloqueos') = 1,
+  'T40 (u1) un suspendido bloquea y lee su propio bloqueo');
+select pg_temp.as_user(:S40::uuid, 'delete from public.user_bloqueos');
+select pg_temp.assert(
+  (select count(*) from public.user_bloqueos where user_id = :S40::uuid) = 0,
+  'T40 (u2) un suspendido deshace su propio bloqueo');
+
+-- (v) Cascade: borrar una cuenta borra los bloqueos en los que aparece.
+insert into public.user_bloqueos (user_id, bloqueado_id)
+values (:D40::uuid, :T40::uuid), (:T40::uuid, :D40::uuid);
+delete from auth.users where id = :D40::uuid;
+select pg_temp.assert(
+  (select count(*) from public.user_bloqueos where :D40::uuid in (user_id, bloqueado_id)) = 0,
+  'T40 (v) eliminar la cuenta borra sus bloqueos en las dos columnas');
+
+-- (w) Mutuo: B también bloquea a A. Si A desbloquea, el de B sigue mandando.
+select pg_temp.assert(
+  pg_temp.rechazo_de(:B40::uuid, format(
+    'insert into public.user_bloqueos (user_id, bloqueado_id) values (%L, %L)', :B40::uuid, :A40::uuid)) = 'ok',
+  'T40 (w0) B bloquea a A por su cuenta');
+-- (y2) Bloqueo mutuo: ninguno suma vistas al otro.
+select (select vistas_count from public.listings where id = :t40_la) as t40_v_la,
+       (select vistas_count from public.listings where id = :t40_lb) as t40_v_lb \gset
+select pg_temp.as_user(:B40::uuid, format('select public.increment_listing_view(%s)', :t40_la));
+select pg_temp.as_user(:A40::uuid, format('select public.increment_listing_view(%s)', :t40_lb));
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = :t40_la) = :t40_v_la
+  and (select vistas_count from public.listings where id = :t40_lb) = :t40_v_lb,
+  'T40 (y2) bloqueo mutuo: ni A ni B suman vistas al otro');
+select pg_temp.as_user(:A40::uuid, 'delete from public.user_bloqueos');
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.listings where id = %s', :t40_lb)) = 0
+  and pg_temp.as_user_text(:A40::uuid, format('select public.interaccion_disponible(%L)::text', :B40::uuid)) = 'false',
+  'T40 (w) con el bloqueo de B vigente, desbloquear el propio no le devuelve a A la publicación de B');
+-- (y3) Solo B→A: tampoco hay vistas en ninguna dirección. A ve la de B (el
+-- dueño lo bloqueó) y B ve la de A (él bloqueó al dueño).
+select (select vistas_count from public.listings where id = :t40_la) as t40_v_la,
+       (select vistas_count from public.listings where id = :t40_lb) as t40_v_lb \gset
+select pg_temp.as_user(:A40::uuid, format('select public.increment_listing_view(%s)', :t40_lb));
+select pg_temp.as_user(:B40::uuid, format('select public.increment_listing_view(%s)', :t40_la));
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = :t40_la) = :t40_v_la
+  and (select vistas_count from public.listings where id = :t40_lb) = :t40_v_lb,
+  'T40 (y3) solo B bloqueó a A: ni A ni B suman vistas al otro');
+
+-- (x) Desbloquear restaura: B deshace el suyo y ya no queda ninguno.
+select pg_temp.as_user(:B40::uuid, 'delete from public.user_bloqueos');
+select pg_temp.assert(
+  pg_temp.as_user_int(:A40::uuid, format('select count(*) from public.listings where id = %s', :t40_lb)) = 1
+  and pg_temp.as_user_int(:B40::uuid, format('select count(*) from public.listings where id = %s', :t40_la)) = 1
+  and pg_temp.as_user_text(:A40::uuid, format('select public.seller_whatsapp(%L)', :B40::uuid)) = '+528140000002'
+  and pg_temp.as_user_text(:B40::uuid, format('select public.interaccion_disponible(%L)::text', :A40::uuid)) = 'true'
+  and pg_temp.rechazo_de(:B40::uuid, format(
+    'insert into public.listing_contacts (user_id, listing_id) values (%L, %s)', :B40::uuid, :t40_la)) = 'ok',
+  'T40 (x) desbloquear restaura publicaciones, WhatsApp, disponibilidad y contactos');
+-- (y4) Sin bloqueos, las vistas vuelven en las dos direcciones.
+select (select vistas_count from public.listings where id = :t40_la) as t40_v_la,
+       (select vistas_count from public.listings where id = :t40_lb) as t40_v_lb \gset
+select pg_temp.as_user(:A40::uuid, format('select public.increment_listing_view(%s)', :t40_lb));
+select pg_temp.as_user(:B40::uuid, format('select public.increment_listing_view(%s)', :t40_la));
+select pg_temp.assert(
+  (select vistas_count from public.listings where id = :t40_la) = :t40_v_la + 1
+  and (select vistas_count from public.listings where id = :t40_lb) = :t40_v_lb + 1,
+  'T40 (y4) desbloqueados: A y B vuelven a sumarse vistas');
+
+\echo ''
+
+\echo ''
 \echo '==========================================='
 \echo '   TODAS LAS PRUEBAS PASARON'
 \echo '==========================================='

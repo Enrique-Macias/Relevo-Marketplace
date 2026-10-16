@@ -53,8 +53,9 @@ AUTH-2 y DEV-1A/B.
 
 ## Estado de ambientes
 
-- **STAGING (`ukxfnydfhmryrzhdqkvj`)**: 50 migraciones aplicadas (a la par con
-  el repo al 2026-10-11), 5 Edge Functions, panel de admin desplegado en
+- **STAGING (`ukxfnydfhmryrzhdqkvj`)**: 52 migraciones aplicadas (a la par con
+  el repo al 2026-10-16; las dos últimas, `…487` y `…488`, son UGC-1, PL-006),
+  5 Edge Functions, panel de admin desplegado en
   `https://admin.rlvo.com.mx` (Cloudflare Pages) **apuntando a STAGING**, 3
   admins activos con TOTP, el Auth Hook de dominios activo (evidencia nueva de
   `run_hook`: 2026-10-12 02:15:05 UTC, C3). La app de desarrollo (Metro +
@@ -143,16 +144,41 @@ AUTH-2 y DEV-1A/B.
 - **Dependencias:** PL-008, PL-010.
 
 ### PL-006 — Bloqueo entre usuarios (contenido generado por usuarios)
-- **Origen:** `docs/auditoria-lanzamiento-2026-09-22.md` §2 · **Estado:** DECISIÓN PENDIENTE · **Prioridad:** P0 (potencial)
+- **Origen:** `docs/auditoria-lanzamiento-2026-09-22.md` §2 · **Estado:** IMPLEMENTADO Y VALIDADO EN STAGING; PROD PENDIENTE · **Prioridad:** P0 (potencial)
 - **Por qué existe:** la auditoría lo identificó como posible requisito de
-  UGC (App Store 1.2); no existe nada en el código ni en `product-spec.md`
-  (solo "Reportar", RF-14).
-- **Qué falta:** **validar contra las políticas vigentes** de App Store y
-  Google Play si es obligatorio y con qué alcance. No se diseñan tablas, RPCs
-  ni UX hasta tener esa validación.
-- **Criterio de cierre:** decisión documentada con la cita de la política; si
-  es requisito, se abre su propio diseño (frame primero).
-- **Dependencias:** PL-010.
+  UGC (App Store 1.2). Antes de UGC-1 solo existía "Reportar" (RF-14).
+- **Qué se hizo (UGC-1, 2026-10-12 al 2026-10-16):**
+  - **Semántica aprobada en UGC-1A** (detalle en `CLAUDE.md` §3, "Bloqueo
+    entre usuarios"): híbrida. Descubrimiento y contacto se cortan en las DOS
+    direcciones; cada quien ve y deshace SOLO su propio bloqueo; las reseñas,
+    los contactos, las ventas, los avisos y los reportes anteriores se
+    conservan. Dos decisiones quedaron como deuda: PL-087 (O-2) y PL-052 (O-5).
+  - **Diseño:** 8 frames nuevos en `design/relevo-app.html` (73 → 81).
+  - **Base:** `20261013000487_user_bloqueos.sql` y
+    `20261015000488_increment_listing_view_bloqueo.sql`.
+  - **Cliente:** Perfil público, Detalle, Reportar, Configuración → Usuarios
+    bloqueados.
+- **Validación:**
+  - **LOCAL:** `rls.sql` 715/715 (T40), `scripts/probe-bloqueos.mjs` 24/24 y
+    el resto de los probes en verde; controles negativos uno por uno (20/20
+    para `…487`, 6/6 para `…488`).
+  - **STAGING:** preflight read-only, copia cifrada previa (2026-10-15),
+    `db push` de `…487` y luego de `…488`, cada uno con su verificación de
+    superficie (solo cambió lo esperado) y sin efectos sobre datos.
+  - **iPhone físico contra STAGING:** bloquear y desbloquear, el estado
+    bloqueado y el neutro, "Usuarios bloqueados", y el fix de vistas (con el
+    bloqueo vigente no suma; sin él, +1 exacto).
+- **Qué falta:**
+  - **PROD:** no existe. Las dos migraciones viajan con PL-001 (PROD-BOOTSTRAP);
+    la validación de STAGING no la sustituye.
+  - **La cita de la política sigue PENDIENTE.** El criterio de cierre original
+    pedía documentar la regla de App Store / Google Play que lo exige y su
+    alcance, y esa cita no está registrada en ningún documento del repo. Se
+    implementó por decisión de producto (UGC-1A), no con una cita verificada.
+- **Criterio de cierre:** las dos migraciones aplicadas y verificadas en PROD
+  (PL-001) **y** la cita de la política documentada (o, si la revisión concluye
+  que no es requisito, esa conclusión documentada con su fuente).
+- **Dependencias:** PL-001, PL-010.
 
 ### PL-007 — Enlaces al aviso de privacidad y a los términos dentro de la app
 - **Origen:** auditoría §6 · **Estado:** ABIERTO · **Prioridad:** P0
@@ -435,6 +461,7 @@ reconstruir y verificar:
 | PL-049 | Observabilidad de `send-push` | PUSH-7A/8 | ABIERTO | Guarda el id de cada ticket (hoy no lo registra cuando sale `ok`); un HTTP no-2xx de Expo no sella `push_enviado_at` en silencio; los errores de ticket distintos de `DeviceNotRegistered` quedan visibles para alguien |
 | PL-050 | Ciclo de vida del token al cerrar sesión | PUSH-5A/5C | ABIERTO | `borrarPushToken()` revisa el `{ error }` del DELETE; si `getExpoPushTokenAsync` falla al cerrar sesión, la fila no se queda con el usuario anterior; una sesión vencida o un cierre forzado también limpian el token; probado en un dispositivo compartido (cambio de cuenta) |
 | PL-051 | El permiso de push se pide antes de la pantalla que lo explica | PUSH-5A | ABIERTO | `session.tsx` registra el token en cuanto hay sesión, así que el aviso de iOS sale antes de "Permiso de notificaciones". Decidir y aplicar cuándo se pide (UX; no viola reglas de tienda) |
+| PL-052 | `listing_contacts` se puede registrar por id sin ver la publicación | UGC-1A (O-5), 2026-10-12 | ABIERTO | `listing_contacts_insert_own` solo exige `user_id = auth.uid()` e `is_active_user()`: un contacto se registra por id sobre una publicación que la RLS le esconde (pausada, pendiente, bloqueada) y eso habilita `private.can_rate` ("yo contacté y esa persona es el vendedor"). UGC-1 lo cierra SOLO para parejas bloqueadas. Cierre: decidir si el insert exige visibilidad (`exists` contra `listings` bajo la RLS del invocante) y, si sí, aplicarlo con su aserción y control negativo |
 
 ---
 
@@ -465,6 +492,7 @@ reconstruir y verificar:
 | PL-084 | Números válidos de 7 dígitos (Tokelau, Tristan da Cunha) | `CLAUDE.md` §3 |
 | PL-085 | Compartir con enlace (deep links) | `compartir-deeplinks.md` |
 | PL-086 | Historial de búsquedas | `explorar.md` |
+| PL-087 | Calificar una transacción registrada antes de un bloqueo | UGC-1A (O-2), 2026-10-12; relacionada con PL-083 |
 
 ---
 

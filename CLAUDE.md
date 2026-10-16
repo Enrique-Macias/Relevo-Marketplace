@@ -21,7 +21,7 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 73 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 81 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
 controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
 tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
@@ -216,11 +216,18 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 50 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-10-11; la 50 es `…486`, también en
-remoto desde el 2026-10-10; decía "48", "46", "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 20 tablas más
+Definido en 52 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-10-15; la 51 es `…487` y la 52 es
+`…488`, las dos de UGC-1 y las dos también en remoto desde el 2026-10-15 y el
+2026-10-16; decía "50", "48", "46", "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 21 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
+
+**Desde `20261013000487` (UGC-1) son 21: 18 con policies más las mismas 3 sin
+policies.** `user_bloqueos` suma una a las "con policies" (tres, todas sobre
+las filas propias; bloque "Bloqueo entre usuarios", más abajo). Medido en local
+el 2026-10-15 con `pg_class.relrowsecurity` y `pg_policy`: 21 tablas, 21 con
+RLS, 18 con al menos una policy. El párrafo de antes, tal como estaba:
 
 **Desde `20261009000485` (Ola 6 de RF-17) son 20: 17 con policies más las
 mismas 3 sin policies.** `actividad_diaria` suma una a las "con policies" (su
@@ -241,6 +248,16 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 52 y 52 (medido el 2026-10-16) — a la par.** `ls
+supabase/migrations | wc -l` da **52**; `supabase_migrations.schema_migrations`
+en remoto (STAGING) también da **52**, y el md5 de la secuencia de versiones y
+nombres es el mismo en el repo, en LOCAL y en remoto (`00879b1e…`).
+`20261013000487` (bloqueo entre usuarios) se aplicó el 2026-10-15 a las
+20:48 UTC y `20261015000488` (vistas entre bloqueados) el 2026-10-16 a las
+00:27 UTC, cada una con su propio `supabase db push --linked --skip-vault`
+precedido de un dry-run que proponía solo esa migración (UGC-1E.4 y UGC-1E.5c;
+evidencia en §8, "Hecho"). La historia de antes, tal como estaba:
 
 **Repo y remoto: 50 y 50 (medido el 2026-10-11) — a la par.** `ls
 supabase/migrations | wc -l` da **50**; `mcp__supabase__list_migrations` también
@@ -466,6 +483,13 @@ actividad_diaria (user_id → users on delete cascade, dia date default hoy en
                  del panel (Ola 6 de RF-17). El cliente solo INSERTA
                  (user_id); nadie la lee desde la app. 90 días de retención.
                  Ver "Actividad diaria y métricas", abajo.
+user_bloqueos    (user_id → users on delete cascade, bloqueado_id → users on
+                 delete cascade, created_at, PK (user_id, bloqueado_id), check
+                 user_id <> bloqueado_id, índice sobre bloqueado_id) — una fila
+                 por bloqueo (UGC-1, `…487`). Cada quien lee, crea y borra SOLO
+                 las suyas (`user_id = auth.uid()`); el bloqueado no ve la fila
+                 que lo nombra. Sin UPDATE; anon, nada. Fuera de Realtime. Ver
+                 "Bloqueo entre usuarios", abajo.
 
 **`campus.latitud`/`longitud` son para "Detectar campus más cercano" (fase
 2C, `20260925000467`).** Nullables a propósito: un campus sin coordenadas
@@ -786,9 +810,10 @@ No quites ninguno de los dos "por simplificar": T16 tiene una aserción por cada
 dirección, y cada una pide el número de alguien cuyo estado NO esté en juego,
 justo para que un `null` no pueda pasar por la razón equivocada.
 
-Consecuencia en la UI: `seller_whatsapp` devuelve `null` por **tres** causas —el
-vendedor no tiene número, quien llama está suspendido, o el vendedor lo está— y
-no dice cuál. El toast las separa con datos que el cliente ya tiene: `estado` de
+Consecuencia en la UI: `seller_whatsapp` devuelve `null` por **cuatro** causas —el
+vendedor no tiene número, quien llama está suspendido, el vendedor lo está, o
+hay un bloqueo entre los dos en cualquier dirección (desde `20261013000487`,
+bloque "Bloqueo entre usuarios", más abajo)— y no dice cuál. El toast las separa con datos que el cliente ya tiene: `estado` de
 la propia sesión (`profile.estado`, en `PROFILE_COLUMNS`) y `estado` del vendedor
 (en el embed `VENDEDOR` de `src/lib/listings.ts`, que lo trae para esto). El
 mensaje del vendedor suspendido es **neutro** ("Esta cuenta no está disponible
@@ -1038,6 +1063,16 @@ La columna en sí no es editable directo por el cliente (grant de columna) —
 sin eso, la RPC sería decorativa y cualquiera podría hacer
 `update listings set vistas_count = 99999`.
 
+**Desde `20261015000488` tampoco cuenta entre usuarios bloqueados**, en
+cualquier dirección (`and not private.bloqueo_entre(user_id, (select
+auth.uid()))`). Por ser definer, la RPC salta `listings_select`, así que el
+filtro de bloqueo de esa policy no la alcanzaba: lo destapó la prueba en iPhone
+contra STAGING (UGC-1E.5), donde un bloqueado abrió por id, desde un aviso
+viejo, el Detalle de una vendida del bloqueador y le sumó una vista (Detalle
+llama a la RPC al montarse aunque la publicación no cargue). La respuesta es la
+misma 204 cuente o no, así que no revela el bloqueo. Lo vigilan T40 (y1a)-(y5b)
+y `probe-bloqueos.mjs` 7b/8b.
+
 **`favorites` no es contable ni por el dueño de la publicación** — su RLS es
 `user_id = auth.uid()`, así que el vendedor no puede hacer un `count` de los
 favoritos de su propia publicación (el stat que pide el frame "Detalle (vista
@@ -1275,19 +1310,28 @@ para impedir. Tres cosas que conviene saber antes de tocarlo:
   `raise exception` a un toast con salida.
 
 **Funciones `SECURITY DEFINER`** viven en el esquema `private` (nunca en
-`public`) excepto TRES, que sí deben ser invocables por PostgREST desde el
-cliente: `increment_listing_view`, `listing_favorites_count` y
-`seller_whatsapp` (eran una sola hasta que Detalle necesitó el conteo de
-favoritos, y dos hasta que el botón de WhatsApp necesitó el número real; si
-algún día hay una cuarta, revisa primero si de verdad la invoca el cliente o si
-va en `private`). **`public.buscar_listings` y `public.recomendar_listings` NO son la
-cuarta**: también son RPC de `public`, pero INVOKER a propósito (sus bloques,
+`public`) excepto CUATRO, que sí deben ser invocables por PostgREST desde el
+cliente: `increment_listing_view`, `listing_favorites_count`,
+`seller_whatsapp` e `interaccion_disponible` (eran una sola hasta que Detalle
+necesitó el conteo de favoritos, dos hasta que el botón de WhatsApp necesitó el
+número real, y tres hasta que el Perfil público necesitó saber si hay un
+bloqueo sin revelar su dirección, `20261013000487`; si algún día hay una
+quinta, revisa primero si de verdad la invoca el cliente o si va en
+`private`). **`public.buscar_listings` y `public.recomendar_listings` NO cuentan
+aquí**: también son RPC de `public`, pero INVOKER a propósito (sus bloques,
 más arriba), y volverlas definer sería una fuga. `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
-acotado a las CUATRO que se invocan desde policies — `is_active_user()`,
-`can_rate()`, `listing_id_from_object_name()` y, desde `20260930000477`,
+acotado a las SEIS que se invocan desde policies — `is_active_user()`,
+`can_rate()`, `listing_id_from_object_name()`, desde `20260930000477`
 `is_admin()` (la usará la policy de Storage del admin en la Ola 2 de RF-17, y
 lleva el workaround del SIGSEGV desde que existe; desde `20260930000479` la
-invoca la policy `listing_photos_objects_select_admin`) — mientras las **22** que solo
+invoca la policy `listing_photos_objects_select_admin`) y, desde
+`20261013000487`, `bloqueos_vigentes()` (`listings_select`) y
+`listing_con_bloqueo()` (`listing_contacts_insert_own`) — decía "CUATRO" hasta
+UGC-1, medido en local el 2026-10-15. **`private.bloqueo_entre()` (`…487`) va
+aparte y con EXECUTE revocado para el cliente**: no la usa ninguna policy, solo
+cuerpos definer (los 4 productores de avisos y, desde `…488`,
+`increment_listing_view`), que la ejecutan como su dueño; abierta, sería un
+oráculo de bloqueos entre terceros (T40 (t2)). Mientras tanto, las **22** que solo
 disparan por trigger siguen revocadas (decía "las otras cinco", un número de la
 Fase 2 que nadie actualizó, y después 12, 16, 18, 19 y 20; medido con `pg_trigger` ⋈ `pg_proc`
 en local el 2026-10-08: **26** funciones de `private` cuelgan de un trigger, 22
@@ -1333,8 +1377,8 @@ local con estas policias exactas:
 
 Por eso el cliente hace un **INSERT plano con `ignoreDuplicates`** (igual que
 `favorites`, `explorar.md`) y `private.claim_push_token()` borra la fila perdedora. Va
-como trigger y NO como RPC `SECURITY DEFINER` de `public` deliberadamente: sería
-la cuarta de esas, y sobre todo **movería el punto de enforcement** — con el
+como trigger y NO como RPC `SECURITY DEFINER` de `public` deliberadamente: habría
+sido una más de esas (hoy son cuatro), y sobre todo **movería el punto de enforcement** — con el
 trigger, la policy `with check (user_id = auth.uid())` sigue siendo quien decide
 de quién puede ser la fila, y el código elevado solo puede BORRAR, nunca
 fabricar una fila a nombre de otro. Alcance honesto: quien conozca el token de
@@ -1740,7 +1784,7 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   'script:crear-admin.mjs'`.
 - **Schema `admin`** (D3): USAGE solo para `authenticated`; sus funciones son
   definer con `search_path` fijo y sin EXECUTE para `anon`/PUBLIC. No cuentan
-  entre "las TRES definer de `public`": viven en otro schema. A 2026-10-08 eran 13
+  entre "las CUATRO definer de `public`" (eran TRES hasta UGC-1): viven en otro schema. A 2026-10-08 eran 13
   (medido en `pg_proc` de remoto el 2026-10-08, tras el push de `…483`; antes
   11 y antes 9): `sesion` (la única que no lanza: gating
   de UX), `buscar_usuarios`, `detalle_usuario`, `suspender_usuario` y
@@ -2015,8 +2059,92 @@ producción, en §8, "Hecho". Lo que vive en la base:
   `ACCOUNT_DELETION.md` y `LEGAL_LAUNCH_CHECKLIST.md`. El aviso de privacidad
   PUBLICADO (fuera de este repo) sigue sin actualizarse: pendiente 0i.
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 657 aserciones (medido con el
-`grep` de §8 el 2026-10-11; antes decía 606, 529, 501, 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Bloqueo entre usuarios (UGC-1, PL-006: `20261013000487` +
+`20261015000488`; en STAGING desde el 2026-10-15/16).** Si A bloquea a B, se
+corta el descubrimiento y el contacto entre los dos en AMBAS direcciones, pero
+la gestión es unilateral: solo A ve y deshace su fila. Semántica aprobada en
+UGC-1A (híbrida); deuda en `docs/PRE_LAUNCH_DEBT.md` (PL-006, PL-052, PL-087).
+Cada pieza, con su porqué:
+
+- **`public.user_bloqueos`** (bloque del esquema, arriba): RLS de filas
+  propias en SELECT/INSERT/DELETE, `revoke all` y después `grant select,
+  insert, delete` a `authenticated`; anon, nada; sin UPDATE. El bloqueado no
+  lee la fila que lo nombra (T40 (s1)) ni la borra (T40 (s2)). Un suspendido
+  SÍ bloquea y desbloquea (T40 (u1)/(u2)): no afecta a nadie más. Borrar la
+  cuenta borra sus bloqueos en las dos columnas (cascade, T40 (v)).
+- **`private.bloqueos_vigentes()`** (`sql stable security definer`, sin
+  parámetros, `uuid[]`): los ids con bloqueo en CUALQUIER dirección respecto a
+  `auth.uid()`. Definer porque tiene que ver las filas donde la sesión es el
+  `bloqueado_id`, que la RLS le esconde. Nunca devuelve NULL (`coalesce` a
+  `'{}'`). EXECUTE para `authenticated` porque la usa una policy (SIGSEGV de
+  §9).
+- **`listings_select`, "variante D"**: a la condición de siempre se le suma
+  `and user_id not in (select b.id from unnest(coalesce((select
+  private.bloqueos_vigentes()), array[null]::uuid[])) as b(id))`.
+  - **Forma medida** (UGC-1C.1, 80 000 activas y 0/1/50/1000 bloqueos, como
+    `authenticated`): Postgres la resuelve como `hashed SubPlan`, con el helper
+    llamado UNA vez por sentencia. Se descartaron `user_id <> all (arreglo)`
+    (filas × bloqueos: de +28 a +122 ms con 1000 bloqueos) y `not exists` sobre
+    el arreglo, cuyo plan era inestable.
+  - **Fail-closed:** si el helper devolviera NULL, el `coalesce` lo vuelve
+    `{NULL}` y `x not in (…, NULL)` nunca es verdadero, así que la fila se
+    ESCONDE (también al dueño: es el precio de cerrar ante un estado
+    inesperado). Con `coalesce(…, '{}')` un helper roto abriría todo. Lo
+    vigila T40 (b6), con el helper roto dentro de un savepoint.
+  - **La heredan, por ser invoker:** Feed, Categoría, `buscar_listings`,
+    `recomendar_listings`, Detalle por id, Perfil público, el `!inner` de
+    Favoritos, `listing_photos_select` y la policy de Storage de
+    `listing-photos`. T40 prueba cada una.
+- **`private.listing_con_bloqueo(bigint)`** (definer, EXECUTE para
+  `authenticated`): ¿el dueño de ESA publicación está en un bloqueo conmigo?
+  Va en el `with check` de `listing_contacts_insert_own`: no nacen contactos
+  NUEVOS entre bloqueados (rechazo 42501). Tiene que ser definer porque la
+  publicación de quien me bloqueó ya no me es visible: un `exists` invoker
+  daría false y dejaría pasar el contacto. Solo cierra el caso de la pareja
+  bloqueada; el hueco general de registrar contactos por id sobre algo
+  invisible es PL-052.
+- **`private.bloqueo_entre(uuid, uuid)`** (invoker, `stable`, EXECUTE
+  revocado para el cliente): ¿hay bloqueo entre dos ids cualesquiera, en
+  cualquier dirección? La usan solo cuerpos definer, que la ejecutan como su
+  dueño: los 4 productores de avisos usuario→usuario
+  (`notify_price_drop`, `notify_favorito_vendido`, `notify_calificacion`,
+  `notify_compra_calificable`), que ya no crean el aviso entre una pareja
+  bloqueada, y desde `…488` `increment_listing_view`. Abierta sería un oráculo
+  de bloqueos entre terceros (T40 (t2)).
+- **`public.interaccion_disponible(uuid)`** (definer, la cuarta de `public`):
+  `true` si no hay bloqueo en NINGUNA dirección con ese usuario. Es un booleano
+  sin dirección: el bloqueado ve lo mismo que el bloqueador, y la base no dice
+  quién bloqueó. El cliente distingue "bloqueado por mí" (lee su propia fila)
+  de "no disponible" (no hay fila suya, pero la interacción está cortada) en
+  `fetchRelacion()` (`src/lib/bloqueos.ts`).
+- **`seller_whatsapp`**: niega el número en las dos direcciones (cuarta causa
+  de `null`, bloque del teléfono, arriba).
+- **`increment_listing_view`** (`…488`): no cuenta vistas entre bloqueados
+  (bloque de `vistas_count`, arriba).
+- **Lo que se CONSERVA, a propósito (UGC-1A):** las reseñas en las dos
+  direcciones (se siguen leyendo, también por el bloqueado; T40 (l4)), y
+  bloquear NO impide calificar una transacción anterior (`can_rate()` no mira
+  bloqueos; T40 (l1), deuda PL-087); los reportes (bloquear no afecta reportar;
+  T40 (m)); los contactos, ventas y avisos anteriores; las filas de
+  `favorites` (se conservan, pero el `!inner` con `listings` las esconde;
+  T40 (g)).
+- **El cliente no decide nada** (§0 regla 7). Elige qué frame pintar
+  ("Perfil público (bloqueado)" o "(no disponible)") y a dónde navegar: después
+  de bloquear desde "Reportar", `marcarBloqueoReciente()` hace que el Detalle
+  que quedó debajo salga en vez de pintar "ya no está disponible". La base ya
+  escondió todo, mire el cliente lo que mire.
+- **Pruebas:** T40 de `rls.sql` (58 aserciones; 20 controles negativos para
+  `…487` y 6 para `…488`, cada uno contra la suite completa y contra T40
+  aislada) y `scripts/probe-bloqueos.mjs` (24 pruebas por HTTP, con la misma
+  `@supabase/supabase-js` de la app).
+- **Evidencia:** LOCAL (suite y probes en verde, UGC-1C/1E.1/1E.5b); STAGING
+  (preflight, copia cifrada del 2026-10-15, un push por migración con su
+  verificación de superficie, UGC-1E.2 a 1E.5c); iPhone físico contra STAGING
+  (bloquear/desbloquear, los dos estados de Perfil público, "Usuarios
+  bloqueados" y el fix de vistas, UGC-1E.5/1E.5d). Detalle en §8, "Hecho".
+
+**Regresión de RLS:** `supabase/tests/rls.sql`, 715 aserciones (medido con el
+`grep` de §8 el 2026-10-15; antes decía 657, 606, 529, 501, 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -2867,6 +2995,56 @@ contra la sección aislada: 44 caen en su aserción en las dos corridas y 11
 caen antes en T12 o T35e por el orden de la suite; el detalle, en el mensaje
 de `880db76`.
 
+Y a **715** con UGC-1 (bloqueo entre usuarios), todo en T40 (58 aserciones;
+medido con el `grep` de §8 el 2026-10-15): 50 con `20261013000487` (707) y 8
+con `20261015000488` (715). T40 es autocontenida, con su universidad
+`rls-t40.mx` y sus propios `:A40` (bloquea), `:B40` (el bloqueado, con
+favoritos y contactos anteriores al bloqueo), `:T40` (el tercero sin
+bloqueos: el CONTROL de cada aserción, para que un `null` o un 0 no venga de
+otra barrera), `:S40` (suspendido) y `:D40` (cuenta que se borra). Cada acción
+corre como `authenticated` y cada comprobación en su propia sentencia (lección
+de T28). Los 20 controles de `…487`, uno a la vez dentro de la transacción de
+la suite y contra la suite completa **y** T40 aislada, caen cada uno en su
+aserción en las dos corridas, salvo uno:
+
+| Variante rota | Suite | T40 aislada |
+|---|---|---|
+| `listings_select` sin la cláusula de bloqueo | (b1) | (b1) |
+| `bloqueos_vigentes` sin la dirección inversa | (b2) | (b2) |
+| `bloqueos_vigentes` SECURITY INVOKER | (b2) | (b2) |
+| `seller_whatsapp` sin el bloqueo, o en una sola dirección | (i1) | (i1) |
+| `listing_contacts_insert_own` sin la condición | (k1) | (k1) |
+| `listing_con_bloqueo` SECURITY INVOKER | (k1) | (k1) |
+| cada uno de los 4 `notify_*` sin el filtro | (n), (o), (l3), (p) | igual |
+| sin el CHECK de auto-bloqueo | (r1) | (r1) |
+| `grant update` a `authenticated` | (t1) | (t1) |
+| `grant select` a `anon` | **T12** ("anon no tiene ni un privilegio en public") | (t1) |
+| las policies de SELECT / INSERT / DELETE abiertas | (s1) / (r3) / (s2) | igual |
+| el `coalesce` cae a `{}`, o sin `coalesce` | (b6) | (b6) |
+| `grant execute` de `bloqueo_entre` a `authenticated` | (t2) | (t2) |
+| `interaccion_disponible` en una sola dirección | (j) | (j) |
+
+Las 8 de `…488` son (y1a)-(y5b): A→B sin vistas en las dos direcciones, la
+vendida incluida ((y1a), (y1b)), el tercero sí suma ((y1c)), la helper NULL no
+cuenta ni para el tercero ((y5), con su restauración en (y5b), gemela de (b7)),
+bloqueo mutuo ((y2)), solo B→A ((y3)) y, desbloqueados, vuelven a sumar
+((y4)). Sus 6 controles, con el estado vivo impreso antes de cada corrida:
+
+| Variante rota | Suite | T40 aislada |
+|---|---|---|
+| sin la cláusula | (y1a) | (y1a) |
+| solo "el dueño bloqueó al lector" | (y1b) | (y1b) |
+| solo "el lector bloqueó al dueño" | (y1a) | (y1a) |
+| `bloqueo_entre(user_id, user_id)` | (y1a) | (y1a) |
+| la cláusula excluye todo | **T5** ("la visita de A incrementó el contador") | (y1c) |
+| fail-open: `coalesce(…, true)` | (y5) | (y5) |
+
+**La lección de la tanda no salió de la suite, salió del iPhone:** `…487`
+filtró la policy de `listings`, y la única RPC definer que escribe sobre esa
+tabla por id quedó por fuera. Ninguna aserción de la primera tanda llamaba a
+`increment_listing_view` con un bloqueo de por medio. Toda función definer
+que reciba un id de otra fila es candidata a saltarse un filtro nuevo de RLS.
+
 **Gotcha: la suite espera 3 usuarios en local.** Una cuenta de prueba (la del
 admin de la prueba manual del panel) la rompe en T1; se arregla con
 `supabase db reset`.
@@ -3037,12 +3215,22 @@ mandado a `pendiente` al editar fotos, auto-aprobándose sin Studio.
 
 ---
 
-## 4. Inventario completo de pantallas (73)
+## 4. Inventario completo de pantallas (81)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
 usa el filtro visual del prototipo. Para el estado de qué grupo ya existe
 como código real (vs. solo diseño), ver §8 y las reglas de `.claude/rules/`.
+
+**81 desde UGC-1 (bloqueo entre usuarios, PL-006)**, medido con
+`grep -o 'class="phone-block" data-cat="[a-z]*"' design/relevo-app.html | sort |
+uniq -c` el 2026-10-15: Onboarding 17, Explorar 22, Publicar 10, Cuenta 17,
+Confianza 5, Notificaciones 2 y Sistema 8. Eran 73; los 8 nuevos son
+"Detalle (opciones)" (Explorar), "Perfil público (opciones)", "Perfil público
+(bloqueado)", "Perfil público (no disponible)", "Usuarios bloqueados" y
+"Usuarios bloqueados vacío" (Cuenta), "Reporte enviado (¿bloquear?)"
+(Confianza) y "Confirmar bloquear" (Sistema). Cada uno se describe en su grupo,
+abajo.
 
 ### Onboarding (17)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
@@ -3086,7 +3274,7 @@ institucional" (Verificación, Iniciar sesión, Recuperar contraseña) pasó de
 `nombre@estudiante.tec.mx` a `estudiante@institución.mx`: el viejo sugería un
 subdominio que el hook rechaza.
 
-### Explorar (21)
+### Explorar (22)
 Feed · **Feed (sin publicaciones)** · Selector de campus ·
 **Selector de campus (detectando ubicación)** ·
 **Selector de campus (sin campus cercano)** ·
@@ -3099,7 +3287,13 @@ Categoría sin resultados ·
 Ver todas (categorías) · Búsqueda (recomendados) · Búsqueda ·
 Búsqueda sin resultados · Filtros · Detalle de publicación ·
 **Detalle (vendida)** · Detalle (vista vendedor) ·
-Detalle (foto a pantalla completa) · Detalle (foto — cerrando)
+Detalle (foto a pantalla completa) · Detalle (foto — cerrando) ·
+**Detalle (opciones)**
+
+"Detalle (opciones)" llegó con UGC-1: el menú "⋯" del Detalle de una
+publicación ajena (`HojaOpciones`), con "Reportar publicación" y "Bloquear a
+…" como filas separadas (decisión O-3 de UGC-1A). Bloquear abre "Confirmar
+bloquear" (Sistema).
 
 "Detalle (vendida)" es el Detalle de una publicación ya vendida vista por quien
 NO es su dueño, y cubre **dos espectadores en un solo frame** con el recurso de
@@ -3196,11 +3390,28 @@ contrario —reintentar es la salida—, así que `esDeterminista()` **no cambi�
 el motivo nuevo vive en `falloGeneral`. Son **tres motivos y dos baldes**; el
 párrafo viejo hacía leer que eran tres baldes.
 
-### Cuenta (12)
+### Cuenta (17)
 Perfil · **Perfil (ayuda y soporte)** · Editar perfil · **Selector de país** ·
-Perfil público · Favoritos · Favoritos vacío · Mis publicaciones ·
-Mis publicaciones vacío · Mis publicaciones (acciones) · **Configuración** ·
-**Editar intereses**
+Perfil público · **Perfil público (opciones)** · **Perfil público (bloqueado)** ·
+**Perfil público (no disponible)** · Favoritos · Favoritos vacío ·
+Mis publicaciones · Mis publicaciones vacío · Mis publicaciones (acciones) ·
+**Configuración** · **Editar intereses** · **Usuarios bloqueados** ·
+**Usuarios bloqueados vacío**
+
+**Los cinco nuevos llegaron con UGC-1 (bloqueo entre usuarios)**: 81 en total,
+17 de Cuenta.
+- **"Perfil público (opciones)"**: la hoja del "⋯", con Reportar y Bloquear
+  separados.
+- **"Perfil público (bloqueado)"**: lo ve quien bloqueó. Identidad y
+  calificaciones visibles; sin publicaciones, contadores ni WhatsApp; con la
+  salida "Desbloquear".
+- **"Perfil público (no disponible)"**: lo ve el otro lado (o quien bloqueó
+  si también lo bloquearon). Identidad y calificaciones visibles y "Este
+  perfil no está disponible."; sin publicaciones, contadores ni WhatsApp, y
+  sin decir quién bloqueó. Si hay fila propia, gana "(bloqueado)": cada quien
+  administra solo su bloqueo (UGC-1B.1).
+- **"Usuarios bloqueados"** y su vacío: Configuración → Privacidad. Solo nombre
+  y avatar, sin fecha ni motivo, y "Desbloquear" por fila.
 
 **"Perfil (ayuda y soporte)" es la hoja de la fila "Ayuda y soporte"**: 73 en
 total, 12 de Cuenta, medido con el mismo `grep | uniq -c`. Es Perfil atenuado
@@ -3279,9 +3490,14 @@ queda rastro. Eso sí exigiría un aviso persistente —frame primero, más dón
 guardar el "ya se lo dijimos"—, y está como deuda con disparador en
 `cuenta-perfil.md`.
 
-### Confianza (4)
+### Confianza (5)
 Reportar publicación · Calificar · ¿A quién le vendiste? ·
-¿A quién le vendiste? (sin contactos)
+¿A quién le vendiste? (sin contactos) · **Reporte enviado (¿bloquear?)**
+
+"Reporte enviado (¿bloquear?)" llegó con UGC-1: después de reportar a una
+persona o una publicación, ofrece bloquear a esa persona (o al vendedor), solo
+si todavía no la bloqueó (`src/app/reportar/[id].tsx`). "Bloquear" abre la
+MISMA "Confirmar bloquear" de Sistema, no una variante (UGC-1B.1).
 
 El vacío NO es un caso borde: nadie está obligado a tocar "Contactar por
 WhatsApp" antes de que el vendedor marque la venta —pudo acordarse en persona, o
@@ -3320,9 +3536,14 @@ reporte. Los íconos de las filas nuevas reusan los componentes existentes
 path de la etiqueta y de la estrella del frame se alinearon a los de esos
 componentes, para no tener dos formas del mismo ícono.
 
-### Sistema (7)
+### Sistema (8)
 Confirmar eliminar · Confirmar cerrar sesión · **Confirmar eliminar cuenta** ·
-Error de conexión · Toast de éxito · Toast de error · Loading / skeleton
+**Confirmar bloquear** · Error de conexión · Toast de éxito · Toast de error ·
+Loading / skeleton
+
+"Confirmar bloquear" llegó con UGC-1: el mismo cascarón `.modal-card`
+(`ConfirmarBloqueoModal`, sobre `ConfirmModal`). La abren el "⋯" de Detalle,
+el de Perfil público y "Reporte enviado (¿bloquear?)".
 
 **"Confirmar eliminar cuenta" y "Cuenta eliminada" (Onboarding) llegaron con
 "Eliminar cuenta" (`20260929000474`)**: 70 en total, 7 de Sistema y 16 de
@@ -3404,7 +3625,7 @@ en "Verificación (correo no participante)".
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 73 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 81 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -3433,8 +3654,8 @@ en "Verificación (correo no participante)".
   quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son QUINCE pasos, no uno (decía "CATORCE" antes de la
-  Ola 6 del panel, "TRECE" antes de la Ola 3b del panel, "DOCE" antes de la Ola 4, "ONCE" antes de la
+  `postgres`/superusuario. Son DIECISÉIS pasos, no uno (decía "QUINCE" antes de
+  UGC-1, "CATORCE" antes de la Ola 6 del panel, "TRECE" antes de la Ola 3b del panel, "DOCE" antes de la Ola 4, "ONCE" antes de la
   Ola 2 del panel, "DIEZ" antes del panel de admin, "NUEVE" antes de eliminar cuenta, y "SIETE" con ocho en la
   lista):
   1. `psql -f supabase/tests/rls.sql` — las policies, por SQL.
@@ -3648,7 +3869,22 @@ en "Verificación (correo no participante)".
      solo el stack (sin `functions serve`), pasa por `_guarda-relevo.mjs` y
      limpia lo suyo (borra sus cuentas y el cascade se lleva las filas). Sus
      cuatro controles caen cada uno en su caso.
-  Los probes 2, 3, 6, 7, 9, 10, 11, 13, 14 y 15 necesitan el stack local arriba y limpian lo suyo (el
+  16. `node scripts/probe-bloqueos.mjs`: el bloqueo entre usuarios (UGC-1,
+     `20261013000487` y `…488`) por HTTP, **24 pruebas**, con la misma
+     `@supabase/supabase-js` que la app, contra PostgREST local. Con A que
+     bloquea a B y un tercero T: las publicaciones no se ven entre A y B en
+     ninguna dirección (también por id y por `buscar_listings`),
+     `seller_whatsapp` niega en las dos, B no lee ni borra la fila que lo nombra
+     ni inserta a nombre de A, `interaccion_disponible` da false en las dos, no
+     nacen contactos nuevos, `increment_listing_view` no suma entre ellos y
+     responde exactamente igual que cuando sí suma (status, cuerpo y headers,
+     por HTTP crudo), anon no toca nada, y desbloquear restaura todo. T40 prueba
+     la semántica en SQL; esto, lo que expone PostgREST. Necesita solo el stack
+     (sin `functions serve`), pasa por `_guarda-relevo.mjs` e imprime al
+     arrancar el estado bajo prueba (la policy, los privilegios y si la RPC mira
+     el bloqueo). Limpia lo suyo: borra sus cuentas y el cascade se lleva
+     publicaciones y bloqueos.
+  Los probes 2, 3, 6, 7, 9, 10, 11, 13, 14, 15 y 16 necesitan el stack local arriba y limpian lo suyo (el
   9, con un rollback); si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4, 5, 8 y 12 no necesitan nada: ni stack, ni red, ni credenciales.
 
@@ -3732,7 +3968,7 @@ de los route groups).
 | `onboarding-auth.md` | Onboarding, OTP, gating de sesión, RF-04, registro por dominio | `src/app/(onboarding)/**`, `src/lib/session.tsx`, `src/lib/supabase.ts`, `src/lib/registro.ts`, `scripts/probe-registro.mjs` |
 | `explorar.md` | Feed, Búsqueda, Categoría, Detalle, favoritos | `src/app/(explorar)/**`, `(tabs)/index.tsx`, `(tabs)/buscar.tsx`, `src/lib/listings.ts` |
 | `publicar-fotos.md` | Publicar atómico, fotos, bucket de Storage | `src/app/(publicar)/**`, `src/lib/{publicar,storage,foto-picker,listing-form}.ts` |
-| `cuenta-perfil.md` | Mis publicaciones, Favoritos, Perfil, Editar perfil, Perfil público, RF-13 | `src/app/(cuenta)/**`, `(tabs)/perfil.tsx`, `(tabs)/favoritos.tsx`, `src/lib/perfil*.ts` |
+| `cuenta-perfil.md` | Mis publicaciones, Favoritos, Perfil, Editar perfil, Perfil público, RF-13, Usuarios bloqueados (UGC-1) | `src/app/(cuenta)/**`, `(tabs)/perfil.tsx`, `(tabs)/favoritos.tsx`, `src/lib/perfil*.ts`, `src/lib/bloqueos.ts`, `scripts/probe-bloqueos.mjs` |
 | `confianza-ventas.md` | Venta, ¿a quién le vendiste?, Calificar, Reportar | `src/app/(confianza)/**`, `src/app/reportar/**`, `src/lib/confianza.ts` |
 | `notificaciones-push.md` | Inbox, push, Edge Function `send-push` | `src/app/(notificaciones)/**`, `src/lib/{notificaciones,push}.ts`, `supabase/functions/**` |
 | `moderacion.md` | Moderación pre-publicación (RF-18): Edge Function `moderar-contenido`, los dos triggers de Storage, rework de `publicar.ts`, Realtime | `supabase/functions/moderar-contenido/**`, `scripts/probe-moderacion*.mjs`, `src/lib/{publicar,storage}.ts`, `src/app/(publicar)/**` |
@@ -4492,6 +4728,53 @@ de los route groups).
     0i, lista de lanzamiento) y los secretos de Vault de `send-push`
     (pendiente 1).
 
+- **UGC-1, bloqueo entre usuarios (PL-006): EN STAGING, validado en LOCAL,
+  en STAGING y en un iPhone físico (2026-10-12 al 2026-10-16, UTC). PROD
+  pendiente (PL-001).** Migraciones `20261013000487_user_bloqueos.sql` y
+  `20261015000488_increment_listing_view_bloqueo.sql`; esquema en §3 ("Bloqueo
+  entre usuarios"); 8 frames nuevos (§4). Cada checkpoint lo autorizó el usuario
+  por separado; los push los corrió Claude con esa autorización, y la copia
+  cifrada y las pruebas en dispositivo, el usuario. Lo medido, sin imprimir PII
+  ni secretos:
+  - **Decisión y diseño:** UGC-1A (semántica híbrida, O-1 a O-5; deuda PL-052
+    y PL-087) y UGC-1B/1B.1 (frames, 73 → 81).
+  - **LOCAL (UGC-1C/1D/1E.1/1E.5b):** `rls.sql` 715/715 (T40, 58 aserciones),
+    `probe-bloqueos` 24/24, `probe-storage` 41/41, `probe-venta` 13/13,
+    `probe-registro` 55/55, `probe-actividad` 15/15, `probe-eliminar-cuenta`
+    26/26 y `probe-admin` 105/105; `tsc`, `lint`, `check:functions` y `git diff
+    --check` limpios; controles negativos 20/20 para `…487` y 6/6 para `…488`.
+    Revisión física del cliente en el iPhone contra el stack LOCAL
+    (`.env.development.local`, ya borrado).
+  - **STAGING, `…487` (UGC-1E.2 a 1E.4):**
+    - preflight read-only: las 7 definiciones que la migración reescribe y
+      las 7 secciones de seguridad idénticas a la foto local previa;
+    - copia cifrada (UGC-1E.3): `relevo-respaldo-2026-10-15.dmg` (AES-256,
+      UDZO, 413,696 B), verificada contra su manifiesto y byte a byte, con su
+      `.sha256` al lado; es ANTERIOR a `…487`;
+    - dry-run con solo `…487`; push el 2026-10-15 a las 20:48 UTC;
+    - después: 51 = 51, las 11 secciones de seguridad iguales a LOCAL, el
+      advisor de definer 27 → 28 (`interaccion_disponible`), los tipos
+      `--linked` iguales salvo `PostgrestVersion` (14.5 → 14.17, plataforma;
+      regenerados en UGC-1E.6B) y ningún efecto sobre datos ni push.
+  - **iPhone físico contra STAGING (UGC-1E.5):** bloquear y desbloquear, los
+    estados "bloqueado" y "no disponible", "Usuarios bloqueados" y la
+    restauración. De ahí salió el hueco de `increment_listing_view` (un
+    bloqueado le sumó una vista al bloqueador por una ruta histórica).
+  - **STAGING, `…488` (UGC-1E.5c):** sin copia nueva (`…488` no toca datos y se
+    revierte recreando el cuerpo de `20260917000459`); dry-run con solo
+    `…488`; push el 2026-10-16 a las 00:27 UTC; 52 = 52, la única diferencia de
+    superficie es el md5 de la RPC (`94a7e813…` → `c5ac0cad…`), advisors sin
+    cambios atribuibles y datos iguales.
+  - **El fix en el iPhone (UGC-1E.5d):** con A→B vigente, B abrió la vendida
+    de A desde su aviso histórico: RPC → 204 y la vista NO se sumó; sin
+    bloqueo, la misma ruta → 204 y +1 exacto. Ninguna otra tabla cambió fuera
+    de lo esperado (vistas normales antes del bloqueo, el token de push
+    moviéndose con cada login y restaurado al final).
+  - **Observaciones de entorno, no del código:** los logs de API de STAGING
+    perdieron algunas entradas (`POST user_bloqueos`, un login) en la
+    ingesta; y en LOCAL `probe-admin` dio 504 de GoTrue mientras otro stack
+    local (`passly-local`) saturaba el host, y pasó 105/105 al detenerlo.
+
 **Pendiente, en este orden de prioridad:**
 0. **Fase 2A en remoto: falta solo la prueba manual (paso 6 del runbook,
    CLAUDE.md §8 arriba).** Los pasos 0-5 ya corrieron y están en "Hecho"
@@ -4852,6 +5135,8 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - La landing (otro repo) podría cargar el snippet de Cloudflare Web Analytics: sin verificar si lo hace, y el aviso de privacidad no lo menciona → `docs/auditoria-lanzamiento-2026-09-22.md`, §6
 - El panel se despliega a mano (`wrangler pages deploy`, sin CI/CD) y Cloudflare le agrega `access-control-allow-origin: *`, `nel` y `report-to`, que no se quitan desde `_headers`; las fuentes `.woff2` se sirven sin `content-type` → `admin/CLAUDE.md`, "Producción"
 - Leaked password protection de Auth desactivado (advisor de seguridad; D-18 de la Ola 6, deuda de endurecimiento, abierta); se decide en el Dashboard → CLAUDE.md §8, "Hecho", Panel de admin
+- Un contacto se puede registrar por id sobre una publicación que la RLS le esconde a quien contacta (pausada, pendiente, bloqueada), y eso habilita `can_rate()`; UGC-1 lo cierra SOLO para parejas bloqueadas → `docs/PRE_LAUNCH_DEBT.md`, PL-052
+- Bloquear a alguien no impide calificar una transacción registrada antes del bloqueo (`can_rate()` no mira bloqueos; decisión O-2 de UGC-1A) → `docs/PRE_LAUNCH_DEBT.md`, PL-087 (relacionada con PL-083)
 - Snapshot diario de métricas (D11, aprobado como "después"): sin él, el `ON DELETE CASCADE` hace que altas, publicaciones, contactos y activos pasados bajen al eliminarse una cuenta; la pantalla y el runbook lo explican. **Revisar cuando:** se necesiten cifras históricas inmutables (p. ej., tras el lanzamiento). **Fix:** `private.metricas_diarias` agregada con pg_cron → `docs/rf17-plan-admin.md` §9, CLAUDE.md §3 ("Actividad diaria y métricas")
 - `actividad_diaria` y las RPC de métricas sin índices nuevos (F4 de la Ola 6, medido en local con volumen sintético): se agregan solo si el volumen o la latencia lo justifican. **Revisar cuando:** `admin.metricas` de 90 días tarde de forma apreciable en el panel o crezca mucho la tabla → `docs/rf17-ola6-plan.md` (F4)
 - En dev, `expo/virtual/env.js` empaqueta `.env.local` y sus valores prevalecen sobre las variables del proceso (también con `EXPO_NO_DOTENV=1`): la app no se puede apuntar al stack local sin crear archivos, y un `.env.local` con producción hace que el JS de desarrollo hable con producción → mensaje de `acf59c1` (F9 de la Ola 6)
@@ -4920,11 +5205,13 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `CategoryTile` | `CategoryTile` | Tile de categoría con su tinte. `selected` opcional = `.cat-item.selected` (checkbox); sin la prop, navega como siempre |
 | `CategoriasSelector` | `CategoriasSelector`, `alternar` | Rejilla de 3 de selección múltiple ("Intereses" y "Editar intereses"). **No** unificar con "Ver todas": esa navega, esta elige |
 | `Chip` | `Chip` | Chip genérico |
-| `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" / "Confirmar eliminar cuenta". `children` es el único hueco (entre el cuerpo y los botones) y `confirmDisabled` apaga solo el confirm; sin hijos se ve igual que siempre |
+| `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" / "Confirmar eliminar cuenta" / "Confirmar bloquear" / "Reporte enviado (¿bloquear?)". `children` es el único hueco (entre el cuerpo y los botones) y `confirmDisabled` apaga solo el confirm; sin hijos se ve igual que siempre. Desde UGC-1: `cancelLabel` (default "Cancelar"; "Ahora no" en "Reporte enviado") e `iconTone` (`'brick'` default, `'forest'` para el ícono de éxito de "Reporte enviado") |
+| `ConfirmarBloqueoModal` | `ConfirmarBloqueoModal` | "Confirmar bloquear": `ConfirmModal` tal cual, con el texto del bloqueo en UN solo sitio. La ÚNICA confirmación de bloqueo, abierta desde el "⋯" de Detalle, el de Perfil público y "Reporte enviado (¿bloquear?)". Con `confirming`, los dos botones apagados |
 | `EmptyState` | `EmptyState` | Estado vacío, con `.empty-actions` opcional |
 | `ErrorState` | `ErrorState` | Estado de fallo con "Reintentar" (label hardcodeado — ver deuda) |
 | `Field` | `Field`, `PhoneField`, `SelectField`, `FixedField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio. `FixedField` = valor que se muestra y no se elige (sin chevron, no es botón). `PhoneField` recibe `pais`/`onPaisPress`/`error` (el país es un botón). `Field` tiene `error` (`.field-error` + borde `--brick`), copy persistente: frame primero |
 | `HojaAccionesListing` | `HojaAccionesListing` | Hoja de acciones de una publicación (pausar/reactivar, editar, marcar vendida/cambiar comprador, eliminar). `Modal` de RN, no `SheetScreen` — mismo criterio que `CampusBottomSheet`. Calcula internamente `puedeAlternarPausa()`/`puedeEditarListing()`/`accionVenta()`; consumida por "Mis publicaciones" y por el kebab de Detalle (vista vendedor) |
+| `HojaOpciones` | `HojaOpciones`, `OpcionHoja` | La hoja del menú "⋯" de "Detalle (opciones)" y "Perfil público (opciones)": Reportar y Bloquear como dos filas separadas. Mismo cascarón que `HojaAccionesListing`/`HojaSoporte` sin ser ninguna: solo pinta las filas que le pasan (`danger`, `chevron`). `Modal` de RN; suma el inset inferior |
 | `HojaSoporte` | `HojaSoporte` | Hoja de "Ayuda y soporte" de Perfil (WhatsApp y Correo). `Modal` de RN con el cascarón de `HojaAccionesListing`, sin ser su consumidor. Encapsulada: recibe solo `visible`, `onCerrar` y `correoUsuario`. Hoy es el único componente de `src/components` que llama `useToast` |
 | `ListRow` | `FormHeader`, `SearchField`, `ListRow`, `RadioCircle` | Fila de lista, header de formulario y el radio que reusan 3 pantallas |
 | `ListingFormFields` | `ListingFormFields` | EL formulario de publicación, compartido por Publicar y Editar |
@@ -5857,3 +6144,15 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   contenido en el dominio propio (`max-age=14400`) y en `pages.dev`
   (`s-maxage=604800`), pero no en el deployment nuevo. No hace falta purgar: el
   `index.html` ya apunta al JS nuevo y se sirve con `max-age=0, must-revalidate`.
+- **Cambiar la app de LOCAL a STAGING no cierra la sesión que ya había contra
+  STAGING.** supabase-js guarda la sesión bajo una llave que sale del hostname
+  de la URL (`sb-${baseUrl.hostname.split(".")[0]}-auth-token`, leído en
+  `node_modules/@supabase/supabase-js/dist`): contra STAGING es
+  `sb-ukxfnydfhmryrzhdqkvj-auth-token` y contra el stack local por hostname de
+  la Mac, `sb-Enrique-MacBook-Pro-auth-token`. Observado en UGC-1E.5: tras
+  borrar `.env.development.local` y reiniciar Metro, el iPhone entró directo al
+  Feed con la sesión de STAGING de tres días antes (STAGING registró un refresh
+  de esa sesión, sin login nuevo). No se midió qué pasa en la otra dirección ni
+  con otros hostnames. **Antes de una prueba que dependa de qué cuenta está
+  activa, comprueba la sesión en vez de suponer que el cambio de entorno la
+  reinició.**

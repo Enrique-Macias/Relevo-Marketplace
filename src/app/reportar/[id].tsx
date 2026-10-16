@@ -25,11 +25,20 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { PrimaryButton } from '@/components/Buttons';
+import { ConfirmarBloqueoModal } from '@/components/ConfirmarBloqueoModal';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { Field } from '@/components/Field';
+import { IconCheck } from '@/components/icons';
 import { RadioCircle } from '@/components/ListRow';
 import { SheetScreen } from '@/components/SheetScreen';
 import { useToast } from '@/components/Toast';
 import { Colors, Typography } from '@/constants/theme';
+import {
+  bloquearUsuario,
+  fetchBloqueoPropio,
+  marcarBloqueoReciente,
+  nombreParaBloqueo,
+} from '@/lib/bloqueos';
 import { crearReporte, type ReportReason } from '@/lib/confianza';
 import { useSession } from '@/lib/session';
 
@@ -60,6 +69,17 @@ export default function ReportarScreen() {
   const [motivo, setMotivo] = useState<ReportReason | null>(null);
   const [comentario, setComentario] = useState('');
   const [enviando, setEnviando] = useState(false);
+
+  /**
+   * UGC-1, frame "Reporte enviado (¿bloquear?)". Después de un reporte con
+   * éxito sobre una persona identificable (el usuario reportado, o el dueño de
+   * la publicación) se OFRECE bloquearla, como un segundo paso aparte:
+   *   'ofrecer'  → "Gracias por avisarnos" con "Ahora no" / "Bloquear";
+   *   'confirmar'→ la MISMA "Confirmar bloquear" de Perfil público y Detalle.
+   * El reporte ya se envió en los dos pasos: cancelar NO lo revierte.
+   */
+  const [paso, setPaso] = useState<'form' | 'ofrecer' | 'confirmar'>('form');
+  const [bloqueando, setBloqueando] = useState(false);
 
   const userId = session?.user.id ?? null;
 
@@ -93,6 +113,10 @@ export default function ReportarScreen() {
     userId !== null &&
     (esUsuario ? userId === id : sellerId !== undefined && userId === sellerId);
 
+  // A quién se ofrece bloquear: la persona reportada, o el dueño de la
+  // publicación (el mismo `sellerId` del guard de arriba). Sin él, no se ofrece.
+  const objetivoBloqueo = esUsuario ? id : (sellerId ?? null);
+
   useEffect(() => {
     if (esAutorreporte) router.back();
   }, [esAutorreporte]);
@@ -108,8 +132,24 @@ export default function ReportarScreen() {
           ? { reporterId: userId, reportedUserId: id, motivo, comentario }
           : { reporterId: userId, listingId: Number(id), motivo, comentario }
       );
-      mostrar('Gracias por avisarnos. Vamos a revisarlo.');
-      router.back();
+      // ¿Se ofrece bloquear? Solo si hay a quién y todavía no lo tengo
+      // bloqueado (desde "Perfil público (bloqueado)" también se puede
+      // reportar). Si la consulta falla, se queda el toast de siempre: un
+      // fallo de red no inventa un paso nuevo.
+      let ofrecer = false;
+      if (objetivoBloqueo && objetivoBloqueo !== userId) {
+        try {
+          ofrecer = !(await fetchBloqueoPropio(userId, objetivoBloqueo));
+        } catch (e: any) {
+          console.warn('[reportar] no se pudo leer el bloqueo propio:', e?.message ?? e);
+        }
+      }
+      if (ofrecer) {
+        setPaso('ofrecer');
+      } else {
+        mostrar('Gracias por avisarnos. Vamos a revisarlo.');
+        router.back();
+      }
     } catch (e: any) {
       // El 42501 tiene varias causas —cuenta suspendida, o el guard de arriba
       // esquivado con un param manipulado— y la respuesta no dice cuál. Se
@@ -128,6 +168,26 @@ export default function ReportarScreen() {
       mostrar('No pudimos enviar tu reporte', 'error');
     } finally {
       setEnviando(false);
+    }
+  }
+
+  async function bloquear() {
+    if (!userId || !objetivoBloqueo || bloqueando) return;
+    setBloqueando(true);
+    try {
+      await bloquearUsuario(userId, objetivoBloqueo);
+      // Detalle, que quedó debajo, ya no puede mostrar esta publicación: al
+      // recuperar el foco consume esta señal y sale (`src/lib/bloqueos.ts`).
+      marcarBloqueoReciente(objetivoBloqueo);
+      mostrar(`Bloqueaste a ${nombreParaBloqueo(nombre)}`);
+      router.back();
+    } catch (e: any) {
+      console.warn('[reportar] no se pudo bloquear:', e?.code ?? '?', e?.message ?? e);
+      // El reporte SÍ se envió; lo que falló es solo el bloqueo.
+      mostrar('Enviamos tu reporte, pero no pudimos bloquear a este usuario.', 'error');
+      router.back();
+    } finally {
+      setBloqueando(false);
     }
   }
 
@@ -192,6 +252,35 @@ export default function ReportarScreen() {
         textAlignVertical="top"
         containerStyle={styles.campoUltimo}
       />
+
+      {/* Frame "Reporte enviado (¿bloquear?)": el ícono de éxito en
+          --forest-tint confirma que el reporte ya salió; bloquear es otra
+          decisión. "Ahora no" cierra sin hacer nada más. */}
+      {/* Cada modal se MONTA solo en su paso (en vez de alternar `visible`):
+          es el mismo patrón de la hoja de acciones → "Confirmar eliminar", y
+          evita presentar un Modal mientras el anterior todavía se cierra. */}
+      {paso === 'ofrecer' ? (
+        <ConfirmModal
+          visible
+          icon={<IconCheck size={22} color={Colors.forest} />}
+          iconTone="forest"
+          title="Gracias por avisarnos"
+          body={`Vamos a revisarlo. ¿También quieres bloquear a ${nombreParaBloqueo(nombre)}?`}
+          cancelLabel="Ahora no"
+          confirmLabel="Bloquear"
+          onConfirm={() => setPaso('confirmar')}
+          onCancel={() => router.back()}
+        />
+      ) : null}
+      {paso === 'confirmar' ? (
+        <ConfirmarBloqueoModal
+          visible
+          nombre={nombre}
+          confirming={bloqueando}
+          onConfirm={() => void bloquear()}
+          onCancel={() => router.back()}
+        />
+      ) : null}
     </SheetScreen>
   );
 }

@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -659,6 +659,39 @@ export type Database = {
         }
         Relationships: []
       }
+      user_bloqueos: {
+        Row: {
+          bloqueado_id: string
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          bloqueado_id: string
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          bloqueado_id?: string
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_bloqueos_bloqueado_id_fkey"
+            columns: ["bloqueado_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_bloqueos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_intereses: {
         Row: {
           categoria_id: number
@@ -794,6 +827,7 @@ export type Database = {
         Args: { p_listing_id: number }
         Returns: undefined
       }
+      interaccion_disponible: { Args: { p_user_id: string }; Returns: boolean }
       listing_favorites_count: {
         Args: { p_listing_id: number }
         Returns: number

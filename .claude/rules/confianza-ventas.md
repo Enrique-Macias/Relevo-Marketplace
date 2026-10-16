@@ -15,8 +15,9 @@ paths:
 > tokens de diseño (§2), esquema y RLS (§3), inventario de pantallas (§4) y los
 > gotchas de infraestructura (§9) — siguen en `CLAUDE.md`, que carga siempre.
 
-**Confianza — 4 de 4 pantallas construidas y conectadas: grupo completo
-(RF-07, RF-12, RF-14).** "¿A quién le vendiste?" (con su vacío y su modo
+**Confianza — 5 de 5 pantallas construidas y conectadas: grupo completo
+(RF-07, RF-12, RF-14; la quinta, "Reporte enviado (¿bloquear?)", es de UGC-1 y
+vive dentro de `reportar/[id].tsx`, ver más abajo).** "¿A quién le vendiste?" (con su vacío y su modo
 corrección) vive en `src/app/(confianza)/vendida/[id].tsx`, "Calificar" en
 `(confianza)/calificar.tsx`, "Reportar publicación" en **`src/app/reportar/[id].tsx`**
 (ojo: fuera del grupo, ver abajo), y la capa de datos en `src/lib/confianza.ts`.
@@ -62,6 +63,38 @@ presentación tiene que declararse ahí (el gotcha de §9). Es el caso de
 `filtros.tsx`/`selector-campus.tsx`, no el de sus dos hermanas, que son pantallas
 completas empujadas por el stack de su grupo. Si alguien la "ordena" moviéndola a
 `(confianza)/`, deja de verse como hoja y se convierte en una card opaca.
+
+**Desde UGC-1 (bloqueo entre usuarios, PL-006), el grupo tiene 5 frames y
+"Reportar" ofrece bloquear al terminar.** El modelo vive en `CLAUDE.md` §3
+("Bloqueo entre usuarios"). Lo que toca este grupo:
+
+- **La bandera dejó de ser un botón suelto:** en Detalle y en Perfil público
+  ahora es una fila del menú "⋯" (`HojaOpciones`), al lado de la de bloquear,
+  nunca combinadas (O-3). El param `tipo`, el `sellerId` y el `nombre` viajan
+  igual que antes.
+- **"Reporte enviado (¿bloquear?)"**: tras un reporte enviado, la hoja pinta
+  `ConfirmModal` con `iconTone="forest"` y `cancelLabel="Ahora no"`, y ofrece
+  bloquear a la persona reportada (o al vendedor de la publicación reportada,
+  `objetivoBloqueo`). Solo se ofrece si todavía no la bloqueé
+  (`fetchBloqueoPropio`) y nunca sobre mí mismo. "Bloquear" abre la MISMA
+  "Confirmar bloquear" (`ConfirmarBloqueoModal`), no una variante (UGC-1B.1).
+  Al bloquear desde aquí se llama `marcarBloqueoReciente()`, para que el
+  Detalle que quedó debajo salga en vez de pintar "ya no está disponible"
+  (`explorar.md`).
+- **Bloquear NO afecta reportar** (T40 (m)): un bloqueado puede seguir
+  reportando, y un reporte anterior no cambia.
+- **`listing_contacts` rechaza contactos NUEVOS entre bloqueados** (42501,
+  `listing_con_bloqueo()` en el `with check`). Los contactos históricos se
+  quedan, así que "¿A quién le vendiste?" sigue pudiendo listar a alguien que
+  después bloqueé.
+- **Bloquear NO impide calificar una transacción anterior**: `can_rate()` no
+  mira bloqueos (decisión O-2 de UGC-1A). Lo que sí se corta son los avisos
+  `compra_calificable` y `calificacion_recibida` entre la pareja (los 4
+  productores filtran con `bloqueo_entre()`). Deuda: PL-087 en
+  `docs/PRE_LAUNCH_DEBT.md`.
+- **Hueco general, cerrado solo para parejas bloqueadas**: hoy se puede
+  registrar un contacto por id sobre una publicación que la RLS te esconde, y
+  eso habilita `can_rate()`. Es PL-052.
 
 Detalles que no se ven en el diff:
 

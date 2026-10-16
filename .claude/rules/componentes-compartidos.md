@@ -14,7 +14,7 @@ Componentes reusables ya construidos aquí (no los reconstruyas):
 `ProductCard`, `CategoryTile`, `PageHeader`, `EmptyState`,
 `SegmentedControl`, `Chip`, `ActiveFilterChip`, `SheetScreen`,
 `RoundIconButton`, `PhotoCarousel`/`PhotoDots`, `PhotoViewer`,
-`HojaAccionesListing`,
+`HojaAccionesListing`, `HojaOpciones`, `ConfirmarBloqueoModal`,
 más los íconos de categorías. Al conectar datos reales se
 sumaron tres del grupo Sistema, transcritos de sus frames: `SkeletonGrid` /
 `SkeletonCatGrid`, `ErrorState` (con "Reintentar") y `Toast` (`ToastProvider`
@@ -56,7 +56,34 @@ toast de WhatsApp, para que un segundo consumidor (el aviso de suspensión) la
 monte sin duplicar lógica. **Deuda menor:** el cascarón de hoja (backdrop,
 tarjeta, handle, header) ya está escrito en tres sitios (`HojaAccionesListing`,
 `HojaSoporte` y, con otra forma, `CampusBottomSheet`); extraer un `HojaBase` es
-una decisión aparte, porque tocaría los consumidores existentes.
+una decisión aparte, porque tocaría los consumidores existentes. **Desde UGC-1
+son cuatro sitios** (se sumó `HojaOpciones`, abajo); la decisión sigue
+pendiente.
+
+**`HojaOpciones`** (`src/components/HojaOpciones.tsx`, UGC-1) es la hoja del
+menú "⋯" de "Detalle (opciones)" y "Perfil público (opciones)": Reportar y
+Bloquear como DOS filas separadas, nunca un botón combinado (O-3). Mismo
+cascarón que `HojaAccionesListing`/`HojaSoporte`, pero NO es ninguna de las
+dos: no decide filas por estado ni por venta, solo pinta las `OpcionHoja` que
+le pasan (`key`, `icon`, `label`, `onPress`, `danger` para Bloquear,
+`chevron` solo si la fila lleva a otra pantalla). `Modal` de RN por el mismo
+motivo que aquellas, y **ya suma el inset inferior** (`insets.bottom`, como
+`HojaSoporte`), así que no hereda la deuda de abajo.
+
+**`ConfirmarBloqueoModal`** (`src/components/ConfirmarBloqueoModal.tsx`,
+UGC-1) es el frame "Confirmar bloquear": `ConfirmModal` tal cual, sin hijos, con
+el título y el texto del bloqueo en UN solo sitio. Es la ÚNICA confirmación de
+bloqueo, a propósito (UGC-1B.1): la abren el "⋯" de Detalle, el de Perfil
+público y "Reporte enviado (¿bloquear?)". Mientras `confirming`, los dos
+botones quedan apagados y el "atrás" de Android no cancela: el bloqueo no se
+puede abortar a medio camino. No decide nada: quien lo monta llama a
+`bloquearUsuario()` y la base es el candado.
+
+**`ConfirmModal` ganó dos props aditivas (UGC-1)**, con defaults que dejan
+igual a todos los usos anteriores: `cancelLabel` (default "Cancelar"; "Ahora
+no" en "Reporte enviado (¿bloquear?)") e `iconTone` (`'brick'` default, el de
+toda confirmación destructiva; `'forest'` con `--forest-tint` para el ícono de
+éxito de "Reporte enviado").
 
 **Deuda: `HojaAccionesListing` no suma el inset inferior.** Su `statusSection`
 lleva `paddingBottom: 24` fijo (`HojaAccionesListing.tsx`, sin
@@ -71,10 +98,12 @@ dispositivo. **Revisar cuando:** alguien lo reporte, o se extraiga un
 **`StatusRow` ganó `sub` opcional (`HojaSoporte`).** Segunda línea bajo el
 label, como `Text selectable` HERMANO del `Pressable` (dentro del mismo borde
 inferior, fuera del área de toque). **Sin `sub`, el render es idéntico al de
-siempre**, así que los otros 15 usos no cambian: `configuracion.tsx` (8),
-`(publicar)/editar/[id].tsx` (3) y `HojaAccionesListing.tsx` (4). Con `sub`
-hay dos rutas de render (una `View` raíz lleva el borde). Hoy solo lo usa la
-fila de Correo de `HojaSoporte`.
+siempre**, así que los otros usos no cambian: `configuracion.tsx` (9 desde
+UGC-1, con "Usuarios bloqueados"), `(publicar)/editar/[id].tsx` (3),
+`HojaAccionesListing.tsx` (4) y `HojaOpciones.tsx` (1, que mapea sus filas);
+medido con `grep -rc '<StatusRow' src` el 2026-10-16 (decía "15", antes de
+UGC-1). Con `sub` hay dos rutas de render (una `View` raíz lleva el borde).
+Hoy solo lo usa la fila de Correo de `HojaSoporte`.
 
 **`Field` tiene `error` (nombre válido, `20260927000469`).** Pinta
 `.field-error` bajo el campo y el borde en `--brick` (`.text-field.is-invalid`),

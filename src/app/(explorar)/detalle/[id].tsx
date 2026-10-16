@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GhostButton, PrimaryButton } from '@/components/Buttons';
 import { CategoryIcon } from '@/components/icons/categories';
 import {
+  IconBan,
   IconCheck,
   IconChevronLeft,
   IconChevronRight,
@@ -20,8 +21,10 @@ import {
   IconWhatsapp,
 } from '@/components/icons';
 import { ConfirmModal } from '@/components/ConfirmModal';
+import { ConfirmarBloqueoModal } from '@/components/ConfirmarBloqueoModal';
 import { ErrorState } from '@/components/ErrorState';
 import { HojaAccionesListing } from '@/components/HojaAccionesListing';
+import { HojaOpciones } from '@/components/HojaOpciones';
 import {
   PhotoCarousel,
   PhotoDots,
@@ -32,6 +35,7 @@ import { RoundIconButton } from '@/components/RoundIconButton';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
+import { bloquearUsuario, consumirBloqueoReciente, nombreParaBloqueo } from '@/lib/bloqueos';
 import { accionVenta, LABEL_ACCION_VENTA, useVentaDetalle } from '@/lib/confianza';
 import { useExplorarState } from '@/lib/explorar-state';
 import { Avatar } from '@/components/Avatar';
@@ -115,6 +119,31 @@ export default function DetalleScreen() {
 
   const userId = session?.user.id ?? null;
   const isOwner = !!listing && !!userId && listing.userId === userId;
+
+  /**
+   * UGC-1: el "⋯" de quien NO es el dueño ("Detalle (opciones)") y la
+   * confirmación de bloqueo. Bloquear al vendedor hace que la base deje de
+   * devolver ESTA publicación, así que tras el éxito la pantalla sale: no se
+   * queda pintando algo que ya no existe para este usuario.
+   */
+  const [opcionesAbiertas, setOpcionesAbiertas] = useState(false);
+  const [confirmarBloqueo, setConfirmarBloqueo] = useState(false);
+  const [bloqueando, setBloqueando] = useState(false);
+  // El vendedor de lo que hay en pantalla, leído desde el foco sin meter
+  // `listing` en las dependencias de `useFocusEffect` (cada recarga crea un
+  // objeto nuevo, y un callback nuevo con la pantalla enfocada se re-ejecuta).
+  const vendedorIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    vendedorIdRef.current = listing?.userId ?? null;
+  }, [listing]);
+
+  const salirDeDetalle = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  }, []);
 
   /**
    * Frame "Detalle (vendida)". Solo se pide cuando la publicación YA está
@@ -241,13 +270,21 @@ export default function DetalleScreen() {
         primerFoco.current = false;
         return;
       }
+      // UGC-1: "Reportar" bloqueó al vendedor en su paso final y volvió aquí.
+      // La base ya no devuelve esta publicación; en vez de recargar y pintar
+      // "ya no está disponible" (cuyo copy habla de otra cosa), se sale.
+      const vendedorId = vendedorIdRef.current;
+      if (vendedorId && consumirBloqueoReciente(vendedorId)) {
+        salirDeDetalle();
+        return;
+      }
       if (idValido) {
         void cargarDetalle(listingId, { silent: true }).catch((e: any) =>
           console.warn('[detalle] falló el refresh al enfocar:', e?.message ?? e)
         );
       }
       setRecargas((n) => n + 1);
-    }, [idValido, listingId, cargarDetalle])
+    }, [idValido, listingId, cargarDetalle, salirDeDetalle])
   );
 
   const [refrescando, setRefrescando] = useState(false);
@@ -494,6 +531,27 @@ export default function DetalleScreen() {
     }
   }
 
+  /**
+   * UGC-1. Sin optimismo: solo después de que la base aceptó el bloqueo se
+   * avisa y se sale. Un fallo cierra la confirmación y deja la pantalla igual.
+   */
+  async function bloquearVendedor() {
+    if (!listing || !userId || bloqueando) return;
+    setBloqueando(true);
+    try {
+      await bloquearUsuario(userId, listing.userId);
+      setConfirmarBloqueo(false);
+      mostrar(`Bloqueaste a ${nombreParaBloqueo(listing.vendedor.nombre)}`);
+      salirDeDetalle();
+    } catch (e: any) {
+      console.warn('[detalle] no se pudo bloquear al vendedor:', e?.code ?? '?', e?.message ?? e);
+      setConfirmarBloqueo(false);
+      mostrar('No pudimos bloquear a este usuario. Intenta de nuevo.', 'error');
+    } finally {
+      setBloqueando(false);
+    }
+  }
+
   if (!idValido || estado === 'error') {
     return (
       <Screen>
@@ -592,20 +650,10 @@ export default function DetalleScreen() {
                   <IconKebab size={17} color={Colors.ink} />
                 </RoundIconButton>
               ) : (
-                <RoundIconButton
-                  onPress={() =>
-                    router.push({
-                      pathname: '/reportar/[id]',
-                      // `listing.userId` y no `listing.vendedor.id`: es el MISMO
-                      // campo con el que se calcula `isOwner` arriba, que es
-                      // justo la condición que decide pintar esta bandera. Dos
-                      // fuentes distintas para la misma pregunta se
-                      // desincronizan sin dar ningún error.
-                      params: { id: String(listingId), sellerId: listing.userId },
-                    })
-                  }
-                >
-                  <IconFlag size={15} color={Colors.ink} />
+                // UGC-1: el "⋯" sustituye a la bandera y abre "Detalle
+                // (opciones)" con Reportar y Bloquear como DOS filas.
+                <RoundIconButton onPress={() => setOpcionesAbiertas(true)}>
+                  <IconKebab size={17} color={Colors.ink} />
                 </RoundIconButton>
               )}
             </View>
@@ -882,6 +930,55 @@ export default function DetalleScreen() {
           setAccionesAbiertas(false);
           setPorBorrar(true);
         }}
+      />
+      <HojaOpciones
+        visible={opcionesAbiertas && !isOwner}
+        titulo={listing.titulo}
+        onCerrar={() => setOpcionesAbiertas(false)}
+        opciones={[
+          {
+            key: 'reportar',
+            icon: <IconFlag size={16} color={Colors.inkSoft} />,
+            label: 'Reportar publicación',
+            chevron: true,
+            onPress: () => {
+              setOpcionesAbiertas(false);
+              router.push({
+                pathname: '/reportar/[id]',
+                // `listing.userId` y no `listing.vendedor.id`: es el MISMO
+                // campo con el que se calcula `isOwner` arriba, que es justo
+                // la condición que decide pintar este menú. Dos fuentes
+                // distintas para la misma pregunta se desincronizan sin dar
+                // ningún error. `nombre` viaja para la oferta de bloquear que
+                // "Reportar" hace al terminar.
+                params: {
+                  id: String(listingId),
+                  sellerId: listing.userId,
+                  nombre: listing.vendedor.nombre ?? '',
+                },
+              });
+            },
+          },
+          {
+            key: 'bloquear',
+            icon: <IconBan size={16} color={Colors.brick} />,
+            label: listing.vendedor.nombre?.trim()
+              ? `Bloquear a ${listing.vendedor.nombre.trim()}`
+              : 'Bloquear usuario',
+            danger: true,
+            onPress: () => {
+              setOpcionesAbiertas(false);
+              setConfirmarBloqueo(true);
+            },
+          },
+        ]}
+      />
+      <ConfirmarBloqueoModal
+        visible={confirmarBloqueo}
+        nombre={listing.vendedor.nombre}
+        confirming={bloqueando}
+        onConfirm={() => void bloquearVendedor()}
+        onCancel={() => setConfirmarBloqueo(false)}
       />
       <ConfirmModal
         visible={porBorrar}

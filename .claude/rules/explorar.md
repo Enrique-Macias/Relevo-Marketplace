@@ -901,6 +901,44 @@ por caso. Se conservan como la lista a repetir si el flujo cambia:
   para leer solo ~20 filas por nivel en vez del alcance entero. Es un cambio de
   función más un índice, no solo un índice.
 
+## Bloqueo entre usuarios en Explorar (UGC-1, PL-006)
+
+El modelo y la evidencia viven en `CLAUDE.md` §3 ("Bloqueo entre usuarios").
+Lo que importa al tocar Explorar:
+
+- **El catálogo ya viene filtrado por la base, en las dos direcciones.**
+  `listings_select` esconde las publicaciones de cualquiera con quien haya un
+  bloqueo, así que el Feed, Categoría, Búsqueda (`buscar_listings`),
+  "Recomendados para ti" (`recomendar_listings`), Detalle por id y el `!inner`
+  de Favoritos lo heredan sin una línea de cliente. **No agregues un filtro de
+  bloqueo en `src/lib/listings.ts`**: sería autorización duplicada (§0 regla 7)
+  y se desincronizaría en silencio.
+- **Detalle de una publicación ajena: el "⋯" abre `HojaOpciones`** ("Detalle
+  (opciones)") con "Reportar publicación" (navega a `/reportar/[id]`) y
+  "Bloquear a …" (abre `ConfirmarBloqueoModal`), dos filas separadas (O-3). El
+  menú del dueño sigue siendo `HojaAccionesListing`, sin cambios.
+- **Bloquear desde Detalle, o desde "Reportar" y volver, sale del Detalle.**
+  Desde Detalle, `bloquearVendedor()` sale en cuanto la base respondió bien
+  (un fallo cierra la confirmación y deja la pantalla igual). Desde
+  "Reportar", esa hoja marca `marcarBloqueoReciente(vendedorId)` antes de cerrar su hoja;
+  al recuperar el foco, Detalle consume esa señal (`consumirBloqueoReciente`,
+  en su `useFocusEffect`) y sale, en vez de recargar y pintar "Esta publicación
+  ya no está disponible", cuyo copy habla de otra cosa. Es una señal en
+  memoria comprobada al actuar, no un temporizador, y no es autorización: la
+  base ya escondió la publicación.
+- **Abrir por id una publicación de alguien con quien hay bloqueo** (un aviso
+  viejo del inbox, un deep link) da `data === null`, y Detalle pinta el estado
+  "ya no está disponible" de siempre. **La RPC de vistas se dispara igual al
+  montar**, y desde `20261015000488` no suma entre bloqueados y responde lo
+  mismo (204). Antes sumaba: lo destapó la prueba en iPhone contra STAGING
+  (UGC-1E.5) y está en CLAUDE.md §3, bloque de `vistas_count`.
+- **"Contactar por WhatsApp" entre bloqueados**: `seller_whatsapp` devuelve
+  `null` (cuarta causa) y el insert en `listing_contacts` se rechaza con 42501.
+  En la práctica el botón no se alcanza, porque la publicación no se ve.
+- **Probado:** T40 (b1)-(h2), (i1), (k1), (y1a)-(y5b) de `rls.sql`,
+  `scripts/probe-bloqueos.mjs` (24/24) y el iPhone contra STAGING (UGC-1E.5 y
+  1E.5d).
+
 ## Datos de prueba en remoto — BORRAR antes de usuarios reales
 
 **ACTUALIZACIÓN 2026-09-29 (medido en remoto con `select`, solo lectura): la

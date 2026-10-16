@@ -7,6 +7,8 @@ paths:
   - "src/lib/perfil-publico.ts"
   - "src/lib/catalogos.ts"
   - "src/lib/configuracion.ts"
+  - "src/lib/bloqueos.ts"
+  - "scripts/probe-bloqueos.mjs"
 ---
 
 # Cuenta: Mis publicaciones, Favoritos, Perfil, Editar perfil, Perfil público
@@ -1340,3 +1342,47 @@ decisión del usuario: una sola puerta.
   llamadas masivas a esa RPC en los logs del proyecto. **Fix:** rate limit, o
   anclar la firma a un `listing_id` que el llamante esté viendo (ojo: eso deja
   fuera el botón de "Perfil público", que no tiene publicación en contexto).
+
+## Bloqueo entre usuarios en Cuenta (UGC-1, PL-006)
+
+El modelo, las funciones y la evidencia viven en `CLAUDE.md` §3 ("Bloqueo entre
+usuarios"); aquí solo lo que toca las pantallas de Cuenta. Capa de datos:
+`src/lib/bloqueos.ts`, que NO filtra publicaciones (eso lo hace la base): lee y
+escribe solo las filas propias de `user_bloqueos` y le pregunta a la base por
+un perfil concreto.
+
+- **Perfil público tiene tres estados**, que decide `fetchRelacion()` en
+  paralelo con el resto de la carga (`perfil-publico/[id].tsx`):
+  - `normal`: sin bloqueo en ninguna dirección.
+  - `bloqueado_por_mi`: existe MI fila. Gana aunque el otro también me haya
+    bloqueado: cada quien administra solo su bloqueo (UGC-1B.1). Frame
+    "Perfil público (bloqueado)": identidad y calificaciones, sin
+    publicaciones, contadores ni WhatsApp, con "Desbloquear".
+  - `no_disponible`: no hay fila mía, pero `interaccion_disponible()` da
+    false. Frame "Perfil público (no disponible)": "Este perfil no está
+    disponible." y nada que revele quién bloqueó.
+  - **Un error se propaga, no se convierte en estado**: si cualquiera de las
+    dos lecturas falla, falla toda la carga. Pintar "no disponible" por un
+    fallo de red sería un bloqueo falso.
+- **El "⋯" abre `HojaOpciones`** ("Perfil público (opciones)") con
+  "Reportar usuario" y "Bloquear usuario" como dos filas (O-3); si ya lo
+  bloqueé, la segunda es "Desbloquear usuario". Bloquear pasa SIEMPRE
+  por `ConfirmarBloqueoModal`, y el estado local cambia solo DESPUÉS de que la
+  base respondió bien (sin optimismo). Un segundo insert que choca con la PK
+  (23505, doble tap) cuenta como éxito: el estado pedido ya existe.
+- **Desbloquear no pide confirmación** (es reversible, UGC-1A). Borra solo MI
+  fila (`eq('user_id', miId)`) y vuelve a preguntar la relación a la base: si
+  el otro también me bloqueó, el perfil queda en "no disponible", y eso no se
+  adivina. 0 filas afectadas significa que ya no estaba, no un error.
+- **Configuración → Privacidad → "Usuarios bloqueados"**
+  (`usuarios-bloqueados.tsx`, frames "Usuarios bloqueados" y su vacío). La
+  sección "Privacidad" se pinta siempre, entre General y Legal, sin contador
+  (costaría una consulta más). La lista es solo de MIS bloqueos, del más
+  reciente al más viejo, con nombre y avatar, sin fecha ni motivo (UGC-1B). El
+  embed va con el nombre de la FK (`users!user_bloqueos_bloqueado_id_fkey`):
+  la tabla tiene dos FKs a `users` y sin hint PostgREST responde `PGRST201`.
+  Una fila se quita de la lista solo después de que la base respondió.
+- **Probado:** T40 de `rls.sql`, `scripts/probe-bloqueos.mjs` (24/24) y, en el
+  iPhone contra STAGING, los dos estados, la lista y desbloquear (UGC-1E.5).
+- **Deuda relacionada:** PL-087 (calificar una transacción previa al bloqueo) y
+  PL-052 (contactos por id), en `docs/PRE_LAUNCH_DEBT.md`.

@@ -2469,7 +2469,7 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
               </div>
               <div class="round-btn">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h13l-3.5 5L18 14H5"/></svg>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="#221F1C"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
               </div>
             </div>
           </div>
@@ -2594,7 +2594,7 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
               </div>
               <div class="round-btn">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h13l-3.5 5L18 14H5"/></svg>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="#221F1C"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
               </div>
             </div>
           </div>
@@ -2958,6 +2958,101 @@
           <div class="viewer-close">
             <div class="round-btn">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UGC-1 (bloqueo entre usuarios, PL-006). El "⋯" sustituye a la bandera en
+       TODO Detalle que ve quien NO es el dueño ("Detalle de publicación" y
+       "Detalle (vendida)"); el dueño conserva su propio kebab en "Detalle
+       (vista vendedor)", que abre otra hoja. Son DOS acciones separadas y
+       etiquetadas, nunca un botón "Reportar y bloquear" (Google Play advierte
+       que un botón combinado confunde):
+         · "Reportar publicación" abre la hoja de RF-14 de siempre, sin cambios
+           (chevron: lleva a otra pantalla, igual que "Editar publicación").
+         · "Bloquear a {Nombre}" abre "Confirmar bloquear" (sin chevron: abre un
+           modal, igual que "Eliminar publicación"). Tratamiento destructivo
+           existente: ícono y texto en --brick. El nombre es el del vendedor de
+           la .seller-card; un perfil sin nombre cae a "Bloquear usuario".
+       Mismo cascarón que "Mis publicaciones (acciones)" (.sheet-card +
+       .status-row), sin CSS nuevo. El título de la hoja es el de la publicación. -->
+  <div class="phone-block" data-cat="explorar">
+    <div class="phone-label">Detalle (opciones)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="detail-photo" style="background:var(--brick-tint);">
+          <div class="detail-nav">
+            <div class="round-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </div>
+            <div class="nav-actions">
+              <div class="round-btn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+              </div>
+              <div class="round-btn">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="#221F1C"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+              </div>
+            </div>
+          </div>
+          <div class="detail-badge">Como nuevo</div>
+          <div class="detail-track">
+            <div class="detail-slide" style="background:var(--brick-tint);">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-body">
+          <div class="detail-price">Gratis</div>
+          <div class="detail-title">Cálculo de Larson, 9a edición</div>
+          <div class="detail-meta">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+            <span>Tec de Monterrey</span><span class="sep">·</span><span>hace 2h</span><span class="sep">·</span><span>48 vistas</span>
+          </div>
+          <div class="seller-card">
+            <div class="seller-avatar">JM</div>
+            <div class="seller-info">
+              <div class="seller-name-row">
+                <span class="seller-name">Jorge Muñoz</span>
+              </div>
+              <div class="seller-sub">Ingeniería Industrial · 12 ventas</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-backdrop" style="align-items:flex-end; padding:0;">
+          <div class="sheet-card">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+              <div class="sheet-title">Cálculo de Larson, 9a edición</div>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </div>
+            <div class="status-section" style="padding:6px 20px 24px;">
+              <div class="status-row">
+                <div class="status-row-label">
+                  <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h13l-3.5 5L18 14H5"/></svg></div>
+                  <span class="status-row-text">Reportar publicación</span>
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+              </div>
+              <div class="status-row">
+                <div class="status-row-label">
+                  <div class="status-row-icon" style="color:var(--brick);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></div>
+                  <span class="status-row-text danger">Bloquear a Jorge Muñoz</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -4323,6 +4418,22 @@
           </div>
         </div>
 
+        <!-- UGC-1: "Usuarios bloqueados" vive en su propia sección, Privacidad,
+             entre General y Legal. Abre "Usuarios bloqueados" (o su vacío). Sin
+             contador: no aporta y obligaría a una consulta más al abrir. -->
+        <div class="section-head">
+          <div class="section-title">Privacidad</div>
+        </div>
+        <div class="status-section" style="padding:0 20px 4px;">
+          <div class="status-row">
+            <div class="status-row-label">
+              <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></div>
+              <span class="status-row-text">Usuarios bloqueados</span>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+          </div>
+        </div>
+
         <div class="section-head">
           <div class="section-title">Legal</div>
         </div>
@@ -4386,6 +4497,93 @@
           </div>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- UGC-1. Se abre desde Configuración → Privacidad. Solo lo que hace falta:
+       avatar, nombre y "Desbloquear" (la fila de .buyer-row de "¿A quién le
+       vendiste?" sin la segunda línea; la acción es texto en --brick 13/600,
+       el mismo recurso que "Activar" en Configuración o "Guardar" en los
+       headers). Sin fecha ni motivo: no aportan a la decisión.
+       Desbloquear NO pide confirmación (es reversible, UGC-1A): la fila sale
+       de la lista y aparece el toast. El render muestra ese momento, justo
+       después de desbloquear a una tercera persona. Sus publicaciones vuelven a
+       verse en la siguiente carga, y sus contactos e historial nunca se
+       borraron. A ella no le llega ningún aviso. -->
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Usuarios bloqueados</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="page-heading">Usuarios bloqueados</div>
+      </div>
+      <div class="screen">
+        <div class="form-body">
+          <div class="auth-sub" style="text-align:left; max-width:none; margin-bottom:18px;">No ven tus publicaciones ni tú las suyas, y no pueden contactarse.</div>
+          <div class="buyer-row">
+            <div class="buyer-avatar">JM</div>
+            <div class="buyer-info">
+              <div class="buyer-name">Jorge Muñoz</div>
+            </div>
+            <span style="font-size:13px; font-weight:600; color:var(--brick);">Desbloquear</span>
+          </div>
+          <div class="buyer-row" style="border-bottom:none;">
+            <div class="buyer-avatar">CR</div>
+            <div class="buyer-info">
+              <div class="buyer-name">Carla Rodríguez</div>
+            </div>
+            <span style="font-size:13px; font-weight:600; color:var(--brick);">Desbloquear</span>
+          </div>
+        </div>
+
+        <div class="toast">
+          <div class="toast-icon">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <span class="toast-text">Desbloqueaste a Lionn P.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UGC-1. El estado de casi toda cuenta. Como "Notificaciones vacío", sin
+       .empty-actions: bloquear se hace desde un perfil o una publicación, no
+       desde aquí, así que no hay nada que ofrecer. El ícono es el mismo
+       círculo tachado de la fila de Configuración. -->
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Usuarios bloqueados vacío</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="page-heading-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <div class="page-heading">Usuarios bloqueados</div>
+      </div>
+      <div class="screen">
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
+          </div>
+          <div class="empty-title">No has bloqueado a nadie</div>
+          <div class="empty-sub">Si bloqueas a alguien desde su perfil o desde una publicación, aparecerá aquí y podrás desbloquearlo.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -5058,12 +5256,18 @@
 
              La bandera NO se pinta cuando el perfil es el propio — el mismo
              criterio de "Detalle (vista vendedor)", donde `isOwner` la cambia
-             por el kebab. Compartir sí se pinta siempre, igual que allá. -->
+             por el kebab. Compartir sí se pinta siempre, igual que allá.
+
+             UGC-1 (bloqueo entre usuarios): la bandera se sustituyó por "⋯",
+             que abre "Perfil público (opciones)" con "Reportar usuario" y
+             "Bloquear usuario" como dos acciones separadas. Todo lo de arriba
+             sobre la bandera (agrupación en .nav-actions, gap de 26px, no
+             pintarla en el perfil propio) aplica igual al "⋯". -->
         <div class="profile-top">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           <div class="nav-actions">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h13l-3.5 5L18 14H5"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--ink)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
           </div>
         </div>
 
@@ -5172,6 +5376,264 @@
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UGC-1. El "⋯" de "Perfil público" (antes, la bandera de RF-14). Las mismas
+       dos acciones separadas que en "Detalle (opciones)", aquí sobre la
+       persona: "Reportar usuario" abre la hoja de RF-14 en su modo usuario
+       ("Reportar a {Nombre}", sin cambios) y "Bloquear usuario" abre
+       "Confirmar bloquear". El título de la hoja es el nombre del perfil. No se
+       pinta en el perfil propio (mismo criterio que la bandera de antes).
+       Si el usuario YA está bloqueado, la segunda fila pasa a "Desbloquear
+       usuario", sin tratamiento destructivo (ver "Perfil público (bloqueado)"). -->
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Perfil público (opciones)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="profile-top">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          <div class="nav-actions">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--ink)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+        </div>
+
+        <div class="profile-block">
+          <div class="profile-avatar">JM</div>
+          <div class="profile-name-row">
+            <span class="profile-name">Jorge Muñoz</span>
+            <span class="verified-tick">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </div>
+          <div class="profile-sub">Ingeniería Industrial · Tec de Monterrey</div>
+          <div class="profile-rating">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)" stroke-width="1"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <span>4.9 · 23 calificaciones</span>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-num">8</div><div class="stat-label">Activas</div></div>
+          <div class="stat-card"><div class="stat-num">12</div><div class="stat-label">Vendidos</div></div>
+          <div class="stat-card"><div class="stat-num">8m</div><div class="stat-label">En Relevo</div></div>
+        </div>
+
+        <div class="modal-backdrop" style="align-items:flex-end; padding:0;">
+          <div class="sheet-card">
+            <div class="sheet-handle"></div>
+            <div class="sheet-header">
+              <div class="sheet-title">Jorge Muñoz</div>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </div>
+            <div class="status-section" style="padding:6px 20px 24px;">
+              <div class="status-row">
+                <div class="status-row-label">
+                  <div class="status-row-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h13l-3.5 5L18 14H5"/></svg></div>
+                  <span class="status-row-text">Reportar usuario</span>
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
+              </div>
+              <div class="status-row">
+                <div class="status-row-label">
+                  <div class="status-row-icon" style="color:var(--brick);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></div>
+                  <span class="status-row-text danger">Bloquear usuario</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UGC-1. El perfil de alguien a quien YO bloqueé. La identidad pública
+       (nombre, carrera, universidad, calificación) se sigue leyendo —la base
+       la deja legible (UGC-1A)— y las calificaciones se conservan. Lo que
+       cambia:
+         · Sin .stat-row: "Activas" y "Vendidos" saldrían en 0 porque la base ya
+           no me devuelve sus publicaciones, y un 0 mentiría.
+         · Sin "Contactar por WhatsApp": el contacto está negado en las dos
+           direcciones.
+         · En su lugar, un .notice SIN .notice-icon (mismo criterio que "ya se
+           vendió" en "Detalle (vendida)": no falló nada) y un .ghost-btn
+           "Desbloquear", que actúa sin confirmación (es reversible).
+       El toast "Bloqueaste a {Nombre}" es el momento justo después de
+       confirmar; se va solo y deja este estado. Desbloquear desde aquí da el
+       toast "Desbloqueaste a {Nombre}" y el perfil vuelve a "Perfil público".
+       LADO DE QUIEN BLOQUEA (A viendo a B). La otra persona NO ve este frame:
+       ve "Perfil público (no disponible)", que no dice por qué.
+       Si los DOS se bloquearon por separado, cada uno ve ESTE frame (su propio
+       bloqueo manda) y solo puede deshacer el suyo. Si después desbloquea
+       mientras el bloqueo de la otra persona sigue vigente, su vista pasa a
+       "Perfil público (no disponible)". -->
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Perfil público (bloqueado)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="profile-top">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          <div class="nav-actions">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--ink)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+        </div>
+
+        <div class="profile-block">
+          <div class="profile-avatar">JM</div>
+          <div class="profile-name-row">
+            <span class="profile-name">Jorge Muñoz</span>
+            <span class="verified-tick">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </div>
+          <div class="profile-sub">Ingeniería Industrial · Tec de Monterrey</div>
+          <div class="profile-rating">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)" stroke-width="1"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <span>4.9 · 23 calificaciones</span>
+          </div>
+        </div>
+
+        <div style="padding:0 20px 20px;">
+          <div class="notice" style="margin-bottom:12px;">
+            <div class="notice-text">Bloqueaste a Jorge Muñoz. No verás sus publicaciones y no podrán contactarse.</div>
+          </div>
+          <div style="display:flex;">
+            <div class="ghost-btn">Desbloquear</div>
+          </div>
+        </div>
+
+        <div class="section-head" style="padding-top:2px;">
+          <div class="section-title">Calificaciones</div>
+        </div>
+
+        <div class="menu-list" style="padding-top:0;">
+          <div class="review-row">
+            <div class="review-top">
+              <div class="review-avatar">EM</div>
+              <span class="review-name">Enrique M.</span>
+              <div class="review-stars">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+              </div>
+            </div>
+            <div class="review-text">Todo perfecto, el libro estaba tal como lo describió. Entrega rápida en el campus.</div>
+          </div>
+        </div>
+
+        <div class="toast">
+          <div class="toast-icon">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <span class="toast-text">Bloqueaste a Jorge Muñoz</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UGC-1B.1. LADO DE QUIEN FUE BLOQUEADO (B viendo a A, cuando A bloqueó a B
+       y B no bloqueó a A). Mismo esqueleto que "Perfil público (bloqueado)"
+       pero NEUTRO: nunca dice que lo bloquearon, ni que la cuenta se eliminó o
+       se suspendió. "Este perfil no está disponible." es de la familia de
+       copys neutros que ya existen ("Esta publicación ya no está disponible",
+       "Esta cuenta no está disponible para contacto").
+         · Se conserva lo que UGC-1A deja legible: identidad pública y
+           calificaciones (el historial de confianza no cambia con un bloqueo).
+         · Sin .stat-row (sus contadores saldrían en 0 por publicaciones que la
+           base ya no devuelve), sin publicaciones y sin "Contactar por
+           WhatsApp": ninguna acción de contacto.
+         · Sin "Desbloquear": B no tiene ningún bloqueo propio que deshacer.
+         · El "⋯" se queda: B puede reportar a A (los reportes no cambian) y
+           bloquearlo por su cuenta; si lo hace, pasa a ver "Perfil público
+           (bloqueado)", que es SU bloqueo.
+       OJO, pendiente para UGC-1C: para pintar este estado, la app de B necesita
+       saber que hay un bloqueo de A hacia B, y UGC-1A decidió que B no puede
+       leer las filas de bloqueo de otros. Ver el resumen de UGC-1B.1. -->
+  <div class="phone-block" data-cat="cuenta">
+    <div class="phone-label">Perfil público (no disponible)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="profile-top">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          <div class="nav-actions">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--ink)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+        </div>
+
+        <div class="profile-block">
+          <div class="profile-avatar">JM</div>
+          <div class="profile-name-row">
+            <span class="profile-name">Jorge Muñoz</span>
+            <span class="verified-tick">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </div>
+          <div class="profile-sub">Ingeniería Industrial · Tec de Monterrey</div>
+          <div class="profile-rating">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)" stroke-width="1"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <span>4.9 · 23 calificaciones</span>
+          </div>
+        </div>
+
+        <div style="padding:0 20px 20px;">
+          <div class="notice" style="margin-bottom:0;">
+            <div class="notice-text">Este perfil no está disponible.</div>
+          </div>
+        </div>
+
+        <div class="section-head" style="padding-top:2px;">
+          <div class="section-title">Calificaciones</div>
+        </div>
+
+        <div class="menu-list" style="padding-top:0;">
+          <div class="review-row">
+            <div class="review-top">
+              <div class="review-avatar">EM</div>
+              <span class="review-name">Enrique M.</span>
+              <div class="review-stars">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+              </div>
+            </div>
+            <div class="review-text">Todo perfecto, el libro estaba tal como lo describió. Entrega rápida en el campus.</div>
           </div>
         </div>
       </div>
@@ -6822,6 +7284,94 @@
     </div>
   </div>
 
+  <!-- UGC-1. Lo que aparece al cerrar la hoja de "Reportar publicación" o
+       "Reportar a {Nombre}" con éxito, cuando hay una persona identificable
+       que todavía no está bloqueada. Reemplaza al toast "Gracias por avisarnos.
+       Vamos a revisarlo." en ese caso; si ya estaba bloqueada, se queda el
+       toast de siempre.
+       El reporte YA se envió cuando esto aparece (el título lo confirma, con
+       el ícono de éxito en --forest-tint/--forest en vez del --brick de
+       "Confirmar …"), así que bloquear es una SEGUNDA decisión, separada y
+       opcional: "Ahora no" cierra este modal y deja al usuario donde reportó,
+       sin hacer nada más. Por eso no es un botón "Reportar y bloquear".
+       "Bloquear" NO bloquea aquí: abre el MISMO "Confirmar bloquear" que se usa
+       desde "Perfil público (opciones)" y "Detalle (opciones)" (UGC-1B.1), para
+       que bloquear —que tiene efecto en las dos direcciones— tenga una sola
+       confirmación sin importar por dónde se llegó. Secuencia: Reportar →
+       este modal → Bloquear → "Confirmar bloquear" → bloqueo → toast
+       "Bloqueaste a {Nombre}". Por eso el sub ya no explica el efecto: lo
+       explica la confirmación. El fondo es Detalle (desde ahí se reportó);
+       desde un perfil es igual. -->
+  <div class="phone-block" data-cat="confianza">
+    <div class="phone-label">Reporte enviado (¿bloquear?)</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="detail-photo" style="background:var(--brick-tint);">
+          <div class="detail-nav">
+            <div class="round-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </div>
+            <div class="nav-actions">
+              <div class="round-btn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#221F1C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+              </div>
+              <div class="round-btn">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="#221F1C"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+              </div>
+            </div>
+          </div>
+          <div class="detail-badge">Como nuevo</div>
+          <div class="detail-track">
+            <div class="detail-slide" style="background:var(--brick-tint);">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.3"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-body">
+          <div class="detail-price">Gratis</div>
+          <div class="detail-title">Cálculo de Larson, 9a edición</div>
+          <div class="detail-meta">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M12 21s7-6.5 7-12a7 7 0 10-14 0c0 5.5 7 12 7 12z"/></svg>
+            <span>Tec de Monterrey</span><span class="sep">·</span><span>hace 2h</span><span class="sep">·</span><span>48 vistas</span>
+          </div>
+          <div class="seller-card">
+            <div class="seller-avatar">JM</div>
+            <div class="seller-info">
+              <div class="seller-name-row">
+                <span class="seller-name">Jorge Muñoz</span>
+              </div>
+              <div class="seller-sub">Ingeniería Industrial · 12 ventas</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-backdrop">
+          <div class="modal-card">
+            <div class="modal-icon" style="background:var(--forest-tint);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--forest)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+            </div>
+            <div class="modal-title">Gracias por avisarnos</div>
+            <div class="modal-sub">Vamos a revisarlo. ¿También quieres bloquear a Jorge Muñoz?</div>
+            <div class="modal-actions">
+              <div class="ghost-btn">Ahora no</div>
+              <button class="danger-btn">Bloquear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="phone-block" data-cat="confianza">
     <div class="phone-label">Calificar</div>
     <div class="device">
@@ -7547,6 +8097,77 @@
             </div>
                 <div class="notice-text">No pudimos eliminar tu cuenta. Intenta de nuevo.</div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UGC-1. Mismo .modal-card que "Confirmar eliminar" / "Confirmar cerrar
+       sesión": ícono en --brick-tint, título en display, sub corto y dos
+       botones (.ghost-btn "Cancelar" + .danger-btn "Bloquear"). Se llega desde
+       "Perfil público (opciones)", desde "Detalle (opciones)" y desde el botón
+       "Bloquear" de "Reporte enviado (¿bloquear?)" (UGC-1B.1): es la ÚNICA
+       confirmación de bloqueo. El fondo es el perfil, pero el modal es idéntico
+       sobre Detalle. El sub dice lo que el
+       bloqueo hace DE VERDAD en la base (UGC-1A): es mutuo para ver
+       publicaciones y para contactar, no le llega ningún aviso a la otra
+       persona y se puede deshacer. No menciona reseñas ni historial porque no
+       cambian. Sin nombre en el perfil, el título cae a "¿Bloquear a este
+       usuario?". -->
+  <div class="phone-block" data-cat="sistema">
+    <div class="phone-label">Confirmar bloquear</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#221F1C"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#221F1C"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#221F1C"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#221F1C"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#221F1C"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#221F1C" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#221F1C"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#221F1C"/></svg>
+        </div>
+      </div>
+      <div class="screen">
+        <div class="profile-top">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          <div class="nav-actions">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.4 10.6l7.2-4.2M8.4 13.4l7.2 4.2"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--ink)"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </div>
+        </div>
+
+        <div class="profile-block">
+          <div class="profile-avatar">JM</div>
+          <div class="profile-name-row">
+            <span class="profile-name">Jorge Muñoz</span>
+            <span class="verified-tick">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+            </span>
+          </div>
+          <div class="profile-sub">Ingeniería Industrial · Tec de Monterrey</div>
+          <div class="profile-rating">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="var(--gold)" stroke="var(--gold)" stroke-width="1"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+            <span>4.9 · 23 calificaciones</span>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-num">8</div><div class="stat-label">Activas</div></div>
+          <div class="stat-card"><div class="stat-num">12</div><div class="stat-label">Vendidos</div></div>
+          <div class="stat-card"><div class="stat-num">8m</div><div class="stat-label">En Relevo</div></div>
+        </div>
+
+        <div class="modal-backdrop">
+          <div class="modal-card">
+            <div class="modal-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
+            </div>
+            <div class="modal-title">¿Bloquear a Jorge Muñoz?</div>
+            <div class="modal-sub">Ninguno de los dos verá las publicaciones del otro y no podrán contactarse desde la app. No le avisaremos. Puedes desbloquearlo cuando quieras desde Configuración.</div>
+            <div class="modal-actions">
+              <div class="ghost-btn">Cancelar</div>
+              <button class="danger-btn">Bloquear</button>
             </div>
           </div>
         </div>

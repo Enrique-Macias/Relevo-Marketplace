@@ -30,6 +30,17 @@ type ConfirmModalProps = {
   confirmDisabled?: boolean;
   /** Contenido entre el cuerpo y los botones. */
   children?: React.ReactNode;
+  /**
+   * Label del botón secundario. Default "Cancelar"; "Reporte enviado
+   * (¿bloquear?)" usa "Ahora no".
+   */
+  cancelLabel?: string;
+  /**
+   * Círculo del ícono. `'brick'` (default) es el de toda confirmación
+   * destructiva; `'forest'` lo usa "Reporte enviado (¿bloquear?)", donde el
+   * ícono confirma un éxito (--forest-tint, como `.toast-icon`).
+   */
+  iconTone?: 'brick' | 'forest';
 };
 
 export function ConfirmModal({
@@ -43,6 +54,8 @@ export function ConfirmModal({
   confirming = false,
   confirmDisabled = false,
   children,
+  cancelLabel = 'Cancelar',
+  iconTone = 'brick',
 }: ConfirmModalProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
@@ -56,7 +69,7 @@ export function ConfirmModal({
         {/* .modal-card{width:100%; background:var(--card); border-radius:20px; padding:24px 20px 20px; text-align:center;} */}
         <View style={styles.card}>
           {/* .modal-icon{width:50px; height:50px; border-radius:50%; background:var(--brick-tint); margin:0 auto 16px;} */}
-          <View style={styles.icon}>{icon}</View>
+          <View style={[styles.icon, iconTone === 'forest' && styles.iconForest]}>{icon}</View>
           <Text style={styles.title}>{title}</Text>
           <Text style={[styles.body, children ? styles.bodyConHijos : null]}>{body}</Text>
           {children ? <View style={styles.hijos}>{children}</View> : null}
@@ -68,7 +81,7 @@ export function ConfirmModal({
                 mientras la acción sigue corriendo de fondo y termina
                 resolviendo sola, sin que el usuario sepa que va a pasar. */}
             <GhostButton
-              label="Cancelar"
+              label={cancelLabel}
               onPress={onCancel}
               disabled={confirming}
               style={styles.ghost}
@@ -110,6 +123,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+  },
+  iconForest: {
+    backgroundColor: Colors.forestTint,
   },
   title: {
     ...Typography.modalTitle,

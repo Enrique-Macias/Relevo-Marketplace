@@ -7,15 +7,20 @@
  * reseñas" de abajo no viene de ningún lado — se decide aquí.
  */
 
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, RefreshControl, Share, StyleSheet, Text, View } from 'react-native';
 
+import { GhostButton } from '@/components/Buttons';
+import { ConfirmarBloqueoModal } from '@/components/ConfirmarBloqueoModal';
 import { ErrorState } from '@/components/ErrorState';
+import { HojaOpciones } from '@/components/HojaOpciones';
 import {
+  IconBan,
   IconChevronLeft,
   IconCheck,
   IconFlag,
+  IconKebab,
   IconShare,
   IconStar,
   IconUser,
@@ -25,6 +30,13 @@ import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { Avatar } from '@/components/Avatar';
+import {
+  bloquearUsuario,
+  desbloquearUsuario,
+  fetchRelacion,
+  nombreParaBloqueo,
+  type RelacionBloqueo,
+} from '@/lib/bloqueos';
 import { antiguedadEnRelevo } from '@/lib/format';
 import { fetchActivasVendedor, fetchVentasVendedor } from '@/lib/listings';
 import { fetchTelefonoVendedor, urlWhatsapp } from '@/lib/perfil';
@@ -35,6 +47,7 @@ export default function PerfilPublicoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { profile } = useSession();
   const { mostrar } = useToast();
+  const miId = profile?.id ?? null;
 
   const [perfil, setPerfil] = useState<PerfilPublico | null>(null);
   const [activas, setActivas] = useState(0);
@@ -49,6 +62,16 @@ export default function PerfilPublicoScreen() {
   const [errorPara, setErrorPara] = useState<string | null>(null);
 
   /**
+   * UGC-1: qué perfil se pinta frente a esta persona (`src/lib/bloqueos.ts`).
+   * Se carga JUNTO con el resto, en la misma tanda: si la consulta falla, falla
+   * la carga entera, nunca se adivina un estado de bloqueo.
+   */
+  const [relacion, setRelacion] = useState<RelacionBloqueo>('normal');
+  const [opcionesAbiertas, setOpcionesAbiertas] = useState(false);
+  const [confirmarBloqueo, setConfirmarBloqueo] = useState(false);
+  const [mutando, setMutando] = useState<'bloquear' | 'desbloquear' | null>(null);
+
+  /**
    * Mismo refactor que "Perfil" (`(tabs)/perfil.tsx`): las cuatro consultas
    * extraídas a una función llamable, con distinción frío/tibio para que un
    * pull-to-refresh fallido nunca tape un perfil bueno ya en pantalla. Esta
@@ -57,32 +80,68 @@ export default function PerfilPublicoScreen() {
    * el gesto de pull llama a esta función en modo `silent`.
    */
   const cargandoRef = useRef(false);
+  /**
+   * UGC-1. Bloquear o desbloquear cambia lo que estas consultas devuelven, y
+   * una carga que ya iba en camino cuando la mutación terminó traería el estado
+   * de ANTES. Por eso: cada mutación exitosa sube `versionRef`, una carga que
+   * termina con la versión cambiada NO aplica su resultado, y cualquier pedido
+   * que llegue con una carga en vuelo queda pendiente en vez de perderse. La
+   * recarga pendiente corre al terminar la que estaba en vuelo.
+   */
+  const versionRef = useRef(0);
+  const pendienteRef = useRef(false);
+  const cargarRef = useRef<((idPedido: string, opts?: { silent?: boolean }) => Promise<void>) | null>(
+    null
+  );
 
-  const cargarPerfil = useCallback(async (idPedido: string, opts?: { silent?: boolean }) => {
-    if (cargandoRef.current) return;
-    cargandoRef.current = true;
+  const cargarPerfil = useCallback(
+    async (idPedido: string, opts?: { silent?: boolean }) => {
+      if (cargandoRef.current) {
+        pendienteRef.current = true;
+        return;
+      }
+      cargandoRef.current = true;
+      const version = versionRef.current;
 
-    try {
-      const [p, a, v, r] = await Promise.all([
-        fetchPerfilPublico(idPedido),
-        fetchActivasVendedor(idPedido),
-        fetchVentasVendedor(idPedido),
-        fetchReviews(idPedido),
-      ]);
-      setPerfil(p);
-      setActivas(a);
-      setVendidas(v);
-      setReviews(r);
-      setCargadoPara(idPedido);
-      setErrorPara(null);
-    } catch (e: any) {
-      console.warn('[perfil-publico] no se pudo leer el perfil:', e?.message ?? e);
-      if (opts?.silent) throw e;
-      setErrorPara(idPedido);
-    } finally {
-      cargandoRef.current = false;
-    }
-  }, []);
+      try {
+        const [p, a, v, r, rel] = await Promise.all([
+          fetchPerfilPublico(idPedido),
+          fetchActivasVendedor(idPedido),
+          fetchVentasVendedor(idPedido),
+          fetchReviews(idPedido),
+          miId ? fetchRelacion(miId, idPedido) : Promise.resolve<RelacionBloqueo>('normal'),
+        ]);
+        if (versionRef.current !== version) {
+          pendienteRef.current = true;
+          return;
+        }
+        setPerfil(p);
+        setActivas(a);
+        setVendidas(v);
+        setReviews(r);
+        setRelacion(rel);
+        setCargadoPara(idPedido);
+        setErrorPara(null);
+      } catch (e: any) {
+        console.warn('[perfil-publico] no se pudo leer el perfil:', e?.message ?? e);
+        if (opts?.silent) throw e;
+        setErrorPara(idPedido);
+      } finally {
+        cargandoRef.current = false;
+        if (pendienteRef.current) {
+          pendienteRef.current = false;
+          void cargarRef.current?.(idPedido, { silent: true }).catch((e: any) =>
+            console.warn('[perfil-publico] falló la recarga pendiente:', e?.message ?? e)
+          );
+        }
+      }
+    },
+    [miId]
+  );
+
+  useEffect(() => {
+    cargarRef.current = cargarPerfil;
+  }, [cargarPerfil]);
 
   /**
    * `montadoRef`, leído ANTES del `void cargarPerfil(id)`: no es solo
@@ -107,6 +166,28 @@ export default function PerfilPublicoScreen() {
     if (!id || !montadoRef.current) return;
     void cargarPerfil(id);
   }, [id, cargarPerfil]);
+
+  /**
+   * UGC-1. Al VOLVER a esta pantalla (no al montarla): "Reportar" puede haber
+   * bloqueado a esta persona en su paso final, y esta ruta sigue montada debajo
+   * de la hoja. Sin esto, el perfil seguiría pintando sus contadores y el botón
+   * de WhatsApp. Mismo patrón —y mismo ref para saltarse el primer foco— que
+   * Detalle.
+   */
+  const primerFoco = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (primerFoco.current) {
+        primerFoco.current = false;
+        return;
+      }
+      if (id) {
+        void cargarPerfil(id, { silent: true }).catch((e: any) =>
+          console.warn('[perfil-publico] falló el refresh al enfocar:', e?.message ?? e)
+        );
+      }
+    }, [id, cargarPerfil])
+  );
 
   const [refrescando, setRefrescando] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -161,6 +242,63 @@ export default function PerfilPublicoScreen() {
   }
 
   /**
+   * UGC-1. Bloquear pasa SIEMPRE por "Confirmar bloquear"; el estado local
+   * cambia solo DESPUÉS de que la base respondió bien, nunca antes (sin
+   * optimismo: un fallo de red no puede dejar un "bloqueado" falso).
+   */
+  async function bloquear() {
+    if (!perfil || !miId || mutando) return;
+    setMutando('bloquear');
+    try {
+      await bloquearUsuario(miId, perfil.id);
+      versionRef.current += 1;
+      setRelacion('bloqueado_por_mi');
+      setConfirmarBloqueo(false);
+      mostrar(`Bloqueaste a ${nombreParaBloqueo(perfil.nombre)}`);
+      void cargarPerfil(perfil.id, { silent: true }).catch((e: any) =>
+        console.warn('[perfil-publico] falló la recarga tras bloquear:', e?.message ?? e)
+      );
+    } catch (e: any) {
+      console.warn('[perfil-publico] no se pudo bloquear:', e?.code ?? '?', e?.message ?? e);
+      setConfirmarBloqueo(false);
+      mostrar('No pudimos bloquear a este usuario. Intenta de nuevo.', 'error');
+    } finally {
+      setMutando(null);
+    }
+  }
+
+  /**
+   * Desbloquear NO pide confirmación (es reversible, UGC-1A). Borra solo MI
+   * fila; si la otra persona también me bloqueó, la relación queda en "no
+   * disponible", y eso no se adivina: se vuelve a preguntar a la base.
+   */
+  async function desbloquear() {
+    if (!perfil || !miId || mutando) return;
+    setOpcionesAbiertas(false);
+    setMutando('desbloquear');
+    try {
+      await desbloquearUsuario(miId, perfil.id);
+      versionRef.current += 1;
+      mostrar(`Desbloqueaste a ${nombreParaBloqueo(perfil.nombre)}`);
+      try {
+        setRelacion(await fetchRelacion(miId, perfil.id));
+      } catch (e: any) {
+        // El desbloqueo SÍ ocurrió; lo que falló es releer. La recarga de abajo
+        // lo reintenta, y mientras tanto no se afirma ningún estado nuevo.
+        console.warn('[perfil-publico] no se pudo releer la relación:', e?.message ?? e);
+      }
+      void cargarPerfil(perfil.id, { silent: true }).catch((e: any) =>
+        console.warn('[perfil-publico] falló la recarga tras desbloquear:', e?.message ?? e)
+      );
+    } catch (e: any) {
+      console.warn('[perfil-publico] no se pudo desbloquear:', e?.code ?? '?', e?.message ?? e);
+      mostrar('No pudimos desbloquear a este usuario. Intenta de nuevo.', 'error');
+    } finally {
+      setMutando(null);
+    }
+  }
+
+  /**
    * Mismo criterio que `compartir()` de Detalle: texto plano y NINGÚN link,
    * porque el proyecto sigue sin universal links/App Links ni página de
    * respaldo (CLAUDE.md §8, deuda consciente de "Compartir"). No hay un
@@ -207,6 +345,10 @@ export default function PerfilPublicoScreen() {
   if (estado === 'loading' || !perfil) return null;
 
   const esPropio = profile?.id === id;
+  // UGC-1: con un bloqueo en cualquier dirección no se pintan contadores (las
+  // publicaciones que contarían ya no se devuelven, así que saldrían en 0) ni
+  // el contacto. La identidad y las calificaciones se quedan (UGC-1A).
+  const conBloqueo = !esPropio && relacion !== 'normal';
 
   return (
     <Screen
@@ -232,28 +374,20 @@ export default function PerfilPublicoScreen() {
             <Pressable onPress={compartir} accessibilityRole="button" hitSlop={12}>
               <IconShare size={18} color={Colors.ink} />
             </Pressable>
-            {/* RF-14, objetivo USUARIO. Guard de UX nada más: el candado es el
-                `check` de tabla de 20260906000441 (`reported_user_id <>
-                reporter_id`). Se esconde en el perfil propio con el mismo
-                criterio con el que Detalle esconde su bandera cuando `isOwner`
-                — hoy no se llega aquí con el id propio (el `.seller-card` que
-                navega acá ya está gateado por `!isOwner`), pero la ruta sí es
-                alcanzable por deep link. */}
+            {/* UGC-1: el "⋯" sustituye a la bandera de RF-14 y abre "Perfil
+                público (opciones)": reportar y bloquear como DOS filas. Se
+                esconde en el perfil propio con el mismo criterio que la
+                bandera — hoy no se llega aquí con el id propio (el
+                `.seller-card` que navega acá ya está gateado por `!isOwner`),
+                pero la ruta sí es alcanzable por deep link. */}
             {!esPropio && (
               <Pressable
-                onPress={() =>
-                  router.push({
-                    pathname: '/reportar/[id]',
-                    // El `id` de ESTA ruta es la persona reportada, así que la
-                    // hoja no necesita un param aparte para su guard. `nombre`
-                    // viaja solo para el título, que ya está en pantalla aquí.
-                    params: { id, tipo: 'usuario', nombre: perfil.nombre ?? '' },
-                  })
-                }
+                onPress={() => setOpcionesAbiertas(true)}
                 accessibilityRole="button"
+                accessibilityLabel="Más opciones"
                 hitSlop={12}
               >
-                <IconFlag size={18} color={Colors.ink} />
+                <IconKebab size={18} color={Colors.ink} />
               </Pressable>
             )}
           </View>
@@ -293,31 +427,56 @@ export default function PerfilPublicoScreen() {
         ) : null}
       </View>
 
-      <View style={styles.statRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNum}>{activas}</Text>
-          <Text style={styles.statLabel}>Activas</Text>
+      {conBloqueo ? (
+        // Frames "Perfil público (bloqueado)" y "(no disponible)": `.notice`
+        // SIN ícono (no falló nada, mismo criterio que "ya se vendió"). El
+        // neutro nunca dice por qué: ni bloqueo, ni suspensión, ni baja.
+        <View style={styles.bloqueoWrap}>
+          <View style={styles.aviso}>
+            <Text style={styles.avisoText}>
+              {relacion === 'bloqueado_por_mi'
+                ? `Bloqueaste a ${nombreParaBloqueo(perfil.nombre)}. No verás sus publicaciones y no podrán contactarse.`
+                : 'Este perfil no está disponible.'}
+            </Text>
+          </View>
+          {relacion === 'bloqueado_por_mi' ? (
+            <GhostButton
+              label={mutando === 'desbloquear' ? '…' : 'Desbloquear'}
+              onPress={() => void desbloquear()}
+              disabled={mutando !== null}
+              style={styles.desbloquearBtn}
+            />
+          ) : null}
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNum}>{vendidas}</Text>
-          <Text style={styles.statLabel}>Vendidos</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNum}>{antiguedadEnRelevo(new Date(perfil.createdAt))}</Text>
-          <Text style={styles.statLabel}>En Relevo</Text>
-        </View>
-      </View>
+      ) : (
+        <>
+          <View style={styles.statRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statNum}>{activas}</Text>
+              <Text style={styles.statLabel}>Activas</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statNum}>{vendidas}</Text>
+              <Text style={styles.statLabel}>Vendidos</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statNum}>{antiguedadEnRelevo(new Date(perfil.createdAt))}</Text>
+              <Text style={styles.statLabel}>En Relevo</Text>
+            </View>
+          </View>
 
-      <View style={styles.whatsappWrap}>
-        <Pressable
-          style={styles.whatsappBtn}
-          onPress={() => void contactarPorWhatsapp()}
-          accessibilityRole="button"
-        >
-          <IconWhatsapp size={16} color={Colors.paper} />
-          <Text style={styles.whatsappText}>Contactar por WhatsApp</Text>
-        </Pressable>
-      </View>
+          <View style={styles.whatsappWrap}>
+            <Pressable
+              style={styles.whatsappBtn}
+              onPress={() => void contactarPorWhatsapp()}
+              accessibilityRole="button"
+            >
+              <IconWhatsapp size={16} color={Colors.paper} />
+              <Text style={styles.whatsappText}>Contactar por WhatsApp</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Calificaciones</Text>
@@ -365,6 +524,54 @@ export default function PerfilPublicoScreen() {
           ))}
         </View>
       ) : null}
+
+      <HojaOpciones
+        visible={opcionesAbiertas}
+        titulo={perfil.nombre ?? 'Usuario'}
+        onCerrar={() => setOpcionesAbiertas(false)}
+        opciones={[
+          {
+            key: 'reportar',
+            icon: <IconFlag size={16} color={Colors.inkSoft} />,
+            label: 'Reportar usuario',
+            chevron: true,
+            onPress: () => {
+              setOpcionesAbiertas(false);
+              router.push({
+                pathname: '/reportar/[id]',
+                // El `id` de ESTA ruta es la persona reportada, así que la
+                // hoja no necesita un param aparte para su guard. `nombre`
+                // viaja para el título y para la oferta de bloquear al final.
+                params: { id, tipo: 'usuario', nombre: perfil.nombre ?? '' },
+              });
+            },
+          },
+          relacion === 'bloqueado_por_mi'
+            ? {
+                key: 'desbloquear',
+                icon: <IconBan size={16} color={Colors.inkSoft} />,
+                label: 'Desbloquear usuario',
+                onPress: () => void desbloquear(),
+              }
+            : {
+                key: 'bloquear',
+                icon: <IconBan size={16} color={Colors.brick} />,
+                label: 'Bloquear usuario',
+                danger: true,
+                onPress: () => {
+                  setOpcionesAbiertas(false);
+                  setConfirmarBloqueo(true);
+                },
+              },
+        ]}
+      />
+      <ConfirmarBloqueoModal
+        visible={confirmarBloqueo}
+        nombre={perfil.nombre}
+        confirming={mutando === 'bloquear'}
+        onConfirm={() => void bloquear()}
+        onCancel={() => setConfirmarBloqueo(false)}
+      />
     </Screen>
   );
 }
@@ -472,6 +679,32 @@ const styles = StyleSheet.create({
     ...Typography.statLabel,
     color: Colors.inkSoft,
     marginTop: 3,
+  },
+  // UGC-1, frames "Perfil público (bloqueado)"/"(no disponible)": el mismo
+  // contenedor `padding:0 20px 20px` que el botón de WhatsApp al que reemplaza.
+  bloqueoWrap: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    gap: 12,
+  },
+  // .notice sin .notice-icon — el mismo par de estilos que el aviso de
+  // "ya se vendió" de Detalle (`vendidoNotice`/`vendidoText`).
+  aviso: {
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    borderRadius: Radii.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  avisoText: {
+    ...Typography.meta,
+    color: Colors.inkSoft,
+    lineHeight: 18.125, // 12.5 × 1.45
+  },
+  // .ghost-btn a ancho completo dentro del `display:flex` del frame.
+  desbloquearBtn: {
+    width: '100%',
   },
   // El contenedor `<div style="padding:0 20px 20px;">` del botón de WhatsApp.
   whatsappWrap: {
