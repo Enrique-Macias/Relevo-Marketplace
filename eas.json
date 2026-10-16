@@ -8,6 +8,11 @@
       "developmentClient": true,
       "distribution": "internal",
       "environment": "development"
+    },
+    "testflight-staging": {
+      "distribution": "store",
+      "environment": "preview",
+      "autoIncrement": true
     }
   }
 }

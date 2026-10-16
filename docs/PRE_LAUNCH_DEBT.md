@@ -17,6 +17,14 @@ AUTH-2 y DEV-1A/B.
 > desarrollo / socios / TestFlight → **STAGING** ·
 > App Store / Google Play pública + usuarios reales → **PROD**.
 >
+> **Nomenclatura de EAS (decidida en TESTFLIGHT-1C.2, 2026-10-16):** el
+> environment de EAS **`preview` = STAGING**, y solo STAGING; el build profile
+> **`testflight-staging`** (`eas.json`) es TestFlight contra STAGING y usa ese
+> environment. **`production`** (environment y profile) queda reservado para
+> PROD y no se configura hasta que PROD exista. Se usa `preview` y no un
+> environment `staging` porque la cuenta de Expo está en el plan Free, y los
+> environments personalizados exigen el plan Production o Enterprise.
+>
 > **Nunca se copia íntegramente STAGING → PROD.** PROD se construye desde lo
 > reproducible (migraciones, funciones, configuración inventariada); las cuentas
 > y los datos de STAGING no se transportan.
@@ -237,12 +245,13 @@ AUTH-2 y DEV-1A/B.
 - **Momento:** el bundle id de iOS, **antes del primer TestFlight**; el paquete
   de Android, antes de la primera subida a Play. Los dos son inmutables una vez
   registrados.
-- **Evidencia actual (`app.json`):** iOS `com.enrique-macias.relevo-marketplace`;
-  Android `com.enriquemacias.enriquemacias` (no coincide, y
+- **Evidencia actual (`app.json`):** iOS `mx.com.rlvo.app` (desde `f5a2648`;
+  App ID registrado en Apple en PUSH-2 y app creada en App Store Connect en
+  TESTFLIGHT-1A, así que ya es inmutable); Android `com.enriquemacias.enriquemacias` (no coincide, y
   `src/lib/configuracion.ts` espera `com.enriquemacias.relevo`); sin
   `buildNumber`/`versionCode`; splash `#208AEF` y fondo del ícono adaptativo
   `#E6F4FE` (valores del template, no tokens de marca); permiso
-  `android.permission.RECORD_AUDIO` sin uso; `name: relevo-marketplace`,
+  `android.permission.RECORD_AUDIO` sin uso; `name: RLVO`,
   `slug: enrique-macias`.
 - **Criterio de cierre:** identificadores definitivos decididos y aplicados,
   versionado definido, íconos y splash con la marca, permisos sin uso
@@ -378,6 +387,15 @@ reconstruir y verificar:
     excluye `.env*.local` y `admin/`;
   - proporcionar de forma segura a ese build las variables de STAGING (sin
     `.env*.local` en el tarball, `src/lib/env.ts` hace fallar el arranque).
+  - **Estado (TESTFLIGHT-1B a 1E, 2026-10-16), todavía sin validar con un build
+    real:** el cliente consume solo `EXPO_PUBLIC_SUPABASE_URL` y
+    `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`src/lib/env.ts:17-18`); las dos
+    existen como variables de EAS en `development` y `preview` (= STAGING; ver
+    "Ambientes", arriba), no en `production` (TESTFLIGHT-1D.1, Dashboard). El
+    profile `testflight-staging` está en `eas.json`. `eas build:inspect
+    --stage archive` del profile (TESTFLIGHT-1D.2, eas-cli 24.14.0) dio un
+    archive sin ningún `.env*` y con `admin/` vacío. Falta comprobar en un build
+    real que las variables llegan al binario.
 - **PRE-LAUNCH:** garantizar que el build público recibe **exclusivamente** la
   configuración de PROD (enlaza con PL-003).
 - **Criterio de cierre:** las dos fases verificadas con su build real.
