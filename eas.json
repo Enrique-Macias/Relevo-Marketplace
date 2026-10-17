@@ -14,5 +14,12 @@
       "environment": "preview",
       "autoIncrement": true
     }
+  },
+  "submit": {
+    "testflight-staging": {
+      "ios": {
+        "ascAppId": "6823504128"
+      }
+    }
   }
 }
