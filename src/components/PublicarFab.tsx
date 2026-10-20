@@ -29,11 +29,13 @@ import { Colors, Radii } from '@/constants/theme';
  * `NativeTabs` no expone su altura: el `useBottomTabBarHeight()` de
  * react-navigation existe, pero es del navegador de tabs en JS, no de este —
  * aquí la barra la dibuja el sistema (`UITabBar` / `BottomNavigationView`) y su
- * medida no vuelve a JS. De ahí estas dos constantes, que son las alturas
- * estándar de cada plataforma; el inset inferior se suma aparte porque en iOS la
- * barra se asienta SOBRE el home indicator.
+ * medida no vuelve a JS. De ahí estas dos constantes; el inset inferior se suma
+ * aparte porque en iOS la barra se asienta SOBRE el home indicator. La de
+ * Android NO es la estándar de Material 3 (80): la fija
+ * `plugins/withCompactAndroidTabBar.js` (`m3_bottom_nav_min_height`), y las dos
+ * tienen que cambiar juntas.
  */
-const ALTURA_TAB_BAR = Platform.select({ ios: 49, default: 80 });
+const ALTURA_TAB_BAR = Platform.select({ ios: 49, default: 64 });
 
 /** Separación entre el FAB y el tab bar: los 96-78 del prototipo. */
 const SEPARACION = 18;

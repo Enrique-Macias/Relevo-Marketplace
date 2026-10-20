@@ -72,7 +72,8 @@
         }
       ],
       "expo-image",
-      "expo-web-browser"
+      "expo-web-browser",
+      "./plugins/withCompactAndroidTabBar.js"
     ],
     "experiments": {
       "typedRoutes": true,
