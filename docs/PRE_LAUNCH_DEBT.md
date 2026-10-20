@@ -247,9 +247,13 @@ AUTH-2 y DEV-1A/B.
   registrados.
 - **Evidencia actual (`app.json`):** iOS `mx.com.rlvo.app` (desde `f5a2648`;
   App ID registrado en Apple en PUSH-2 y app creada en App Store Connect en
-  TESTFLIGHT-1A, así que ya es inmutable); Android `com.enriquemacias.enriquemacias` (no coincide, y
-  `src/lib/configuracion.ts` espera `com.enriquemacias.relevo`); sin
-  `buildNumber`/`versionCode`; splash `#208AEF` y fondo del ícono adaptativo
+  TESTFLIGHT-1A, así que ya es inmutable); Android `mx.com.rlvo.app` (desde
+  ANDROID-1B, antes del primer build de Android: el package definitivo, igual
+  que el bundle id de iOS a propósito; antes era
+  `com.enriquemacias.enriquemacias`). Todavía no hay ningún build de Android
+  validado ni app en Google Play, así que el package aún no está registrado.
+  `src/lib/configuracion.ts` sigue esperando `com.enriquemacias.relevo` (no
+  coincide); sin `buildNumber`/`versionCode`; splash `#208AEF` y fondo del ícono adaptativo
   `#E6F4FE` (valores del template, no tokens de marca); permiso
   `android.permission.RECORD_AUDIO` sin uso; `name: RLVO`,
   `slug: enrique-macias`.

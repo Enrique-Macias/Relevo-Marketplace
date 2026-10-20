@@ -31,7 +31,7 @@
       "blockedPermissions": [
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-      "package": "com.enriquemacias.enriquemacias"
+      "package": "mx.com.rlvo.app"
     },
     "web": {
       "output": "static",
