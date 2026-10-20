@@ -6,7 +6,7 @@
 
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Platform, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { PrimaryButton } from '@/components/Buttons';
 import { EmptyState } from '@/components/EmptyState';
@@ -161,6 +161,7 @@ export default function FavoritosScreen() {
 
   return (
     <Screen
+      bordeInferior={Platform.OS !== 'android'}
       refreshControl={
         <RefreshControl
           refreshing={refrescando}

@@ -3,7 +3,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
 
 import { GhostButton } from '@/components/Buttons';
@@ -74,6 +74,7 @@ export default function InicioScreen() {
 
   return (
     <Screen
+      bordeInferior={Platform.OS !== 'android'}
       refreshControl={
         <RefreshControl
           refreshing={refrescando}

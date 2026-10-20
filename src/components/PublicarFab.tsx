@@ -30,12 +30,20 @@ import { Colors, Radii } from '@/constants/theme';
  * react-navigation existe, pero es del navegador de tabs en JS, no de este —
  * aquí la barra la dibuja el sistema (`UITabBar` / `BottomNavigationView`) y su
  * medida no vuelve a JS. De ahí estas dos constantes; el inset inferior se suma
- * aparte porque en iOS la barra se asienta SOBRE el home indicator. La de
- * Android NO es la estándar de Material 3 (80): la fija
- * `plugins/withCompactAndroidTabBar.js` (`m3_bottom_nav_min_height`), y las dos
- * tienen que cambiar juntas.
+ * aparte porque la barra se asienta SOBRE la del sistema (el home indicator en
+ * iOS, los botones o el gesto en Android).
+ *
+ * La de Android es la altura EFECTIVA medida, no un recurso. Material mide la
+ * `BottomNavigationView` según su contenido y usa `m3_bottom_nav_min_height`
+ * (64dp, `plugins/withCompactAndroidTabBar.js`) solo como piso: con los
+ * recursos actuales, el item seleccionado suma 8 + 32 (indicador) + 4 + 16
+ * (etiqueta) + 8 = 68dp, y eso es lo que se midió en un Redmi físico con
+ * font_scale 1.0 (187 px a 2.75 px/dp, ANDROID-2K). Esta constante posiciona
+ * el FAB respecto a esa altura: si cambian esos recursos, la etiqueta o el
+ * indicador, hay que volver a medirla. Con la fuente del sistema agrandada la
+ * barra crece y el FAB queda algo más cerca de ella.
  */
-const ALTURA_TAB_BAR = Platform.select({ ios: 49, default: 64 });
+const ALTURA_TAB_BAR = Platform.select({ ios: 49, default: 68 });
 
 /** Separación entre el FAB y el tab bar: los 96-78 del prototipo. */
 const SEPARACION = 18;

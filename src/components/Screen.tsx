@@ -58,6 +58,19 @@ type ScreenProps = {
   onEndReached?: () => void;
   /** Pass-through al `refreshControl` del `ScrollView` interno (pull-to-refresh). */
   refreshControl?: React.ReactElement<RefreshControlProps>;
+  /**
+   * Si aplica el safe area INFERIOR (default true; el superior siempre se aplica).
+   *
+   * Las pantallas de `NativeTabs` en Android lo apagan explícitamente: ahí
+   * expo-router ya envuelve cada pantalla en un `SafeAreaView` de
+   * react-native-screens que la termina ENCIMA de la `BottomNavigationView`
+   * (que a su vez ya despeja la barra del sistema). Este `SafeAreaView` no mide
+   * su propia posición: toma el inset del `SafeAreaProvider` raíz, que es la
+   * ventana entera, así que volvía a restar la barra del sistema y dejaba una
+   * franja vacía de su misma altura sobre las tabs (130 px = 47dp medidos en un
+   * Redmi, ANDROID-2K/2L). En iOS y fuera de las tabs se queda en true.
+   */
+  bordeInferior?: boolean;
 };
 
 // Distancia al final a partir de la cual se pide la página siguiente: poco más
@@ -71,6 +84,7 @@ export function Screen({
   contentStyle,
   onEndReached,
   refreshControl,
+  bordeInferior = true,
 }: ScreenProps) {
   const scrollRef = useRef<ScrollView>(null);
 
@@ -83,7 +97,7 @@ export function Screen({
     : undefined;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={bordeInferior ? ['top', 'bottom'] : ['top']}>
       {header}
       {scroll ? (
         // Sin este KeyboardAvoidingView, en iOS el teclado se dibuja ENCIMA

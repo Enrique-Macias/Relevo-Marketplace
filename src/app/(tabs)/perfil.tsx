@@ -20,7 +20,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ErrorState } from '@/components/ErrorState';
@@ -299,6 +299,7 @@ export default function PerfilScreen() {
   return (
     <>
       <Screen
+        bordeInferior={Platform.OS !== 'android'}
         refreshControl={
           <RefreshControl
             refreshing={refrescando}

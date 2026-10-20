@@ -2,7 +2,15 @@
 
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { InteractionManager, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import {
+  InteractionManager,
+  Platform,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { ActiveFilterChip } from '@/components/ActiveFilterChip';
 import { GhostButton } from '@/components/Buttons';
@@ -141,7 +149,11 @@ export default function BuscarScreen() {
 
   if (modoRecomendados) {
     return (
-      <Screen onEndReached={loadMore} refreshControl={refreshControl}>
+      <Screen
+        onEndReached={loadMore}
+        refreshControl={refreshControl}
+        bordeInferior={Platform.OS !== 'android'}
+      >
         {buscador}
         <SectionHead title="Recomendados para ti" />
         {estado === 'error' ? (
@@ -220,7 +232,11 @@ export default function BuscarScreen() {
   const conteo = total ?? items.length;
 
   return (
-    <Screen onEndReached={loadMore} refreshControl={refreshControl}>
+    <Screen
+      onEndReached={loadMore}
+      refreshControl={refreshControl}
+      bordeInferior={Platform.OS !== 'android'}
+    >
       {buscador}
 
       <View style={styles.activeChips}>

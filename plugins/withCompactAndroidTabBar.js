@@ -14,6 +14,12 @@
  * sobre los de una librería con el mismo nombre.
  *
  * QUÉ CAMBIA. Solo tres `<dimen>` de `res/values/dimens.xml` (80/12/16 → 64/8/8).
+ * `m3_bottom_nav_min_height` es un PISO, no la altura: Material mide la barra
+ * según su contenido (`BottomNavigationView.onMeasure`), y el item seleccionado
+ * suma padding top + indicador (32) + 4 + etiqueta (16) + padding bottom. Con
+ * 8/8 eso da 68dp, por encima del piso de 64: la altura efectiva medida en un
+ * Redmi físico con font_scale 1.0 es 68dp (antes, 80). Bajar solo el piso no
+ * baja la barra.
  * NO toca el inset del sistema (`paddingBottomSystemWindowInsets` sigue en true:
  * nada queda debajo de los botones de MIUI), ni etiquetas, íconos, indicador ni
  * colores. iOS no se entera: son recursos de Android.
@@ -27,8 +33,9 @@
  * cualquier BottomNavigationView de Material 3 de la app (hoy solo existe esta).
  *
  * ACOPLAMIENTO. `ALTURA_TAB_BAR` de Android en `src/components/PublicarFab.tsx`
- * tiene que valer lo mismo que `m3_bottom_nav_min_height`: la barra nativa no
- * devuelve su altura a JS y el FAB la despeja a mano.
+ * guarda la altura EFECTIVA de la barra (68dp hoy), no `m3_bottom_nav_min_height`:
+ * la barra nativa no devuelve su altura a JS y el FAB la despeja a mano. Si
+ * cambian estos valores, hay que volver a medir la barra y ajustar esa constante.
  */
 const { AndroidConfig, XML, withDangerousMod } = require('expo/config-plugins');
 
