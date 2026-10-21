@@ -362,10 +362,37 @@ reconstruir y verificar:
     registra tokens de APNs production; la key ya cubre los dos entornos.
   - **Android:** service account de FCM V1 en EAS, build de Android y prueba
     física — solo si el lanzamiento incluye Android (PL-011).
+  - **Android — hardening de la API key de cliente de Firebase** (después del
+    push E2E en Android y antes de PROD/lanzamiento público; ANDROID-PUSH-SEC-1
+    a SEC-3, 2026-10-20):
+    - `google-services.json` está versionado a propósito (`386a8cd`): es
+      configuración de cliente con identificadores públicos (docs de Firebase
+      y de Expo), y su API key viaja de todos modos dentro de cada APK. GitHub
+      Secret Scanning la detecta como "Google API Key" (alerta #1); se resuelve
+      como exposición intencional, no como fuga.
+    - Una **service account JSON / private key** (la de FCM V1) es otra cosa:
+      **nunca** entra al repo.
+    - Estado revisado en Google Cloud: la key "Android key (auto created by
+      Firebase)" tiene API restrictions con las 25 APIs que Firebase pone por
+      default (ninguna ajena a Firebase) y Application restrictions = None.
+      Firebase AI Logic, Generative Language y Vertex AI están deshabilitadas
+      en el proyecto. No se rota ni se reescribe el historial.
+    - Pendiente (A): reducir las API restrictions al conjunto que RLVO use de
+      verdad (como mínimo FCM Registration e Installations) y repetir el push
+      E2E después de recortarlas.
+    - Pendiente (B): evaluar y aplicar la restricción "Android apps" con el
+      package `mx.com.rlvo.app` y su SHA-1.
+    - Pendiente (C): al poner SHA-1, incluir el de **cada** certificado que
+      firme la app: el de EAS y, si Android se publica en Google Play, el de
+      Play App Signing. Un SHA-1 faltante puede romper el registro del token,
+      así que se verifica con un push real después del cambio.
   - Hardening de `send-push` y del ciclo de vida del token: PL-049 a PL-051
     (P2) y PL-064/PL-068 (condicionales). No bloquean.
 - **Criterio de cierre:** en PROD, un aviso real llega como push a un iPhone
   (y a un Android si se lanza en Android) y `push_enviado_at` queda sellado.
+  Si se lanza en Android, además: la API key de cliente de Firebase con las
+  API restrictions reducidas y la restricción de app (package + SHA-1)
+  aplicada, con un push real verificado después.
 - **Dependencias:** PL-011, PL-023; PL-001 para PROD.
 
 ### PL-021 — Leaked password protection (D-18)
