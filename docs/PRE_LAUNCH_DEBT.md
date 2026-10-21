@@ -70,7 +70,9 @@ AUTH-2 y DEV-1A/B.
   `.env.local`) apunta a STAGING. **Push iOS validado de punta a punta en
   STAGING** (2026-10-12, PL-020): `send-push` v13 y los dos secretos
   `send_push_*` en Vault, así que cada INSERT en `notifications` envía un push
-  real a quien tenga token (hoy, solo el usuario de prueba).
+  real a quien tenga token (hoy, solo usuarios de prueba). **Push Android
+  validado de punta a punta en STAGING** (2026-10-21, ANDROID-PUSH-1F/1G,
+  PL-020) con el mismo `send-push` v13.
 - **Documentación histórica:** `CLAUDE.md`, `admin/CLAUDE.md`,
   `docs/admin-runbook.md` y los planes de RF-17 llaman "producción" / "EN
   PRODUCCIÓN" a lo que hoy es STAGING. Se lee como "STAGING" hasta que PL-027
@@ -250,8 +252,10 @@ AUTH-2 y DEV-1A/B.
   TESTFLIGHT-1A, así que ya es inmutable); Android `mx.com.rlvo.app` (desde
   ANDROID-1B, antes del primer build de Android: el package definitivo, igual
   que el bundle id de iOS a propósito; antes era
-  `com.enriquemacias.enriquemacias`). Todavía no hay ningún build de Android
-  validado ni app en Google Play, así que el package aún no está registrado.
+  `com.enriquemacias.enriquemacias`). Ya hay un development build de Android
+  (EAS `612b469b-55fe-4046-b268-83a450f675a7`, distribución interna, validado
+  en un dispositivo físico en ANDROID-PUSH-1F/1G, PL-020), pero no hay app en
+  Google Play, así que el package aún no está registrado en Play.
   `src/lib/configuracion.ts` sigue esperando `com.enriquemacias.relevo` (no
   coincide); sin `buildNumber`/`versionCode`; splash `#208AEF` y fondo del ícono adaptativo
   `#E6F4FE` (valores del template, no tokens de marca); permiso
@@ -332,7 +336,7 @@ reconstruir y verificar:
 ## P1 — Requerido antes del lanzamiento público
 
 ### PL-020 — Push real (RF-16)
-- **Origen:** pendiente 1 de `CLAUDE.md` §8; auditoría §5 y §7 · **Estado:** ABIERTO (iOS validado de punta a punta **en STAGING**; falta PROD y Android) · **Prioridad:** P1
+- **Origen:** pendiente 1 de `CLAUDE.md` §8; auditoría §5 y §7 · **Estado:** ABIERTO (push iOS y Android validados de punta a punta **en STAGING**; PROD pendiente) · **Prioridad:** P1
 - **Por qué existe:** hasta el 2026-10-12 ningún push había llegado a un
   teléfono: `expo-notifications` estaba excluido del autolinking (cuenta
   personal de Apple) y no había APNs ni secretos `send_push_*`.
@@ -355,13 +359,51 @@ reconstruir y verificar:
     `push_tokens` → Expo → APNs → iPhone: **una** notificación visible
     (fila 39, request de `pg_net` 47, `enviados: 1`), `push_enviado_at` sellado
     solo en esa fila; las 35 históricas intactas.
+- **Evidencia actual — STAGING, Android (checkpoints ANDROID-PUSH-1A a 1G,
+  2026-10-19 a 2026-10-21):**
+  - 1B/1C: proyecto de Firebase "RLVO" con la app Android `mx.com.rlvo.app`
+    (Analytics apagado, FCM API V1 habilitada); `google-services.json` y
+    `android.googleServicesFile` en `app.json` (`386a8cd`).
+  - 1D: service account dedicada `expo-fcm-push`, con solo el rol Firebase
+    Cloud Messaging API Admin y una sola key, cargada en EAS como FCM V1
+    service account key de `mx.com.rlvo.app`. El JSON vive fuera del repo.
+    Crear la key exigió un override temporal de la org policy
+    `iam.managed.disableServiceAccountKeyCreation` en el proyecto; el override
+    se quitó (la policy volvió a "Inherit parent's policy", Enforced) y se
+    retiró el rol temporal Organization Policy Administrator. Ninguna
+    credencial de EAS Submit / Google Play; el keystore de Android de EAS no se
+    tocó.
+  - 1E: development build de EAS `612b469b-55fe-4046-b268-83a450f675a7`
+    (perfil `development`, APK de distribución interna, commit `0a53ba1`,
+    credenciales remotas existentes). El APK trae los recursos de Firebase
+    (`google_app_id`, `gcm_defaultSenderId`) y `googleServicesFile` en la
+    config embebida.
+  - 1F: el primer intento falló por el **binario**, no por la configuración:
+    el Redmi tenía reinstalado el APK del build anterior `5a311448` (commit
+    `2e50c7c`, sin Firebase), idéntico byte a byte según su SHA-256, y Firebase
+    no inicializaba ("Default FirebaseApp failed to initialize"). Con el APK
+    de 1E instalado: Firebase inicializa, la app obtuvo un Expo Push Token y
+    `push_tokens` tiene **una** fila `platform = 'android'` del usuario de
+    prueba, creada el 2026-10-21 03:42:10 UTC (ese usuario no tiene otros
+    tokens).
+  - 1G: INSERT controlado en `notifications` (fila **41**, `reporte_resuelto`,
+    "RLVO" / "Prueba de notificaciones Android", `listing_id` NULL) → trigger
+    `notifications_notify_push` → `private.notify_push` → `send-push` v13 →
+    Expo → FCM → Redmi físico. Respuesta de `pg_net` (request 49): HTTP 200,
+    `ok: true`, `enviados: 1`, `limpiados: 0`; `push_enviado_at` sellado
+    ~1.3 s después; el token Android sigue registrado; la notificación
+    **llegó al dispositivo** (confirmación manual). No se consultó el receipt
+    de Expo (PL-064).
 - **Qué falta:**
   - **PROD (bloquea el lanzamiento):** desplegar `send-push`, crear los dos
     secretos `send_push_*` en el Vault de PROD y repetir en PROD la prueba
     física (PROD-BOOTSTRAP criterios 8 y 14). La build de tienda/TestFlight
     registra tokens de APNs production; la key ya cubre los dos entornos.
-  - **Android:** service account de FCM V1 en EAS, build de Android y prueba
-    física — solo si el lanzamiento incluye Android (PL-011).
+  - **Android en PROD** (solo si el lanzamiento incluye Android, PL-011): la
+    FCM V1 key ya está en EAS para `mx.com.rlvo.app` y aplica a cualquier
+    build de ese package; falta repetir la prueba física contra PROD con un
+    build de release (y, si se publica en Play, con el binario firmado por
+    Play App Signing).
   - **Android — hardening de la API key de cliente de Firebase** (después del
     push E2E en Android y antes de PROD/lanzamiento público; ANDROID-PUSH-SEC-1
     a SEC-3, 2026-10-20):
@@ -556,6 +598,7 @@ tiempo en limpiarlos como si fueran deuda de lanzamiento:
 - las 5 cuentas gmail/hotmail/outlook anteriores al hook;
 - las 35 notificaciones con `push_enviado_at` NULL, anteriores a activar Vault (decisión del 2026-10-06: no se reenvían; el trigger solo envía en INSERT);
 - la notificación 39, fixture de PUSH-8 creada a mano (no por un trigger) en el inbox del usuario de prueba, y su fila de `push_tokens`: se pueden limpiar junto con otros fixtures de STAGING, con autorización aparte;
+- la notificación 41, fixture de ANDROID-PUSH-1G creada a mano (no por un trigger) en el inbox del usuario de prueba Android, y su fila Android de `push_tokens`: mismo tratamiento que la 39;
 - cuentas y sesiones de prueba de C3 y AUTH-2 (ya eliminadas).
 
 **Sí permanece** como operación futura en PROD: el procedimiento de barrido
@@ -577,6 +620,7 @@ periódico de fotos huérfanas (`docs/admin-runbook.md` §7).
 | Fotos de una `bloqueada` legibles por su dueño | CERRADO | D5 = (a), Ola 4 (`…481`) |
 | Admin (RF-17 fase 1) | CERRADO | F28, `af2d862` |
 | Push iOS de punta a punta (PUSH-2 a PUSH-8) | CERRADO en STAGING (PL-020 sigue abierto para PROD) | `f5a2648`, `76d3137`, `d4e8d18`, `564bedd`; `send-push` v13; PUSH-6 ticket y receipt `ok`; PUSH-8 fila 39 / request 47, una notificación en el iPhone |
+| Push Android de punta a punta (ANDROID-PUSH-1A a 1G) | CERRADO en STAGING (PL-020 sigue abierto para PROD) | `386a8cd`, `0a53ba1`; build EAS `612b469b-55fe-4046-b268-83a450f675a7`; `send-push` v13; 1G fila 41 / request 49, `enviados: 1`, `limpiados: 0`, una notificación en el Redmi |
 
 ---
 

@@ -5066,7 +5066,10 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
    `send-push` v13 con `@supabase/server@1.7.0` (`564bedd`). Un INSERT en
    `notifications` llegó como push a un iPhone físico (fila 39, request 47).
    Desde entonces cada aviso nuevo de STAGING sale como push real a quien tenga
-   token. Falta Android (FCM V1) y repetir todo en PROD; el detalle, la evidencia
+   token. **Android VALIDADO DE PUNTA A PUNTA EN STAGING el 2026-10-21**
+   (ANDROID-PUSH-1A a 1G: FCM V1 key en EAS, build EAS `612b469b`, fila 41 /
+   request 49 llegó a un Redmi físico). Falta repetir todo en PROD; el
+   detalle, la evidencia
    y la deuda que queda viven en PL-020, PL-049 a PL-051, PL-064 y PL-068 de
    `docs/PRE_LAUNCH_DEBT.md`. El texto de antes, tal como estaba:
 
