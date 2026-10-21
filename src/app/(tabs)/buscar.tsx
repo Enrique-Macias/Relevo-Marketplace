@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: ScreenPadding,
     paddingTop: 12,
-    paddingBottom: 90,
+    paddingBottom: Platform.select({ ios: 90, default: 12 }),
   },
   gridRow: {
     flexDirection: 'row',
@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
   },
   skeleton: {
     paddingTop: 12,
-    paddingBottom: 90,
+    paddingBottom: Platform.select({ ios: 90, default: 12 }),
   },
   skeletonMas: {
     paddingHorizontal: 0,

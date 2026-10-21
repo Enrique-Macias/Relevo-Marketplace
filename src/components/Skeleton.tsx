@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Animated, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Animated, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { Colors, Radii, ScreenPadding } from '@/constants/theme';
 import { chunkRows } from '@/lib/grid';
@@ -426,10 +426,12 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   // .menu-list{padding:2px 20px 100px;}
+  // Mismo valor que `menuList` de Perfil (100 en iOS, 82 en Android, por el
+  // espacio del FAB): ver el comentario de ese estilo.
   perfilMenu: {
     paddingTop: 2,
     paddingHorizontal: ScreenPadding,
-    paddingBottom: 100,
+    paddingBottom: Platform.select({ ios: 100, default: 82 }),
   },
   // .menu-row{gap:12px; padding:13px 0;}
   perfilMenuRow: {

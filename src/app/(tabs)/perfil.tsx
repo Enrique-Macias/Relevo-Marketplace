@@ -707,10 +707,16 @@ const styles = StyleSheet.create({
     color: Colors.ink,
   },
   // .menu-list{padding:2px 20px 100px;}
+  // En iOS se conservan los 100 del frame, porque ahí la barra se dibuja encima
+  // del contenido. En Android la pantalla ya termina encima de la barra, y los
+  // 82 (más los 8 de `Screen`, 90 en total) reservan el espacio del FAB al final
+  // del scroll: 20 de fila a FAB + 52 de FAB + 18 de FAB a la barra
+  // (`PublicarFab.tsx`). Si cambia el FAB, se recalcula. Igual en `perfilMenu`
+  // de `SkeletonPerfil`, para que no salte al terminar de cargar.
   menuList: {
     paddingTop: 2,
     paddingHorizontal: ScreenPadding,
-    paddingBottom: 100,
+    paddingBottom: Platform.select({ ios: 100, default: 82 }),
   },
   // .menu-row{display:flex; align-items:center; gap:12px; padding:13px 0; border-bottom:1px solid var(--line);}
   menuRow: {

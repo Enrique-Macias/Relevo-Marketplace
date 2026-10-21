@@ -403,10 +403,14 @@ const styles = StyleSheet.create({
     gap: 9,
     paddingHorizontal: ScreenPadding,
   },
+  // El colchón inferior de 90 del frame es para la barra dibujada encima, y se
+  // conserva en iOS. En Android la pantalla ya termina encima de la barra: 12
+  // más los 8 de `Screen` = 20 al final, igual que el margen lateral. Misma
+  // regla en los demás estados de este archivo, en Buscar y en Favoritos.
   grid: {
     gap: 12,
     paddingHorizontal: ScreenPadding,
-    paddingBottom: 90,
+    paddingBottom: Platform.select({ ios: 90, default: 12 }),
   },
   catGridRow: {
     flexDirection: 'row',
@@ -423,15 +427,15 @@ const styles = StyleSheet.create({
   // mismo colchón inferior que `grid` para el tab bar.
   emptyState: {
     paddingTop: 34,
-    paddingBottom: 110,
+    paddingBottom: Platform.select({ ios: 110, default: 12 }),
   },
   errorState: {
     paddingTop: 30,
-    paddingBottom: 90,
+    paddingBottom: Platform.select({ ios: 90, default: 12 }),
   },
   // Mismo colchón inferior que `grid`, para que el tab bar no tape la última
   // fila mientras carga.
   skeletonGrid: {
-    paddingBottom: 90,
+    paddingBottom: Platform.select({ ios: 90, default: 12 }),
   },
 });

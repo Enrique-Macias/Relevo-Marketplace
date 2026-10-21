@@ -222,14 +222,14 @@ const styles = StyleSheet.create({
   },
   skeleton: {
     paddingTop: 14,
-    paddingBottom: 90,
+    paddingBottom: Platform.select({ ios: 90, default: 12 }),
   },
   // .grid{padding:0 20px 90px;} — el frame le pone padding-top:14 inline.
   grid: {
     gap: 12,
     paddingTop: 14,
     paddingHorizontal: ScreenPadding,
-    paddingBottom: 90,
+    paddingBottom: Platform.select({ ios: 90, default: 12 }),
   },
   gridRow: {
     flexDirection: 'row',
