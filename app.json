@@ -31,7 +31,8 @@
       "blockedPermissions": [
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-      "package": "mx.com.rlvo.app"
+      "package": "mx.com.rlvo.app",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",

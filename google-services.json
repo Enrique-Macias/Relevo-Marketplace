@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1000613787221",
+    "project_id": "rlvo-108c9",
+    "storage_bucket": "rlvo-108c9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1000613787221:android:bfb4df1b33249ed05206dc",
+        "android_client_info": {
+          "package_name": "mx.com.rlvo.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD4gqls589mEscJDi5p479M7n5PP4HMYbw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
