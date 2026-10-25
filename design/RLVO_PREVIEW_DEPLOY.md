@@ -29,17 +29,22 @@ No crea proyectos, hace commits ni push. Wrangler usa su selección habitual de 
 npm run deploy:rlvo-preview -- --branch=NOMBRE_DE_RAMA
 ```
 
-La URL que indique Wrangler al terminar es la referencia del despliegue. La URL principal depende de la rama de producción configurada en el proyecto. No se ha ejecutado ningún despliegue durante esta preparación.
+La URL que indique Wrangler al terminar es la referencia del despliegue. La URL principal depende de la rama de producción configurada en el proyecto.
 
 `--no-install` utiliza el Wrangler disponible y evita instalar paquetes automáticamente. La preparación y validación solo usan módulos incorporados de Node; no se añadieron dependencias.
 
 ## Contenido del paquete
 
-- `index.html`: el prototipo completo, sin redirección intermedia; sus logos apuntan a `./assets/brand/`.
-- `design/rlvo-app.html`: la copia publicable, conservando las rutas relativas `../assets/brand/`.
-- Tres SVG oficiales referenciados: variantes 02, 07 y 16, copiados byte por byte.
+**Desde DESIGN-1 se publica `design/rlvo-app-final-preview.html` (Paleta 06)**, que reemplaza a `design/rlvo-app.html` en la misma URL. El prototipo anterior se queda en el repo, pero ya no se publica; sus despliegues previos siguen en el historial del proyecto de Cloudflare.
+
+- `index.html`: el prototipo completo, sin redirección intermedia. Sus logos apuntan a `./design/rlvo-final-brand/`.
+- `design/rlvo-app-final-preview.html`: la copia publicable, conservando las rutas relativas `rlvo-final-brand/`.
+- Los tres SVG recoloreados de `design/rlvo-final-brand/` que referencia, copiados byte por byte. El script acepta también los SVG oficiales de `assets/brand/` (el patrón anterior); ninguna otra ruta local.
+- `_redirects`: `/design/rlvo-app.html` y `/design/rlvo-app` responden 301 a `/`, para que los enlaces viejos no den 404.
 - `404.html`: respuesta para rutas inexistentes, sin fallback de SPA que oculte recursos faltantes.
 - `_headers`: indica `noindex, nofollow`.
+
+La validación en Node cubre el filtro, el editor de estilo, el selector de ancho y el carrusel. El visor con zoom, las hojas de fotos, el ojo de contraseña y el editor de recorte necesitan un DOM real: se validan en navegador (ver `design/RLVO_FINAL_PREVIEW.md`, "Validaciones").
 
 El CSS y JavaScript del prototipo permanecen integrados. Las fuentes siguen cargándose desde Google Fonts; no hay fuentes locales referenciadas y el build no descarga fuentes. Sin conexión se aplican los fallbacks tipográficos del HTML original.
 
