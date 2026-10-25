@@ -1,6 +1,6 @@
 # DESIGN-1, fase 3 — ojo de contraseña y visor con zoom por gestos
 
-Estado: **APROBADO e implementado (2026-10-25), pendiente de la prueba en dispositivo.** Ver "Cambios respecto al plan" al final. Solo JS: sin migraciones, sin
+Estado: **CERRADA (2026-10-25): implementada y confirmada por el usuario en iPhone y Android**, incluido el fix del pellizco (`6c053f0`). Ver "Cambios respecto al plan" al final. Solo JS: sin migraciones, sin
 Supabase, sin STAGING, sin build nativo nuevo, sin cambios de `app.json`.
 
 ## Lo medido antes de escribir esto
