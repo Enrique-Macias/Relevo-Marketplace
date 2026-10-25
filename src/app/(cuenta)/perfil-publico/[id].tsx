@@ -26,6 +26,7 @@ import {
   IconUser,
   IconWhatsapp,
 } from '@/components/icons';
+import { PhotoViewer } from '@/components/PhotoViewer';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
@@ -69,6 +70,8 @@ export default function PerfilPublicoScreen() {
   const [relacion, setRelacion] = useState<RelacionBloqueo>('normal');
   const [opcionesAbiertas, setOpcionesAbiertas] = useState(false);
   const [confirmarBloqueo, setConfirmarBloqueo] = useState(false);
+  // "Perfil público (foto ampliada)" (DESIGN-1, fase 3).
+  const [fotoAbierta, setFotoAbierta] = useState(false);
   const [mutando, setMutando] = useState<'bloquear' | 'desbloquear' | null>(null);
 
   /**
@@ -395,12 +398,22 @@ export default function PerfilPublicoScreen() {
       }
     >
       <View style={styles.block}>
-        <Avatar
-          path={perfil.fotoUrl}
-          nombre={perfil.nombre}
-          style={styles.avatar}
-          textStyle={styles.avatarText}
-        />
+        {/* Tocable SOLO con foto, igual que en Perfil. También en los estados
+            "bloqueado"/"no disponible": el avatar ya está en pantalla, ampliarlo
+            no revela nada nuevo. */}
+        <Pressable
+          onPress={() => setFotoAbierta(true)}
+          disabled={!perfil.fotoUrl}
+          accessibilityRole={perfil.fotoUrl ? 'button' : undefined}
+          accessibilityLabel={perfil.fotoUrl ? 'Ver foto de perfil' : undefined}
+        >
+          <Avatar
+            path={perfil.fotoUrl}
+            nombre={perfil.nombre}
+            style={styles.avatar}
+            textStyle={styles.avatarText}
+          />
+        </Pressable>
         <View style={styles.nameRow}>
           <Text style={styles.name}>{perfil.nombre ?? ''}</Text>
           {/* Decorativo: toda fila de `users` pasó por OTP — mismo criterio
@@ -572,6 +585,12 @@ export default function PerfilPublicoScreen() {
         onConfirm={() => void bloquear()}
         onCancel={() => setConfirmarBloqueo(false)}
       />
+      {fotoAbierta && perfil.fotoUrl ? (
+        <PhotoViewer
+          avatar={{ path: perfil.fotoUrl, nombre: perfil.nombre }}
+          onCerrar={() => setFotoAbierta(false)}
+        />
+      ) : null}
     </Screen>
   );
 }

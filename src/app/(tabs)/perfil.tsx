@@ -38,6 +38,7 @@ import {
 } from '@/components/icons';
 import { CategoryIcon } from '@/components/icons/categories';
 import { ListingPhoto } from '@/components/ListingPhoto';
+import { PhotoViewer } from '@/components/PhotoViewer';
 import { Screen } from '@/components/Screen';
 import { SectionHead } from '@/components/SectionHead';
 import { SkeletonPerfil } from '@/components/Skeleton';
@@ -260,6 +261,8 @@ export default function PerfilScreen() {
 
   const [confirmando, setConfirmando] = useState(false);
   const [soporteAbierto, setSoporteAbierto] = useState(false);
+  // "Perfil (foto ampliada)" (DESIGN-1, fase 3): el visor de una sola foto.
+  const [fotoAbierta, setFotoAbierta] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
 
   /**
@@ -336,12 +339,21 @@ export default function PerfilScreen() {
         ) : (
           <>
             <View style={styles.block}>
-              <Avatar
-                path={perfil.fotoUrl}
-                nombre={perfil.nombre}
-                style={styles.avatar}
-                textStyle={styles.avatarText}
-              />
+              {/* Tocable SOLO con foto: el frame solo documenta `.has-photo`, y
+                  ampliar unas iniciales no muestra nada nuevo. */}
+              <Pressable
+                onPress={() => setFotoAbierta(true)}
+                disabled={!perfil.fotoUrl}
+                accessibilityRole={perfil.fotoUrl ? 'button' : undefined}
+                accessibilityLabel={perfil.fotoUrl ? 'Ver foto de perfil' : undefined}
+              >
+                <Avatar
+                  path={perfil.fotoUrl}
+                  nombre={perfil.nombre}
+                  style={styles.avatar}
+                  textStyle={styles.avatarText}
+                />
+              </Pressable>
               <View style={styles.nameRow}>
                 <Text style={styles.name}>{perfil.nombre ?? ''}</Text>
                 {/* Decorativo: toda fila de `users` pasó por OTP — mismo
@@ -460,6 +472,15 @@ export default function PerfilScreen() {
           Perfil.
         */}
       </Screen>
+
+      {/* Montaje condicional, como en Detalle: cada apertura es un montaje
+          nuevo. */}
+      {fotoAbierta && perfil?.fotoUrl ? (
+        <PhotoViewer
+          avatar={{ path: perfil.fotoUrl, nombre: perfil.nombre }}
+          onCerrar={() => setFotoAbierta(false)}
+        />
+      ) : null}
 
       <HojaSoporte
         visible={soporteAbierto}

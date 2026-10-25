@@ -402,6 +402,17 @@ aunque `tsc` pasara — por eso van con `type` tanto el re-export como el `impor
 distinto de `ItemCatalogo` (el de `src/components/SelectorCatalogo.tsx`, borrado
 en la fase 2B), que llevaba `subtitulo` y era el del selector, no el del borrador.
 
+**Foto de perfil ampliada (DESIGN-1, fase 3): "Perfil (foto ampliada)" y
+"Perfil público (foto ampliada)".** Tocar el avatar del bloque principal de
+`(tabs)/perfil.tsx` o de `perfil-publico/[id].tsx` monta `PhotoViewer` con
+`avatar` (montaje condicional, como Detalle): zoom por gestos, sin dots.
+**Solo con foto** (`fotoUrl` no es null): sin ella el `Pressable` va
+`disabled` y sin rol de botón, porque el frame solo documenta `.has-photo` y
+ampliar unas iniciales no muestra nada nuevo (el JS del prototipo sí abre un
+visor de iniciales; no tiene frame). En Perfil público también se abre en los
+estados "bloqueado"/"no disponible": ese avatar ya está en pantalla. Los
+avatares de las reseñas NO se tocan.
+
 **"Perfil" (el propio) construida y conectada — cierra el grupo Cuenta (8/8).**
 Vive en `src/app/(tabs)/perfil.tsx`, sin ningún archivo nuevo de datos: reusa
 `fetchPerfilPublico`/`fetchReviews` (`src/lib/perfil-publico.ts`, SIN

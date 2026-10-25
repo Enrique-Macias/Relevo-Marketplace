@@ -153,6 +153,10 @@ Detalles que no se ven en el diff:
     Detalle hace `setIndiceFoto(i)` + `carruselRef.current?.irA(i)`. El `irA` va
     sin animar y mientras el Modal todavía tapa, así que no hay tirón visible.
     **Si alguien "simplifica" ese parámetro, rompe esto sin ningún error.**
+  - **Desde DESIGN-1 fase 3 el VISOR ya no usa `PhotoCarousel`; el hero sí.**
+    Ver el punto del zoom, más abajo. Lo de `contentOffset` y del tamaño medido
+    sigue valiendo para el hero; en el visor, abrir en la foto tocada es
+    `translateX = -indice·ancho`, sin `ScrollView`.
   - **`contentOffset` de ScrollView NO sirve para abrir en la foto tocada: es
     iOS-only** (`ScrollView.d.ts:406`, dentro de `ScrollViewPropsIOS`, que abre
     en la 336). En Android se habría ignorado en silencio y el visor siempre
@@ -162,14 +166,21 @@ Detalles que no se ven en el diff:
     sería `useWindowDimensions().width` en los dos usos, pero el alto no (340 en
     el hero, pantalla completa en el visor), y un `height:'100%'` por página
     colapsa a 0 dentro del contenedor de contenido de un ScrollView.
-  - El gesto de cierre va con **`PanResponder` + `Animated`**, no con
-    gesture-handler: `react-native-gesture-handler` y `reanimated` están en
-    `package.json` pero no se usan en un solo archivo de `src/`. El reparto de
-    ejes es `|dy| > |dx| * 2 && |dy| > 8` — eso es lo que impide que el arrastre
-    vertical le robe el swipe horizontal entre fotos. **Y el cierre pasa por
-    estado (`cerrando`), no por un ref**: el `PanResponder` se crea una sola vez
-    y por clausura reportaría siempre `indiceInicial`; `react-hooks/refs`
-    además rechaza el ref.
+  - **Zoom por gestos (DESIGN-1, fase 3): todo el visor es UN árbol de
+    gesture-handler + Reanimated**, paginación incluida. Hasta la fase 3 el
+    cierre iba con `PanResponder` + `Animated` sobre `PhotoCarousel`; con
+    pellizco, un `ScrollView` nativo debajo compite por el toque (en iOS gana el
+    reconocedor que dispara primero), así que la pista pasó a ser una
+    `Animated.View` con `translateX`. Qué hace un arrastre de un dedo se decide
+    en el `onStart` del pan: con zoom > 1 mueve la foto (y NO pagina); sin zoom
+    y con `dy > 0 && |dy| > |dx|·2` arrastra para cerrar (el mismo reparto de
+    ejes de antes); si no, pagina (22 % del ancho o 500 px/s). Pellizco de 1 a 4
+    (`MAX_ZOOM` del prototipo) anclado a los dedos, doble toque solo
+    restablece, y los dots bajan a 0.35 con zoom. Un solo juego de shared
+    values de zoom, aplicado solo a la página actual: como solo se pagina con
+    zoom 1, no hay salto al cambiar. El `Modal` lleva su propio
+    `GestureHandlerRootView` (CLAUDE.md §9). El mismo visor sirve la foto de
+    perfil (`avatar`), ver `cuenta-perfil.md`.
   - **Con 0 fotos el tap no abre nada** (ahí se ve el ícono de categoría de
     fallback) y **con ≤1 foto no se pintan dots** — un indicador de paginación
     de una sola página es ruido. Antes se pintaba uno solo

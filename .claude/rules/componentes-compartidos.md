@@ -126,6 +126,15 @@ cambia nada en el servidor. Botón de 36×36 a `right: 6`, ícono de 18 en
 `--ink-soft` (oculto) o `--mint-700` (visible), etiquetas "Mostrar contraseña" /
 "Ocultar contraseña" con `accessibilityState.checked`.
 
+**`PhotoViewer` ya no usa `PhotoCarousel` (DESIGN-1, fase 3).** El visor
+pagina con su propia pista de Reanimated para que el pellizco no compita con un
+`ScrollView` nativo; el hero de Detalle sigue con `PhotoCarousel`, que NO
+cambió. No los "reunifiques": el carrusel no tiene zoom y el visor no puede
+tener un `ScrollView` debajo. El visor acepta `fotos` + `indiceInicial` o
+`avatar` (una foto de perfil, caja 4:5 de `.viewer-avatar`, sin dots, y una
+caja menta vacía como fallback en vez de iniciales: unas iniciales de 72 serían
+un rol de `Typography` sin frame). Detalle en `explorar.md`.
+
 **`PhoneField` ya no pinta un `+52` inerte (`20260927000470`)**: recibe `pais`
 (el `Pais` de `src/lib/paises.ts`), `onPaisPress` y `error`, y el país es un
 `Pressable` (`.phone-country`: ISO en 600, lada y chevron en `--ink-soft`,

@@ -1,6 +1,6 @@
 # DESIGN-1, fase 3 — ojo de contraseña y visor con zoom por gestos
 
-Estado: **PLAN, pendiente de aprobación.** Solo JS: sin migraciones, sin
+Estado: **APROBADO e implementado (2026-10-25), pendiente de la prueba en dispositivo.** Ver "Cambios respecto al plan" al final. Solo JS: sin migraciones, sin
 Supabase, sin STAGING, sin build nativo nuevo, sin cambios de `app.json`.
 
 ## Lo medido antes de escribir esto
@@ -169,3 +169,15 @@ Una sola foto con zoom, hecha con `react-native-gesture-handler` (la API
 2. `feat: visor con zoom por gestos y foto de perfil ampliada (DESIGN-1, fase 3)`
 
 Cada uno con su documentación. Sin push hasta que confirmes en dispositivo.
+
+## Cambios respecto al plan (al implementar)
+- **No hay `ZoomableImage` ni cambios a `PhotoCarousel`.** Con un `ScrollView`
+  nativo debajo del pellizco, los dos reconocedores compiten por el toque (en
+  iOS gana el que dispara primero). Por eso el visor entero (pellizco, mover,
+  paginar, arrastrar para cerrar y doble toque) es UN árbol de gesture-handler
+  + Reanimated dentro de `PhotoViewer.tsx`, con su propia pista animada. El hero
+  de Detalle sigue con `PhotoCarousel`, intacto.
+- **El fallback del avatar en el visor es una caja menta vacía, no iniciales:**
+  unas iniciales de 72 serían un rol de `Typography` nuevo sin frame que lo
+  pida (CLAUDE.md §2). El visor solo abre con foto, así que solo se ve si la
+  foto no carga.

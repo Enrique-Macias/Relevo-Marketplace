@@ -5290,7 +5290,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `PaisBottomSheet` | `PaisBottomSheet` | "Selector de país" del WhatsApp: `Modal` de RN con `FlatList` (245 filas estáticas). Hermano de `CampusBottomSheet`, no una variante |
 | `PhotoCarousel` | `PhotoCarousel`, `PhotoDots` | Carrusel del hero y sus puntos; no guarda índice propio |
 | `PhotoRow` | `PhotoRow`, `idFoto` | Fila de fotos con sus 4 estados y el contador `N/5` |
-| `PhotoViewer` | `PhotoViewer` | Visor a pantalla completa (`Modal`, montado condicionalmente) |
+| `PhotoViewer` | `PhotoViewer` | Visor a pantalla completa (`Modal`, montado condicionalmente). Desde DESIGN-1 fase 3: zoom por gestos (pellizco 1-4, doble toque restablece, sin botones) y paginación propia en gesture-handler + Reanimated, SIN `PhotoCarousel`. Dos fuentes: `fotos` + `indiceInicial` (Detalle) o `avatar` (Perfil y Perfil público, una foto 4:5 sin dots) |
 | `ProductCard` | `ProductCard` | Tarjeta de grid — sin estado "vendida", a propósito |
 | `PublicarFab` | `PublicarFab` | El FAB de Perfil; vive como hermano de `NativeTabs` (§9) |
 | `RoundIconButton` | `RoundIconButton` | Botón circular de los headers sobre foto |
@@ -6223,6 +6223,17 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   con otros hostnames. **Antes de una prueba que dependa de qué cuenta está
   activa, comprueba la sesión en vez de suponer que el cambio de entorno la
   reinició.**
+- **Un `Modal` de RN necesita su PROPIO `GestureHandlerRootView` para que
+  react-native-gesture-handler funcione dentro.** En Android un `Modal` es otra
+  ventana nativa, fuera del árbol del root view de la app, así que los gestos
+  de RNGH no le llegan (requisito documentado por RNGH). La app, además, no
+  tiene `GestureHandlerRootView` en el layout raíz: RNGH solo se usa dentro de
+  `PhotoViewer` (DESIGN-1 fase 3), que lo monta dentro de su `Modal`. **Quien
+  use RNGH fuera de un `Modal` tiene que agregarlo antes**, o en Android el
+  `GestureDetector` revienta o queda inerte. Tampoco mezcles un pellizco de
+  RNGH con un `ScrollView` nativo debajo: los dos reconocedores compiten por el
+  toque y en iOS gana el que dispara primero, por eso el visor pagina con su
+  propia pista animada (`explorar.md`).
 - **`expo-location` enlaza `CMMotionActivityManager`, así que Apple exige
   `NSMotionUsageDescription` aunque RLVO no use Motion/Fitness.** Lo destapó
   TESTFLIGHT-2C (2026-10-16): Apple rechazó RLVO 1.0.0 (build 2) con
