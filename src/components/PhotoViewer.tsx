@@ -132,6 +132,16 @@ export function PhotoViewer(props: PhotoViewerProps) {
   const focoYInicio = useSharedValue(0);
   const bajada = useSharedValue(0);
   const modo = useSharedValue<Modo>('ninguno');
+  /**
+   * ¿Hubo un pellizco dentro del toque actual? Los dos dedos casi nunca bajan
+   * a la vez: el primero alcanza a activar el arrastre de un dedo (paginar o
+   * mover la foto) y, sin esto, ese arrastre seguía escribiendo la posición
+   * mientras el pellizco también la escribía, así que la foto se deslizaba
+   * lejos de los dedos. Lo reporta el usuario en dispositivo (DESIGN-1 fase 3).
+   * Se limpia en `onBegin` del pan, que solo dispara al bajar el PRIMER dedo de
+   * un toque nuevo.
+   */
+  const huboPellizco = useSharedValue(false);
 
   function alMedir(w: number, h: number) {
     setMedida({ ancho: w, alto: h });
@@ -149,6 +159,13 @@ export function PhotoViewer(props: PhotoViewerProps) {
   // ---- Pellizco: escala anclada al punto medio de los dedos. ----
   const pellizco = Gesture.Pinch()
     .onStart((e) => {
+      // El arrastre que el primer dedo alcanzó a empezar se deshace y deja de
+      // escribir hasta que se levanten todos los dedos (ver `huboPellizco`).
+      huboPellizco.set(true);
+      const m = modo.get();
+      if (m === 'paginar') paginaX.set(withTiming(-indiceSV.get() * ancho.get(), SUAVE));
+      if (m === 'cerrar') bajada.set(withTiming(0, SUAVE));
+      modo.set('ninguno');
       escalaInicio.set(escala.get());
       fotoXInicio.set(fotoX.get());
       fotoYInicio.set(fotoY.get());
@@ -187,8 +204,16 @@ export function PhotoViewer(props: PhotoViewerProps) {
   const arrastre = Gesture.Pan()
     .maxPointers(1)
     .minDistance(8)
+    .onBegin(() => {
+      huboPellizco.set(false);
+    })
     .onStart((e) => {
-      if (escala.get() > 1.01) {
+      // Si el dedo que queda tras un pellizco activa el arrastre, su traslación
+      // cuenta desde que bajó el primer dedo y la foto saltaría: se ignora el
+      // resto de este toque.
+      if (huboPellizco.get()) {
+        modo.set('ninguno');
+      } else if (escala.get() > 1.01) {
         modo.set('mover');
         fotoXInicio.set(fotoX.get());
         fotoYInicio.set(fotoY.get());
@@ -202,6 +227,7 @@ export function PhotoViewer(props: PhotoViewerProps) {
     })
     .onUpdate((e) => {
       const m = modo.get();
+      if (huboPellizco.get()) return;
       if (m === 'mover') {
         fotoX.set(limitar(fotoXInicio.get() + e.translationX, escala.get(), ancho.get()));
         fotoY.set(limitar(fotoYInicio.get() + e.translationY, escala.get(), alto.get()));
