@@ -97,7 +97,7 @@ export default function NuevaPasswordScreen() {
       <AuthBody>
         <AuthLogo background={Colors.forest} />
         <AuthHeadline>Crea una contraseña nueva</AuthHeadline>
-        <AuthSub>Elige una contraseña que no hayas usado antes en Relevo.</AuthSub>
+        <AuthSub>Elige una contraseña que no hayas usado antes en RLVO.</AuthSub>
 
         <Field
           label="Nueva contraseña"
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   },
   error: {
     ...Typography.meta,
-    color: Colors.brick,
+    color: Colors.danger,
     textAlign: 'center',
     marginTop: 12,
   },

@@ -29,7 +29,7 @@ export function ConfirmarBloqueoModal({ visible, nombre, confirming, onConfirm, 
   return (
     <ConfirmModal
       visible={visible}
-      icon={<IconBan size={22} color={Colors.brick} />}
+      icon={<IconBan size={22} color={Colors.danger} />}
       title={limpio ? `¿Bloquear a ${limpio}?` : '¿Bloquear a este usuario?'}
       body="Ninguno de los dos verá las publicaciones del otro y no podrán contactarse desde la app. No le avisaremos. Puedes desbloquearlo cuando quieras desde Configuración."
       confirmLabel="Bloquear"

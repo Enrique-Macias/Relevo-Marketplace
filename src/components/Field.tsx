@@ -277,14 +277,14 @@ const styles = StyleSheet.create({
     ...Typography.input,
     color: Colors.ink,
   },
-  // .text-field.is-invalid{border-color:var(--brick);}
+  // .text-field.is-invalid{border-color:var(--danger);}
   inputInvalid: {
-    borderColor: Colors.brick,
+    borderColor: Colors.danger,
   },
-  // .field-error{font-size:11px; line-height:1.5; color:var(--brick); margin-top:6px;}
+  // .field-error{font-size:11px; line-height:1.5; color:var(--danger); margin-top:6px;}
   error: {
     ...Typography.fieldError,
-    color: Colors.brick,
+    color: Colors.danger,
     marginTop: 6,
   },
   // .select-field{display:flex; align-items:center; justify-content:space-between;

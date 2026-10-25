@@ -36,11 +36,14 @@ type ConfirmModalProps = {
    */
   cancelLabel?: string;
   /**
-   * Círculo del ícono. `'brick'` (default) es el de toda confirmación
-   * destructiva; `'forest'` lo usa "Reporte enviado (¿bloquear?)", donde el
-   * ícono confirma un éxito (--forest-tint, como `.toast-icon`).
+   * Círculo del ícono. `'danger'` (default) es el de toda confirmación
+   * destructiva (`.modal-icon`, --danger-bg); `'forest'` lo usa "Reporte
+   * enviado (¿bloquear?)", donde el ícono confirma un éxito (--forest-tint);
+   * `'neutral'` es "Confirmar cerrar sesión" (`.modal-icon.is-neutral` y
+   * `.danger-btn.is-neutral`): no es destructiva, así que ni el círculo ni el
+   * botón van en --danger.
    */
-  iconTone?: 'brick' | 'forest';
+  iconTone?: 'danger' | 'forest' | 'neutral';
 };
 
 export function ConfirmModal({
@@ -55,11 +58,11 @@ export function ConfirmModal({
   confirmDisabled = false,
   children,
   cancelLabel = 'Cancelar',
-  iconTone = 'brick',
+  iconTone = 'danger',
 }: ConfirmModalProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      {/* .modal-backdrop{position:absolute; inset:0; background:rgba(34,31,28,0.55); align-items:center; padding:0 26px;} */}
+      {/* .modal-backdrop{position:absolute; inset:0; background:rgba(24,61,57,0.55); align-items:center; padding:0 26px;} */}
       {/* Con un campo de texto dentro, el teclado taparía la tarjeta centrada.
           En iOS se empuja con padding; Android ya redimensiona la ventana. */}
       <KeyboardAvoidingView
@@ -68,8 +71,16 @@ export function ConfirmModal({
       >
         {/* .modal-card{width:100%; background:var(--card); border-radius:20px; padding:24px 20px 20px; text-align:center;} */}
         <View style={styles.card}>
-          {/* .modal-icon{width:50px; height:50px; border-radius:50%; background:var(--brick-tint); margin:0 auto 16px;} */}
-          <View style={[styles.icon, iconTone === 'forest' && styles.iconForest]}>{icon}</View>
+          {/* .modal-icon{width:50px; height:50px; border-radius:50%; background:var(--danger-bg); margin:0 auto 16px;} */}
+          <View
+            style={[
+              styles.icon,
+              iconTone === 'forest' && styles.iconForest,
+              iconTone === 'neutral' && styles.iconNeutral,
+            ]}
+          >
+            {icon}
+          </View>
           <Text style={styles.title}>{title}</Text>
           <Text style={[styles.body, children ? styles.bodyConHijos : null]}>{body}</Text>
           {children ? <View style={styles.hijos}>{children}</View> : null}
@@ -90,6 +101,7 @@ export function ConfirmModal({
               label={confirming ? '…' : confirmLabel}
               onPress={onConfirm}
               disabled={confirming || confirmDisabled}
+              neutral={iconTone === 'neutral'}
             />
           </View>
         </View>
@@ -101,7 +113,7 @@ export function ConfirmModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(34,31,28,0.55)',
+    backgroundColor: Colors.backdrop,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 26,
@@ -119,13 +131,17 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: Radii.full,
-    backgroundColor: Colors.brickTint,
+    backgroundColor: Colors.dangerBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   iconForest: {
     backgroundColor: Colors.forestTint,
+  },
+  // .modal-icon.is-neutral{background:var(--mint-100);}
+  iconNeutral: {
+    backgroundColor: Colors.mint100,
   },
   title: {
     ...Typography.modalTitle,

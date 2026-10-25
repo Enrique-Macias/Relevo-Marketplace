@@ -172,7 +172,7 @@ export default function ConfiguracionScreen() {
     // Texto plano, sin link — mismo criterio que Detalle/Perfil público
     // (compartir-deeplinks.md): sin universal links/App Links todavía.
     await Share.share({
-      message: 'Descarga Relevo, el marketplace para comprar y vender entre estudiantes.',
+      message: 'Descarga RLVO, el marketplace para comprar y vender entre estudiantes.',
     });
   }
 
@@ -311,7 +311,7 @@ export default function ConfiguracionScreen() {
         {filaVisible('eliminar_cuenta') ? (
           <View style={[styles.section, styles.separado, styles.ultimaSeccion]}>
             <StatusRow
-              icon={<IconTrash size={16} color={Colors.brick} />}
+              icon={<IconTrash size={16} color={Colors.danger} />}
               label="Eliminar cuenta"
               trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
               danger
@@ -327,7 +327,7 @@ export default function ConfiguracionScreen() {
           persistente que se lee mientras se corrige (§0 regla 4). */}
       <ConfirmModal
         visible={eliminarVisible}
-        icon={<IconTrash size={22} color={Colors.brick} />}
+        icon={<IconTrash size={22} color={Colors.danger} />}
         title="¿Eliminar tu cuenta?"
         body="Se borrarán tu perfil y tus publicaciones de inmediato. Esta acción no se puede deshacer."
         confirmLabel="Eliminar"

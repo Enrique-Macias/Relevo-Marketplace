@@ -2,6 +2,7 @@
 
 import { StyleSheet, Text, View, type TextStyle, type ViewStyle } from 'react-native';
 
+import { Isotipo } from '@/components/BrandLogo';
 import { Colors, Radii, Typography } from '@/constants/theme';
 
 export function AuthBody({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
@@ -9,14 +10,19 @@ export function AuthBody({ children, style }: { children: React.ReactNode; style
 }
 
 /**
- * `.auth-logo` — cuadro de 52px con la "R" del wordmark.
- * "Recuperar contraseña" lo pinta `--forest` y lo deja **sin letra**, de ahí que
- * el contenido sea opcional en vez de una "R" fija.
+ * `.auth-logo` — cuadro de 52px en --mint-900 con el isotipo menta de 38px
+ * (Paleta 06). "Recuperar contraseña" lo pinta `--forest` y lo deja **sin
+ * isotipo**, de ahí que la marca sea opcional.
  */
-export function AuthLogo({ background = Colors.ink, mark }: { background?: string; mark?: string }) {
+export function AuthLogo({ background = Colors.mint900, marca = false }: { background?: string; marca?: boolean }) {
   return (
-    <View style={[styles.logo, { backgroundColor: background }]}>
-      {mark ? <Text style={styles.logoMark}>{mark}</Text> : null}
+    <View
+      style={[styles.logo, { backgroundColor: background }]}
+      accessible={marca}
+      accessibilityRole={marca ? 'image' : undefined}
+      accessibilityLabel={marca ? 'RLVO' : undefined}
+    >
+      {marca ? <Isotipo width={38} color={Colors.mint400} /> : null}
     </View>
   );
 }
@@ -66,7 +72,7 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     alignItems: 'center',
   },
-  // .auth-logo{width:52px; height:52px; border-radius:16px; background:var(--ink); margin-bottom:26px;}
+  // .auth-logo{width:52px; height:52px; border-radius:16px; background:var(--mint-900); margin-bottom:26px;}
   logo: {
     width: 52,
     height: 52,
@@ -74,11 +80,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 26,
-  },
-  // .auth-logo span{font-family:display; font-weight:600; font-size:22px; color:var(--paper);}
-  logoMark: {
-    ...Typography.logoMark,
-    color: Colors.paper,
   },
   // .auth-headline{font-size:22px; margin-bottom:9px; max-width:250px;}
   headline: {
@@ -108,10 +109,10 @@ const styles = StyleSheet.create({
     ...Typography.label,
     color: Colors.brick,
   },
-  // .auth-terms{font-size:11px; color:#A8A29A; margin-top:18px; line-height:1.5; max-width:250px;}
+  // .auth-terms{font-size:11px; color:var(--ink-soft); margin-top:18px; line-height:1.5; max-width:250px;}
   terms: {
     ...Typography.terms,
-    color: Colors.placeholder,
+    color: Colors.inkSoft,
     marginTop: 18,
     maxWidth: 250,
     textAlign: 'center',

@@ -66,12 +66,12 @@ const styles = StyleSheet.create({
     ...Typography.labelMuted,
     color: Colors.inkSoft,
   },
-  // .segment.active{background:var(--ink); color:var(--paper); border-color:var(--ink);}
+  // .segment.active{background:var(--mint-100); color:var(--mint-900); border-color:var(--mint-700);}
   segmentActive: {
-    backgroundColor: Colors.ink,
-    borderColor: Colors.ink,
+    backgroundColor: Colors.mint100,
+    borderColor: Colors.mint700,
   },
   segmentTextActive: {
-    color: Colors.paper,
+    color: Colors.mint900,
   },
 });

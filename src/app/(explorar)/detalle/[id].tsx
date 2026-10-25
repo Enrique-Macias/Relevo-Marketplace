@@ -363,7 +363,7 @@ export default function DetalleScreen() {
     if (!listing) return;
     try {
       await Share.share({
-        message: `${listing.titulo}\n${formatPrecio(listing.precio)}\nPublicado en Relevo`,
+        message: `${listing.titulo}\n${formatPrecio(listing.precio)}\nPublicado en RLVO`,
       });
     } catch (e: any) {
       // Cancelar la hoja nativa NO entra aquí (resuelve con
@@ -455,7 +455,7 @@ export default function DetalleScreen() {
     }
 
     void Linking.openURL(
-      urlWhatsapp(telefono, `Hola, vi tu publicación "${listing.titulo}" en Relevo`)
+      urlWhatsapp(telefono, `Hola, vi tu publicación "${listing.titulo}" en RLVO`)
     );
   }
 
@@ -961,7 +961,7 @@ export default function DetalleScreen() {
           },
           {
             key: 'bloquear',
-            icon: <IconBan size={16} color={Colors.brick} />,
+            icon: <IconBan size={16} color={Colors.danger} />,
             label: listing.vendedor.nombre?.trim()
               ? `Bloquear a ${listing.vendedor.nombre.trim()}`
               : 'Bloquear usuario',
@@ -982,7 +982,7 @@ export default function DetalleScreen() {
       />
       <ConfirmModal
         visible={porBorrar}
-        icon={<IconTrash size={22} color={Colors.brick} />}
+        icon={<IconTrash size={22} color={Colors.danger} />}
         title="¿Eliminar publicación?"
         body="Se borrarán también sus fotos. Esta acción no se puede deshacer."
         confirmLabel="Eliminar"
@@ -1220,7 +1220,7 @@ const styles = StyleSheet.create({
     right: 0,
     paddingTop: 14,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(243,240,234,0.94)',
+    backgroundColor: 'rgba(245,250,248,0.94)',
     borderTopWidth: 1,
     borderTopColor: Colors.line,
     flexDirection: 'row',
@@ -1284,7 +1284,7 @@ const styles = StyleSheet.create({
     color: Colors.inkSoft,
     lineHeight: 18.125, // 12.5 × 1.45
   },
-  // .sold-badge{position:absolute; inset:0; background:rgba(34,31,28,0.55);}
+  // .sold-badge{position:absolute; inset:0; background:rgba(24,61,57,0.55);}
   // Va sobre el carrusel y por DEBAJO del chrome, igual que en el frame.
   soldBadge: {
     position: 'absolute',
@@ -1292,7 +1292,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(34,31,28,0.55)',
+    backgroundColor: Colors.backdrop,
     alignItems: 'center',
     justifyContent: 'center',
   },

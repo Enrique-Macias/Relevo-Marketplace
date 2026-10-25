@@ -5,9 +5,10 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { BlinkingDots } from '@/components/BlinkingDots';
+import { LogoVertical } from '@/components/BrandLogo';
 import { ErrorState } from '@/components/ErrorState';
 import { Screen } from '@/components/Screen';
-import { Colors, Radii, Typography } from '@/constants/theme';
+import { Colors, Typography } from '@/constants/theme';
 import { getHasSeenOnboarding } from '@/lib/onboarding-flag';
 import { useSession } from '@/lib/session';
 
@@ -65,22 +66,22 @@ export default function SplashScreen() {
   }
 
   return (
-    // .splash-screen{background:linear-gradient(135deg, var(--ink) 0%, var(--brick-dark) 100%);}
+    // .splash-screen{background:linear-gradient(135deg, var(--mint-900) 0%, var(--mint-700) 100%);}
     // 135deg en CSS va de arriba-izquierda a abajo-derecha.
     <LinearGradient
-      colors={[Colors.ink, Colors.brickDark]}
+      colors={[Colors.mint900, Colors.mint700]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.screen}
     >
       <StatusBar style="light" />
-      {/* .splash-logo{width:64px; height:64px; border-radius:20px; background:var(--paper); margin-bottom:18px;} */}
-      <View style={styles.logo}>
-        <Text style={styles.logoMark}>R</Text>
+      {/* .splash-logo img: el logo vertical menta, 210px de ancho, margin-bottom:14px. */}
+      <View style={styles.logo} accessible accessibilityRole="image" accessibilityLabel="RLVO">
+        <LogoVertical width={210} color={Colors.mint400} />
       </View>
-      <Text style={styles.word}>Relevo</Text>
       <Text style={styles.tag}>Tu campus, tu mercado</Text>
-      <BlinkingDots />
+      {/* .splash-screen .splash-dot{background:var(--mint-400);} */}
+      <BlinkingDots dotColor={Colors.mint400} />
     </LinearGradient>
   );
 }
@@ -92,28 +93,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logo: {
-    width: 64,
-    height: 64,
-    borderRadius: Radii.xxl,
-    backgroundColor: Colors.paper,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 18,
+    marginBottom: 14,
   },
-  // .splash-logo span{font-size:28px; font-weight:600; color:var(--brick);}
-  logoMark: {
-    ...Typography.priceLarge,
-    color: Colors.brick,
-  },
-  // .splash-word{font-size:26px; font-weight:600; color:var(--paper); margin-bottom:6px;}
-  word: {
-    ...Typography.splash,
-    color: Colors.paper,
-    marginBottom: 6,
-  },
-  // .splash-tag{font-size:12.5px; color:rgba(243,240,234,0.65);}
+  // .splash-tag{font-size:12.5px; color:rgba(221,245,237,0.82);}
   tag: {
     ...Typography.meta,
-    color: Colors.paper65,
+    color: 'rgba(221,245,237,0.82)',
   },
 });

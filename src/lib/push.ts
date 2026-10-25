@@ -86,9 +86,9 @@ export async function configurarCanalAndroid(): Promise<void> {
   if (!Notifications || Platform.OS !== 'android') return;
 
   await Notifications.setNotificationChannelAsync('default', {
-    name: 'Avisos de Relevo',
+    name: 'Avisos de RLVO',
     importance: Notifications.AndroidImportance.DEFAULT,
-    lightColor: '#C1440E', // --brick
+    lightColor: '#23635C', // --brick (Paleta 06)
   });
 }
 

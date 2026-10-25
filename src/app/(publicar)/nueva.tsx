@@ -455,7 +455,7 @@ export default function PublicarScreen() {
 
 const styles = StyleSheet.create({
   // .sticky-cta{position:absolute; bottom:0; left:0; right:0; padding:14px 20px 22px;
-  //   background:rgba(243,240,234,0.94); border-top:1px solid var(--line); gap:10px;}
+  //   background:rgba(245,250,248,0.94); border-top:1px solid var(--line); gap:10px;}
   stickyCta: {
     position: 'absolute',
     bottom: 0,
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingTop: 14,
     paddingHorizontal: ScreenPadding,
-    // El prototipo usa `rgba(243,240,234,0.94)` + `backdrop-filter:blur(10px)`.
+    // El prototipo usa `rgba(245,250,248,0.94)` + `backdrop-filter:blur(10px)`.
     // RN no tiene backdrop-filter (expo-glass-effect sí, pero es iOS 26+ y
     // aquí el efecto es decorativo), así que se toma el color plano: el
     // contenido de abajo queda cubierto igual, que es lo que la barra necesita.

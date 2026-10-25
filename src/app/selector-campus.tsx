@@ -89,7 +89,7 @@ const COPY_DETECCION: Partial<Record<EstadoDeteccion, string>> = {
   permiso_denegado:
     'No pudimos acceder a tu ubicación. Puedes intentarlo de nuevo o elegir un campus de la lista.',
   permiso_denegado_permanente:
-    'Desactivaste el acceso a tu ubicación para Relevo. Actívalo desde Ajustes para poder detectar tu campus.',
+    'Desactivaste el acceso a tu ubicación para RLVO. Actívalo desde Ajustes para poder detectar tu campus.',
   error: 'No pudimos obtener tu ubicación. Inténtalo de nuevo o elige un campus de la lista.',
 };
 
@@ -198,7 +198,7 @@ export default function SelectorCampusScreen() {
       {!q ? (
         <ListRow
           name="Todas las universidades"
-          sub="Todo el catálogo de Relevo"
+          sub="Todo el catálogo de RLVO"
           selected={alcance?.tipo === 'todo'}
           last={false}
           onPress={() => elegir({ tipo: 'todo' })}

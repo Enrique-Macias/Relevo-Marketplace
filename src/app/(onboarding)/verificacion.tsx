@@ -78,7 +78,7 @@ export default function VerificacionScreen() {
     <Screen>
       <StatusBar style="dark" />
       <AuthBody>
-        <AuthLogo mark="R" />
+        <AuthLogo marca />
         <AuthHeadline>Verifica que eres estudiante</AuthHeadline>
         <AuthSub>
           Usa tu correo institucional para crear tu cuenta y acceder al catálogo de tu campus.
@@ -117,7 +117,7 @@ export default function VerificacionScreen() {
           </AuthLinkStrong>
         </AuthLink>
         <AuthTerms>
-          Al continuar aceptas los Términos de uso y el Aviso de privacidad de Relevo.
+          Al continuar aceptas los Términos de uso y el Aviso de privacidad de RLVO.
         </AuthTerms>
       </AuthBody>
     </Screen>
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
   notice: { marginBottom: 12 },
   error: {
     ...Typography.meta,
-    color: Colors.brick,
+    color: Colors.danger,
     textAlign: 'center',
     marginTop: 12,
   },

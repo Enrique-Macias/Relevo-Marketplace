@@ -500,7 +500,7 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
       <Screen header={<FormHeader title="Editar publicación" />}>
         <StatusBar style="dark" />
         <EmptyState
-          icon={<IconXCircle size={30} color={Colors.brick} />}
+          icon={<IconXCircle size={30} color={Colors.danger} />}
           iconStyle={styles.iconoError}
           title="Esta publicación no fue aprobada"
           sub="No cumple con las reglas de la comunidad, así que no se publicó. Puedes eliminarla desde Mis publicaciones."
@@ -581,7 +581,7 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
           ) : null}
 
           <StatusRow
-            icon={<IconTrash size={16} color={Colors.brick} />}
+            icon={<IconTrash size={16} color={Colors.danger} />}
             label="Eliminar publicación"
             danger
             onPress={ocupado ? undefined : () => setConfirmandoBorrado(true)}
@@ -592,7 +592,7 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
 
       <ConfirmModal
         visible={confirmandoBorrado}
-        icon={<IconTrash size={22} color={Colors.brick} />}
+        icon={<IconTrash size={22} color={Colors.danger} />}
         title="¿Eliminar publicación?"
         body="Se borrarán también sus fotos. Esta acción no se puede deshacer."
         confirmLabel="Eliminar"
@@ -621,10 +621,10 @@ const styles = StyleSheet.create({
   skeleton: {
     paddingTop: 18,
   },
-  // .error-icon{background:var(--brick-tint);} — conserva el borde, al revés que
+  // .error-icon{background:var(--danger-bg);} — conserva el borde, al revés que
   // `.empty-icon.success`. Solo lo usa el guard de `bloqueada`.
   iconoError: {
-    backgroundColor: Colors.brickTint,
+    backgroundColor: Colors.dangerBg,
   },
   sectionHead: {
     paddingTop: 4,

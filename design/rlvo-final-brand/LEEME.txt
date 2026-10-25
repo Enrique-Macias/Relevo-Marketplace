@@ -1,11 +1,13 @@
-RLVO | Copias recoloreadas para el prototipo DESIGN-1 (Paleta 06)
+RLVO | Copias recoloreadas del kit oficial para la Paleta 06 (DESIGN-1)
 
-Generadas por design/scripts/build-final-preview.mjs a partir de assets/brand/.
-Solo cambia el color de relleno/trazo; la geometría es la del kit oficial.
-Los SVG oficiales de assets/brand/ NO se modificaron.
+Aprobadas el 2026-10-25. Las generó design/scripts/build-final-preview.mjs
+(retirado; sigue en el commit 05264fe) a partir de assets/brand/. Solo cambia
+el color de relleno/trazo; la geometría es la del kit oficial. Los SVG
+oficiales de assets/brand/ NO se modificaron.
 
 rlvo-logo-horizontal-verde-oscuro.svg  <- 07_logo_horizontal_grafito_transparente.svg  (#191A23 -> #183D39)
 rlvo-logo-vertical-menta.svg           <- 16_logo_vertical_lima_transparente.svg       (#B9FF66 -> #78CDB5)
 rlvo-isotipo-menta.svg                 <- 02_isotipo_lima_transparente.svg             (#B9FF66 -> #78CDB5)
 
-Propuesta pendiente de aprobación: no son logos oficiales.
+La app los usa transcritos a react-native-svg en src/components/BrandLogo.tsx.
+Si estos archivos cambian, ese componente se vuelve a transcribir desde aquí.

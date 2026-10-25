@@ -72,7 +72,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             {toast.variante === 'error' ? (
               <IconExclamation size={12} color="#fff" />
             ) : (
-              <IconCheck size={12} color="#fff" />
+              <IconCheck size={12} color={Colors.mint900} />
             )}
           </View>
           <Text style={styles.texto}>{toast.texto}</Text>
@@ -115,12 +115,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // .toast-icon{background:var(--mint-400);} con el check en --mint-900.
   iconExito: {
-    backgroundColor: Colors.forest,
+    backgroundColor: Colors.accent,
   },
-  // .toast-icon.is-error{background:var(--brick);}
+  // .toast-icon.is-error{background:var(--danger);}
   iconError: {
-    backgroundColor: Colors.brick,
+    backgroundColor: Colors.danger,
   },
   // .toast-text{font-size:13px; font-weight:500;}
   texto: {

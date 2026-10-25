@@ -1,32 +1,52 @@
 /**
- * Tokens de diseño de Relevo, extraídos directamente del CSS de
+ * Tokens de diseño de RLVO, extraídos directamente del CSS de
  * `/design/relevo-app.html` (fuente de verdad — ver CLAUDE.md §0 y §2).
  * No hay valores inventados aquí: todo lo que aparece abajo se repite en el
  * prototipo. El prototipo define una sola paleta (no hay variante dark).
+ *
+ * Paleta 06 (DESIGN-1, aprobada el 2026-10-25). Los nombres `brick`/`forest`/
+ * `gold`/`slate` se conservan de la paleta anterior para no tocar cada estilo;
+ * su VALOR cambió. Lo que es error o destructivo usa `danger`, NO `brick`: con
+ * un primario verde, un error en `brick` se leería como acción.
  */
 
 export const Colors = {
-  ink: '#221F1C',
-  inkSoft: '#6B6660',
-  paper: '#F3F0EA',
+  // Paleta base (--mint-*). `mint400` es solo relleno/indicador, nunca texto
+  // sobre fondo claro (1.88:1).
+  mint900: '#183D39',
+  mint700: '#23635C',
+  mint400: '#78CDB5',
+  mint100: '#DDF5ED',
+  mint50: '#F5FAF8',
+
+  ink: '#183D39', // --ink = --mint-900
+  inkSoft: '#4F6B67', // derivado neutro: 5.5:1 sobre --paper
+  paper: '#F5FAF8', // --paper = --mint-50
   card: '#FFFFFF',
-  line: 'rgba(34,31,28,0.10)',
-  brick: '#C1440E',
-  brickDark: '#87300A', // color-mix(in srgb, brick 70%, black)
-  brickTint: '#F6E3DB', // color-mix(in srgb, brick 15%, white)
-  forest: '#2F6B4F',
-  forestTint: '#E0E9E5', // color-mix(in srgb, forest 15%, white)
-  gold: '#D9A441',
-  goldTint: '#F7ECD6', // literal en el CSS
-  slate: '#5B6B78',
-  slateTint: '#E3E9EC', // literal en el CSS
-  // Gris de placeholder. No es una variable :root del prototipo — está escrito
-  // a mano en cada regla que lo usa (.text-field::placeholder, .search-field
-  // input::placeholder, el span vacío de .select-field, y .auth-terms).
-  placeholder: '#A8A29A',
-  // Paper con alfa sobre el gradiente del splash (.splash-tag, .splash-dot).
-  paper65: 'rgba(243,240,234,0.65)',
-  paper50: 'rgba(243,240,234,0.5)',
+  surfaceMuted: '#EAF8F3', // color-mix(in srgb, mint-100 45%, mint-50)
+  line: 'rgba(24,61,57,0.12)',
+  brick: '#23635C', // primario / CTA (= --mint-700)
+  brickDark: '#183D39', // --brick-dark = --mint-900 (pressed, gradiente)
+  brickTint: '#DDF5ED', // --brick-tint = --mint-100
+  forest: '#23635C', // confianza / verificado: hoy mismo valor que el primario
+  forestTint: '#DDF5ED',
+  accent: '#78CDB5', // --accent = --mint-400
+  gold: '#23635C', // --gold = --mint-700 (acento de categoría)
+  goldTint: '#CCECE3', // color-mix(in srgb, mint-400 38%, white)
+  slate: '#4F6B67', // --slate = --ink-soft
+  slateTint: '#EAF8F3', // --slate-tint = --surface-muted
+  // Excepción funcional fuera de la paleta: errores y acciones destructivas.
+  danger: '#B42332',
+  dangerBg: '#FCEBED',
+  // --ink-muted: placeholders e ícono de lupa (3.35:1, no es texto de contenido).
+  placeholder: '#7B918D',
+  // Fondo del visor de fotos (.photo-viewer) y su capa translúcida.
+  viewer: '#0E2321',
+  viewer45: 'rgba(14,35,33,0.45)',
+  // Telón de los modales y hojas: --ink al 55 %.
+  backdrop: 'rgba(24,61,57,0.55)',
+  // Paper al 50 %: `.splash-dot` sobre el primario (botón ocupado, scrims).
+  paper50: 'rgba(245,250,248,0.5)',
 } as const;
 
 export const Fonts = {

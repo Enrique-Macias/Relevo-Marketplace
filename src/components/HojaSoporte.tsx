@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
   // .modal-backdrop con align-items:flex-end — ancla la hoja abajo.
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(34,31,28,0.55)',
+    backgroundColor: Colors.backdrop,
     justifyContent: 'flex-end',
   },
   // .sheet-card{width:100%; background:var(--card); border-radius:20px 20px 0 0;}

@@ -45,10 +45,10 @@ export default function IniciarSesionScreen() {
     <Screen>
       <StatusBar style="dark" />
       <AuthBody>
-        <AuthLogo mark="R" />
+        <AuthLogo marca />
         <AuthHeadline>Qué bueno verte de nuevo</AuthHeadline>
         <AuthSub>
-          Inicia sesión con tu cuenta de Relevo para seguir comprando y vendiendo en tu campus.
+          Inicia sesión con tu cuenta de RLVO para seguir comprando y vendiendo en tu campus.
         </AuthSub>
 
         <Field
@@ -97,7 +97,7 @@ export default function IniciarSesionScreen() {
 const styles = StyleSheet.create({
   error: {
     ...Typography.meta,
-    color: Colors.brick,
+    color: Colors.danger,
     textAlign: 'center',
     marginTop: 12,
   },

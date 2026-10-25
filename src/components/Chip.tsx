@@ -37,12 +37,12 @@ const styles = StyleSheet.create({
     ...Typography.bodyStrong,
     color: Colors.inkSoft,
   },
-  // .chip.active{background:var(--ink); color:var(--paper); border-color:var(--ink);}
+  // .chip.active{background:var(--mint-100); color:var(--mint-900); border-color:var(--mint-700);}
   chipActive: {
-    backgroundColor: Colors.ink,
-    borderColor: Colors.ink,
+    backgroundColor: Colors.mint100,
+    borderColor: Colors.mint700,
   },
   textActive: {
-    color: Colors.paper,
+    color: Colors.mint900,
   },
 });

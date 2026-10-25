@@ -115,7 +115,7 @@ export function PhotoViewer({ fotos, indiceInicial, onCerrar }: PhotoViewerProps
     })
   );
 
-  // `.photo-viewer.is-dismissing{background:rgba(16,14,12,0.45);}` — el fondo se
+  // `.photo-viewer.is-dismissing{background:rgba(14,35,33,0.45);}` — el fondo se
   // vuelve translúcido para dejar ver el Detalle al que se va a volver.
   const opacidadFondo = arrastre.interpolate({
     inputRange: [0, RECORRIDO],
@@ -187,10 +187,9 @@ const styles = StyleSheet.create({
   raiz: {
     flex: 1,
   },
-  // #100E0C es el negro que ya usan `.device` y `.notch` en el prototipo, no un
-  // token nuevo.
+  // `Colors.viewer` (#0E2321) es el fondo de `.photo-viewer` en el prototipo.
   fondo: {
-    backgroundColor: '#100E0C',
+    backgroundColor: Colors.viewer,
   },
   // .viewer-close{position:absolute; top:16px; left:20px; z-index:3;} — el
   // `top` lo pone quien renderiza, sumándole el inset.

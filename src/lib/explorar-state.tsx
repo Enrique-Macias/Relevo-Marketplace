@@ -81,7 +81,7 @@ export function etiquetaAlcance(a: Alcance, universidadPropiaId: number | null):
 export function lugarAlcance(a: Alcance): string {
   if (a.tipo === 'campus') return a.campus.nombre;
   if (a.tipo === 'universidad') return a.universidad.nombre;
-  return 'Relevo';
+  return 'RLVO';
 }
 
 export type Condicion = 'nuevo' | 'como_nuevo' | 'buen_estado' | 'usado';

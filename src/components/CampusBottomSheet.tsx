@@ -174,7 +174,7 @@ export function CampusBottomSheet({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(34,31,28,0.55)',
+    backgroundColor: Colors.backdrop,
     justifyContent: 'flex-end',
   },
   sheet: {

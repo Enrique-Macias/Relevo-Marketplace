@@ -128,7 +128,7 @@ export default function CodigoScreen() {
     <Screen>
       <StatusBar style="dark" />
       <AuthBody>
-        <AuthLogo mark="R" />
+        <AuthLogo marca />
         <AuthHeadline>Ingresa el código</AuthHeadline>
         <AuthSub>Te enviamos un código de 6 dígitos a {correo}</AuthSub>
 
@@ -154,7 +154,7 @@ export default function CodigoScreen() {
 const styles = StyleSheet.create({
   error: {
     ...Typography.meta,
-    color: Colors.brick,
+    color: Colors.danger,
     textAlign: 'center',
     marginTop: 12,
   },

@@ -29,8 +29,8 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 
-const INACTIVO = '#A8A29A'; // Colors.placeholder (src/constants/theme.ts:26)
-const ACTIVO = '#221F1C'; // Colors.ink (src/constants/theme.ts:9)
+const INACTIVO = '#4F6B67'; // Colors.inkSoft (.tab, Paleta 06)
+const ACTIVO = '#183D39'; // Colors.ink (.tab.active, Paleta 06)
 
 const OUT_DIR = path.join(process.cwd(), 'assets', 'images', 'tab-icons');
 // Tamaño base = los 21px del HTML. IMPORTANTE (medido, no asumido): un PNG

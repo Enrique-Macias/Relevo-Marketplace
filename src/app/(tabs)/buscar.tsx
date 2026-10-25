@@ -142,7 +142,7 @@ export default function BuscarScreen() {
         containerStyle={styles.searchFieldFlex}
       />
       <Pressable style={styles.filterBtn} onPress={() => router.push('/filtros')} accessibilityRole="button">
-        <IconFilterSliders size={16} color="#F3F0EA" />
+        <IconFilterSliders size={16} color={Colors.paper} />
       </Pressable>
     </View>
   );

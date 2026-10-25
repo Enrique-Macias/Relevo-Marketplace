@@ -340,7 +340,7 @@ export default function MisPublicacionesScreen() {
 
       <ConfirmModal
         visible={porBorrar !== null}
-        icon={<IconTrash size={22} color={Colors.brick} />}
+        icon={<IconTrash size={22} color={Colors.danger} />}
         title="¿Eliminar publicación?"
         body="Se borrarán también sus fotos. Esta acción no se puede deshacer."
         confirmLabel="Eliminar"
@@ -523,14 +523,14 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  // .sold-badge{position:absolute; inset:0; background:rgba(34,31,28,0.55);}
+  // .sold-badge{position:absolute; inset:0; background:rgba(24,61,57,0.55);}
   soldBadge: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(34,31,28,0.55)',
+    backgroundColor: Colors.backdrop,
     alignItems: 'center',
     justifyContent: 'center',
   },

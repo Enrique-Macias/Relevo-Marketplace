@@ -63,7 +63,7 @@ export default function PublicacionNoAprobadaScreen() {
     <Screen>
       <StatusBar style="dark" />
       <EmptyState
-        icon={<IconXCircle size={30} color={Colors.brick} />}
+        icon={<IconXCircle size={30} color={Colors.danger} />}
         // `.empty-icon.error-icon` — aquí SÍ, al revés que "en revisión": esto
         // es un rechazo, no un estado de espera.
         iconStyle={styles.iconoError}
@@ -87,11 +87,11 @@ const styles = StyleSheet.create({
   estado: {
     paddingTop: 90,
   },
-  // .error-icon{background:var(--brick-tint);} — y CONSERVA el borde, al revés
+  // .error-icon{background:var(--danger-bg);} — y CONSERVA el borde, al revés
   // que `.empty-icon.success`, que sí lleva `border:none`. Mismo estilo que
   // `ErrorState`, medido contra el CSS del frame y no copiado de `creada.tsx`.
   iconoError: {
-    backgroundColor: Colors.brickTint,
+    backgroundColor: Colors.dangerBg,
   },
   cta: {
     marginTop: 0,

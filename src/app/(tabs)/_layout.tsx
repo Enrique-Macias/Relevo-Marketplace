@@ -11,7 +11,7 @@ import { useAutoAbrirCalificarPendiente } from '@/lib/confianza';
 import { useRespuestaANotificacion } from '@/lib/push';
 import { useSession } from '@/lib/session';
 
-// Tab bar de Relevo: 4 ítems fijos, sin botón central de "+"
+// Tab bar de RLVO: 4 ítems fijos, sin botón central de "+"
 // (publicar vive como FAB en Perfil — ver CLAUDE.md §0.6).
 // Íconos: PNGs con el color de stroke horneado por estado (activo/inactivo),
 // generados por scripts/generate-tab-icons.mjs a partir de las mismas formas
@@ -91,9 +91,13 @@ export default function TabsLayout() {
 
   return (
     <View style={styles.contenedor}>
+      {/* `.tab` en --ink-soft y `.tab.active` en --mint-900 con una cápsula
+          --mint-100 detrás del ícono. La cápsula solo existe en Android
+          (`indicatorColor`); iOS no tiene indicador en su tab bar. */}
       <NativeTabs
         backgroundColor={Colors.paper}
-        labelStyle={{ color: Colors.placeholder, selected: { color: Colors.ink } }}
+        labelStyle={{ color: Colors.inkSoft, selected: { color: Colors.ink } }}
+        indicatorColor={Colors.mint100}
       >
         <NativeTabs.Trigger name="index">
           <NativeTabs.Trigger.Icon

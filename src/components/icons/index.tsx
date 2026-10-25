@@ -150,7 +150,7 @@ export function IconChevronDown({ size, color }: IconProps) {
 }
 
 // Lupa del `.search-field`. En el prototipo su stroke es el gris de placeholder
-// escrito a mano (#A8A29A), no `--ink-soft` — de ahí el default.
+// (--ink-muted, #7B918D), no `--ink-soft` — de ahí el default.
 export function IconSearch({ size, color = Colors.placeholder }: Partial<IconProps> & { size: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>

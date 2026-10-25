@@ -238,7 +238,7 @@ export default function PerfilPublicoScreen() {
       return;
     }
 
-    void Linking.openURL(urlWhatsapp(telefono, 'Hola, te escribo desde Relevo'));
+    void Linking.openURL(urlWhatsapp(telefono, 'Hola, te escribo desde RLVO'));
   }
 
   /**
@@ -315,7 +315,7 @@ export default function PerfilPublicoScreen() {
     if (!perfil) return;
     try {
       await Share.share({
-        message: [perfil.nombre, perfil.universidadNombre, 'Perfil en Relevo']
+        message: [perfil.nombre, perfil.universidadNombre, 'Perfil en RLVO']
           .filter(Boolean)
           .join('\n'),
       });
@@ -461,7 +461,7 @@ export default function PerfilPublicoScreen() {
             </View>
             <View style={styles.statCard}>
               <Text style={styles.statNum}>{antiguedadEnRelevo(new Date(perfil.createdAt))}</Text>
-              <Text style={styles.statLabel}>En Relevo</Text>
+              <Text style={styles.statLabel}>En RLVO</Text>
             </View>
           </View>
 
@@ -555,7 +555,7 @@ export default function PerfilPublicoScreen() {
               }
             : {
                 key: 'bloquear',
-                icon: <IconBan size={16} color={Colors.brick} />,
+                icon: <IconBan size={16} color={Colors.danger} />,
                 label: 'Bloquear usuario',
                 danger: true,
                 onPress: () => {

@@ -61,7 +61,7 @@ export function whatsappSoporteDisponible(): boolean {
 }
 
 // El nombre de la app en los textos de soporte sale SOLO de aquí (rebranding).
-const MARCA = 'Relevo';
+const MARCA = 'RLVO';
 
 /**
  * Asunto y cuerpo prellenados de soporte, para WhatsApp y para el correo. El

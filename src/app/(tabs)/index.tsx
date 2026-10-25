@@ -6,6 +6,7 @@ import { useCallback, useState } from 'react';
 import { Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Path, Svg } from 'react-native-svg';
 
+import { LogoHorizontal } from '@/components/BrandLogo';
 import { GhostButton } from '@/components/Buttons';
 import { CategoryTile } from '@/components/CategoryTile';
 import { EmptyState } from '@/components/EmptyState';
@@ -86,7 +87,10 @@ export default function InicioScreen() {
     >
       <View style={styles.top}>
         <View style={styles.brandRow}>
-          <Text style={styles.wordmark}>Relevo</Text>
+          {/* .wordmark.brand-logo: el logo horizontal en --mint-900, 92px. */}
+          <View style={styles.wordmark} accessible accessibilityRole="image" accessibilityLabel="RLVO">
+            <LogoHorizontal width={92} color={Colors.ink} />
+          </View>
           <View style={styles.topActions}>
             <Pressable
               style={styles.iconBtn}
@@ -124,7 +128,7 @@ export default function InicioScreen() {
         </Pressable>
 
         <LinearGradient
-          colors={[Colors.ink, Colors.brickDark]}
+          colors={[Colors.mint900, Colors.mint700]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.hero}
@@ -154,7 +158,7 @@ export default function InicioScreen() {
             preserveAspectRatio="none"
           >
             <Path
-              fill="rgba(243,240,234,0.16)"
+              fill="rgba(120,205,181,0.22)"
               d="M0 60 L0 38 L30 38 L34 24 L40 24 L46 12 L52 24 L60 24 L64 34 L90 34 L94 20 L102 20 L108 6 L114 20 L122 20 L126 40 L150 40 L154 30 L162 30 L168 44 L200 44 L206 18 L216 18 L224 4 L232 18 L242 18 L248 42 L280 42 L284 32 L294 32 L300 46 L335 46 L335 60 Z"
             />
           </Svg>
@@ -184,7 +188,7 @@ export default function InicioScreen() {
           onPress={() => router.push({ pathname: '/filtros', params: { origin: 'feed' } })}
           accessibilityRole="button"
         >
-          <IconFilterSliders size={16} color="#F3F0EA" />
+          <IconFilterSliders size={16} color={Colors.paper} />
         </Pressable>
       </View>
 
@@ -267,9 +271,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  // .wordmark.brand-logo{line-height:0; display:flex; align-items:center;}
   wordmark: {
-    ...Typography.wordmark,
-    color: Colors.ink,
+    justifyContent: 'center',
   },
   topActions: {
     flexDirection: 'row',
@@ -329,9 +333,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 54,
   },
+  // .hero-eyebrow{color:var(--mint-400);}
   heroEyebrow: {
     ...Typography.caption,
-    color: Colors.paper65,
+    color: Colors.mint400,
     marginBottom: 8,
   },
   heroHeadline: {
@@ -347,9 +352,9 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   heroStat: {
-    backgroundColor: 'rgba(243,240,234,0.14)',
+    backgroundColor: 'rgba(245,250,248,0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(243,240,234,0.25)',
+    borderColor: 'rgba(245,250,248,0.25)',
     paddingVertical: 6,
     paddingHorizontal: 11,
     borderRadius: Radii.full,

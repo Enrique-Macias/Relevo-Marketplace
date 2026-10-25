@@ -30,7 +30,7 @@ export default function CuentaEliminadaScreen() {
         iconStyle={styles.iconoExito}
         style={styles.estado}
         title="Tu cuenta fue eliminada"
-        sub="Borramos tu perfil, tus publicaciones y sus fotos. Gracias por haber usado Relevo."
+        sub="Borramos tu perfil, tus publicaciones y sus fotos. Gracias por haber usado RLVO."
       >
         <PrimaryButton label="Entendido" onPress={() => router.replace('/splash')} style={styles.cta} />
       </EmptyState>

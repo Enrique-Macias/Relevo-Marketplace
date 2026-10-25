@@ -201,7 +201,7 @@ Tipografía — dos familias, uso deliberado y separado:
 - **Fraunces** (serif, display) — wordmark, precios, headlines de onboarding/auth.
 - **Inter** (sans) — todo el resto: UI, cuerpo, títulos de sección.
 
-Ya implementado en `src/constants/theme.ts`: `Colors`, `Fonts`, `FontWeights`
+Ya implementado en `src/constants/theme.ts`: `Colors` (Paleta 06 desde la fase 2 de DESIGN-1, con `mint900`…`mint50`, `danger`/`dangerBg`, `accent`, `surfaceMuted`, `backdrop` y `viewer`; el splash y el ícono NATIVOS de `app.json` todavía no cambian, porque exigen un build nativo), `Fonts`, `FontWeights`
 (400/500/600, todos sí se usan — no asumas que la UI evita el regular),
 `Radii` (8/12/14/16/20/9999, más el 10px de `.menu-icon`/`.status-row-icon`
 que quedó fuera del token original), `Typography` (49 roles por nombre
@@ -5264,6 +5264,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `ActiveFilterChip` | `ActiveFilterChip` | Chip de filtro activo, con la ✕ para quitarlo |
 | `AuthBody` | `AuthBody`, `AuthLogo`, `AuthHeadline`, `AuthSub`, `AuthLink`, `AuthLinkStrong`, `AuthTerms` | Las piezas de las pantallas de auth (`.auth-body`) |
 | `Avatar` | `Avatar` | Punto ÚNICO de contacto con el bucket PÚBLICO `avatars`. **No** es `ListingPhoto` con otro nombre: sin token, por diseño |
+| `BrandLogo` | `LogoHorizontal`, `LogoVertical`, `Isotipo` | Los logos de RLVO (Paleta 06) en react-native-svg, transcritos de `design/rlvo-final-brand/`; solo `width` y `color`. Feed (horizontal), Splash (vertical) y `AuthLogo` (isotipo) |
 | `BlinkingDots` | `BlinkingDots` | EL indicador de espera del sistema de diseño (`.splash-dots`) |
 | `Buttons` | `PrimaryButton`, `GhostButton`, `DangerButton` | Los tres botones; `PrimaryButton` tiene `busy` ≠ `disabled` |
 | `BuyerRow` | `BuyerRow`, `BuyerRowAvatarNeutro` | Fila de comprador con avatar y radio |
@@ -5271,7 +5272,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `CategoryTile` | `CategoryTile` | Tile de categoría con su tinte. `selected` opcional = `.cat-item.selected` (checkbox); sin la prop, navega como siempre |
 | `CategoriasSelector` | `CategoriasSelector`, `alternar` | Rejilla de 3 de selección múltiple ("Intereses" y "Editar intereses"). **No** unificar con "Ver todas": esa navega, esta elige |
 | `Chip` | `Chip` | Chip genérico |
-| `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" / "Confirmar eliminar cuenta" / "Confirmar bloquear" / "Reporte enviado (¿bloquear?)". `children` es el único hueco (entre el cuerpo y los botones) y `confirmDisabled` apaga solo el confirm; sin hijos se ve igual que siempre. Desde UGC-1: `cancelLabel` (default "Cancelar"; "Ahora no" en "Reporte enviado") e `iconTone` (`'brick'` default, `'forest'` para el ícono de éxito de "Reporte enviado") |
+| `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" / "Confirmar eliminar cuenta" / "Confirmar bloquear" / "Reporte enviado (¿bloquear?)". `children` es el único hueco (entre el cuerpo y los botones) y `confirmDisabled` apaga solo el confirm; sin hijos se ve igual que siempre. Desde UGC-1: `cancelLabel` (default "Cancelar"; "Ahora no" en "Reporte enviado") e `iconTone`: `'danger'` (default, destructiva: --danger-bg y botón --danger), `'forest'` (ícono de éxito de "Reporte enviado") y, desde la Paleta 06, `'neutral'` ("Confirmar cerrar sesión": círculo --mint-100 y botón en primario) |
 | `ConfirmarBloqueoModal` | `ConfirmarBloqueoModal` | "Confirmar bloquear": `ConfirmModal` tal cual, con el texto del bloqueo en UN solo sitio. La ÚNICA confirmación de bloqueo, abierta desde el "⋯" de Detalle, el de Perfil público y "Reporte enviado (¿bloquear?)". Con `confirming`, los dos botones apagados |
 | `EmptyState` | `EmptyState` | Estado vacío, con `.empty-actions` opcional |
 | `ErrorState` | `ErrorState` | Estado de fallo con "Reintentar" (label hardcodeado — ver deuda) |

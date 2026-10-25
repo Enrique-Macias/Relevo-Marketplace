@@ -124,7 +124,7 @@ export default function CalificarScreen() {
             ? `¿Cómo estuvo tu experiencia con ${nombrePila}?`
             : '¿Cómo estuvo tu experiencia?'}
         </AuthHeadline>
-        <AuthSub>Tu calificación ayuda a que la comunidad confíe más en Relevo.</AuthSub>
+        <AuthSub>Tu calificación ayuda a que la comunidad confíe más en RLVO.</AuthSub>
 
         <StarRating valor={estrellas} onChange={setEstrellas} disabled={guardando} />
 

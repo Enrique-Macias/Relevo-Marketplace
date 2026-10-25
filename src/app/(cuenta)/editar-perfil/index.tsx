@@ -463,7 +463,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderRadius: Radii.full,
-    backgroundColor: 'rgba(34,31,28,0.55)',
+    backgroundColor: Colors.backdrop,
     alignItems: 'center',
     justifyContent: 'center',
   },

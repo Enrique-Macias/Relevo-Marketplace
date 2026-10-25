@@ -178,7 +178,7 @@ export default function VendidaScreen() {
             // la única acción posible ya está en el `.sticky-cta`.
             <EmptyState
               icon={<IconUsers size={30} color={Colors.inkSoft} />}
-              title="Nadie te contactó por Relevo"
+              title="Nadie te contactó por RLVO"
               sub="Puedes marcarla como vendida de todos modos. No habrá a quién calificar, porque la calificación solo existe entre personas que se contactaron aquí."
             />
           ) : (
@@ -203,7 +203,7 @@ export default function VendidaScreen() {
                 <>
                   <Text style={[styles.label, styles.labelOtra]}>Otra opción</Text>
                   <BuyerRow
-                    nombre="No fue a través de Relevo"
+                    nombre="No fue a través de RLVO"
                     selected={seleccionEfectiva === SIN_COMPRADOR}
                     last
                     onPress={() => setElegido(SIN_COMPRADOR)}
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   // .sticky-cta{position:absolute; bottom:0; left:0; right:0;
-  //   padding:14px 20px 22px; background:rgba(243,240,234,0.94);
+  //   padding:14px 20px 22px; background:rgba(245,250,248,0.94);
   //   border-top:1px solid var(--line);}
   stickyCta: {
     position: 'absolute',
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
     right: 0,
     paddingTop: 14,
     paddingHorizontal: ScreenPadding,
-    backgroundColor: 'rgba(243,240,234,0.94)',
+    backgroundColor: 'rgba(245,250,248,0.94)',
     borderTopWidth: 1,
     borderTopColor: Colors.line,
   },

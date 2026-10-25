@@ -7,7 +7,7 @@
  * token (CLAUDE.md §0 regla 2) teniendo uno.
  *
  * Que funcionen igual de bien sobre `--brick` que sobre el degradado del Splash
- * no es suerte: `.splash-dot` es `rgba(243,240,234,0.5)`, o sea `--paper` al
+ * no es suerte: `.splash-dot` es `rgba(245,250,248,0.5)`, o sea `--paper` al
  * 50%, el mismo color del texto de `.primary-btn`.
  */
 

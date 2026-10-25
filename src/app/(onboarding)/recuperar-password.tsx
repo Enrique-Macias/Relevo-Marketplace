@@ -90,7 +90,7 @@ export default function RecuperarPasswordScreen() {
 const styles = StyleSheet.create({
   error: {
     ...Typography.meta,
-    color: Colors.brick,
+    color: Colors.danger,
     textAlign: 'center',
     marginTop: 12,
   },

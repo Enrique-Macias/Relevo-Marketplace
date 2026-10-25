@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     borderRadius: Radii.lg,
   },
   // .photo-thumb .thumb-scrim{position:absolute; inset:0; border-radius:14px;
-  //   background:rgba(34,31,28,0.55);} — mismo tono que .photo-remove, no un
+  //   background:rgba(24,61,57,0.55);} — mismo tono que .photo-remove, no un
   // color nuevo.
   scrim: {
     position: 'absolute',
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderRadius: Radii.lg,
-    backgroundColor: 'rgba(34,31,28,0.55)',
+    backgroundColor: Colors.backdrop,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
     marginTop: 0,
   },
   // .photo-remove{top:-6px; right:-6px; width:20px; height:20px; border-radius:50%;
-  //   background:rgba(34,31,28,0.55); border:2px solid var(--paper);}
+  //   background:rgba(24,61,57,0.55); border:2px solid var(--paper);}
   remove: {
     position: 'absolute',
     top: -6,
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: Radii.full,
-    backgroundColor: 'rgba(34,31,28,0.55)',
+    backgroundColor: Colors.backdrop,
     borderWidth: 2,
     borderColor: Colors.paper,
     alignItems: 'center',

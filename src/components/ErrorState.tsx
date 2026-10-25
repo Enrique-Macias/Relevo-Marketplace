@@ -2,7 +2,7 @@
  * Frame "Error de conexión" (`design/relevo-app.html`, grupo `sistema`).
  *
  * Es el `.empty-state` de siempre con `.empty-icon.error-icon` (fondo
- * `--brick-tint` en vez de `--paper`) y un `.primary-btn` de "Reintentar".
+ * `--danger-bg` en vez de `--paper`) y un `.primary-btn` de "Reintentar".
  * Se vuelve alcanzable ahora que las pantallas leen de la red.
  */
 
@@ -28,7 +28,7 @@ export function ErrorState({
 }: ErrorStateProps) {
   return (
     <EmptyState
-      icon={<IconAlertCircle size={30} color={Colors.brick} />}
+      icon={<IconAlertCircle size={30} color={Colors.danger} />}
       iconStyle={styles.errorIcon}
       title={title}
       sub={sub}
@@ -40,9 +40,9 @@ export function ErrorState({
 }
 
 const styles = StyleSheet.create({
-  // .error-icon{background:var(--brick-tint);}
+  // .error-icon{background:var(--danger-bg);}
   errorIcon: {
-    backgroundColor: Colors.brickTint,
+    backgroundColor: Colors.dangerBg,
   },
   // .empty-actions .primary-btn{margin-top:0;}
   btn: {

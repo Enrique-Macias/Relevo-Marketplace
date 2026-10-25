@@ -51,7 +51,7 @@ export const CORREO_BLOQUEADO = 'correo_bloqueado';
  * toast del vendedor suspendido.
  */
 export const COPY_CORREO_BLOQUEADO =
-  'Este correo no puede registrarse en Relevo. Si crees que es un error, escríbenos a soporte.';
+  'Este correo no puede registrarse en RLVO. Si crees que es un error, escríbenos a soporte.';
 
 export function esCorreoBloqueado(
   e: { message?: string; status?: number } | null | undefined,

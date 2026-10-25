@@ -91,16 +91,20 @@ export function DangerButton({
   onPress,
   style,
   disabled = false,
+  neutral = false,
 }: {
   label: string;
   onPress: () => void;
   style?: ViewStyle;
   disabled?: boolean;
+  /** `.danger-btn.is-neutral`: confirmación no destructiva (cerrar sesión). */
+  neutral?: boolean;
 }) {
   return (
     <Pressable
       style={({ pressed }) => [
         styles.danger,
+        neutral && styles.dangerNeutral,
         pressed && !disabled && styles.pressed,
         disabled && styles.disabled,
         style,
@@ -163,16 +167,20 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.45,
   },
-  // .danger-btn{flex:1.2; background:var(--brick); color:var(--paper); border-radius:14px; padding:13px 0;}
+  // .danger-btn{flex:1.2; background:var(--danger); color:#FFFFFF; border-radius:14px; padding:13px 0;}
   danger: {
     flex: 1.2,
-    backgroundColor: Colors.brick,
+    backgroundColor: Colors.danger,
     borderRadius: Radii.lg,
     paddingVertical: 13,
     alignItems: 'center',
   },
+  // .danger-btn.is-neutral{background:var(--brick);}
+  dangerNeutral: {
+    backgroundColor: Colors.brick,
+  },
   dangerLabel: {
     ...Typography.emphasis,
-    color: Colors.paper,
+    color: Colors.card,
   },
 });

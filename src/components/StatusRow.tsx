@@ -149,8 +149,8 @@ const styles = StyleSheet.create({
     ...Typography.rowLabel,
     color: Colors.ink,
   },
-  // .status-row-text.danger{color:var(--brick);}
+  // .status-row-text.danger{color:var(--danger);}
   textDanger: {
-    color: Colors.brick,
+    color: Colors.danger,
   },
 });

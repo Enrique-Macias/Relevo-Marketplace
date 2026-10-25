@@ -470,8 +470,9 @@ export default function PerfilScreen() {
       <ConfirmModal
         visible={confirmando}
         icon={<IconLogout size={22} color={Colors.brick} />}
+        iconTone="neutral"
         title="¿Cerrar sesión?"
-        body="Tendrás que verificar tu correo de nuevo la próxima vez que quieras entrar a Relevo."
+        body="Tendrás que verificar tu correo de nuevo la próxima vez que quieras entrar a RLVO."
         confirmLabel="Cerrar sesión"
         onConfirm={cerrarSesion}
         onCancel={() => setConfirmando(false)}
@@ -676,14 +677,14 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  // .sold-badge{position:absolute; inset:0; background:rgba(34,31,28,0.55);}
+  // .sold-badge{position:absolute; inset:0; background:rgba(24,61,57,0.55);}
   soldBadge: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(34,31,28,0.55)',
+    backgroundColor: Colors.backdrop,
     alignItems: 'center',
     justifyContent: 'center',
   },
