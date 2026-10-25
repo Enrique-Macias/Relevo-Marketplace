@@ -717,3 +717,44 @@ export function IconInfo({ size, color }: IconProps) {
     </Svg>
   );
 }
+
+// `.pw-toggle .eye-show` — DESIGN-1, el ojo de "Mostrar contraseña"
+// (`relevo-app.html`, Iniciar sesión).
+export function IconEye({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+      <Circle cx={12} cy={12} r={3} />
+    </Svg>
+  );
+}
+
+// `.pw-toggle .eye-hide` — el ojo tachado de "Ocultar contraseña".
+export function IconEyeOff({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M10.6 5.1A10.7 10.7 0 0112 5c6.4 0 10 7 10 7a17.6 17.6 0 01-3.2 4.1" />
+      <Path d="M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a10 10 0 005.4-1.6" />
+      <Path d="M9.9 9.9a3 3 0 004.2 4.2" />
+      <Path d="M3 3l18 18" />
+    </Svg>
+  );
+}

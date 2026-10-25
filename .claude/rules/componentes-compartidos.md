@@ -106,11 +106,25 @@ UGC-1). Con `sub` hay dos rutas de render (una `View` raíz lleva el borde).
 Hoy solo lo usa la fila de Correo de `HojaSoporte`.
 
 **`Field` tiene `error` (nombre válido, `20260927000469`).** Pinta
-`.field-error` bajo el campo y el borde en `--brick` (`.text-field.is-invalid`),
+`.field-error` bajo el campo y el borde en `--danger` (`.text-field.is-invalid`;
+era `--brick` hasta la Paleta 06, donde `--brick` pasó a ser el primario verde),
 con el rol `Typography.fieldError`. Ese rol tiene los MISMOS valores que
 `terms` a propósito, y es otro rol: aquel es letra chica gris de ayuda, este es
 un error. El texto es copy PERSISTENTE, así que cualquier uso nuevo necesita su
 frame antes (§0 regla 4). Hoy lo usa solo el nombre del perfil.
+
+**`Field` con `secureTextEntry` pinta el ojo de `.pw-toggle` SOLO (DESIGN-1,
+fase 3).** No hay un `PasswordField` aparte, a propósito: el diseño pone el ojo
+en TODO campo de contraseña, así que un campo nuevo lo hereda sin acordarse.
+Hoy son 6 (`iniciar-sesion.tsx`, `nueva-password.tsx` ×2,
+`completar-perfil.tsx` ×2 y el `ConfirmModal` de `configuracion.tsx`), 1:1 con
+los frames. El estado `visible` es local y arranca en `false`; con el texto a la
+vista se fuerzan `autoCorrect={false}` y `autoCapitalize="none"` (el que llama
+puede sobrescribirlos), porque una contraseña "corregida" deja de ser la
+contraseña. El ojo sigue tocable con `editable={false}`: mostrar lo tecleado no
+cambia nada en el servidor. Botón de 36×36 a `right: 6`, ícono de 18 en
+`--ink-soft` (oculto) o `--mint-700` (visible), etiquetas "Mostrar contraseña" /
+"Ocultar contraseña" con `accessibilityState.checked`.
 
 **`PhoneField` ya no pinta un `+52` inerte (`20260927000470`)**: recibe `pais`
 (el `Pais` de `src/lib/paises.ts`), `onPaisPress` y `error`, y el país es un

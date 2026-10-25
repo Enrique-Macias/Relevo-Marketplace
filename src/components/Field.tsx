@@ -1,6 +1,6 @@
 /** `.field` + `.field-label` + `.text-field` / `.select-field`. */
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -12,7 +12,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { IconChevronDown } from '@/components/icons';
+import { IconChevronDown, IconEye, IconEyeOff } from '@/components/icons';
 import { useScreenScrollViewRef } from '@/components/Screen';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { type Pais } from '@/lib/paises';
@@ -53,10 +53,20 @@ export function Field({
   style,
   onFocus,
   error,
+  secureTextEntry,
   ...inputProps
 }: FieldProps) {
   const inputRef = useRef<TextInput>(null);
   const scrollViewRef = useScreenScrollViewRef();
+  /**
+   * El ojo de `.pw-toggle` (DESIGN-1). No es un `PasswordField` aparte: el
+   * diseño lo pone en TODO campo de contraseña, así que cualquier `Field` con
+   * `secureTextEntry` lo trae sin que su pantalla se acuerde de pedirlo.
+   * Arranca oculto, y sigue funcionando con `editable={false}`: mostrar lo que
+   * uno ya tecleó no cambia nada en el servidor.
+   */
+  const [visible, setVisible] = useState(false);
+  const esContrasena = !!secureTextEntry;
 
   const handleFocus = (e: FocusEvent) => {
     onFocus?.(e);
@@ -70,13 +80,40 @@ export function Field({
   return (
     <View style={[styles.field, containerStyle]}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput
-        ref={inputRef}
-        style={[styles.input, error ? styles.inputInvalid : null, style]}
-        placeholderTextColor={Colors.placeholder}
-        onFocus={handleFocus}
-        {...inputProps}
-      />
+      <View>
+        <TextInput
+          ref={inputRef}
+          style={[
+            styles.input,
+            esContrasena ? styles.inputConOjo : null,
+            error ? styles.inputInvalid : null,
+            style,
+          ]}
+          placeholderTextColor={Colors.placeholder}
+          onFocus={handleFocus}
+          // Con el texto a la vista, iOS y Android vuelven a sugerir y a
+          // corregir: una contraseña "corregida" deja de ser la contraseña.
+          {...(esContrasena ? { autoCorrect: false, autoCapitalize: 'none' as const } : null)}
+          {...inputProps}
+          secureTextEntry={esContrasena && !visible}
+        />
+        {esContrasena ? (
+          <Pressable
+            onPress={() => setVisible((v) => !v)}
+            style={styles.ojo}
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityLabel={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+            accessibilityState={{ checked: visible }}
+          >
+            {visible ? (
+              <IconEyeOff size={18} color={Colors.mint700} />
+            ) : (
+              <IconEye size={18} color={Colors.inkSoft} />
+            )}
+          </Pressable>
+        ) : null}
+      </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -276,6 +313,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     ...Typography.input,
     color: Colors.ink,
+  },
+  // .pw-field .text-field{padding-right:46px;}
+  inputConOjo: {
+    paddingRight: 46,
+  },
+  // .pw-toggle{position:absolute; top:50%; right:6px; transform:translateY(-50%);
+  //   width:36px; height:36px; border-radius:10px; color:var(--ink-soft);}
+  // `.pw-field.is-visible .pw-toggle{color:var(--mint-700);}` va en el ícono.
+  // El centrado vertical sale de `top:0/bottom:0` + `justifyContent`, que no
+  // depende de medir el alto del input.
+  ojo: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 6,
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
   },
   // .text-field.is-invalid{border-color:var(--danger);}
   inputInvalid: {
