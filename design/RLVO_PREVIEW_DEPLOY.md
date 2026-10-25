@@ -35,12 +35,12 @@ La URL que indique Wrangler al terminar es la referencia del despliegue. La URL 
 
 ## Contenido del paquete
 
-**Desde DESIGN-1 se publica `design/rlvo-app-final-preview.html` (Paleta 06)**, que reemplaza a `design/rlvo-app.html` en la misma URL. El prototipo anterior se queda en el repo, pero ya no se publica; sus despliegues previos siguen en el historial del proyecto de Cloudflare.
+**Se publica la especificación misma, `design/relevo-app.html`** (Paleta 06 desde DESIGN-1, aprobada el 2026-10-25). Antes se publicaba `design/rlvo-app.html`, y durante la revisión `design/rlvo-app-final-preview.html`; los dos se dejaron de publicar, y sus despliegues previos siguen en el historial del proyecto de Cloudflare.
 
 - `index.html`: el prototipo completo, sin redirección intermedia. Sus logos apuntan a `./design/rlvo-final-brand/`.
-- `design/rlvo-app-final-preview.html`: la copia publicable, conservando las rutas relativas `rlvo-final-brand/`.
+- `design/relevo-app.html`: la copia publicable, conservando las rutas relativas `rlvo-final-brand/`.
 - Los tres SVG recoloreados de `design/rlvo-final-brand/` que referencia, copiados byte por byte. El script acepta también los SVG oficiales de `assets/brand/` (el patrón anterior); ninguna otra ruta local.
-- `_redirects`: `/design/rlvo-app.html` y `/design/rlvo-app` responden 301 a `/`, para que los enlaces viejos no den 404.
+- `_redirects`: las rutas publicadas antes (`/design/rlvo-app` y `/design/rlvo-app-final-preview`, con y sin `.html`) responden 301 a `/`, para que los enlaces viejos no den 404.
 - `404.html`: respuesta para rutas inexistentes, sin fallback de SPA que oculte recursos faltantes.
 - `_headers`: indica `noindex, nofollow`.
 

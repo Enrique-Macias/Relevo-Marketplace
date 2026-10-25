@@ -21,11 +21,14 @@ documento original de producto, en texto plano).
 de Postgres/Supabase local ya diagnosticados, para no re-investigarlos desde
 cero si vuelven a aparecer.
 
-Es un prototipo HTML/CSS/JS autocontenido con las 81 pantallas de la app
+Es un prototipo HTML/CSS/JS autocontenido con las 88 pantallas de la app
 renderizadas como frames de teléfono, más un panel de "Editor de estilo" con
-controles en vivo (colores primario/secundario/fondo/tarjetas/texto y
-tipografía de títulos/cuerpo) para experimentar con la identidad visual sin
-tocar código.
+controles en vivo (colores primario/secundario/fondo/tarjetas/texto,
+tipografía de títulos/cuerpo y ancho del teléfono: 360/375/390/430) para
+experimentar con la identidad visual sin tocar código. Desde DESIGN-1
+(2026-10-25) usa la **Paleta 06** (§2) y la marca RLVO (los logos recoloreados
+de `design/rlvo-final-brand/`). Se publica, sin indexar, en
+`rlvo-design-preview.pages.dev` (`design/RLVO_PREVIEW_DEPLOY.md`).
 
 Reglas para cualquier IA o desarrollador que trabaje en este repo:
 
@@ -158,18 +161,41 @@ TI de cada universidad.
 
 ## 2. Design tokens (extraídos de `relevo-app.html`)
 
-Colores base (variables CSS `:root`, con tintes derivados vía `color-mix`):
+**Paleta 06 — Gris + Verde Menta, desde DESIGN-1 (aprobada el 2026-10-25).**
+Decisiones, tabla de contraste WCAG y excepciones en
+`design/RLVO_FINAL_PREVIEW.md`. Colores base (variables CSS `:root`):
 
 ```
---ink:        #221F1C   /* texto principal */
---ink-soft:   #6B6660   /* texto secundario */
---paper:      #F3F0EA   /* fondo de app */
---card:       #FFFFFF   /* superficie de tarjetas */
---brick:      #C1440E   /* primario / marca / CTAs */
---forest:     #2F6B4F   /* secundario / confianza / verificado */
---gold:       #D9A441   /* acento decorativo (categorías) */
---slate:      #5B6B78   /* acento decorativo (categorías) */
+--mint-900:   #183D39   /* verde oscuro */
+--mint-700:   #23635C   /* verde profundo */
+--mint-400:   #78CDB5   /* verde menta: rellenos e indicadores, NUNCA texto sobre claro (1.88:1) */
+--mint-100:   #DDF5ED   /* menta claro: selección, tintes */
+--mint-50:    #F5FAF8   /* fondo claro */
+
+--ink:        var(--mint-900)   /* texto principal */
+--ink-soft:   #4F6B67           /* texto secundario (derivado: 5.5:1 sobre --paper) */
+--ink-muted:  #7B918D           /* placeholders, tab inactivo (3.35:1, no es texto de contenido) */
+--paper:      var(--mint-50)    /* fondo de app */
+--card:       #FFFFFF           /* superficie de tarjetas */
+--brick:      #23635C           /* primario / CTAs (el nombre se conserva, el color no) */
+--brick-tint: var(--mint-100)
+--forest:     #23635C           /* confianza / verificado: hoy mismo valor que el primario */
+--gold, --slate                 /* acentos de categoría: variaciones de la misma familia */
+--danger:     #B42332           /* errores y acciones destructivas — excepción fuera de paleta */
+--danger-bg:  #FCEBED
 ```
+
+**Los nombres `--brick`/`--forest`/`--gold`/`--slate` se conservan** porque
+todo el CSS y cientos de estilos inline los usan; su VALOR cambió. Ojo con lo
+que eso implica: en la paleta anterior el error y el primario eran el mismo
+`--brick`, y con un primario verde un error se leería como éxito. Por eso
+**todo lo que es error o destructivo usa `--danger`, no `--brick`** (borde y
+texto de error de campo, filas `.danger`, el botón Eliminar, el ícono de
+confirmaciones destructivas, el toast de error, `ErrorState`). "Confirmar
+cerrar sesión" NO es destructiva: va en primario (`.is-neutral`). La selección
+(chip, segmento, tab activo) pasó de relleno `--ink` a menta claro con borde
+`--mint-700`. La paleta anterior (ladrillo/bosque) está en git, en el
+`relevo-app.html` anterior a `05264fe`.
 
 Tipografía — dos familias, uso deliberado y separado:
 - **Fraunces** (serif, display) — wordmark, precios, headlines de onboarding/auth.
@@ -3215,12 +3241,25 @@ mandado a `pendiente` al editar fotos, auto-aprobándose sin Studio.
 
 ---
 
-## 4. Inventario completo de pantallas (81)
+## 4. Inventario completo de pantallas (88)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
 usa el filtro visual del prototipo. Para el estado de qué grupo ya existe
 como código real (vs. solo diseño), ver §8 y las reglas de `.claude/rules/`.
+
+**88 desde DESIGN-1 (Paleta 06, aprobada el 2026-10-25)**, medido con
+`grep -o 'class="phone-block[^"]*" data-cat="[a-z]*"' design/relevo-app.html |
+sort | uniq -c` el 2026-10-25: Onboarding 18, Explorar 23, Publicar 11, Cuenta
+21, Confianza 5, Notificaciones 2 y Sistema 8. Eran 81; los 7 nuevos son
+"Iniciar sesión (contraseña visible)" (Onboarding), "Detalle (foto ampliada con
+zoom)" (Explorar), "Publicar (agregar fotos)" (Publicar), y "Perfil (foto
+ampliada)", "Perfil público (foto ampliada)", "Editar perfil (cambiar foto)" y
+"Editor de foto de perfil" (Cuenta). **Representan mejoras que la app todavía
+NO tiene** (fases 3 a 5 de DESIGN-1; `design/RLVO_FINAL_PREVIEW.md`), igual
+que la categoría `Alimentos`, que aparece en las rejillas y selectores de
+categoría del prototipo pero todavía no es una fila de `categories`. La
+cuenta anterior, tal como estaba:
 
 **81 desde UGC-1 (bloqueo entre usuarios, PL-006)**, medido con
 `grep -o 'class="phone-block" data-cat="[a-z]*"' design/relevo-app.html | sort |
@@ -3232,14 +3271,20 @@ Confianza 5, Notificaciones 2 y Sistema 8. Eran 73; los 8 nuevos son
 (Confianza) y "Confirmar bloquear" (Sistema). Cada uno se describe en su grupo,
 abajo.
 
-### Onboarding (17)
+### Onboarding (18)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
 **Verificación (correo no participante)** ·
 Código de verificación · Completar perfil ·
 Completar perfil (estado inicial) · Completar perfil (selector de campus) ·
 **Intereses** · Permiso de notificaciones ·
 Iniciar sesión · Recuperar contraseña · **Código de recuperación** ·
-**Nueva contraseña** · **Cuenta eliminada**
+**Nueva contraseña** · **Cuenta eliminada** ·
+**Iniciar sesión (contraseña visible)**
+
+"Iniciar sesión (contraseña visible)" llegó con DESIGN-1: el estado del ojo de
+mostrar/ocultar contraseña, que llevan TODOS los campos de contraseña del
+prototipo (Iniciar sesión, Completar perfil, Nueva contraseña y Confirmar
+eliminar cuenta). Uno solo como frame porque el ojo es el mismo en todos.
 
 **Eran 16: "Selector de universidad" salió con la fase 2A** (`20260924000466`).
 La universidad ya no se elige: la asigna el servidor desde el dominio del
@@ -3274,7 +3319,7 @@ institucional" (Verificación, Iniciar sesión, Recuperar contraseña) pasó de
 `nombre@estudiante.tec.mx` a `estudiante@institución.mx`: el viejo sugería un
 subdominio que el hook rechaza.
 
-### Explorar (22)
+### Explorar (23)
 Feed · **Feed (sin publicaciones)** · Selector de campus ·
 **Selector de campus (detectando ubicación)** ·
 **Selector de campus (sin campus cercano)** ·
@@ -3288,7 +3333,12 @@ Ver todas (categorías) · Búsqueda (recomendados) · Búsqueda ·
 Búsqueda sin resultados · Filtros · Detalle de publicación ·
 **Detalle (vendida)** · Detalle (vista vendedor) ·
 Detalle (foto a pantalla completa) · Detalle (foto — cerrando) ·
-**Detalle (opciones)**
+**Detalle (opciones)** · **Detalle (foto ampliada con zoom)**
+
+"Detalle (foto ampliada con zoom)" llegó con DESIGN-1: el visor con una foto
+ampliada. El zoom es SOLO por gestos (pellizcar, doble toque para restablecer;
+sin botones de acercar/alejar), se cierra con la X o arrastrando hacia abajo y
+navega entre fotos con swipe cuando el zoom está en 1.
 
 "Detalle (opciones)" llegó con UGC-1: el menú "⋯" del Detalle de una
 publicación ajena (`HojaOpciones`), con "Reportar publicación" y "Bloquear a
@@ -3341,11 +3391,16 @@ bloquea al usuario mientras detecta) y componen `.notice`/`.ghost-btn`/
 `.splash-dots`, ya existentes — ningún CSS nuevo. Detalle de qué dice cada uno
 y por qué, en `explorar.md`.
 
-### Publicar (10)
+### Publicar (11)
 Publicar · Publicar (procesando fotos) · Publicar (subiendo imágenes) ·
 **Publicar (revisando)** · Publicar (error de subida) ·
 Publicar (falta teléfono) · Editar publicación · Publicación creada ·
-Publicación en revisión · Publicación no aprobada
+Publicación en revisión · Publicación no aprobada ·
+**Publicar (agregar fotos)**
+
+"Publicar (agregar fotos)" llegó con DESIGN-1: la hoja "Tomar foto" / "Elegir
+de galería" al tocar agregar foto, con el mismo tope de 5 y los mismos errores.
+Aplica igual en Editar publicación (variante, no frame aparte).
 
 "Publicar (falta teléfono)" es el quinto estado del MISMO componente, y el único
 que se ve ANTES de tocar nada: el campo de WhatsApp aparece solo mientras el
@@ -3390,13 +3445,21 @@ contrario —reintentar es la salida—, así que `esDeterminista()` **no cambi�
 el motivo nuevo vive en `falloGeneral`. Son **tres motivos y dos baldes**; el
 párrafo viejo hacía leer que eran tres baldes.
 
-### Cuenta (17)
+### Cuenta (21)
 Perfil · **Perfil (ayuda y soporte)** · Editar perfil · **Selector de país** ·
 Perfil público · **Perfil público (opciones)** · **Perfil público (bloqueado)** ·
 **Perfil público (no disponible)** · Favoritos · Favoritos vacío ·
 Mis publicaciones · Mis publicaciones vacío · Mis publicaciones (acciones) ·
 **Configuración** · **Editar intereses** · **Usuarios bloqueados** ·
-**Usuarios bloqueados vacío**
+**Usuarios bloqueados vacío** · **Perfil (foto ampliada)** ·
+**Perfil público (foto ampliada)** · **Editar perfil (cambiar foto)** ·
+**Editor de foto de perfil**
+
+**Los cuatro últimos llegaron con DESIGN-1.** Las dos "(foto ampliada)" son el
+mismo visor de "Detalle (foto ampliada con zoom)" con una sola foto, abierto al
+tocar el avatar. "Editar perfil (cambiar foto)" es la hoja Tomar foto / Elegir
+de galería, y "Editor de foto de perfil" es el recorte circular (mover, zoom,
+vista previa en los tamaños reales, Cancelar / Usar foto).
 
 **Los cinco nuevos llegaron con UGC-1 (bloqueo entre usuarios)**: 81 en total,
 17 de Cuenta.
@@ -3625,7 +3688,7 @@ en "Verificación (correo no participante)".
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 81 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 88 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es

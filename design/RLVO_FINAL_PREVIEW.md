@@ -1,19 +1,26 @@
-# RLVO: prototipo final (Paleta 06), DESIGN-1
+# RLVO: Paleta 06 y las 7 pantallas de DESIGN-1
 
-**Estado: propuesta pendiente de aprobación.** `design/relevo-app.html` sigue
-siendo la especificación (CLAUDE.md §0). Nada de esto toca la app real:
-`src/constants/theme.ts`, React Native, Supabase y los SVG oficiales quedan
-como estaban.
+**Estado: APROBADO por el usuario el 2026-10-25 y promovido a la
+especificación.** Desde entonces `design/relevo-app.html` ES este prototipo
+(88 pantallas, Paleta 06) y se edita a mano, como siempre (CLAUDE.md §0).
+
+Este archivo queda como registro de las decisiones: tokens, contraste,
+excepciones y qué cambió respecto a la paleta anterior.
 
 | Archivo | Qué es |
 |---|---|
-| `design/rlvo-app-final-preview.html` | El prototipo. Es GENERADO: no se edita a mano |
-| `design/scripts/build-final-preview.mjs` | El generador. Lee `relevo-app.html` (solo lectura) y escribe el prototipo y las copias de marca |
-| `design/rlvo-final-brand/` | 3 copias recoloreadas de `assets/brand/` (solo cambia el color) y su `LEEME.txt` |
+| `design/relevo-app.html` | La especificación, ya con la Paleta 06 |
+| `design/rlvo-final-brand/` | 3 copias recoloreadas de `assets/brand/` (solo cambia el color) y su `LEEME.txt`. Las usa `relevo-app.html` |
 
-Para regenerar: `node design/scripts/build-final-preview.mjs`. Cada reemplazo
-declara cuántas veces debe aplicarse. Si `relevo-app.html` cambia y un patrón
-deja de coincidir, el build aborta en vez de generar un prototipo a medias.
+**Historia:** durante la revisión, el prototipo vivió como
+`design/rlvo-app-final-preview.html`, generado por
+`design/scripts/build-final-preview.mjs` a partir del `relevo-app.html` de la
+paleta anterior (commit `05264fe`). Al aprobarse, el resultado reemplazó a
+`relevo-app.html` y los dos archivos se retiraron. El generador ya no sirve:
+su entrada era el archivo que reemplazó.
+
+En las secciones de abajo, "el original" es el `relevo-app.html` anterior a la
+aprobación, y "las 7 pantallas nuevas" son las de DESIGN-1.
 
 ## Cobertura
 
@@ -166,9 +173,9 @@ cambia es su valor.
 - **"Relevo" → "RLVO" en el copy:** el resto del repo (CLAUDE.md, la app) sigue
   diciendo Relevo. Cambiarlo en la app es una decisión aparte.
 
-## Si se aprueba: qué falta para llevarlo a la app (no hecho aquí)
+## Qué falta para llevarlo a la app
 
-1. Primero se actualiza `design/relevo-app.html` (CLAUDE.md §0, regla 3) y
+1. ~~Primero se actualiza `design/relevo-app.html`~~ (hecho al aprobarse) y
    después `src/constants/theme.ts`. Las 7 pantallas nuevas pasan a ser frames
    de la especificación.
 2. **`Alimentos` exige un cambio de datos:** es una fila de `categories`
