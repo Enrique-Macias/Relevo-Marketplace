@@ -1,0 +1,18 @@
+RLVO | Kit vectorial en Paleta 06 (verde + menta)
+Copia de los 18 SVG de assets/brand/, generada el 2026-10-26.
+Solo se cambió el color; la geometría y el lema son los del kit original
+(comprobado: los archivos son idénticos al sustituir los hex).
+Los originales de assets/brand/ NO se modificaron.
+
+Correspondencia de colores (y de nombres de archivo):
+  grafito #191A23 -> verde        #183D39  (--mint-900)
+  lima    #B9FF66 -> menta        #78CDB5  (--mint-400)
+  crema   #F5F1EA -> menta-claro  #F5FAF8  (--mint-50)
+  blanco  #FFFFFF -> blanco       #FFFFFF  (sin cambio)
+
+Contraste (WCAG): verde/menta 6.34:1, verde/menta-claro 11.28:1.
+La menta NO va sobre blanco ni sobre fondos claros (1.88:1): usa las
+versiones "menta" solo sobre verde o sobre fondos oscuros.
+
+07, 16 y 02 son byte a byte iguales a las copias aprobadas de
+design/rlvo-final-brand/ (las que transcribe src/components/BrandLogo.tsx).
