@@ -29,6 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PrimaryButton } from '@/components/Buttons';
 import { ListingFormFields } from '@/components/ListingFormFields';
 import { PaisBottomSheet } from '@/components/PaisBottomSheet';
+import { HojaAgregarFotos } from '@/components/HojaOrigenFoto';
 import { FormHeader } from '@/components/ListRow';
 import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
@@ -36,7 +37,11 @@ import { useToast } from '@/components/Toast';
 import { Colors, ScreenPadding } from '@/constants/theme';
 import { esCategoriaInactiva } from '@/lib/categorias';
 import { useExplorarState } from '@/lib/explorar-state';
-import { elegirFotos, PermisoDenegadoError } from '@/lib/foto-picker';
+import {
+  elegirFotos,
+  PermisoCamaraDenegadoError,
+  PermisoDenegadoError,
+} from '@/lib/foto-picker';
 import { useListingForm } from '@/lib/listing-form';
 import { paisPorIso, type Pais } from '@/lib/paises';
 import { guardarTelefono } from '@/lib/perfil';
@@ -215,7 +220,16 @@ export default function PublicarScreen() {
    */
   const publicandoRef = useRef(false);
 
-  async function agregarFoto() {
+  /** La hoja "Agregar fotos" (Tomar foto / Elegir de la galería). */
+  const [hojaFotosVisible, setHojaFotosVisible] = useState(false);
+
+  function abrirHojaFotos() {
+    if (procesandoRef.current) return;
+    if (MAX_FOTOS - form.fotos.length <= 0) return;
+    setHojaFotosVisible(true);
+  }
+
+  async function agregarFoto(origen: 'galeria' | 'camara') {
     if (procesandoRef.current) return;
     const disponibles = MAX_FOTOS - form.fotos.length;
     if (disponibles <= 0) return;
@@ -223,10 +237,14 @@ export default function PublicarScreen() {
     procesandoRef.current = true;
     setEligiendoFotos(true);
     try {
-      const { descartadas } = await elegirFotos(disponibles, {
-        onPlaceholders: form.agregarPlaceholders,
-        onFotoLista: form.reemplazarPlaceholder,
-      });
+      const { descartadas } = await elegirFotos(
+        disponibles,
+        {
+          onPlaceholders: form.agregarPlaceholders,
+          onFotoLista: form.reemplazarPlaceholder,
+        },
+        { origen }
+      );
       if (descartadas > 0) {
         mostrar(
           descartadas === 1
@@ -238,6 +256,15 @@ export default function PublicarScreen() {
     } catch (e) {
       if (e instanceof PermisoDenegadoError) {
         mostrar('Necesitamos acceso a tus fotos para agregarlas', 'error');
+        return;
+      }
+      if (e instanceof PermisoCamaraDenegadoError) {
+        mostrar('Necesitamos acceso a tu cámara para tomar la foto', 'error');
+        return;
+      }
+      if (origen === 'camara') {
+        console.warn('[publicar] no se pudo abrir la cámara:', e);
+        mostrar('No pudimos abrir la cámara', 'error');
         return;
       }
       console.warn('[publicar] no se pudo abrir el carrete:', e);
@@ -386,7 +413,7 @@ export default function PublicarScreen() {
           form={form}
           categorias={categorias}
           zonaEntrega={campus?.nombre}
-          onAgregarFoto={agregarFoto}
+          onAgregarFoto={abrirHojaFotos}
           disabled={textoCongelado}
           fotosDisabled={ocupado}
           eligiendoFotos={eligiendoFotos}
@@ -448,6 +475,15 @@ export default function PublicarScreen() {
           style={styles.cta}
         />
       </View>
+
+      <HojaAgregarFotos
+        visible={hojaFotosVisible}
+        llevas={form.fotos.length}
+        max={MAX_FOTOS}
+        onCamara={() => agregarFoto('camara')}
+        onGaleria={() => agregarFoto('galeria')}
+        onCerrar={() => setHojaFotosVisible(false)}
+      />
 
       <PaisBottomSheet
         visible={paisSheetVisible}

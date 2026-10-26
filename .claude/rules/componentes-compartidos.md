@@ -195,5 +195,16 @@ mutar. **No se unifica con "Ver todas (categorías)"** aunque la geometría sea
 la misma (gap 10 y relleno de la última fila): esa pantalla navega y esta
 elige.
 
+**`HojaOrigenFoto` y `EditorFotoPerfil` (DESIGN-1 fase 5).** `HojaOrigenFoto`
+tiene el cascarón de `HojaOpciones` pero no es una variante suya: suma la
+`.sheet-note` y el ghost "Cancelar", y la línea secundaria va DENTRO del área
+tocable (por eso no usa `StatusRow`). Ejecuta la fila elegida en `onDismiss`
+del `Modal`, no al tocar: iOS no presenta el picker mientras otro view
+controller se está desmontando. Sus dos usos tienen envoltura con el copy del
+frame: `HojaAgregarFotos` (Publicar y Editar) y la hoja de `ModalesFotoPerfil`.
+`EditorFotoPerfil` es un `Modal` con su propio `GestureHandlerRootView` (gotcha
+de §9) y no comparte código con `PhotoViewer`: el visor no recorta y el editor
+no pagina.
+
 **`AuthSub` ganó `style` opcional**, igual que `AuthHeadline`. Lo pide el
 frame "Intereses", que baja su `margin-bottom` a 20.

@@ -257,6 +257,16 @@ Detalles que no se ven en el diff:
     que resolver de todos modos, se eligió la que falla alto en vez de la que
     corrompe en silencio — no es validación agregada por si acaso sobre un
     riesgo de hoy.
+  - **Desde DESIGN-1 fase 5, "+" abre la hoja "Agregar fotos"**
+    (`HojaAgregarFotos`): Tomar foto o Elegir de la galería, con el sub "Puedes
+    elegir hasta N más" ("1 más" con un lugar, decisión D2) y la nota "Llevas X
+    de 5 fotos…". `agregarFoto(origen)` le pasa `{ origen }` a `elegirFotos()`;
+    la cámara entrega una foto y sigue el mismo camino (filtro de formato,
+    placeholder, `normalizar()`). Toasts propios de la cámara: "Necesitamos
+    acceso a tu cámara para tomar la foto" (permiso) y "No pudimos abrir la
+    cámara". El texto del permiso en español (`cameraPermission` en
+    `app.json`, sin micrófono) entra con el siguiente build nativo; hasta
+    entonces iOS muestra el texto por default del plugin.
   - **`agregarFoto()` (en `nueva.tsx` y `editar/[id].tsx`) gana un guard de
     reentrada por `useRef`**, no por estado: tiene que valer ANTES del primer
     `await`, sin esperar a un re-render. Un doble-tap muy rápido en "Agregar"

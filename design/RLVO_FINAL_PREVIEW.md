@@ -183,9 +183,12 @@ cambia es su valor.
    seed en remoto, y su ícono en `src/components/icons/categories.tsx`.
 3. Los íconos del tab bar son PNG generados (`scripts/generate-tab-icons.mjs`,
    CLAUDE.md §9) y habría que regenerarlos con el color nuevo.
-4. Zoom, editor de recorte y cámara/galería son trabajo de React Native
-   aparte: gestos y permisos de cámara, que es un módulo nativo y exige un dev
-   build nuevo.
+4. ~~Zoom, editor de recorte y cámara/galería~~: el zoom llegó con la fase 3, y
+   el editor y la hoja cámara/galería con la fase 5 (en código, confirmados por el
+   usuario en iPhone y Android el 2026-10-26). La cámara NO exigió un dev build nuevo:
+   `expo-image-picker` ya estaba compilado. Lo que sí espera al siguiente build
+   nativo son los textos de permiso en español (`cameraPermission` en
+   `app.json`).
 
 ## Validaciones corridas (2026-10-23)
 

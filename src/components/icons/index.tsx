@@ -758,3 +758,44 @@ export function IconEyeOff({ size, color }: IconProps) {
     </Svg>
   );
 }
+
+// "Publicar (agregar fotos)" y "Editar perfil (cambiar foto)", fila "Tomar
+// foto". NO es `IconCamera` (Onboarding 1/3): el frame de la hoja dibuja otra
+// cámara, con las esquinas redondeadas.
+export function IconTomarFoto({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" />
+      <Circle cx={12} cy={13.5} r={3.5} />
+    </Svg>
+  );
+}
+
+// Las mismas dos hojas, fila "Elegir de la galería".
+export function IconGaleria({ size, color }: IconProps) {
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <Rect x={3} y={4} width={18} height={16} rx={2} />
+      <Circle cx={9} cy={10} r={2} />
+      <Path d="M21 16l-5-5-9 9" />
+    </Svg>
+  );
+}

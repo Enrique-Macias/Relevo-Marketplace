@@ -47,6 +47,13 @@ export const Colors = {
   backdrop: 'rgba(24,61,57,0.55)',
   // Paper al 50 %: `.splash-dot` sobre el primario (botón ocupado, scrims).
   paper50: 'rgba(245,250,248,0.5)',
+  // "Editor de foto de perfil" (`.crop-*`, DESIGN-1 fase 5), sobre --mint-900.
+  cropMascara: 'rgba(14,35,33,0.62)', // .crop-mask box-shadow (lo de fuera del círculo)
+  cropAro: 'rgba(245,250,248,0.9)', // .crop-mask outline
+  cropEnlace: 'rgba(245,250,248,0.82)', // .crop-link
+  cropPista: 'rgba(245,250,248,0.78)', // .crop-hint
+  cropBorde: 'rgba(245,250,248,0.35)', // .crop-actions .ghost-btn border-color
+  cropAroPrevia: 'rgba(245,250,248,0.18)', // .crop-preview box-shadow
 } as const;
 
 export const Fonts = {
@@ -185,6 +192,12 @@ export const Typography = {
     lineHeight: 18.75, // 12.5 × 1.5
   }, // .review-text (Perfil público) — mismo tamaño que `meta`/`modalSub`, pero su propio line-height (1.5, no 1.55)
   rowSub: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 11.5 }, // .list-row-sub, .buyer-time
+  cropHint: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 12 }, // .crop-hint — mismo tamaño que `activeChip`, pero regular
+  sheetNote: {
+    fontFamily: face(Fonts.body, FontWeights.regular),
+    fontSize: 11.5,
+    lineHeight: 16.675, // 11.5 × 1.45
+  }, // .sheet-note (hojas "Agregar fotos"): mismo tamaño que `rowSub`, con line-height propio
   heroStat: { fontFamily: face(Fonts.body, FontWeights.medium), fontSize: 11.5 }, // .hero-stat (chip del hero del Feed)
   caption: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 11 }, // .cat-label, .hero-eyebrow
   metaLight: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 11 }, // .meta (product card)

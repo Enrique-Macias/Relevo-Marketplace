@@ -19,7 +19,14 @@ import { type CountryCode } from 'libphonenumber-js/min';
 import { useCallback, useRef, useState } from 'react';
 
 import { type OpcionCatalogo } from '@/lib/catalogos';
-import { LADO_MAXIMO_AVATAR, PermisoDenegadoError, elegirFotos } from '@/lib/foto-picker';
+import {
+  LADO_MAXIMO,
+  PermisoCamaraDenegadoError,
+  PermisoDenegadoError,
+  elegirFotos,
+  recortarAvatar,
+} from '@/lib/foto-picker';
+import { type Rect } from '@/lib/recorte';
 import {
   FormatoNoSoportadoError,
   FotoDemasiadoGrandeError,
@@ -262,6 +269,9 @@ function avisoDe(e: unknown): string {
   if (e instanceof PermisoDenegadoError) {
     return 'Necesitamos permiso para abrir tus fotos';
   }
+  if (e instanceof PermisoCamaraDenegadoError) {
+    return 'Necesitamos acceso a tu cámara para tomar la foto';
+  }
   if (e instanceof FotoDemasiadoGrandeError) {
     return `Esa foto pesa más de ${MB_AVATAR} MB. Elige otra.`;
   }
@@ -272,21 +282,44 @@ function avisoDe(e: unknown): string {
 }
 
 /**
- * El estado del círculo de foto, compartido por las DOS pantallas que lo pintan.
+ * Lo que necesitan la hoja "Foto de perfil" y el "Editor de foto de perfil"
+ * para pintarse. Lo arma `useFotoPerfil()` y lo consume `ModalesFotoPerfil`
+ * (`src/components/EditorFotoPerfil.tsx`): este módulo no importa componentes.
+ */
+export type ModalesFotoPerfilEstado = {
+  hojaVisible: boolean;
+  cerrarHoja: () => void;
+  elegirCamara: () => void;
+  elegirGaleria: () => void;
+  /** La foto en el editor; `null` = editor cerrado. */
+  editorUri: string | null;
+  cancelarEditor: () => void;
+  elegirOtra: () => void;
+  usar: (rect: Rect) => void;
+};
+
+/**
+ * El estado del círculo de foto, compartido por las DOS pantallas que lo pintan
+ * (D1 de `docs/design-1-fase5-plan.md`).
  *
- * Vive aquí y no en cada pantalla porque el flujo es idéntico —elegir, subir,
- * escribir `foto_url`, refrescar la sesión— y el copy de los cuatro avisos es el
- * mismo; duplicarlo lo dejaría desincronizado al primer ajuste.
+ * El flujo (DESIGN-1 fase 5): tocar el círculo abre la hoja "Foto de perfil";
+ * Tomar foto o Elegir de la galería abre el picker; la foto elegida entra al
+ * editor de recorte; "Usar foto" recorta el círculo (`recortarAvatar()`), sube,
+ * escribe `foto_url` y refresca la sesión. Cancelar en cualquier punto no sube
+ * nada.
+ *
+ * El picker normaliza a `LADO_MAXIMO` (1600) y no a `LADO_MAXIMO_AVATAR`: el
+ * usuario todavía va a acercar, y recortar sobre 512 px dejaría el avatar
+ * borroso. El tope del avatar lo aplica `recortarAvatar()`, al final.
  *
  * NO importa `useToast`: ningún módulo de `src/lib/` importa un componente en
  * runtime (solo tipos), así que el aviso sale por `onAviso` y la pantalla decide
  * con qué lo muestra.
  *
- * `LADO_MAXIMO_AVATAR` y no el default de 1600: ver su doc en `foto-picker.ts`.
- *
  * El guard de reentrada va en un `ref` y no en el estado, mismo motivo que
  * `agregarFoto()` de Publicar: tiene que valer ANTES del primer `await`, sin
- * esperar a un re-render, o un doble tap abre el picker dos veces.
+ * esperar a un re-render, o un doble tap abre el picker dos veces. Se toma al
+ * abrir el picker y se suelta al terminar (cancelar, fallar o guardar).
  */
 export function useFotoPerfil({
   userId,
@@ -302,36 +335,112 @@ export function useFotoPerfil({
 }) {
   const [fotoUrl, setFotoUrl] = useState<string | null>(inicial);
   const [subiendo, setSubiendo] = useState(false);
+  const [hojaVisible, setHojaVisible] = useState(false);
+  const [editorUri, setEditorUri] = useState<string | null>(null);
   const enCurso = useRef(false);
 
-  const cambiar = useCallback(async () => {
+  const cambiar = useCallback(() => {
     if (enCurso.current) return;
-    enCurso.current = true;
-    setSubiendo(true);
+    setHojaVisible(true);
+  }, []);
 
-    try {
-      const { fotos, descartadas } = await elegirFotos(1, undefined, {
-        ladoMaximo: LADO_MAXIMO_AVATAR,
-      });
+  const cerrarHoja = useCallback(() => setHojaVisible(false), []);
 
-      // Sin fotos y sin descartadas = canceló, que no es un error.
-      if (fotos.length === 0) {
-        if (descartadas > 0) onAviso('Ese formato de imagen no es compatible', 'error');
-        return;
+  /**
+   * Abre el picker y devuelve la uri normalizada, o `null` si no hay foto
+   * (canceló, formato no soportado o falló, ya avisado). No toma el guard: lo
+   * hace quien la llama, porque "Elegir otra" la llama con el editor abierto.
+   */
+  const elegir = useCallback(
+    async (origen: 'galeria' | 'camara'): Promise<string | null> => {
+      try {
+        const { fotos, descartadas } = await elegirFotos(1, undefined, {
+          ladoMaximo: LADO_MAXIMO,
+          origen,
+        });
+        // Sin fotos y sin descartadas = canceló, que no es un error.
+        if (fotos.length === 0) {
+          if (descartadas > 0) onAviso('Ese formato de imagen no es compatible', 'error');
+          return null;
+        }
+        return fotos[0].uri;
+      } catch (e: any) {
+        console.warn('[foto-perfil] no se pudo abrir el picker:', e?.message ?? e);
+        const conocido =
+          e instanceof PermisoDenegadoError || e instanceof PermisoCamaraDenegadoError;
+        onAviso(
+          !conocido && origen === 'camara' ? 'No pudimos abrir la cámara' : avisoDe(e),
+          'error'
+        );
+        return null;
       }
+    },
+    [onAviso]
+  );
 
-      const anterior = fotoUrl;
-      const path = await guardarFotoPerfil(userId, fotos[0], anterior);
-      setFotoUrl(path);
-      await onGuardada?.();
-    } catch (e: any) {
-      console.warn('[foto-perfil] no se pudo actualizar:', e?.message ?? e);
-      onAviso(avisoDe(e), 'error');
-    } finally {
-      enCurso.current = false;
-      setSubiendo(false);
-    }
-  }, [fotoUrl, onAviso, onGuardada, userId]);
+  const abrir = useCallback(
+    async (origen: 'galeria' | 'camara') => {
+      if (enCurso.current) return;
+      enCurso.current = true;
+      const uri = await elegir(origen);
+      if (uri) {
+        setEditorUri(uri);
+      } else {
+        enCurso.current = false;
+      }
+    },
+    [elegir]
+  );
 
-  return { fotoUrl, subiendo, cambiar };
+  const elegirCamara = useCallback(() => void abrir('camara'), [abrir]);
+  const elegirGaleria = useCallback(() => void abrir('galeria'), [abrir]);
+
+  const cancelarEditor = useCallback(() => {
+    setEditorUri(null);
+    enCurso.current = false;
+  }, []);
+
+  // Con el editor abierto el guard ya está tomado; si cancela, se queda la foto
+  // que ya estaba en el editor.
+  const elegirOtra = useCallback(async () => {
+    const uri = await elegir('galeria');
+    if (uri) setEditorUri(uri);
+  }, [elegir]);
+
+  const usar = useCallback(
+    async (rect: Rect) => {
+      const uri = editorUri;
+      if (!uri) return;
+      // El editor se cierra primero: la espera se ve en el círculo de la
+      // pantalla (`subiendo`), igual que antes del editor.
+      setEditorUri(null);
+      setSubiendo(true);
+      try {
+        const recortada = await recortarAvatar(uri, rect);
+        const path = await guardarFotoPerfil(userId, recortada, fotoUrl);
+        setFotoUrl(path);
+        await onGuardada?.();
+      } catch (e: any) {
+        console.warn('[foto-perfil] no se pudo actualizar:', e?.message ?? e);
+        onAviso(avisoDe(e), 'error');
+      } finally {
+        enCurso.current = false;
+        setSubiendo(false);
+      }
+    },
+    [editorUri, fotoUrl, onAviso, onGuardada, userId]
+  );
+
+  const modales: ModalesFotoPerfilEstado = {
+    hojaVisible,
+    cerrarHoja,
+    elegirCamara,
+    elegirGaleria,
+    editorUri,
+    cancelarEditor,
+    elegirOtra: () => void elegirOtra(),
+    usar: (rect) => void usar(rect),
+  };
+
+  return { fotoUrl, subiendo, cambiar, modales };
 }

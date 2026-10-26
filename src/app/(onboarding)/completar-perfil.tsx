@@ -15,6 +15,7 @@ import { Avatar } from '@/components/Avatar';
 import { BlinkingDots } from '@/components/BlinkingDots';
 import { PrimaryButton } from '@/components/Buttons';
 import { CampusBottomSheet } from '@/components/CampusBottomSheet';
+import { ModalesFotoPerfil } from '@/components/EditorFotoPerfil';
 import { Field, FixedField, SelectField } from '@/components/Field';
 import { IconCamera, IconPlus } from '@/components/icons';
 import { Notice } from '@/components/Notice';
@@ -106,6 +107,7 @@ export default function CompletarPerfilScreen() {
     fotoUrl,
     subiendo: subiendoFoto,
     cambiar: cambiarFoto,
+    modales: modalesFoto,
   } = useFotoPerfil({
     // La ruta del objeto ES la llave de autorización, así que sin sesión no hay
     // carpeta válida a la que subir. En la práctica no se llega aquí sin ella
@@ -216,9 +218,10 @@ export default function CompletarPerfilScreen() {
           las 9 superficies donde cambia: aquí el nombre todavía se está
           escribiendo, así que abreviarlo daría "?" o media inicial.
 
-          La foto se guarda AL ELEGIRLA, no con el resto del formulario: la fila
-          de `users` ya existe (la creó `private.handle_new_user()` al verificarse
-          el correo), así que no hay nada que esperar. Ver `guardarFotoPerfil()`.
+          La foto se guarda AL CONFIRMAR EL RECORTE ("Usar foto"), no con el
+          resto del formulario: la fila de `users` ya existe (la creó
+          `private.handle_new_user()` al verificarse el correo), así que no hay
+          nada que esperar. Ver `guardarFotoPerfil()`.
         */}
         <Pressable
           style={[styles.photoCircle, fotoUrl ? styles.photoCircleConFoto : null]}
@@ -342,6 +345,7 @@ export default function CompletarPerfilScreen() {
         onSelect={setCampus}
         onClose={() => setCampusSheetVisible(false)}
       />
+      <ModalesFotoPerfil estado={modalesFoto} />
     </>
   );
 }

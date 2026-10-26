@@ -204,10 +204,10 @@ Tipografía — dos familias, uso deliberado y separado:
 Ya implementado en `src/constants/theme.ts`: `Colors` (Paleta 06 desde la fase 2 de DESIGN-1, con `mint900`…`mint50`, `danger`/`dangerBg`, `accent`, `surfaceMuted`, `backdrop` y `viewer`; el splash y el ícono NATIVOS de `app.json` todavía no cambian, porque exigen un build nativo), `Fonts`, `FontWeights`
 (400/500/600, todos sí se usan — no asumas que la UI evita el regular),
 `Radii` (8/12/14/16/20/9999, más el 10px de `.menu-icon`/`.status-row-icon`
-que quedó fuera del token original), `Typography` (49 roles por nombre
+que quedó fuera del token original), `Typography` (51 roles por nombre
 semántico — medido con `awk` sobre el objeto en `theme.ts`, no de memoria: si
 este número discrepa del archivo, gana el archivo, y ganó: decía "47" cuando
-el archivo ya tenía 48, antes de que `fieldError` lo llevara a 49 — cada uno citando la clase
+el archivo ya tenía 48, antes de que `fieldError` lo llevara a 49, y `sheetNote` y `cropHint` (DESIGN-1 fase 5) a 51 — cada uno citando la clase
 CSS exacta de origen — incluye `.avatar`/`.seller-avatar` en weight 600, ojo si
 agregas un rol parecido, es fácil confundirlo con 500), y `ScreenPadding = 20`.
 
@@ -3336,9 +3336,11 @@ ampliada)", "Perfil público (foto ampliada)", "Editar perfil (cambiar foto)" y
 "Editor de foto de perfil" (Cuenta). Las cuatro primeras (contraseña visible
 y los tres visores con zoom) ya están en la app desde la fase 3 de DESIGN-1;
 "Publicar (agregar fotos)", "Editar perfil (cambiar foto)" y "Editor de foto
-de perfil" **siguen sin estar en la app** (fase 5;
-`design/RLVO_FINAL_PREVIEW.md`). Este párrafo decía que ninguna de las siete
-estaba, y lo dejó viejo la fase 3. La categoría `Alimentos` ya es una fila de
+de perfil" **están en el código desde la fase 5** (`HojaOrigenFoto` y
+`EditorFotoPerfil`), **confirmadas por el usuario en iPhone y Android el
+2026-10-26** (`docs/design-1-fase5-plan.md`). Este párrafo decía que ninguna de las siete
+estaba, y lo dejó viejo la fase 3; después decía que esas tres faltaban, y lo
+dejó viejo la fase 5. La categoría `Alimentos` ya es una fila de
 `categories` desde `20261025000489` (fase 4). La
 cuenta anterior, tal como estaba:
 
@@ -3798,7 +3800,7 @@ en "Verificación (correo no participante)".
   quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son DIECISÉIS pasos, no uno (decía "QUINCE" antes de
+  `postgres`/superusuario. Son DIECISIETE pasos, no uno (decía "DIECISÉIS" antes de DESIGN-1 fase 5, "QUINCE" antes de
   UGC-1, "CATORCE" antes de la Ola 6 del panel, "TRECE" antes de la Ola 3b del panel, "DOCE" antes de la Ola 4, "ONCE" antes de la
   Ola 2 del panel, "DIEZ" antes del panel de admin, "NUEVE" antes de eliminar cuenta, y "SIETE" con ocho en la
   lista):
@@ -4030,9 +4032,17 @@ en "Verificación (correo no participante)".
      arrancar el estado bajo prueba (la policy, los privilegios y si la RPC mira
      el bloqueo). Limpia lo suyo: borra sus cuentas y el cascade se lleva
      publicaciones y bloqueos.
+  17. `node scripts/probe-recorte.mjs`: la geometría del "Editor de foto de
+     perfil" (DESIGN-1 fase 5, `src/lib/recorte.ts`), **17 pruebas**: la escala
+     base, los límites del paneo, el rectángulo que recibe
+     `ImageManipulator.crop()` (entero, cuadrado y dentro de la imagen en un
+     barrido) y que el centro del recorte sea el centro del círculo. Mismo
+     criterio que el paso 8: el módulo es puro (sin imports) y Node lo carga
+     directo, así que no necesita nada. Los gestos y el recorte real dependen
+     del módulo nativo y se verifican a mano en dispositivo.
   Los probes 2, 3, 6, 7, 9, 10, 11, 13, 14, 15 y 16 necesitan el stack local arriba y limpian lo suyo (el
   9, con un rollback); si una corrida muere de golpe, `supabase db reset` borra la basura.
-  Los pasos 4, 5, 8 y 12 no necesitan nada: ni stack, ni red, ni credenciales.
+  Los pasos 4, 5, 8, 12 y 17 no necesitan nada: ni stack, ni red, ni credenciales.
 
   **`scripts/probe-moderacion-red.mjs` NO es un séptimo paso rutinario** —
   cubre particionado real (>6 MB), descarga fallida de una foto suelta y el
@@ -5403,9 +5413,11 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `ConfirmModal` | `ConfirmModal` | "Confirmar eliminar" / "Confirmar cerrar sesión" / "Confirmar eliminar cuenta" / "Confirmar bloquear" / "Reporte enviado (¿bloquear?)". `children` es el único hueco (entre el cuerpo y los botones) y `confirmDisabled` apaga solo el confirm; sin hijos se ve igual que siempre. Desde UGC-1: `cancelLabel` (default "Cancelar"; "Ahora no" en "Reporte enviado") e `iconTone`: `'danger'` (default, destructiva: --danger-bg y botón --danger), `'forest'` (ícono de éxito de "Reporte enviado") y, desde la Paleta 06, `'neutral'` ("Confirmar cerrar sesión": círculo --mint-100 y botón en primario) |
 | `ConfirmarBloqueoModal` | `ConfirmarBloqueoModal` | "Confirmar bloquear": `ConfirmModal` tal cual, con el texto del bloqueo en UN solo sitio. La ÚNICA confirmación de bloqueo, abierta desde el "⋯" de Detalle, el de Perfil público y "Reporte enviado (¿bloquear?)". Con `confirming`, los dos botones apagados |
 | `EmptyState` | `EmptyState` | Estado vacío, con `.empty-actions` opcional |
+| `EditorFotoPerfil` | `EditorFotoPerfil`, `ModalesFotoPerfil` | "Editor de foto de perfil" (DESIGN-1 fase 5): `Modal` a pantalla completa con su propio `GestureHandlerRootView`, pellizco y arrastre (Reanimated, acotados en vivo con `src/lib/recorte.ts`), máscara circular y las tres vistas previas. Devuelve el `Rect` a recortar; no sube nada. `ModalesFotoPerfil` monta la hoja "Foto de perfil" y el editor a partir del `modales` de `useFotoPerfil()`, con el copy en un solo sitio para Completar perfil y Editar perfil |
 | `ErrorState` | `ErrorState` | Estado de fallo con "Reintentar" (label hardcodeado — ver deuda) |
 | `Field` | `Field`, `PhoneField`, `SelectField`, `FixedField` | Campos de formulario. **`PhoneField` vive aquí**, no en archivo propio. `FixedField` = valor que se muestra y no se elige (sin chevron, no es botón). `PhoneField` recibe `pais`/`onPaisPress`/`error` (el país es un botón). `Field` tiene `error` (`.field-error` + borde `--danger`), copy persistente: frame primero. Con `secureTextEntry`, `Field` pinta solo el ojo de mostrar/ocultar (`.pw-toggle`, DESIGN-1 fase 3) |
 | `HojaAccionesListing` | `HojaAccionesListing` | Hoja de acciones de una publicación (pausar/reactivar, editar, marcar vendida/cambiar comprador, eliminar). `Modal` de RN, no `SheetScreen` — mismo criterio que `CampusBottomSheet`. Calcula internamente `puedeAlternarPausa()`/`puedeEditarListing()`/`accionVenta()`; consumida por "Mis publicaciones" y por el kebab de Detalle (vista vendedor) |
+| `HojaOrigenFoto` | `HojaOrigenFoto`, `HojaAgregarFotos` | Las hojas "Tomar foto / Elegir de la galería" (DESIGN-1 fase 5). Abre el picker en `onDismiss` del `Modal` (iOS no presenta la cámara mientras el `Modal` se desmonta) con respaldo de 700 ms. `HojaAgregarFotos` es "Agregar fotos" de Publicar y Editar publicación, con el sub ("hasta N más" / "1 más") y la nota del frame |
 | `HojaOpciones` | `HojaOpciones`, `OpcionHoja` | La hoja del menú "⋯" de "Detalle (opciones)" y "Perfil público (opciones)": Reportar y Bloquear como dos filas separadas. Mismo cascarón que `HojaAccionesListing`/`HojaSoporte` sin ser ninguna: solo pinta las filas que le pasan (`danger`, `chevron`). `Modal` de RN; suma el inset inferior |
 | `HojaSoporte` | `HojaSoporte` | Hoja de "Ayuda y soporte" de Perfil (WhatsApp y Correo). `Modal` de RN con el cascarón de `HojaAccionesListing`, sin ser su consumidor. Encapsulada: recibe solo `visible`, `onCerrar` y `correoUsuario`. Hoy es el único componente de `src/components` que llama `useToast` |
 | `ListRow` | `FormHeader`, `SearchField`, `ListRow`, `RadioCircle` | Fila de lista, header de formulario y el radio que reusan 3 pantallas |
@@ -5430,7 +5442,7 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
 | `StarRating` | `StarRating` | Estrellas de Calificar |
 | `StatusRow` | `StatusRow` | La `.status-section` fuera de Editar publicación. `sub` opcional: segunda línea seleccionable, hermana del `Pressable` (la usa `HojaSoporte`); sin `sub`, render idéntico |
 | `Toast` | `ToastProvider`, `useToast` | Avisos efímeros; montado en el `_layout.tsx` raíz |
-| `icons/` | `index.tsx`, `categories.tsx` | Todos los íconos del set |
+| `icons/` | `index.tsx`, `categories.tsx` | Todos los íconos del set (desde la fase 5, también `IconTomarFoto` e `IconGaleria`) |
 
 ---
 

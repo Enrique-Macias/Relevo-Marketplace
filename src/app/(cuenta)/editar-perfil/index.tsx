@@ -27,6 +27,7 @@ import { Avatar } from '@/components/Avatar';
 import { BlinkingDots } from '@/components/BlinkingDots';
 import { CampusBottomSheet } from '@/components/CampusBottomSheet';
 import { ErrorState } from '@/components/ErrorState';
+import { ModalesFotoPerfil } from '@/components/EditorFotoPerfil';
 import { Field, FixedField, PhoneField, SelectField } from '@/components/Field';
 import { PaisBottomSheet } from '@/components/PaisBottomSheet';
 import { IconCamera } from '@/components/icons';
@@ -167,6 +168,7 @@ function Formulario({
     fotoUrl,
     subiendo: subiendoFoto,
     cambiar: cambiarFoto,
+    modales: modalesFoto,
   } = useFotoPerfil({
     userId,
     inicial: perfil.fotoUrl,
@@ -297,7 +299,8 @@ function Formulario({
 
             YA NO ES INERTE (RF-03). Era un `View` sin `accessibilityRole`
             mientras no hacía nada —el criterio del tile de espera de
-            `PhotoRow`—; ahora abre el carrete, así que es un `Pressable` que SÍ
+            `PhotoRow`—; ahora abre la hoja "Foto de perfil" (cámara o galería,
+            y después el editor de recorte), así que es un `Pressable` que SÍ
             se anuncia como botón. El bucket propio que le faltaba es `avatars`
             (migración `20260916000456`): `listing-photos` no se podía prestar
             porque autoriza por carpeta `{listing_id}/` y un avatar no tiene
@@ -416,6 +419,7 @@ function Formulario({
         }}
         onClose={() => setPaisSheetVisible(false)}
       />
+      <ModalesFotoPerfil estado={modalesFoto} />
     </>
   );
 }

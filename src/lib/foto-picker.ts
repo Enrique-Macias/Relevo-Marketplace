@@ -1,5 +1,5 @@
 /**
- * Selección de fotos del carrete (RF-05), y su normalización.
+ * Selección de fotos del carrete o de la cámara (RF-05), y su normalización.
  *
  * Vive aparte de `storage.ts` a propósito: elegir una foto y subirla son dos
  * momentos distintos del flujo —y en Publicar están separados por la creación
@@ -16,12 +16,21 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 
 import type { FotoElegida, FotoProcesando } from '@/components/PhotoRow';
+import type { Rect } from '@/lib/recorte';
 import { formatoSoportado } from '@/lib/storage';
 
 export class PermisoDenegadoError extends Error {
   constructor() {
     super('Sin permiso para leer el carrete');
     this.name = 'PermisoDenegadoError';
+  }
+}
+
+/** Hermano de `PermisoDenegadoError` para la cámara: el toast dice otra cosa. */
+export class PermisoCamaraDenegadoError extends Error {
+  constructor() {
+    super('Sin permiso para usar la cámara');
+    this.name = 'PermisoCamaraDenegadoError';
   }
 }
 
@@ -67,7 +76,7 @@ const MODO_REPRESENTACION = ImagePicker.UIImagePickerPreferredAssetRepresentatio
  * más grande que la app llega a pintar es el hero de Detalle a ancho completo:
  * 1125 px en un dispositivo 3x. 1600 deja margen sin ser gratis.
  */
-const LADO_MAXIMO = 1600;
+export const LADO_MAXIMO = 1600;
 
 /**
  * Lo mismo para la foto de PERFIL, y es mucho más chico por una razón medible.
@@ -200,7 +209,41 @@ export type ElegirFotosCallbacks = {
 export type ElegirFotosOpciones = {
   /** Lado mayor de salida. Default `LADO_MAXIMO`; el avatar pasa el suyo. */
   ladoMaximo?: number;
+  /**
+   * De dónde sale la foto (DESIGN-1 fase 5, hojas "Agregar fotos" y "Foto de
+   * perfil"). Default `'galeria'`, el comportamiento de siempre. La cámara
+   * toma UNA foto, y su resultado pasa por el mismo filtro de formato, los
+   * mismos callbacks y la misma `normalizar()`: quien llama no distingue el
+   * origen.
+   */
+  origen?: 'galeria' | 'camara';
 };
+
+async function abrirGaleria(disponibles: number) {
+  const permiso = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permiso.granted) throw new PermisoDenegadoError();
+
+  return ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsMultipleSelection: disponibles > 1,
+    selectionLimit: disponibles,
+    quality: 1,
+    preferredAssetRepresentationMode: MODO_REPRESENTACION,
+  });
+}
+
+/**
+ * Una sola foto de la cámara. `quality: 1` por el mismo motivo que la galería:
+ * la única compresión es la de `normalizar()`. `preferredAssetRepresentationMode`
+ * no aplica: la cámara de iOS entrega JPEG por este camino, y el filtro de
+ * formato de `elegirFotos()` sigue siendo la red si algún día no lo hiciera.
+ */
+async function abrirCamara() {
+  const permiso = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permiso.granted) throw new PermisoCamaraDenegadoError();
+
+  return ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });
+}
 
 export async function elegirFotos(
   disponibles: number,
@@ -208,17 +251,8 @@ export async function elegirFotos(
   opciones?: ElegirFotosOpciones
 ): Promise<Seleccion> {
   const ladoMaximo = opciones?.ladoMaximo ?? LADO_MAXIMO;
-
-  const permiso = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permiso.granted) throw new PermisoDenegadoError();
-
-  const resultado = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images'],
-    allowsMultipleSelection: disponibles > 1,
-    selectionLimit: disponibles,
-    quality: 1,
-    preferredAssetRepresentationMode: MODO_REPRESENTACION,
-  });
+  const resultado =
+    opciones?.origen === 'camara' ? await abrirCamara() : await abrirGaleria(disponibles);
 
   if (resultado.canceled) return { fotos: [], descartadas: 0 };
 
@@ -253,4 +287,36 @@ export async function elegirFotos(
   }
 
   return { fotos, descartadas: elegidas.length - soportadas.length };
+}
+
+/**
+ * El recorte del "Editor de foto de perfil" (DESIGN-1 fase 5): el cuadrado que
+ * circunscribe al círculo, encogido a `LADO_MAXIMO_AVATAR` si es más grande, en
+ * JPEG. `rect` sale de `rectRecorte()` (`src/lib/recorte.ts`), en píxeles de la
+ * foto que el editor tuvo a la vista, que es la que dejó `normalizar()`.
+ *
+ * A diferencia de `normalizar()`, un fallo AQUÍ se propaga: caer a la URI
+ * original subiría la foto sin recortar, o sea otra cosa que la que el usuario
+ * confirmó. Quien llama lo traduce al aviso genérico.
+ *
+ * No se agranda: un recorte de menos de 512 px (zoom 4 sobre una foto chica)
+ * sube con su tamaño.
+ */
+export async function recortarAvatar(uri: string, rect: Rect): Promise<FotoElegida> {
+  let contexto: ImageManipulatorContext | null = null;
+  let render: ImageRef | null = null;
+
+  try {
+    contexto = ImageManipulator.manipulate(uri);
+    contexto.crop(rect);
+    if (rect.width > LADO_MAXIMO_AVATAR) {
+      contexto.resize({ width: LADO_MAXIMO_AVATAR, height: LADO_MAXIMO_AVATAR });
+    }
+    render = await contexto.renderAsync();
+    const salida = await render.saveAsync({ format: SaveFormat.JPEG, compress: CALIDAD_JPEG });
+    return { origen: 'local', uri: salida.uri, mimeType: 'image/jpeg' };
+  } finally {
+    render?.release();
+    contexto?.release();
+  }
 }

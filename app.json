@@ -52,7 +52,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Relevo usa tus fotos para que puedas ilustrar las publicaciones que pones en venta."
+          "photosPermission": "Relevo usa tus fotos para que puedas ilustrar las publicaciones que pones en venta.",
+          "cameraPermission": "RLVO usa tu cámara para que tomes fotos de lo que vendes y de tu perfil.",
+          "microphonePermission": false
         }
       ],
       [

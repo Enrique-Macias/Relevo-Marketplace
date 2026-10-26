@@ -784,6 +784,20 @@ Lo que no se ve en el diff:
   que el aviso sale por un callback `onAviso` y la pantalla decide con qué lo
   muestra. El hook es compartido porque el flujo y los cuatro textos de error son
   idénticos en las dos pantallas.
+- **Desde DESIGN-1 fase 5 el flujo es hoja → editor → subida** (decisión D1:
+  también en Completar perfil). `cambiar()` abre la hoja "Foto de perfil"
+  (Tomar foto / Elegir de la galería); la foto elegida se normaliza a 1600 px
+  (no a 512) para que un recorte con zoom siga nítido, y se abre
+  `EditorFotoPerfil`. **Nada se sube hasta "Usar foto"**: entonces el editor se
+  cierra, el círculo de la pantalla pasa a `subiendo` y corre
+  `recortarAvatar()` (recorte al `Rect` del editor, tope de 512 y JPEG) →
+  `guardarFotoPerfil()`. Cancelar el editor no deja nada en Storage. "Elegir
+  otra" reabre la galería y, si se cancela, conserva la foto que ya estaba en
+  el editor. Como el hook no puede importar componentes, devuelve un objeto
+  `modales` y la pantalla monta `<ModalesFotoPerfil estado={modales} />`, que
+  tiene el copy en un solo sitio. La geometría del recorte es pura
+  (`src/lib/recorte.ts`) y la prueba `scripts/probe-recorte.mjs`. Los gestos,
+  el permiso de cámara y el recorte real se prueban a mano en dispositivo.
 - **En "Completar perfil" el aviso va por TOAST y no por el `<Text style={error}>`
   que esa pantalla ya tiene.** Aquél es copy persistente —el usuario lo lee con
   calma— y estrenar texto ahí exigiría un frame (§0 regla 4); un toast es la

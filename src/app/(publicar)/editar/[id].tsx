@@ -23,6 +23,7 @@ import {
   IconXCircle,
 } from '@/components/icons';
 import { ListingFormFields } from '@/components/ListingFormFields';
+import { HojaAgregarFotos } from '@/components/HojaOrigenFoto';
 import { FormHeader } from '@/components/ListRow';
 import { idFoto, type FotoEnEdicion } from '@/components/PhotoRow';
 import { Screen } from '@/components/Screen';
@@ -34,7 +35,11 @@ import { Colors, Radii, ScreenPadding } from '@/constants/theme';
 import { accionVenta, LABEL_ACCION_VENTA, useVenta } from '@/lib/confianza';
 import { esCategoriaInactiva } from '@/lib/categorias';
 import { useExplorarState } from '@/lib/explorar-state';
-import { elegirFotos, PermisoDenegadoError } from '@/lib/foto-picker';
+import {
+  elegirFotos,
+  PermisoCamaraDenegadoError,
+  PermisoDenegadoError,
+} from '@/lib/foto-picker';
 import { useListingForm } from '@/lib/listing-form';
 import {
   eliminarPublicacion,
@@ -276,7 +281,16 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
    */
   const [eligiendoFotos, setEligiendoFotos] = useState(false);
 
-  async function agregarFoto() {
+  /** La hoja "Agregar fotos" (Tomar foto / Elegir de la galería). */
+  const [hojaFotosVisible, setHojaFotosVisible] = useState(false);
+
+  function abrirHojaFotos() {
+    if (procesandoRef.current) return;
+    if (MAX_FOTOS - form.fotos.length <= 0) return;
+    setHojaFotosVisible(true);
+  }
+
+  async function agregarFoto(origen: 'galeria' | 'camara') {
     if (procesandoRef.current) return;
     const disponibles = MAX_FOTOS - form.fotos.length;
     if (disponibles <= 0) return;
@@ -284,10 +298,14 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
     procesandoRef.current = true;
     setEligiendoFotos(true);
     try {
-      const { descartadas } = await elegirFotos(disponibles, {
-        onPlaceholders: form.agregarPlaceholders,
-        onFotoLista: form.reemplazarPlaceholder,
-      });
+      const { descartadas } = await elegirFotos(
+        disponibles,
+        {
+          onPlaceholders: form.agregarPlaceholders,
+          onFotoLista: form.reemplazarPlaceholder,
+        },
+        { origen }
+      );
       if (descartadas > 0) {
         mostrar(
           descartadas === 1
@@ -299,6 +317,15 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
     } catch (e) {
       if (e instanceof PermisoDenegadoError) {
         mostrar('Necesitamos acceso a tus fotos para agregarlas', 'error');
+        return;
+      }
+      if (e instanceof PermisoCamaraDenegadoError) {
+        mostrar('Necesitamos acceso a tu cámara para tomar la foto', 'error');
+        return;
+      }
+      if (origen === 'camara') {
+        console.warn('[editar] no se pudo abrir la cámara:', e);
+        mostrar('No pudimos abrir la cámara', 'error');
         return;
       }
       console.warn('[editar] no se pudo abrir el carrete:', e);
@@ -550,7 +577,7 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
           categorias={categorias}
           zonaEntrega={campusNombre}
           zonaEntregaFija
-          onAgregarFoto={agregarFoto}
+          onAgregarFoto={abrirHojaFotos}
           disabled={ocupado}
           eligiendoFotos={eligiendoFotos}
         />
@@ -603,6 +630,15 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
           />
         </View>
       </Screen>
+
+      <HojaAgregarFotos
+        visible={hojaFotosVisible}
+        llevas={form.fotos.length}
+        max={MAX_FOTOS}
+        onCamara={() => agregarFoto('camara')}
+        onGaleria={() => agregarFoto('galeria')}
+        onCerrar={() => setHojaFotosVisible(false)}
+      />
 
       <ConfirmModal
         visible={confirmandoBorrado}

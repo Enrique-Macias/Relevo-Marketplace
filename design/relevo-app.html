@@ -3694,6 +3694,17 @@
           </div>
           <div class="sheet-note">Llevas 1 de 5 fotos. JPG o PNG; las convertimos antes de subirlas.</div>
           <div style="padding:6px 20px 22px;"><div class="ghost-btn sheet-cancel" style="display:block;">Cancelar</div></div>
+          <!-- Fase 5 de DESIGN-1 (D2): el texto sale del estado real. "Puedes
+               elegir hasta N más" con N = 5 − fotos actuales, en singular
+               cuando queda un solo lugar. Con 5 fotos no se abre la hoja: el
+               botón "Agregar" ya no existe (tope de 5, PhotoRow). -->
+          <div style="margin:0 20px 22px; padding-top:12px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px;">
+              Variante (doc, no es parte del flujo): queda 1 lugar
+            </div>
+            <div class="status-row-sub" style="padding-left:0;">Puedes elegir 1 más</div>
+            <div class="sheet-note" style="padding:6px 0 0;">Llevas 4 de 5 fotos. JPG o PNG; las convertimos antes de subirlas.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -7656,8 +7667,15 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" stroke-width="2.2"><path d="M9 6l6 6-6 6"/></svg>
             </div>
           </div>
-          
           <div style="padding:6px 20px 22px;"><div class="ghost-btn sheet-cancel" style="display:block;">Cancelar</div></div>
+          <!-- Fase 5 de DESIGN-1 (D1): esta MISMA hoja, y después el "Editor de
+               foto de perfil", se abren también desde la foto de "Completar
+               perfil" (el alta). Es el mismo flujo, no un frame aparte. -->
+          <div style="margin:0 20px 22px; padding-top:12px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em;">
+              Variante (doc, no es parte del flujo): también en Completar perfil
+            </div>
+          </div>
         </div>
       </div>
     </div>
