@@ -201,7 +201,7 @@ Tipografía — dos familias, uso deliberado y separado:
 - **Fraunces** (serif, display) — wordmark, precios, headlines de onboarding/auth.
 - **Inter** (sans) — todo el resto: UI, cuerpo, títulos de sección.
 
-Ya implementado en `src/constants/theme.ts`: `Colors` (Paleta 06 desde la fase 2 de DESIGN-1, con `mint900`…`mint50`, `danger`/`dangerBg`, `accent`, `surfaceMuted`, `backdrop` y `viewer`; el splash y el ícono NATIVOS de `app.json` todavía no cambian, porque exigen un build nativo), `Fonts`, `FontWeights`
+Ya implementado en `src/constants/theme.ts`: `Colors` (Paleta 06 desde la fase 2 de DESIGN-1, con `mint900`…`mint50`, `danger`/`dangerBg`, `accent`, `surfaceMuted`, `backdrop` y `viewer`; desde el 2026-10-26 también lo nativo de `app.json`, visible con el siguiente build nativo: el ícono de la app, verde sobre menta; el splash NATIVO, el isotipo menta sobre `#183D39` (antes el azul y la imagen de la plantilla de Expo), y la notificación de Android: color `#23635C` (antes el ladrillo `#C1440E`) e ícono chico propio, el símbolo blanco (antes ninguno: el ícono opaco de la app); los PNG los genera `scripts/generate-app-icons.mjs`), `Fonts`, `FontWeights`
 (400/500/600, todos sí se usan — no asumas que la UI evita el regular),
 `Radii` (8/12/14/16/20/9999, más el 10px de `.menu-icon`/`.status-row-icon`
 que quedó fuera del token original), `Typography` (51 roles por nombre
