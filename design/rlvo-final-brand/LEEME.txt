@@ -2,7 +2,10 @@ RLVO | Copias recoloreadas del kit oficial para la Paleta 06 (DESIGN-1)
 
 Aprobadas el 2026-10-25. Las generó design/scripts/build-final-preview.mjs
 (retirado; sigue en el commit 05264fe) a partir de assets/brand/. Solo cambia
-el color de relleno/trazo; la geometría es la del kit oficial. Los SVG
+el color de relleno/trazo; la geometría es la del kit oficial,
+salvo el espaciado de "RLVO" en los dos logos con palabra, que desde el
+2026-10-26 va 100 unidades de fuente más junto por par de letras (el mismo
+de assets/brand-paleta-06/). Los SVG
 oficiales de assets/brand/ NO se modificaron.
 
 rlvo-logo-horizontal-verde-oscuro.svg  <- 07_logo_horizontal_grafito_transparente.svg  (#191A23 -> #183D39)

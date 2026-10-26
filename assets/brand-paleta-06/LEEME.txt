@@ -1,7 +1,10 @@
 RLVO | Kit vectorial en Paleta 06 (verde + menta)
 Copia de los 18 SVG de assets/brand/, generada el 2026-10-26.
-Solo se cambió el color; la geometría y el lema son los del kit original
-(comprobado: los archivos son idénticos al sustituir los hex).
+Cambian el color y, desde el 2026-10-26, el espaciado de "RLVO": cada par de
+letras va 100 unidades de fuente más junto (variante A, elegida por el
+usuario). En los horizontales la R no se mueve, y el lema sigue alineado con
+ella. En los verticales la palabra se recentra. Las letras, el isotipo y el
+lema son los del kit original.
 Los originales de assets/brand/ NO se modificaron.
 
 Correspondencia de colores (y de nombres de archivo):
