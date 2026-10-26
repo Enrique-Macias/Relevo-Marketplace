@@ -16,7 +16,7 @@ la sesión toca `admin/`.
    frames. Solo se reusan los TOKENS de color y
    tipografía de §2 raíz (`src/estilos.css`); nada de tamaños ni componentes
    de teléfono.
-   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 37 frames (medido el 2026-10-11; 35 hasta la Ola 5, 24 hasta la Ola 3; la Ola 4 sumó tres de Moderación y el detalle "en revisión (aprobar)", aprobados por el usuario el 2026-10-07; la Ola 3b reemplazó "Usuario — cuenta de admin" por su versión con «Restablecer app autenticadora» y sumó el modal, aprobados el 2026-10-08; la Ola 5 sumó seis de Catálogo y el ítem «Catálogo» en la barra lateral de todos, aprobados el 2026-10-08; la Ola 6 sumó dos de Métricas, la auditoría en «Universidad — detalle», la variante de auditoría vacía en «Reporte resuelto» y el ítem «Métricas» en la barra lateral de todos, aprobados en F3, `ed00c7a`) medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
+   **Vigente desde la Ola 2 (frames aprobados por el usuario el 2026-10-01):** `design/admin-panel.html`, 41 frames (medido el 2026-10-26; 37 hasta la fase 4 de DESIGN-1, que sumó los cuatro de Categorías y el ítem «Categorías» en la barra lateral de todos, aprobados por el usuario el 2026-10-25; 35 hasta la Ola 5, 24 hasta la Ola 3; la Ola 4 sumó tres de Moderación y el detalle "en revisión (aprobar)", aprobados por el usuario el 2026-10-07; la Ola 3b reemplazó "Usuario — cuenta de admin" por su versión con «Restablecer app autenticadora» y sumó el modal, aprobados el 2026-10-08; la Ola 5 sumó seis de Catálogo y el ítem «Catálogo» en la barra lateral de todos, aprobados el 2026-10-08; la Ola 6 sumó dos de Métricas, la auditoría en «Universidad — detalle», la variante de auditoría vacía en «Reporte resuelto» y el ítem «Métricas» en la barra lateral de todos, aprobados en F3, `ed00c7a`) medidos con `grep -o 'class="desk-block" data-cat="[^"]*"' design/admin-panel.html | sort | uniq -c`. Toda pantalla del panel lo calca antes de conectarse a datos; una pantalla o un estado que no esté ahí se dibuja ahí primero.
 2. **Autorización, siempre en la base** (§0 regla 7 raíz, esta sí aplica).
    Toda acción es una RPC `security definer` de `admin.*` cuya primera línea es
    `perform private.exigir_admin();`, y toda escritura se audita en
@@ -197,6 +197,29 @@ E6 de la Ola 3 y el caso 3 de `probe-admin`).
   `ErrorCarga`.
 - **Solo lectura:** ninguna de las tres RPC audita ni escribe.
 
+## Categorías (DESIGN-1 fase 4, `20261025000489`): en STAGING desde el 2026-10-26
+
+Plan y decisiones D1-D4 en `docs/design-1-fase4-plan.md`; esquema en
+`CLAUDE.md` §3, "Categorías administrables".
+
+- **Pantallas:** `pantallas/Categorias.tsx` (lista con su posición, «En el
+  inicio» para las 7 primeras activas, conteos y estado; el modo «Reordenar»
+  mueve un BORRADOR local con flechas y «Guardar orden» manda el orden
+  completo, con motivo, en una sola RPC) y los modales `ModalCategoria`
+  (agregar o editar, con el ícono elegido de los 13 de
+  `componentes/IconosCategoria.tsx`) y `ModalEstadoCategoria` (desactivar o
+  reactivar).
+- **`IconosCategoria.tsx` copia los paths de la app**
+  (`src/components/icons/categories.tsx`), en elementos DOM. Las dos copias y
+  el CHECK `categories_icono_check` se cambian juntos: un ícono nuevo exige
+  código en las dos y una migración.
+- **Ninguna regla vive en el panel:** normalización y unicidad del nombre, la
+  lista de íconos, el lugar de una categoría nueva (antes de «Otros»), el CAS
+  de desactivar/reactivar y `orden_desactualizado`/`sin_cambios` son de la
+  base. El panel pinta el rechazo con `textoDeRechazo(…, 'categoria')`.
+- **No hay borrado (D1):** desactivar solo impide ELEGIRLA en la app (trigger
+  `categoria_inactiva`); las publicaciones y los intereses la conservan.
+
 ## Moderación y aprobar (Ola 4, en producción desde el 2026-10-08)
 
 - **Moderación** (`pantallas/Moderacion.tsx`) pinta `admin.cola_moderacion`:
@@ -317,8 +340,10 @@ la secret key temporal y la contraseña de la base; ver la cabecera del script).
 ## Producción (Ola 3)
 
 *Estado a 2026-10-05, salvo el deployment vigente; si algo de esto cambia, se
-cambia aquí.* Deployment de Production vigente a 2026-10-11 (confirmado con
-`wrangler pages deployment list` en F27 de la Ola 6):
+cambia aquí.* Deployment de Production vigente a 2026-10-26 (confirmado con
+`wrangler pages deployment list`): `cea07690-db65-4ea3-a922-fc0b0f7990a7`
+(fuente `078c401`, DESIGN-1 fase 4, categorías; `index-qvyqgr5g.js`, SHA-256
+`6f895166…`; `_headers` sin cambios). El anterior era
 `2b1016db-ef9d-4d5e-8e12-9ededb5204d6` (fuente `83af816`, Ola 6;
 `index-C8GP050S.js`, SHA-256 `d8d76d22…`; `_headers` sin cambios, `80c9304e…`),
 desplegado con `npx wrangler pages deploy admin/dist --project-name rlvo-admin
@@ -392,8 +417,8 @@ responde 503. En remoto, el Dashboard se toca después del push de
 
 - `npm run check:admin` desde la raíz (typecheck + lint del panel). El
   `tsconfig.json` raíz excluye `admin/`: sin este comando, nadie lo mira.
-- `node scripts/probe-admin.mjs` (stack local + Mailpit): 105 pruebas desde la
-  Ola 6 (94 a 2026-10-09, 84 a 2026-10-08), con el camino `--remoto`, los correos externos de
+- `node scripts/probe-admin.mjs` (stack local + Mailpit): 118 pruebas desde la
+  fase 4 de DESIGN-1 (caso 12, categorías; 105 desde la Ola 6, 94 a 2026-10-09, 84 a 2026-10-08), con el camino `--remoto`, los correos externos de
   `crear-admin.mjs`, el amarre del TTL del reclamo (7d), desde la Ola 5 el
   catálogo por HTTP (caso 10, con la carrera de `agregar_dominio` hecha
   determinista) y desde la Ola 6 las métricas y la auditoría (caso 11).
@@ -407,7 +432,8 @@ responde 503. En remoto, el Dashboard se toca después del push de
 - `supabase/tests/rls.sql`: T12, T35 y, desde la Ola 4, T35b, T35c (Ola 4),
   T35d y T35e; desde la Ola 3b, T35f (28); desde la Ola 5, T37 (77) y T28 (a3)
   con un dominio inactivo; desde la Ola 6, T38 (36) y T39 (11), más 4 en T12
-  (657 en total, medido el 2026-10-11).
+  (657 en total, medido el 2026-10-11); desde la fase 4 de DESIGN-1, T41 (21;
+  736 en total, medido el 2026-10-26).
 - Tipos: `npm run gen:types` (desde `admin/`) regenera `src/db/admin.types.ts`
   contra el stack **local** y es el default a propósito: las RPC nuevas se
   prueban en local antes del push. `--linked` produce el mismo contenido con

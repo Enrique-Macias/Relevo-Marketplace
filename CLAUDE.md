@@ -242,10 +242,10 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 52 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-10-15; la 51 es `…487` y la 52 es
-`…488`, las dos de UGC-1 y las dos también en remoto desde el 2026-10-15 y el
-2026-10-16; decía "50", "48", "46", "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 21 tablas más
+Definido en 53 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-10-26; la 53 es `20261025000489`,
+categorías administrables de DESIGN-1 fase 4, en remoto desde el 2026-10-26;
+la 51 y la 52 son `…487` y `…488`, de UGC-1; decía "52", "50", "48", "46", "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 21 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
 
@@ -274,6 +274,13 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 53 y 53 (medido el 2026-10-26) — a la par.**
+`ls supabase/migrations | wc -l` da **53** y `supabase_migrations.schema_migrations`
+en remoto (STAGING) también, con `20261025000489` como última. La aplicó el
+usuario el 2026-10-26 con `supabase db push --linked --skip-vault`, precedido
+de un dry-run que proponía solo esa migración (evidencia en §8, "Hecho"). La
+historia de antes, tal como estaba:
 
 **Repo y remoto: 52 y 52 (medido el 2026-10-16) — a la par.** `ls
 supabase/migrations | wc -l` da **52**; `supabase_migrations.schema_migrations`
@@ -485,7 +492,11 @@ universidades   (id, nombre único)
 campus          (id, universidad_id → universidades, nombre, ciudad,
                  latitud/longitud double precision NULLABLES, único por
                  (universidad_id, nombre))
-categories      (id, nombre único) — 12 filas sembradas, ver seed.sql
+categories      (id, nombre único, orden int único DIFERIBLE > 0, icono text con
+                 CHECK de 13 llaves, activa boolean default true) — 13 filas
+                 sembradas (con Alimentos, antes de Otros), ver seed.sql. Desde
+                 `20261025000489` las ADMINISTRA el panel; el cliente solo lee.
+                 Ver "Categorías administrables", abajo.
 universidad_dominios (dominio text PK, universidad_id → universidades on delete
                  cascade, created_at, activo boolean not null default true
                  desde `…484`, en producción desde el 2026-10-09) — con qué
@@ -1357,8 +1368,12 @@ UGC-1, medido en local el 2026-10-15. **`private.bloqueo_entre()` (`…487`) va
 aparte y con EXECUTE revocado para el cliente**: no la usa ninguna policy, solo
 cuerpos definer (los 4 productores de avisos y, desde `…488`,
 `increment_listing_view`), que la ejecutan como su dueño; abierta, sería un
-oráculo de bloqueos entre terceros (T40 (t2)). Mientras tanto, las **22** que solo
-disparan por trigger siguen revocadas (decía "las otras cinco", un número de la
+oráculo de bloqueos entre terceros (T40 (t2)). Mientras tanto, las **23** que solo
+disparan por trigger siguen revocadas (medido en local el 2026-10-26: **27**
+funciones de `private` cuelgan de un trigger, 23 sin EXECUTE para
+`authenticated` y las mismas 4 INVOKER con él; la nueva es
+`exige_categoria_activa()`, de `20261025000489`. Decía 22, y antes "las otras
+cinco", un número de la
 Fase 2 que nadie actualizó, y después 12, 16, 18, 19 y 20; medido con `pg_trigger` ⋈ `pg_proc`
 en local el 2026-10-08: **26** funciones de `private` cuelgan de un trigger, 22
 sin EXECUTE para `authenticated` y 4 con él; las dos nuevas son
@@ -1826,6 +1841,10 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   se leyó en remoto en F18 y que los tipos `--linked` de `83af816` listan, 21 →
   24): `metricas`, `metricas_resumen` (Ola 6, `…485`) y `auditoria` (`…486`),
   las tres de SOLO LECTURA, así que no auditan y el CHECK de acciones sigue en 16.
+  **Desde `20261025000489` son 30** (medido en `pg_proc` de remoto el
+  2026-10-26), con las 6 de categorías: `categorias`, `crear_categoria`,
+  `editar_categoria`, `desactivar_categoria`, `reactivar_categoria` y
+  `reordenar_categorias`.
 - **Reportes y bloqueo (`20260930000479`, Ola 2).** `listar_reportes` usa solo
   left joins y nunca esconde un reporte: los 4 `objetivo_tipo`
   (`publicacion`, `usuario`, `publicacion_eliminada`, `cuenta_eliminada`).
@@ -1849,7 +1868,10 @@ del código del panel, en `admin/CLAUDE.md`. Lo que vive en la base:
   `restablecer_mfa` y `factores_mfa_borrados`. **Desde `…484` son 16**
   (medido en remoto el 2026-10-09): las 7 de escritura del catálogo, cada una con
   el nombre de su RPC. **La Ola 6 no lo cambia** (`…485`/`…486` solo leen;
-  md5 de CHECKs en remoto igual antes y después, F13 = F18).
+  md5 de CHECKs en remoto igual antes y después, F13 = F18). **Desde
+  `20261025000489` son 21** (medido en remoto el 2026-10-26), con las 5 de
+  escritura de categorías, y `objetivo_tipo` suma `'categoria'` (claves
+  `nombre`, `icono`, `orden` y `activa`).
 - **Métricas y auditoría (`20261009000485` + `…486`, Ola 6): en producción
   desde el 2026-10-10; RF-17 Ola 6 — CERRADA el 2026-10-11.** El esquema, en
   el bloque "Actividad diaria y métricas", más abajo; la evidencia, en §8,
@@ -2085,6 +2107,47 @@ producción, en §8, "Hecho". Lo que vive en la base:
   `ACCOUNT_DELETION.md` y `LEGAL_LAUNCH_CHECKLIST.md`. El aviso de privacidad
   PUBLICADO (fuera de este repo) sigue sin actualizarse: pendiente 0i.
 
+**Categorías administrables (`20261025000489`, DESIGN-1 fase 4; en STAGING
+desde el 2026-10-26).** Plan y decisiones D1-D4 en
+`docs/design-1-fase4-plan.md`. Lo que vive en la base:
+
+- **Columnas nuevas de `categories`:** `orden` (único, `deferrable initially
+  deferred` para poder intercambiar posiciones en una transacción, y `> 0`),
+  `icono` (CHECK con las 13 llaves de `PATHS` en
+  `src/components/icons/categories.tsx`: un ícono nuevo exige código, una
+  versión de la app y una migración, D2) y `activa`. Más un CHECK de forma del
+  nombre (normalizado, 2-50) y un índice único sobre `lower(nombre)`. **Sin
+  grants nuevos**: el `grant select` de TABLA de `categories` cubre las
+  columnas nuevas, y `authenticated` no escribe nada (medido en remoto).
+- **Borrar = desactivar (D1).** No hay borrado. `private.exige_categoria_activa()`
+  (trigger, EXECUTE revocado) lanza **`55000 categoria_inactiva`** al elegir
+  una categoría desactivada: al crear una publicación, al CAMBIARLE la
+  categoría (`before update of categoria_id … when (old is distinct from
+  new)`) y al agregar un interés. Aplica a todos los roles, también Studio.
+  Lo ya elegido se conserva: una publicación sigue editándose con su categoría
+  inactiva, y los intereses no se pierden.
+- **Seis RPC en `admin.*`** (plantilla de la Ola 5: definer, `search_path =
+  ''`, `exigir_admin()` primero, motivo 3-500 y auditoría en la misma
+  transacción): `categorias()` (lista con conteos de publicaciones e
+  intereses), `crear_categoria` (entra al final, o justo antes de la última si
+  su ícono es `otros`), `editar_categoria` (nombre e ícono, con `sin_cambios`),
+  `desactivar_categoria`/`reactivar_categoria` (CAS sobre `activa`) y
+  `reordenar_categorias(p_ids)` (el orden COMPLETO en una llamada, D3; deja
+  `orden` en 1..n, `orden_desactualizado` si el conjunto no es el vigente y
+  `sin_cambios` si el orden es el mismo; audita cada categoría que cambió de
+  número). Las escrituras que tocan `orden` toman `for update` de todas las
+  filas, sin advisory lock.
+- **La app** (`src/lib/categorias.ts`, `src/lib/explorar-state.tsx`) ordena por
+  `orden` y oculta las inactivas en los selectores; Editar publicación agrega
+  la propia si está inactiva. El cliente no decide nada: el candado es el
+  trigger, y `esCategoriaInactiva()` solo elige el texto del toast. El tinte
+  de cada categoría sale de su posición en la lista completa.
+- **Un build ya instalado** (anterior a la fase 4) ordena por `id` y no oculta
+  las inactivas: elegir una le da el error genérico, porque el trigger la
+  rechaza igual. Aceptado (índice de deuda, §8).
+- **Pruebas:** T41 de `rls.sql` (21 aserciones, 24 controles) y el caso 12 de
+  `probe-admin.mjs` (13 pruebas, 2 controles).
+
 **Bloqueo entre usuarios (UGC-1, PL-006: `20261013000487` +
 `20261015000488`; en STAGING desde el 2026-10-15/16).** Si A bloquea a B, se
 corta el descubrimiento y el contacto entre los dos en AMBAS direcciones, pero
@@ -2169,8 +2232,8 @@ Cada pieza, con su porqué:
   (bloquear/desbloquear, los dos estados de Perfil público, "Usuarios
   bloqueados" y el fix de vistas, UGC-1E.5/1E.5d). Detalle en §8, "Hecho".
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 715 aserciones (medido con el
-`grep` de §8 el 2026-10-15; antes decía 657, 606, 529, 501, 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Regresión de RLS:** `supabase/tests/rls.sql`, 736 aserciones (medido con el
+`grep` de §8 el 2026-10-26; antes decía 715, 657, 606, 529, 501, 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -3071,6 +3134,21 @@ tabla por id quedó por fuera. Ninguna aserción de la primera tanda llamaba a
 `increment_listing_view` con un bloqueo de por medio. Toda función definer
 que reciba un id de otra fila es candidata a saltarse un filtro nuevo de RLS.
 
+Y a **736** con las categorías administrables (`20261025000489`, DESIGN-1
+fase 4): 21 de T41, más la función nueva en la lista de T12 de las que solo
+disparan por trigger (22 → 23) y el CHECK de T37 (k1) en 21 acciones, sin
+cambiar la cuenta de ninguna de las dos. T41 es autocontenida (sus propias
+categorías, un admin activado y un no-admin). Los 24 controles negativos se
+corrieron uno a la vez dentro de la transacción de la suite, contra la suite
+completa y contra T41 aislada; cada uno cae en su aserción, salvo los dos que
+son de T12 por definición (`grant execute` de una RPC a `anon`, que cae en T12
+dentro de la suite y en (e2) aislada; EXECUTE de la función de trigger para
+`authenticated`, que cae solo en T12). **La lección de la sección**, la de
+`t3b_json` y la de T37 otra vez: dos controles morían con un error crudo
+(«not deferrable» en un `set constraints`, y un cast de `:'id'` a bigint
+resuelto al planear) en vez de en su aserción. Ahora el `set constraints` va
+condicionado a `condeferrable` y la comparación es `id::text`.
+
 **Gotcha: la suite espera 3 usuarios en local.** Una cuenta de prueba (la del
 admin de la prueba manual del panel) la rompe en T1; se arregla con
 `supabase db reset`.
@@ -3255,10 +3333,13 @@ sort | uniq -c` el 2026-10-25: Onboarding 18, Explorar 23, Publicar 11, Cuenta
 "Iniciar sesión (contraseña visible)" (Onboarding), "Detalle (foto ampliada con
 zoom)" (Explorar), "Publicar (agregar fotos)" (Publicar), y "Perfil (foto
 ampliada)", "Perfil público (foto ampliada)", "Editar perfil (cambiar foto)" y
-"Editor de foto de perfil" (Cuenta). **Representan mejoras que la app todavía
-NO tiene** (fases 3 a 5 de DESIGN-1; `design/RLVO_FINAL_PREVIEW.md`), igual
-que la categoría `Alimentos`, que aparece en las rejillas y selectores de
-categoría del prototipo pero todavía no es una fila de `categories`. La
+"Editor de foto de perfil" (Cuenta). Las cuatro primeras (contraseña visible
+y los tres visores con zoom) ya están en la app desde la fase 3 de DESIGN-1;
+"Publicar (agregar fotos)", "Editar perfil (cambiar foto)" y "Editor de foto
+de perfil" **siguen sin estar en la app** (fase 5;
+`design/RLVO_FINAL_PREVIEW.md`). Este párrafo decía que ninguna de las siete
+estaba, y lo dejó viejo la fase 3. La categoría `Alimentos` ya es una fila de
+`categories` desde `20261025000489` (fase 4). La
 cuenta anterior, tal como estaba:
 
 **81 desde UGC-1 (bloqueo entre usuarios, PL-006)**, medido con
@@ -3865,7 +3946,9 @@ en "Verificación (correo no participante)".
      TOTP encendido y `admin` en `[api] schemas`. Tarda unos minutos por las
      esperas de ventana TOTP. Del lado del código, `npm run check:admin` hace
      el typecheck y el lint del panel, que el `tsc` y el `lint` de la raíz no
-     miran. **105 pruebas** (94 en la Ola 5, 84 en la Ola 4, 83 en la Ola 3,
+     miran. **118 pruebas** (105 en la Ola 6; el caso 12 de DESIGN-1 fase 4
+     cubre por HTTP las 6 RPC de categorías, su auditoría, el trigger de
+     `categoria_inactiva` y sus textos de `rechazos.ts`; 94 en la Ola 5, 84 en la Ola 4, 83 en la Ola 3,
      47 en la Ola 2; el caso 11 de la Ola 6 cubre por HTTP `metricas` con NULL
      fuera de cobertura, `metricas_resumen` con la cobertura esperada y
      retención 90, el resumen = suma de los diarios, `auditoria` de la
@@ -4791,6 +4874,50 @@ de los route groups).
     0i, lista de lanzamiento) y los secretos de Vault de `send-push`
     (pendiente 1).
 
+- **DESIGN-1 fase 4, categorías administrables y `Alimentos`: EN STAGING,
+  validado en LOCAL, en iPhone, en Android y en el panel (2026-10-25 al
+  2026-10-26). PROD pendiente (PL-001).** Migración `20261025000489`, la
+  app (solo JS), la sección Categorías del panel (4 frames aprobados, 41 en
+  total) y el commit `078c401`. Cada paso remoto lo autorizó el usuario: el
+  push y los tipos los corrió él, y el deploy del panel, Claude.
+  - **LOCAL:** `rls.sql` 736/736 (T41, 21 aserciones y 24 controles);
+    `probe-admin` 118/118 (caso 12, con 2 controles); `registro` 55,
+    `storage` 41, `venta` 13, `actividad` 15, `bloqueos` 24, `perfil` 90,
+    `moderacion` 166, `ubicacion` 9 y `puerta-totp` 11; `tsc`, `lint`,
+    `check:functions` y `check:admin`, limpios.
+  - **Preflight en STAGING (solo lectura):** 52 migraciones; las 12
+    categorías con los nombres exactos del backfill; 0 nombres que violaran el
+    CHECK nuevo y 0 duplicados sin mayúsculas. Sin copia cifrada: la migración
+    solo toca las 12 filas de `categories`, y se deshace a mano.
+  - **Incidente sin efecto en datos:** el JS nuevo se cargó por Metro contra
+    STAGING ANTES del push (`.env.local` apunta a STAGING), y el Feed no cargó
+    categorías (`column categories.icono does not exist`). Es el paso 5 del
+    plan al revés; lo resolvió el push. Solo afectó a los dispositivos del
+    usuario con ese Metro.
+  - **Push y readback (2026-10-26):** dry-run con solo `…489` y después `supabase
+    db push --linked --skip-vault`. Remoto en 53 = 53, con 13 categorías
+    (Alimentos id 13 en el orden 12 y Otros en el 13). Los constraints, el
+    índice y los 3 triggers están puestos. Las 6 RPC son definer, con
+    `search_path=""`, EXECUTE para `authenticated` y no para `anon`. La
+    función de trigger no tiene EXECUTE para el cliente; el CHECK de acciones
+    tiene 21 y `objetivo_tipo` suma `categoria`. El cliente solo tiene
+    `SELECT`. El **md5 de las 8 funciones** (las 6 RPC,
+    `exige_categoria_activa` y `claves_auditoria_ok`) es **igual al de local**,
+    y la auditoría (13), las publicaciones (73) y los intereses (4) no
+    cambiaron.
+  - **Tipos `--linked`:** `database.types.ts` igual a la edición a mano;
+    `admin.types.ts` suma las 6 RPC y `PostgrestVersion` 14.5 → 14.17
+    (plataforma, como en UGC-1).
+  - **Pruebas manuales del usuario (2026-10-26):** iPhone, Android y el panel,
+    "todo se ve bien", sin desglose por caso.
+  - **Panel:** deployment **`cea07690-db65-4ea3-a922-fc0b0f7990a7`**
+    (Production, `main`, `--commit-hash 078c401`, `index-qvyqgr5g.js` con
+    SHA-256 `6f895166…` y `_headers` sin cambios, `80c9304e…`). Preflight de
+    `dist` limpio. En los 3 hosts, el HTML salió byte-idéntico y sin beacon en
+    24/24 peticiones (la batería de 4 variantes), JS y CSS byte-idénticos, y los
+    6 headers iguales a `_headers`. El rollback de referencia es `2b1016db`
+    (`83af816`), no usado.
+
 - **UGC-1, bloqueo entre usuarios (PL-006): EN STAGING, validado en LOCAL,
   en STAGING y en un iPhone físico (2026-10-12 al 2026-10-16, UTC). PROD
   pendiente (PL-001).** Migraciones `20261013000487_user_bloqueos.sql` y
@@ -5203,6 +5330,7 @@ aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 - Leaked password protection de Auth desactivado (advisor de seguridad; D-18 de la Ola 6, deuda de endurecimiento, abierta); se decide en el Dashboard → CLAUDE.md §8, "Hecho", Panel de admin
 - Un contacto se puede registrar por id sobre una publicación que la RLS le esconde a quien contacta (pausada, pendiente, bloqueada), y eso habilita `can_rate()`; UGC-1 lo cierra SOLO para parejas bloqueadas → `docs/PRE_LAUNCH_DEBT.md`, PL-052
 - Bloquear a alguien no impide calificar una transacción registrada antes del bloqueo (`can_rate()` no mira bloqueos; decisión O-2 de UGC-1A) → `docs/PRE_LAUNCH_DEBT.md`, PL-087 (relacionada con PL-083)
+- Un build instalado antes de la fase 4 de DESIGN-1 ordena las categorías por `id` y no oculta las desactivadas; elegir una le da el error genérico (el trigger `categoria_inactiva` la rechaza igual). **Revisar cuando:** se desactive la primera categoría en producción, si sigue habiendo builds viejos. **Fix:** forzar actualización de la app → CLAUDE.md §3, "Categorías administrables"
 - Snapshot diario de métricas (D11, aprobado como "después"): sin él, el `ON DELETE CASCADE` hace que altas, publicaciones, contactos y activos pasados bajen al eliminarse una cuenta; la pantalla y el runbook lo explican. **Revisar cuando:** se necesiten cifras históricas inmutables (p. ej., tras el lanzamiento). **Fix:** `private.metricas_diarias` agregada con pg_cron → `docs/rf17-plan-admin.md` §9, CLAUDE.md §3 ("Actividad diaria y métricas")
 - `actividad_diaria` y las RPC de métricas sin índices nuevos (F4 de la Ola 6, medido en local con volumen sintético): se agregan solo si el volumen o la latencia lo justifican. **Revisar cuando:** `admin.metricas` de 90 días tarde de forma apreciable en el panel o crezca mucho la tabla → `docs/rf17-ola6-plan.md` (F4)
 - En dev, `expo/virtual/env.js` empaqueta `.env.local` y sus valores prevalecen sobre las variables del proceso (también con `EXPO_NO_DOTENV=1`): la app no se puede apuntar al stack local sin crear archivos, y un `.env.local` con producción hace que el JS de desarrollo hable con producción → mensaje de `acf59c1` (F9 de la Ola 6)
