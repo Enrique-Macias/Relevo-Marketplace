@@ -4,6 +4,9 @@
  * `viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.6}` salvo
  * el segundo trazo de "Deportes", que en el HTML lleva su propio
  * `stroke-width="1"`.
+ *
+ * Las llaves son las de `categories.icono`, que un CHECK de la base
+ * (`20261025000489`) limita a estas 13. Agregar una exige las dos cosas.
  */
 
 import { Circle, Path, Rect, Svg } from 'react-native-svg';
@@ -68,6 +71,18 @@ const PATHS: Record<string, React.ReactNode> = {
     <>
       <Path d="M3 9a2 2 0 100 6 2 2 0 010 4h16a2 2 0 010-4 2 2 0 100-6 2 2 0 010-4H3a2 2 0 010 4z" />
       <Path d="M9 4v16" strokeDasharray="2 2" />
+    </>
+  ),
+  // Es el único del set con `stroke-linecap/linejoin="round"` en el HTML
+  // (`design/relevo-app.html:6820`), por eso lo llevan sus trazos y no el `Svg`.
+  alimentos: (
+    <>
+      <Path
+        d="M12 7.5c-1.6-1.7-4.3-2-6-.5-2.2 2-1.7 6-.2 9 1.2 2.4 3 4.6 4.7 4 .7-.2.9-.6 1.5-.6s.8.4 1.5.6c1.7.6 3.5-1.6 4.7-4 1.5-3 2-7-.2-9-1.7-1.5-4.4-1.2-6 .5z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M12 7.5c0-2.2 1-3.7 3-4.5" strokeLinecap="round" strokeLinejoin="round" />
     </>
   ),
   otros: (

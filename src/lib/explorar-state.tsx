@@ -111,7 +111,13 @@ type ExplorarState = {
   catalogo: UniversidadCatalogo[];
   /** Un campus del catálogo por id, de cualquier universidad. */
   getCampus: (id: number | null | undefined) => CampusCatalogo | undefined;
+  /**
+   * Solo las ACTIVAS, en el orden de `categories.orden`: es lo que se elige
+   * (Feed, Ver todas, Filtros, Publicar, Intereses). Una publicación en una
+   * categoría desactivada la sigue pintando `getCategoria`, que busca en todas.
+   */
   categorias: Categoria[];
+  /** Cualquier categoría por id, también una desactivada. */
   getCategoria: (id: number | undefined) => Categoria | undefined;
   categoriasListas: boolean;
   filtros: Filtros;
@@ -143,7 +149,7 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
   const userId = session?.user.id ?? null;
 
   const [catalogo, setCatalogo] = useState<UniversidadCatalogo[]>([]);
-  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [todasCategorias, setTodasCategorias] = useState<Categoria[]>([]);
   const [categoriasListas, setCategoriasListas] = useState(false);
   const [filtros, setFiltrosState] = useState<Filtros>(FILTROS_VACIOS);
   const [favoritos, setFavoritos] = useState<Set<number>>(new Set());
@@ -244,7 +250,7 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
     fetchCategorias()
       .then((lista) => {
         if (!vigente) return;
-        setCategorias(lista);
+        setTodasCategorias(lista);
         setCategoriasListas(true);
       })
       .catch((e) => console.warn('[explorar] no se pudieron leer las categorías:', e?.message ?? e));
@@ -328,9 +334,11 @@ export function ExplorarStateProvider({ children }: { children: React.ReactNode 
   );
 
   const getCategoria = useCallback(
-    (id: number | undefined) => (id === undefined ? undefined : categorias.find((c) => c.id === id)),
-    [categorias]
+    (id: number | undefined) =>
+      id === undefined ? undefined : todasCategorias.find((c) => c.id === id),
+    [todasCategorias]
   );
+  const categorias = useMemo(() => todasCategorias.filter((c) => c.activa), [todasCategorias]);
 
   const value = useMemo<ExplorarState>(
     () => ({

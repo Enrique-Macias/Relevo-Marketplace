@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   admin: {
     Tables: {
@@ -70,6 +70,7 @@ export type Database = {
         }[]
       }
       catalogo: { Args: never; Returns: Json }
+      categorias: { Args: never; Returns: Json }
       cola_moderacion: {
         Args: {
           p_cursor?: number
@@ -103,9 +104,17 @@ export type Database = {
         }
         Returns: number
       }
+      crear_categoria: {
+        Args: { p_icono: string; p_motivo: string; p_nombre: string }
+        Returns: number
+      }
       crear_universidad: {
         Args: { p_motivo: string; p_nombre: string }
         Returns: number
+      }
+      desactivar_categoria: {
+        Args: { p_id: number; p_motivo: string }
+        Returns: undefined
       }
       desactivar_dominio: {
         Args: { p_dominio: string; p_motivo: string }
@@ -119,6 +128,15 @@ export type Database = {
           p_id: number
           p_latitud: number
           p_longitud: number
+          p_motivo: string
+          p_nombre: string
+        }
+        Returns: undefined
+      }
+      editar_categoria: {
+        Args: {
+          p_icono: string
+          p_id: number
           p_motivo: string
           p_nombre: string
         }
@@ -186,12 +204,20 @@ export type Database = {
           usuarios_activos_distintos: number
         }[]
       }
+      reactivar_categoria: {
+        Args: { p_id: number; p_motivo: string }
+        Returns: undefined
+      }
       reactivar_dominio: {
         Args: { p_dominio: string; p_motivo: string }
         Returns: undefined
       }
       reactivar_usuario: {
         Args: { p_motivo: string; p_user_id: string }
+        Returns: undefined
+      }
+      reordenar_categorias: {
+        Args: { p_ids: number[]; p_motivo: string }
         Returns: undefined
       }
       resolver_reporte: {

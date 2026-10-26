@@ -1,24 +1,30 @@
 -- Relevo — datos de referencia.
--- Las 12 categorías de CLAUDE.md §3 y el campus piloto de product-spec §02.
+-- Las 13 categorías (las 12 de CLAUDE.md §3 más `Alimentos`, DESIGN-1 fase 4)
+-- y el campus piloto de product-spec §02.
 --
 -- Idempotente a propósito: además del `db reset` local (que siempre arranca en
 -- limpio), este seed se empuja al proyecto remoto con
 -- `supabase db push --linked --include-seed`, donde sí puede correr dos veces.
 -- Sin `on conflict do nothing` reventaría contra los unique de cada catálogo.
+--
+-- `orden` e `icono` van explícitos desde 20261025000489: en un `db reset` la
+-- migración corre con la tabla vacía, así que el orden y el ícono los pone
+-- este seed. Los íconos son las llaves de `src/components/icons/categories.tsx`.
 
-insert into public.categories (nombre) values
-  ('Libros'),
-  ('Electrónica'),
-  ('Muebles'),
-  ('Ropa'),
-  ('Deportes'),
-  ('Apuntes'),
-  ('Hogar'),
-  ('Papelería'),
-  ('Instrumentos'),
-  ('Arte y manualidades'),
-  ('Boletos y eventos'),
-  ('Otros')
+insert into public.categories (nombre, orden, icono) values
+  ('Libros', 1, 'libros'),
+  ('Electrónica', 2, 'electronica'),
+  ('Muebles', 3, 'muebles'),
+  ('Ropa', 4, 'ropa'),
+  ('Deportes', 5, 'deportes'),
+  ('Apuntes', 6, 'apuntes'),
+  ('Hogar', 7, 'hogar'),
+  ('Papelería', 8, 'papeleria'),
+  ('Instrumentos', 9, 'instrumentos'),
+  ('Arte y manualidades', 10, 'arte-y-manualidades'),
+  ('Boletos y eventos', 11, 'boletos-y-eventos'),
+  ('Alimentos', 12, 'alimentos'),
+  ('Otros', 13, 'otros')
 on conflict (nombre) do nothing;
 
 insert into public.universidades (nombre) values ('Tec de Monterrey')

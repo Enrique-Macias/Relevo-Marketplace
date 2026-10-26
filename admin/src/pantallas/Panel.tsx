@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import type { Vista } from '../lib/tipos.ts';
-import { IconBuilding, IconChart, IconEye, IconFlag, IconUser } from '../componentes/Iconos.tsx';
+import { IconBuilding, IconChart, IconEye, IconFlag, IconTag, IconUser } from '../componentes/Iconos.tsx';
 import { Reportes } from './Reportes.tsx';
 import { DetalleReporte } from './DetalleReporte.tsx';
 import { DetalleListing } from './DetalleListing.tsx';
 import { Moderacion } from './Moderacion.tsx';
 import { BuscarUsuarios, DetalleCuenta, type Busqueda } from './Usuarios.tsx';
 import { Catalogo } from './Catalogo.tsx';
+import { Categorias } from './Categorias.tsx';
 import { DetalleUniversidad } from './DetalleUniversidad.tsx';
 import { Metricas } from './Metricas.tsx';
 
@@ -28,9 +29,11 @@ export function Panel() {
       ? 'moderacion'
       : vista.tipo === 'catalogo' || vista.tipo === 'universidad'
         ? 'catalogo'
-        : vista.tipo === 'metricas'
-          ? 'metricas'
-          : 'reportes';
+        : vista.tipo === 'categorias'
+          ? 'categorias'
+            : vista.tipo === 'metricas'
+              ? 'metricas'
+              : 'reportes';
 
   return (
     <div className="cuerpo">
@@ -47,6 +50,9 @@ export function Panel() {
         <button type="button" className={`nav-item${seccion === 'catalogo' ? ' active' : ''}`}
           aria-current={seccion === 'catalogo' ? 'page' : undefined}
           onClick={() => setVista({ tipo: 'catalogo' })}><IconBuilding />Catálogo</button>
+        <button type="button" className={`nav-item${seccion === 'categorias' ? ' active' : ''}`}
+          aria-current={seccion === 'categorias' ? 'page' : undefined}
+          onClick={() => setVista({ tipo: 'categorias' })}><IconTag tam={18} />Categorías</button>
         <button type="button" className={`nav-item${seccion === 'metricas' ? ' active' : ''}`}
           aria-current={seccion === 'metricas' ? 'page' : undefined}
           onClick={() => setVista({ tipo: 'metricas' })}><IconChart />Métricas</button>
@@ -60,6 +66,7 @@ export function Panel() {
         {vista.tipo === 'usuario' && <DetalleCuenta key={vista.id} id={vista.id} desde={vista.desde} ir={setVista} />}
         {vista.tipo === 'catalogo' && <Catalogo onAbrir={(id) => setVista({ tipo: 'universidad', id })} />}
         {vista.tipo === 'universidad' && <DetalleUniversidad key={vista.id} id={vista.id} ir={setVista} />}
+        {vista.tipo === 'categorias' && <Categorias />}
         {vista.tipo === 'metricas' && <Metricas />}
       </main>
     </div>

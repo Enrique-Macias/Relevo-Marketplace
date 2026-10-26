@@ -311,6 +311,21 @@
   .tabla .sin-datos{color:var(--ink-soft); font-size:12px; font-style:italic;}
 
   .oculto{display:none !important;}
+
+  /* ---------- Categorías (DESIGN-1 fase 4) ----------
+     Solo clases nuevas sobre tokens existentes. El ícono va en --ink sobre
+     --paper, como `.cat-icon` de relevo-app. */
+  .cat-celda{display:flex; align-items:center; gap:10px;}
+  .cat-ico{width:34px; height:34px; border-radius:10px; background:var(--paper); color:var(--ink); display:inline-flex; align-items:center; justify-content:center; flex:none;}
+  .cat-ico.apagado{color:var(--ink-soft);}
+  .orden-btns{display:inline-flex; gap:4px;}
+  .orden-btn{width:28px; height:28px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); display:inline-flex; align-items:center; justify-content:center;}
+  .orden-btn.arriba svg{transform:rotate(90deg);}
+  .orden-btn.abajo svg{transform:rotate(-90deg);}
+  .orden-btn.disabled{opacity:.35;}
+  .iconos{display:grid; grid-template-columns:repeat(7, 1fr); gap:8px; margin-top:6px;}
+  .icono-op{height:44px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--ink); display:flex; align-items:center; justify-content:center;}
+  .icono-op.active{border-color:var(--ink); box-shadow:inset 0 0 0 1px var(--ink); background:var(--paper);}
 </style>
 </head>
 <body>
@@ -345,6 +360,7 @@
     <div class="filter-chip" data-filter="publicacion">Publicación</div>
     <div class="filter-chip" data-filter="usuarios">Usuarios</div>
     <div class="filter-chip" data-filter="catalogo">Catálogo</div>
+    <div class="filter-chip" data-filter="categorias">Categorías</div>
     <div class="filter-chip" data-filter="metricas">Métricas</div>
     <div class="filter-chip" data-filter="sistema">Sistema</div>
     <div class="filter-count" id="filter-count"></div>
@@ -561,6 +577,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -635,6 +652,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -666,6 +684,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -750,6 +769,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -818,6 +838,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -876,6 +897,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -936,6 +958,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1012,6 +1035,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1074,6 +1098,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1146,6 +1171,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1184,6 +1210,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1246,6 +1273,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1346,6 +1374,7 @@
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1444,6 +1473,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1480,6 +1510,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1512,6 +1543,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1582,6 +1614,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1657,6 +1690,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1758,6 +1792,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1834,6 +1869,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1890,6 +1926,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -1978,6 +2015,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -2053,6 +2091,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -2146,6 +2185,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -2215,6 +2255,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -2265,6 +2306,290 @@
 </div>
 
 <!-- =====================================================================
+     CATEGORÍAS (DESIGN-1 fase 4)
+     Fuente: admin.categorias() (con el conteo de publicaciones e intereses).
+     Escrituras: crear_categoria, editar_categoria, desactivar_categoria,
+     reactivar_categoria y reordenar_categorias, todas con motivo y auditadas.
+     No hay borrado (D1): desactivar esconde la categoría de lo que se ELIGE en
+     la app (publicar, filtros, intereses, inicio) y la conserva en lo que se
+     MUESTRA (publicaciones existentes). El ícono se elige de los que conoce la
+     app (D2): uno nuevo exige una versión de la app. Ninguna regla vive en el
+     panel: nombres duplicados o no válidos y los CAS los decide la base.
+     ===================================================================== -->
+
+<div class="desk-block" data-cat="categorias">
+  <div class="desk-label">Categorías — lista</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Categorías</div>
+        <div class="sub-pagina">Las categorías de la app, en el orden en que se muestran. Las 7 primeras activas salen en el inicio.</div>
+        <div class="acciones"><span class="btn ghost-btn">Reordenar</span> <span class="btn primary-btn">Agregar categoría</span></div>
+        <br>
+        <table class="tabla">
+          <thead><tr><th class="num">#</th><th>Categoría</th><th class="num">Publicaciones</th><th class="num">Intereses</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="num suave">1</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg></span><div><div class="celda-titulo">Libros</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">18</td><td class="num">4</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">2</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg></span><div><div class="celda-titulo">Electrónica</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">12</td><td class="num">3</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">3</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg></span><div><div class="celda-titulo">Muebles</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">6</td><td class="num">1</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">4</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg></span><div><div class="celda-titulo">Ropa</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">9</td><td class="num">2</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">5</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="7"/><path d="M12 5v14M5 12h14" stroke-width="1"/></svg></span><div><div class="celda-titulo">Deportes</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">3</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">6</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><div><div class="celda-titulo">Apuntes</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">7</td><td class="num">2</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">7</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg></span><div><div class="celda-titulo">Hogar</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">4</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">8</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span><div><div class="celda-titulo">Papelería</div></div></div></td><td class="num">2</td><td class="num">1</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">9</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span><div><div class="celda-titulo">Instrumentos</div></div></div></td><td class="num">1</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">10</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21a9 9 0 110-18c4 0 7 2.5 7 5.5 0 2-1.5 3-3 3h-2a1.5 1.5 0 000 3h.5a1.5 1.5 0 010 3H12z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/></svg></span><div><div class="celda-titulo">Arte y manualidades</div></div></div></td><td class="num">0</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">11</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9a2 2 0 100 6 2 2 0 010 4h16a2 2 0 010-4 2 2 0 100-6 2 2 0 010-4H3a2 2 0 010 4z"/><path d="M9 4v16" stroke-dasharray="2 2"/></svg></span><div><div class="celda-titulo">Boletos y eventos</div></div></div></td><td class="num">3</td><td class="num">1</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">12</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 7.5c-1.6-1.7-4.3-2-6-.5-2.2 2-1.7 6-.2 9 1.2 2.4 3 4.6 4.7 4 .7-.2.9-.6 1.5-.6s.8.4 1.5.6c1.7.6 3.5-1.6 4.7-4 1.5-3 2-7-.2-9-1.7-1.5-4.4-1.2-6 .5z" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 7.5c0-2.2 1-3.7 3-4.5" stroke-linecap="round"/></svg></span><div><div class="celda-titulo">Alimentos</div></div></div></td><td class="num">0</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+            <tr><td class="num suave">13</td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span><div><div class="celda-titulo">Otros</div></div></div></td><td class="num">5</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td><span class="btn ghost-btn">Editar</span> <span class="btn ghost-btn">Desactivar</span></td></tr>
+          </tbody>
+        </table>
+        <div class="pie-tabla"><span>Las publicaciones existentes conservan su categoría aunque se desactive. Una categoría desactivada no se puede elegir al publicar, al filtrar ni en intereses.</span></div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variante (doc): una categoría desactivada</div>
+    <div class="variante-caja completa">
+      <table class="tabla">
+        <thead><tr><th class="num">#</th><th>Categoría</th><th class="num">Publicaciones</th><th class="num">Intereses</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+          <tr><td class="num suave">9</td><td><div class="cat-celda"><span class="cat-ico apagado"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span><div><div class="celda-titulo">Instrumentos</div><div class="celda-sub" style="white-space:nowrap">No se puede elegir en la app</div></div></div></td><td class="num">1</td><td class="num">0</td><td><span class="estado apagado">Desactivada</span></td><td><span class="btn ghost-btn">Reactivar</span></td></tr>
+        </tbody>
+      </table>
+      <br>
+      <div class="texto-suave">Conserva su lugar en el orden. Si está entre las 7 primeras, el inicio muestra la siguiente activa en su lugar.</div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variante (doc): error de carga</div>
+    <div class="variante-caja">
+      <div class="empty-state compacto">
+        <div class="empty-icon error"><svg width="30" height="30"><use href="#i-wifi"/></svg></div>
+        <div class="empty-title">No pudimos cargar las categorías</div>
+        <div class="empty-sub">Revisa tu conexión e inténtalo de nuevo.</div>
+        <span class="btn ghost-btn">Reintentar</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="categorias">
+  <div class="desk-label">Categorías — reordenar</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Categorías</div>
+        <div class="sub-pagina">Las categorías de la app, en el orden en que se muestran. Las 7 primeras activas salen en el inicio.</div>
+        <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Mueve las categorías con las flechas. Nada cambia en la app hasta que guardes.</div></div>
+        <div class="acciones"><span class="btn ghost-btn">Cancelar</span> <span class="btn primary-btn">Guardar orden</span></div>
+        <br>
+        <table class="tabla">
+          <thead><tr><th>Orden</th><th>Categoría</th><th class="num">Publicaciones</th><th class="num">Intereses</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba disabled"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg></span><div><div class="celda-titulo">Libros</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">18</td><td class="num">4</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg></span><div><div class="celda-titulo">Electrónica</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">12</td><td class="num">3</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg></span><div><div class="celda-titulo">Muebles</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">6</td><td class="num">1</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg></span><div><div class="celda-titulo">Ropa</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">9</td><td class="num">2</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="7"/><path d="M12 5v14M5 12h14" stroke-width="1"/></svg></span><div><div class="celda-titulo">Deportes</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">3</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><div><div class="celda-titulo">Apuntes</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">7</td><td class="num">2</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg></span><div><div class="celda-titulo">Hogar</div><div class="celda-sub">En el inicio</div></div></div></td><td class="num">4</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span><div><div class="celda-titulo">Papelería</div></div></div></td><td class="num">2</td><td class="num">1</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span><div><div class="celda-titulo">Instrumentos</div></div></div></td><td class="num">1</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21a9 9 0 110-18c4 0 7 2.5 7 5.5 0 2-1.5 3-3 3h-2a1.5 1.5 0 000 3h.5a1.5 1.5 0 010 3H12z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/></svg></span><div><div class="celda-titulo">Arte y manualidades</div></div></div></td><td class="num">0</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9a2 2 0 100 6 2 2 0 010 4h16a2 2 0 010-4 2 2 0 100-6 2 2 0 010-4H3a2 2 0 010 4z"/><path d="M9 4v16" stroke-dasharray="2 2"/></svg></span><div><div class="celda-titulo">Boletos y eventos</div></div></div></td><td class="num">3</td><td class="num">1</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 7.5c-1.6-1.7-4.3-2-6-.5-2.2 2-1.7 6-.2 9 1.2 2.4 3 4.6 4.7 4 .7-.2.9-.6 1.5-.6s.8.4 1.5.6c1.7.6 3.5-1.6 4.7-4 1.5-3 2-7-.2-9-1.7-1.5-4.4-1.2-6 .5z" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 7.5c0-2.2 1-3.7 3-4.5" stroke-linecap="round"/></svg></span><div><div class="celda-titulo">Alimentos</div></div></div></td><td class="num">0</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+            <tr><td><span class="orden-btns"><span class="orden-btn arriba"><svg width="14" height="14"><use href="#i-chevron"/></svg></span><span class="orden-btn abajo disabled"><svg width="14" height="14"><use href="#i-chevron"/></svg></span></span></td><td><div class="cat-celda"><span class="cat-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span><div><div class="celda-titulo">Otros</div></div></div></td><td class="num">5</td><td class="num">0</td><td><span class="estado ok">Activa</span></td><td></td></tr>
+          </tbody>
+        </table>
+        <div class="pie-tabla"><span>Las publicaciones existentes conservan su categoría aunque se desactive. Una categoría desactivada no se puede elegir al publicar, al filtrar ni en intereses.</span></div>
+      </main>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): guardar orden (modal con motivo) · sin cambios · el orden cambió mientras tanto</div>
+    <div class="variante-caja">
+      <div class="modal-title">Guardar el orden nuevo</div>
+      <div class="modal-sub">Cambia el orden de la app para todos. Las 7 primeras activas salen en el inicio.</div>
+      <div class="field">
+        <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+        <div class="text-field area placeholder">Por qué cambias el orden</div>
+        <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+      </div>
+      <div class="modal-actions">
+        <span class="btn ghost-btn">Cancelar</span>
+        <span class="btn primary-btn disabled">Guardar</span>
+      </div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">No hay cambios que guardar.</div></div>
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">Otra persona cambió las categorías mientras tanto. Recarga la lista y vuelve a ordenarlas.</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="categorias">
+  <div class="desk-label">Categoría (modal: agregar o editar)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Categorías</div>
+        <div class="sub-pagina">Las categorías de la app, en el orden en que se muestran. Las 7 primeras activas salen en el inicio.</div>
+        <div class="tarjeta"><div class="sk-line skeleton"></div></div>
+      </main>
+    </div>
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-icon neutro"><svg width="24" height="24"><use href="#i-tag"/></svg></div>
+        <div class="modal-title">Agregar categoría</div>
+        <div class="modal-sub">Entra al final de la lista, antes de «Otros», y se puede elegir en la app de inmediato.</div>
+        <div class="field">
+          <span class="field-label">Nombre</span>
+          <div class="text-field">Alimentos</div>
+        </div>
+        <div class="field">
+          <span class="field-label">Ícono</span>
+          <div class="iconos"><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h11a2 2 0 012 2v14l-7.5-4L4 20V4z"/><path d="M17 4h1a2 2 0 012 2v14l-3-1.6"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3l1.5 4h9L18 3M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="7"/><path d="M12 5v14M5 12h14" stroke-width="1"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21a9 9 0 110-18c4 0 7 2.5 7 5.5 0 2-1.5 3-3 3h-2a1.5 1.5 0 000 3h.5a1.5 1.5 0 010 3H12z"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9a2 2 0 100 6 2 2 0 010 4h16a2 2 0 010-4 2 2 0 100-6 2 2 0 010-4H3a2 2 0 010 4z"/><path d="M9 4v16" stroke-dasharray="2 2"/></svg></span><span class="icono-op active"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 7.5c-1.6-1.7-4.3-2-6-.5-2.2 2-1.7 6-.2 9 1.2 2.4 3 4.6 4.7 4 .7-.2.9-.6 1.5-.6s.8.4 1.5.6c1.7.6 3.5-1.6 4.7-4 1.5-3 2-7-.2-9-1.7-1.5-4.4-1.2-6 .5z" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 7.5c0-2.2 1-3.7 3-4.5" stroke-linecap="round"/></svg></span><span class="icono-op"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span></div>
+          <div class="field-help">Solo los íconos que ya conoce la app.</div>
+        </div>
+        <div class="field">
+          <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+          <div class="text-field area placeholder">Por qué la das de alta</div>
+          <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+        </div>
+        <div class="modal-actions">
+          <span class="btn ghost-btn">Cancelar</span>
+          <span class="btn primary-btn disabled">Agregar</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): editar · nombre duplicado · nombre no válido · sin cambios · guardando</div>
+    <div class="variante-caja">
+      <div class="modal-title">Editar categoría</div>
+      <div class="notice is-neutro"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">El nombre y el ícono nuevos se verán en todas las publicaciones de esta categoría.</div></div>
+      <div class="field">
+        <span class="field-label">Nombre</span>
+        <div class="text-field">Papelería</div>
+      </div>
+      <div class="texto-suave">Precargado con el nombre y el ícono actuales. «Guardar» se puede pulsar aunque no cambie nada: lo decide la base.</div>
+    </div>
+    <div class="variante-caja">
+      <div class="field">
+        <span class="field-label">Nombre</span>
+        <div class="text-field is-invalid">libros</div>
+        <div class="field-error">Ya existe una categoría con ese nombre.</div>
+      </div>
+      <div class="field">
+        <span class="field-label">Nombre</span>
+        <div class="text-field is-invalid">L</div>
+        <div class="field-error">El nombre debe tener entre 2 y 50 caracteres.</div>
+      </div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">No hay cambios que guardar.</div></div>
+      <div class="modal-actions">
+        <span class="btn ghost-btn disabled">Cancelar</span>
+        <span class="btn primary-btn"><span class="splash-dots"><span class="splash-dot"></span><span class="splash-dot"></span><span class="splash-dot"></span></span>Guardando</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="desk-block" data-cat="categorias">
+  <div class="desk-label">Desactivar o reactivar categoría (modal)</div>
+  <div class="desk">
+    <header class="barra">
+      <span class="marca">Relevo<small>Panel de administración</small></span>
+      <span class="barra-sesion">ana@rlvo.com.mx <span class="btn ghost-btn">Cerrar sesión</span></span>
+    </header>
+    <div class="cuerpo">
+      <nav class="lateral">
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-flag"/></svg>Reportes</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item active"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
+      </nav>
+      <main class="contenido">
+        <div class="titulo-pagina">Categorías</div>
+        <div class="sub-pagina">Las categorías de la app, en el orden en que se muestran. Las 7 primeras activas salen en el inicio.</div>
+        <div class="tarjeta"><div class="sk-line skeleton"></div></div>
+      </main>
+    </div>
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="modal-icon"><svg width="24" height="24"><use href="#i-ban"/></svg></div>
+        <div class="modal-title">¿Desactivar Instrumentos?</div>
+        <div class="modal-sub">Ya no se podrá elegir al publicar, al filtrar ni en intereses. Su publicación existente la conserva, y las 0 personas que la eligieron como interés no pierden nada.</div>
+        <div class="field">
+          <div class="field-label-row"><span class="field-label">Motivo (3 a 500 caracteres)</span><span class="contador">0/500</span></div>
+          <div class="text-field area placeholder">Por qué la desactivas</div>
+          <div class="field-help">No escribas datos personales: queda en la auditoría.</div>
+        </div>
+        <div class="modal-actions">
+          <span class="btn ghost-btn">Cancelar</span>
+          <span class="btn danger-btn disabled">Desactivar</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="variante-doc">
+    <div class="variante-doc-titulo">Variantes (doc): reactivar · la categoría cambió mientras tanto</div>
+    <div class="variante-caja">
+      <div class="modal-title">¿Reactivar Instrumentos?</div>
+      <div class="modal-sub">Se podrá volver a elegir en la app, en el mismo lugar del orden.</div>
+      <div class="modal-actions">
+        <span class="btn ghost-btn">Cancelar</span>
+        <span class="btn forest-btn">Reactivar</span>
+      </div>
+    </div>
+    <div class="variante-caja">
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">La categoría ya estaba desactivada. Recarga la lista.</div></div>
+      <div class="notice"><div class="notice-icon"><svg width="12" height="12" color="#fff"><use href="#i-alert"/></svg></div><div class="notice-text">La categoría ya estaba activa. Recarga la lista.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
      MÉTRICAS (Ola 6)
      Solo agregados: el panel nunca recibe quién estuvo activo, solo cuántos.
      Fuentes: admin.metricas (una fila por día) y admin.metricas_resumen
@@ -2291,6 +2616,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -2362,6 +2688,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item active"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -2432,6 +2759,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -2480,6 +2808,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -2514,6 +2843,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">
@@ -2547,6 +2877,7 @@
         <div class="nav-item"><svg width="18" height="18"><use href="#i-eye"/></svg>Moderación</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-user"/></svg>Usuarios</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-building"/></svg>Catálogo</div>
+        <div class="nav-item"><svg width="18" height="18"><use href="#i-tag"/></svg>Categorías</div>
         <div class="nav-item"><svg width="18" height="18"><use href="#i-chart"/></svg>Métricas</div>
       </nav>
       <main class="contenido">

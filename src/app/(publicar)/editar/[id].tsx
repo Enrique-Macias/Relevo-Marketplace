@@ -32,6 +32,7 @@ import { StatusRow } from '@/components/StatusRow';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, ScreenPadding } from '@/constants/theme';
 import { accionVenta, LABEL_ACCION_VENTA, useVenta } from '@/lib/confianza';
+import { esCategoriaInactiva } from '@/lib/categorias';
 import { useExplorarState } from '@/lib/explorar-state';
 import { elegirFotos, PermisoDenegadoError } from '@/lib/foto-picker';
 import { useListingForm } from '@/lib/listing-form';
@@ -151,8 +152,16 @@ export default function EditarPublicacionScreen() {
  */
 function FormularioCargado({ listing }: { listing: ListingDetalle }) {
   const { session } = useSession();
-  const { categorias } = useExplorarState();
+  const { categorias: activas, getCategoria } = useExplorarState();
   const { mostrar } = useToast();
+  // Una publicación en una categoría que el panel desactivó la conserva: el
+  // selector la muestra para no vaciar el campo, al final de la lista. Elegir
+  // OTRA inactiva no se puede (la base lo rechaza con `categoria_inactiva`).
+  const propia = getCategoria(listing.categoriaId);
+  const categorias = useMemo(
+    () => (propia && !propia.activa ? [...activas, propia] : activas),
+    [activas, propia]
+  );
 
   const [guardando, setGuardando] = useState(false);
   const [progreso, setProgreso] = useState<ProgresoFoto | null>(null);
@@ -353,7 +362,12 @@ function FormularioCargado({ listing }: { listing: ListingDetalle }) {
       router.back();
     } catch (e: any) {
       console.warn('[editar] no se pudo guardar:', e?.message ?? e);
-      mostrar('No pudimos guardar los cambios. Intenta de nuevo.', 'error');
+      mostrar(
+        esCategoriaInactiva(e)
+          ? 'Esa categoría ya no está disponible. Elige otra.'
+          : 'No pudimos guardar los cambios. Intenta de nuevo.',
+        'error'
+      );
       setGuardando(false);
       setProgreso(null);
     }

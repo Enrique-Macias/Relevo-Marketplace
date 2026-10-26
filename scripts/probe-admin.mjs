@@ -58,6 +58,11 @@
 //      dominio en una llamada, etiquetas, cursor), y los rechazos por HTTP con
 //      su texto en `rechazos.ts`. Corre DENTRO del caso 10, antes de borrar su
 //      universidad.
+//  12. Categorías (20261025000489): `admin.categorias()` por HTTP, crear (entra
+//      antes de «Otros»), editar, desactivar y reactivar con su auditoría,
+//      reordenar (sin_cambios, orden_desactualizado y un orden nuevo en 1..n),
+//      el trigger que impide elegir una inactiva (categoria_inactiva) y los
+//      textos de `rechazos.ts`. Restaura el orden y borra su categoría.
 //
 // Limpia lo suyo al final (sus cuentas y su universidad de prueba, con sus
 // campus y dominios; la auditoría es append-only y se queda, como en
@@ -487,6 +492,85 @@ async function main() {
     ]);
     ok('11k una sesión aal1 → mfa_requerido en las tres RPC', a1.every((r) => r.error?.message === MFA_REQUERIDO),
       a1.map((r) => r.error?.message).join(','));
+
+    // -------------------------------------------------------------------
+    // 12. Categorías (20261025000489) por HTTP, con la misma sesión aal2. La
+    // categoría de prueba vive solo durante este caso: el orden real se
+    // restaura con la misma RPC y la fila se borra al final (la auditoría,
+    // append-only, se queda).
+    console.log('\n== 12. categorías ==');
+    const nomCat = `Probe Cat ${RUN}`;
+    const ordenIds = () => sql(`select string_agg(id::text, ',' order by orden) from public.categories`).split(',').map(Number);
+    const otrosId = Number(sql(`select id from public.categories where icono = 'otros' order by orden desc limit 1`));
+    const ordenOriginal = ordenIds();
+    let catId = null;
+    try {
+      const lc = await c5.schema('admin').rpc('categorias');
+      ok('12a categorias() por HTTP trae todas, en orden, con sus conteos',
+        !lc.error && lc.data.categorias.map((c) => c.id).join(',') === ordenOriginal.join(',')
+          && lc.data.categorias.every((c) => typeof c.publicaciones === 'number' && typeof c.intereses === 'number'),
+        lc.error?.message);
+      const rCat = await c5.schema('admin').rpc('crear_categoria', { p_nombre: nomCat, p_icono: 'otros', p_motivo: 'probe 12' });
+      catId = rCat.data;
+      const tras = ordenIds();
+      ok('12b crear_categoria → id, auditado, y entra justo antes de «Otros»',
+        !rCat.error && audita('crear_categoria', String(catId))
+          && tras.at(-1) === otrosId && tras.at(-2) === catId, rCat.error?.message ?? tras.join(','));
+      const dup = await c5.schema('admin').rpc('crear_categoria', { p_nombre: nomCat.toUpperCase(), p_icono: 'otros', p_motivo: 'probe 12' });
+      ok('12c el mismo nombre en MAYÚSCULAS → 23505 nombre_duplicado, con el texto de categoría',
+        dup.error?.code === '23505' && dup.error?.message === 'nombre_duplicado'
+          && textoDeRechazo(dup.error, 'categoria') === 'Ya existe una categoría con ese nombre.',
+        `${dup.error?.code}:${dup.error?.message}`);
+      const rEd = await c5.schema('admin').rpc('editar_categoria', { p_id: catId, p_nombre: `${nomCat} Dos`, p_icono: 'libros', p_motivo: 'probe 12' });
+      ok('12d editar_categoria → ok, auditado', !rEd.error && audita('editar_categoria', String(catId)), rEd.error?.message);
+      const sinC = await c5.schema('admin').rpc('editar_categoria', { p_id: catId, p_nombre: `${nomCat} Dos`, p_icono: 'libros', p_motivo: 'probe 12' });
+      ok('12e editar sin cambios → sin_cambios, sin otra fila de auditoría',
+        sinC.error?.message === 'sin_cambios' && audita('editar_categoria', String(catId)), sinC.error?.message);
+      const rDe = await c5.schema('admin').rpc('desactivar_categoria', { p_id: catId, p_motivo: 'probe 12' });
+      const rDe2 = await c5.schema('admin').rpc('desactivar_categoria', { p_id: catId, p_motivo: 'probe 12' });
+      ok('12f desactivar_categoria → ok, auditado, activa=false; repetir → categoria_ya_inactiva con su texto',
+        !rDe.error && audita('desactivar_categoria', String(catId))
+          && sql(`select activa::text from public.categories where id = ${catId}`) === 'false'
+          && rDe2.error?.message === 'categoria_ya_inactiva'
+          && textoDeRechazo(rDe2.error, 'categoria') === 'La categoría ya estaba desactivada. Recarga la lista.',
+        `${rDe.error?.message} / ${rDe2.error?.message}`);
+      // Con la categoría inactiva, el trigger rechaza elegirla como interés (la app lo reconoce por code+message).
+      const elegir = await c5.from('user_intereses').insert({ user_id: idA, categoria_id: catId });
+      ok('12g elegir una categoría inactiva como interés → 55000 categoria_inactiva',
+        elegir.error?.code === '55000' && elegir.error?.message === 'categoria_inactiva',
+        `${elegir.error?.code}:${elegir.error?.message}`);
+      const rRe = await c5.schema('admin').rpc('reactivar_categoria', { p_id: catId, p_motivo: 'probe 12' });
+      ok('12h reactivar_categoria → ok, auditado, activa=true',
+        !rRe.error && audita('reactivar_categoria', String(catId))
+          && sql(`select activa::text from public.categories where id = ${catId}`) === 'true', rRe.error?.message);
+      const actual = ordenIds();
+      const igual = await c5.schema('admin').rpc('reordenar_categorias', { p_ids: actual, p_motivo: 'probe 12' });
+      ok('12i reordenar con el orden vigente → sin_cambios', igual.error?.message === 'sin_cambios', igual.error?.message);
+      const falta = await c5.schema('admin').rpc('reordenar_categorias', { p_ids: actual.slice(1), p_motivo: 'probe 12' });
+      ok('12j reordenar sin una categoría → orden_desactualizado, con su texto',
+        falta.error?.message === 'orden_desactualizado'
+          && textoDeRechazo(falta.error, 'categoria') === 'Otra persona cambió las categorías mientras tanto. Recarga la lista y vuelve a ordenarlas.',
+        falta.error?.message);
+      const alFrente = [catId, ...actual.filter((x) => x !== catId)];
+      const rOr = await c5.schema('admin').rpc('reordenar_categorias', { p_ids: alFrente, p_motivo: 'probe 12' });
+      ok('12k reordenar → el orden nuevo queda en la base, en 1..n, y se audita la categoría movida',
+        !rOr.error && ordenIds().join(',') === alFrente.join(',')
+          && sql(`select string_agg(orden::text, ',' order by orden) from public.categories`) === alFrente.map((_, i) => i + 1).join(',')
+          && audita('reordenar_categorias', String(catId)), rOr.error?.message);
+      // El orden real vuelve a ser el de antes (la de prueba, antes de «Otros»).
+      const deVuelta = [...ordenOriginal.slice(0, -1), catId, ordenOriginal.at(-1)];
+      const rVu = await c5.schema('admin').rpc('reordenar_categorias', { p_ids: deVuelta, p_motivo: 'probe 12' });
+      ok('12l reordenar de vuelta al orden original', !rVu.error && ordenIds().join(',') === deVuelta.join(','), rVu.error?.message);
+    } finally {
+      // Fuera la de prueba, y «Otros» vuelve a su número (el unique es diferible).
+      if (catId) {
+        sql(`begin; delete from public.categories where id = ${Number(catId)};
+          update public.categories set orden = (select max(orden) + 1 from public.categories where id <> ${otrosId})
+           where id = ${otrosId}; commit;`);
+      }
+    }
+    ok('12m al terminar, el orden de las categorías es el del arranque', ordenIds().join(',') === ordenOriginal.join(','),
+      ordenIds().join(','));
 
     // El catálogo vuelve a su estado ANTES de los casos 8 y 9: el 9c compara
     // `universidad_dominios` contra la foto del arranque (el finally es respaldo).

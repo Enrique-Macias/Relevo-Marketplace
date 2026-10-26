@@ -2517,8 +2517,10 @@ select pg_temp.assert(
   -- RF-17, Ola 4 (20261007000480): definer que lee el estado de OTRO usuario.
   and not has_function_privilege('authenticated', 'private.exige_dueno_activo()', 'execute')
   -- RF-17, Ola 4 (20261007000482): definer que escribe el registro retenido.
-  and not has_function_privilege('authenticated', 'private.retiene_moderacion()', 'execute'),
-  'las 22 funciones que solo disparan por trigger siguen revocadas');
+  and not has_function_privilege('authenticated', 'private.retiene_moderacion()', 'execute')
+  -- DESIGN-1 fase 4 (20261025000489): definer que lee `categories.activa`.
+  and not has_function_privilege('authenticated', 'private.exige_categoria_activa()', 'execute'),
+  'las 23 funciones que solo disparan por trigger siguen revocadas');
 
 -- Las DOS funciones de trigger que NO están en la lista de arriba, a
 -- propósito: `set_updated_at()` y `limpia_veredicto_en_pantalla()` son
@@ -7454,10 +7456,10 @@ select pg_temp.t37('select admin.reactivar_dominio(''rls-t37b.mx'', ''fin prueba
 -- (k) El CHECK de auditoría -----------------------------------------------------
 select pg_temp.assert(
   (select count(*) from pg_constraint c, regexp_matches(pg_get_constraintdef(c.oid), '''([a-z_]+)''::text', 'g')
-    where c.conname = 'admin_acciones_accion_check') = 16
+    where c.conname = 'admin_acciones_accion_check') = 21
   and (select pg_get_constraintdef(c.oid) from pg_constraint c where c.conname = 'admin_acciones_accion_check')
       ~ 'crear_universidad.*editar_universidad.*crear_campus.*editar_campus.*agregar_dominio.*desactivar_dominio.*reactivar_dominio',
-  'T37 (k1) admin_acciones_accion_check admite exactamente 16 acciones, con las 7 del catálogo');
+  'T37 (k1) admin_acciones_accion_check admite exactamente 21 acciones (16 hasta 20261025000489), con las 7 del catálogo');
 select pg_temp.assert(
   pg_temp.rechazo_de(null, format($q$insert into private.admin_acciones
     (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
@@ -8634,6 +8636,380 @@ select pg_temp.assert(
   'T40 (y4) desbloqueados: A y B vuelven a sumarse vistas');
 
 \echo ''
+
+\echo ''
+\echo '== T41 — categorías: orden, ícono, activa y su CRUD en el panel (DESIGN-1 fase 4, 20261025000489) =='
+-- Autocontenida: su universidad (`rls-t41.mx`), un campus, sus cuentas y sus
+-- categorías con prefijo "RLS T41". Las 13 del seed solo se LEEN en (a); todo
+-- lo que escribe usa categorías propias, salvo el reordenamiento (h), que
+-- por definición mueve el catálogo entero y se restaura al final de (h).
+-- Cada acción va en una sentencia y su comprobación en otra (lección de T28).
+--
+--   :E41 admin activado   :N41 cuenta que no es admin   :U41 vendedor
+
+\set E41 '''41414141-0000-0000-0000-0000000041e0'''
+\set N41 '''41414141-0000-0000-0000-0000000041b0'''
+\set U41 '''41414141-0000-0000-0000-0000000041c0'''
+
+insert into public.universidades (nombre) values ('RLS T41 Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t41.mx', id from public.universidades where nombre = 'RLS T41 Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, 'RLS T41 Campus', 'Ciudad T41' from public.universidades where nombre = 'RLS T41 Universidad';
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:E41, 'rls-t41-e@rls-t41.test'), (:N41, 'rls-t41-n@rls-t41.test'),
+               (:U41, 'rls-t41-u@rls-t41.mx')) as v(u, e);
+insert into private.admins (user_id, nombre, activado_at) values (:E41::uuid, 'Admin T41', now());
+update public.users
+   set campus_id = (select id from public.campus where nombre = 'RLS T41 Campus')
+ where id = :U41::uuid;
+
+-- 'ok' o `<sqlstate>:<constraint, o el mensaje si no hay>`. Como
+-- `authenticated` si p_uid no es null. (rechazo_de no da el mensaje, y aquí
+-- el trigger y las RPC se distinguen solo por él.)
+create or replace function pg_temp.t41(p_uid uuid, p_sql text)
+returns text language plpgsql as $$
+declare v_con text;
+begin
+  if p_uid is not null then
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+    perform set_config('role', 'authenticated', true);
+  end if;
+  execute p_sql;
+  perform set_config('role', 'postgres', true);
+  return 'ok';
+exception when others then
+  get stacked diagnostics v_con = constraint_name;
+  perform set_config('role', 'postgres', true);
+  return sqlstate || ':' || coalesce(nullif(v_con, ''), sqlerrm);
+end $$;
+
+-- Escalar de p_sql como `authenticated` con aal y TOTP de hace p_horas, o
+-- `ERR:<sqlstate>:<mensaje>`; una función `void` da ''. Copia de pg_temp.t37
+-- para que T41 corra aislada; por defecto, como :E41.
+create or replace function pg_temp.t41_rpc(
+  p_sql text, p_uid uuid default '41414141-0000-0000-0000-0000000041e0',
+  p_aal text default 'aal2', p_horas int default 1)
+returns text language plpgsql as $$
+declare v_out text;
+begin
+  perform set_config('request.jwt.claims',
+    pg_temp.claims_aal(p_uid, p_aal, pg_temp.amr_totp(p_horas)), true);
+  perform set_config('role', 'authenticated', true);
+  execute p_sql into v_out;
+  perform set_config('role', 'postgres', true);
+  return coalesce(v_out, '');
+exception when others then
+  perform set_config('role', 'postgres', true);
+  return 'ERR:' || sqlstate || ':' || sqlerrm;
+end $$;
+
+create or replace function pg_temp.t41_admin(p_sql text)
+returns text language sql as $$ select pg_temp.t41_rpc(p_sql) $$;
+
+-- La última fila de auditoría de una acción.
+create or replace function pg_temp.t41_audit(p_accion text)
+returns private.admin_acciones language sql as $$
+  select * from private.admin_acciones where accion = p_accion order by id desc limit 1
+$$;
+
+create or replace function pg_temp.t41_orden(p_nombre text) returns int language sql as $$
+  select orden from public.categories where nombre = p_nombre
+$$;
+
+-- Las 3 categorías propias, al final del orden (no tocan a las 13 del seed).
+insert into public.categories (nombre, orden, icono) values
+  ('RLS T41 Activa',   901, 'libros'),
+  ('RLS T41 Inactiva', 902, 'ropa'),
+  ('RLS T41 Otra',     903, 'hogar');
+update public.categories set activa = false where nombre = 'RLS T41 Inactiva';
+
+select (select id from public.categories where nombre = 'RLS T41 Activa')   as t41_ca,
+       (select id from public.categories where nombre = 'RLS T41 Inactiva') as t41_ci,
+       (select id from public.categories where nombre = 'RLS T41 Otra')     as t41_co,
+       (select universidad_id from public.users where id = :U41::uuid)      as t41_uni,
+       (select campus_id from public.users where id = :U41::uuid)           as t41_campus \gset
+
+-- (a) El catálogo sembrado --------------------------------------------------------
+select pg_temp.assert(
+  (select string_agg(nombre || '=' || icono, ',' order by orden)
+     from public.categories where nombre not like 'RLS T41 %')
+  = 'Libros=libros,Electrónica=electronica,Muebles=muebles,Ropa=ropa,Deportes=deportes,'
+    'Apuntes=apuntes,Hogar=hogar,Papelería=papeleria,Instrumentos=instrumentos,'
+    'Arte y manualidades=arte-y-manualidades,Boletos y eventos=boletos-y-eventos,'
+    'Alimentos=alimentos,Otros=otros'
+  and (select bool_and(activa) from public.categories where nombre not like 'RLS T41 %')
+  and pg_temp.t41_orden('Alimentos') = pg_temp.t41_orden('Otros') - 1,
+  'T41 (a) 13 categorías activas, Alimentos justo antes de Otros, con su ícono');
+
+-- (b) El cliente lee las columnas nuevas y no escribe nada -------------------------
+select pg_temp.assert(
+  pg_temp.as_user_int(:N41::uuid,
+    'select count(*) from public.categories where orden > 0 and icono is not null and activa is not null') >= 13
+  and pg_temp.t41(:N41::uuid, 'insert into public.categories (nombre, orden, icono) values (''X41'', 950, ''otros'')') like '42501:%'
+  and pg_temp.t41(:N41::uuid, 'update public.categories set activa = false') like '42501:%'
+  and pg_temp.t41(:N41::uuid, 'delete from public.categories') like '42501:%'
+  and not has_column_privilege('authenticated', 'public.categories', 'activa', 'update')
+  and not has_column_privilege('authenticated', 'public.categories', 'orden', 'update'),
+  'T41 (b) authenticated lee orden/icono/activa y no inserta, actualiza ni borra categorías');
+
+-- (c) Restricciones de la tabla (para todos los roles, también Studio) -------------
+select
+  pg_temp.t41(null, 'insert into public.categories (nombre, orden, icono) values (''RLS T41 Ico'', 951, ''pizza'')') as t41_c1,
+  pg_temp.t41(null, 'insert into public.categories (nombre, orden, icono) values ('' RLS T41 Borde'', 952, ''otros'')') as t41_c2,
+  pg_temp.t41(null, format('insert into public.categories (nombre, orden, icono) values (%L, 953, ''otros'')', repeat('x', 51))) as t41_c3,
+  pg_temp.t41(null, 'insert into public.categories (nombre, orden, icono) values (''x'', 954, ''otros'')') as t41_c4,
+  pg_temp.t41(null, 'insert into public.categories (nombre, orden, icono) values (''LIBROS'', 955, ''otros'')') as t41_c5,
+  pg_temp.t41(null, 'insert into public.categories (nombre, orden, icono) values (''RLS T41 Cero'', 0, ''otros'')') as t41_c6
+\gset
+select pg_temp.assert(
+  :'t41_c1' = '23514:categories_icono_check'
+  and :'t41_c2' = '23514:categories_nombre_normalizado'
+  and :'t41_c3' = '23514:categories_nombre_normalizado'
+  and :'t41_c4' = '23514:categories_nombre_normalizado'
+  and :'t41_c5' = '23505:categories_nombre_lower_key'
+  and :'t41_c6' = '23514:categories_orden_positivo',
+  'T41 (c) ícono fuera de la lista, nombre sucio o de 1/51 caracteres, duplicado sin mayúsculas y orden 0 → rechazados');
+
+-- El orden único es DIFERIBLE: en modo inmediato, un repetido se rechaza.
+-- SET CONSTRAINTS sobre un unique NO diferible lanza crudo: va dentro de un `do`
+-- que solo lo pide si es diferible, para que esa variante caiga en (c7).
+do $$ begin
+  if (select condeferrable from pg_constraint where conname = 'categories_orden_key') then
+    set constraints public.categories_orden_key immediate;
+  end if;
+end $$;
+select pg_temp.t41(null, 'update public.categories set orden = 901 where nombre = ''RLS T41 Otra''') as t41_c7 \gset
+do $$ begin
+  if (select condeferrable from pg_constraint where conname = 'categories_orden_key') then
+    set constraints public.categories_orden_key deferred;
+  end if;
+end $$;
+select pg_temp.assert(
+  :'t41_c7' = '23505:categories_orden_key'
+  and (select condeferrable and condeferred from pg_constraint where conname = 'categories_orden_key'),
+  'T41 (c7) orden repetido → 23505:categories_orden_key, y el unique es diferible e inicialmente diferido');
+
+-- (d) No se elige una categoría inactiva -------------------------------------------
+-- Publicación ya existente en "Activa" (como postgres), que luego se desactiva.
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, descripcion, precio, condicion, estado)
+values (:U41::uuid, :t41_ca, :t41_uni, :t41_campus, 'RLS T41 vieja', 'T41', 100, 'usado', 'activa');
+select id as t41_lv from public.listings where titulo = 'RLS T41 vieja' \gset
+insert into public.user_intereses (user_id, categoria_id) values (:U41::uuid, :t41_ca);
+update public.categories set activa = false where id = :t41_ca;
+
+select
+  pg_temp.t41(:U41::uuid, format($q$insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+     titulo, descripcion, precio, condicion, estado) values (%L, %s, %s, %s, 'RLS T41 nueva', 'x', 1, 'usado', 'pendiente')$q$,
+     :U41, :t41_ci, :t41_uni, :t41_campus)) as t41_d1,
+  pg_temp.t41(null, format($q$insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+     titulo, descripcion, precio, condicion, estado) values (%L, %s, %s, %s, 'RLS T41 studio', 'x', 1, 'usado', 'pendiente')$q$,
+     :U41, :t41_ci, :t41_uni, :t41_campus)) as t41_d2,
+  pg_temp.t41(:U41::uuid, format($q$insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+     titulo, descripcion, precio, condicion, estado) values (%L, %s, %s, %s, 'RLS T41 buena', 'x', 1, 'usado', 'pendiente')$q$,
+     :U41, :t41_co, :t41_uni, :t41_campus)) as t41_d3
+\gset
+select pg_temp.assert(
+  :'t41_d1' = '55000:categoria_inactiva'
+  and :'t41_d2' = '55000:categoria_inactiva'
+  and :'t41_d3' = 'ok',
+  'T41 (d1) crear una publicación en una categoría inactiva → 55000 (cliente y Studio); en una activa, sí');
+
+-- La vieja (sembrada `activa`, sin foto: el trigger de fotos solo mira la
+-- TRANSICIÓN) se sigue editando sin cambiar de categoría, puede salir hacia
+-- una activa, y no puede volver a la inactiva.
+select
+  pg_temp.t41(:U41::uuid, format('update public.listings set titulo = ''RLS T41 vieja editada'' where id = %s', :t41_lv)) as t41_d4,
+  pg_temp.t41(:U41::uuid, format('update public.listings set categoria_id = %s where id = %s', :t41_ci, :t41_lv)) as t41_d5
+\gset
+select pg_temp.t41(:U41::uuid, format('update public.listings set categoria_id = %s where id = %s', :t41_co, :t41_lv)) as t41_d6 \gset
+select pg_temp.t41(:U41::uuid, format('update public.listings set categoria_id = %s where id = %s', :t41_ca, :t41_lv)) as t41_d7 \gset
+select pg_temp.assert(
+  :'t41_d4' = 'ok'
+  and (select titulo from public.listings where id = :t41_lv) = 'RLS T41 vieja editada'
+  and :'t41_d5' = '55000:categoria_inactiva'
+  and :'t41_d6' = 'ok'
+  and :'t41_d7' = '55000:categoria_inactiva'
+  and (select categoria_id from public.listings where id = :t41_lv) = :t41_co,
+  'T41 (d2) una publicación en una categoría desactivada se sigue editando, sale hacia una activa y no entra a una inactiva');
+
+-- Intereses: no se agrega uno inactivo; el que ya existía se puede quitar.
+select
+  pg_temp.t41(:U41::uuid, format('insert into public.user_intereses (user_id, categoria_id) values (%L, %s)', :U41, :t41_ci)) as t41_d8,
+  pg_temp.t41(:U41::uuid, format('insert into public.user_intereses (user_id, categoria_id) values (%L, %s)', :U41, :t41_co)) as t41_d9
+\gset
+select pg_temp.t41(:U41::uuid, format('delete from public.user_intereses where user_id = %L and categoria_id = %s', :U41, :t41_ca)) as t41_d10 \gset
+select pg_temp.assert(
+  :'t41_d8' = '55000:categoria_inactiva'
+  and :'t41_d9' = 'ok'
+  and :'t41_d10' = 'ok'
+  and not exists (select 1 from public.user_intereses where user_id = :U41::uuid and categoria_id = :t41_ca),
+  'T41 (d3) intereses: no se agrega una categoría inactiva, sí una activa, y la inactiva que ya estaba se quita');
+update public.categories set activa = true where id = :t41_ca;
+
+-- (e) Autorización e invariantes de las RPC ----------------------------------------
+select
+  pg_temp.t41_rpc('select admin.categorias()::text', :N41::uuid) as t41_e1,
+  pg_temp.t41_rpc('select admin.crear_categoria(''RLS T41 X'', ''otros'', ''motivo e'')::text', :N41::uuid) as t41_e2,
+  pg_temp.t41_rpc('select admin.categorias()::text', :E41::uuid, 'aal1') as t41_e3
+\gset
+select pg_temp.assert(
+  :'t41_e1' = 'ERR:42501:no_admin'
+  and :'t41_e2' = 'ERR:42501:no_admin'
+  and :'t41_e3' = 'ERR:42501:mfa_requerido',
+  'T41 (e1) un no-admin y un admin aal1 no leen ni escriben categorías');
+select pg_temp.assert(
+  (select bool_and(p.prosecdef and p.proconfig = array['search_path=""']
+                   and has_function_privilege('authenticated', p.oid, 'execute')
+                   and not has_function_privilege('anon', p.oid, 'execute'))
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'admin'
+      and p.proname in ('categorias', 'crear_categoria', 'editar_categoria',
+                        'desactivar_categoria', 'reactivar_categoria', 'reordenar_categorias'))
+  and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'admin'
+          and p.proname in ('categorias', 'crear_categoria', 'editar_categoria',
+                            'desactivar_categoria', 'reactivar_categoria', 'reordenar_categorias')) = 6,
+  'T41 (e2) las 6 RPC: definer, search_path vacío, EXECUTE para authenticated y no para anon');
+
+-- (f) Lectura -----------------------------------------------------------------------
+select pg_temp.t41_admin('select admin.categorias()::text') as t41_f \gset
+select pg_temp.assert(
+  (select string_agg(e->>'nombre', ',' order by o) from jsonb_array_elements((:'t41_f')::jsonb->'categorias') with ordinality as x(e, o))
+    = (select string_agg(nombre, ',' order by orden) from public.categories)
+  and (select (e->>'publicaciones')::int = 2 and (e->>'intereses')::int = 1 and (e->>'icono') = 'hogar'
+         from jsonb_array_elements((:'t41_f')::jsonb->'categorias') e where e->>'nombre' = 'RLS T41 Otra')
+  and (select (e->>'activa')::boolean = false
+         from jsonb_array_elements((:'t41_f')::jsonb->'categorias') e where e->>'nombre' = 'RLS T41 Inactiva'),
+  'T41 (f) admin.categorias(): todas en orden, con ícono, activa y los conteos de publicaciones e intereses');
+
+-- (g) Crear y editar ----------------------------------------------------------------
+select
+  pg_temp.t41_admin('select admin.crear_categoria(''RLS T41 Nueva'', ''otros'', ''no'')::text') as t41_g1,
+  pg_temp.t41_admin('select admin.crear_categoria(''R'', ''otros'', ''motivo g'')::text') as t41_g2,
+  pg_temp.t41_admin('select admin.crear_categoria(''RLS T41 Nueva'', ''pizza'', ''motivo g'')::text') as t41_g3,
+  pg_temp.t41_admin('select admin.crear_categoria(''rls t41 activa'', ''otros'', ''motivo g'')::text') as t41_g4
+\gset
+select pg_temp.assert(
+  :'t41_g1' = 'ERR:22023:motivo_invalido'
+  and :'t41_g2' = 'ERR:22023:nombre_invalido'
+  and :'t41_g3' = 'ERR:22023:icono_invalido'
+  and :'t41_g4' = 'ERR:23505:nombre_duplicado',
+  'T41 (g1) crear: motivo, nombre, ícono y duplicado sin mayúsculas rechazados');
+
+-- La última del catálogo es "RLS T41 Otra" (ícono hogar): la nueva va al final.
+select pg_temp.t41_admin('select admin.crear_categoria(''  RLS   T41 Nueva '', ''alimentos'', ''motivo g2'')::text') as t41_g5 \gset
+select pg_temp.assert(
+  (select nombre = 'RLS T41 Nueva' and icono = 'alimentos' and activa and orden = 904
+     from public.categories where id::text = :'t41_g5')
+  and (select objetivo_tipo = 'categoria' and objetivo_id = :'t41_g5' and antes is null
+              and despues = '{"nombre": "RLS T41 Nueva", "icono": "alimentos", "orden": 904, "activa": true}'::jsonb
+              and admin_id = :E41::uuid
+         from pg_temp.t41_audit('crear_categoria')),
+  'T41 (g2) crear normaliza el nombre, entra al final y audita nombre, ícono, orden y activa');
+
+-- Si la última tiene el ícono `otros`, la nueva entra justo antes de ella.
+update public.categories set icono = 'otros' where nombre = 'RLS T41 Nueva';
+select pg_temp.t41_admin('select admin.crear_categoria(''RLS T41 Antes'', ''libros'', ''motivo g3'')::text') as t41_g6 \gset
+select pg_temp.assert(
+  pg_temp.t41_orden('RLS T41 Antes') = 904 and pg_temp.t41_orden('RLS T41 Nueva') = 905,
+  'T41 (g3) con "otros" al final, la nueva toma su lugar y "otros" se recorre uno');
+
+select
+  pg_temp.t41_admin(format('select admin.editar_categoria(%s, ''RLS T41 Activa'', ''libros'', ''motivo g4'')::text', :t41_ca)) as t41_g7,
+  pg_temp.t41_admin(format('select admin.editar_categoria(%s, ''rls t41 otra'', ''libros'', ''motivo g4'')::text', :t41_ca)) as t41_g8,
+  pg_temp.t41_admin('select admin.editar_categoria(-1, ''RLS T41 Z'', ''libros'', ''motivo g4'')::text') as t41_g9
+\gset
+select pg_temp.t41_admin(format('select admin.editar_categoria(%s, ''RLS T41 Activa'', ''muebles'', ''motivo g5'')::text', :t41_ca)) as t41_g10 \gset
+select pg_temp.assert(
+  :'t41_g7' = 'ERR:55000:sin_cambios'
+  and :'t41_g8' = 'ERR:23505:nombre_duplicado'
+  and :'t41_g9' = 'ERR:P0002:categoria_no_existe'
+  and :'t41_g10' = ''
+  and (select icono from public.categories where id = :t41_ca) = 'muebles'
+  and (select antes = '{"icono": "libros"}'::jsonb and despues = '{"icono": "muebles"}'::jsonb
+         from pg_temp.t41_audit('editar_categoria')),
+  'T41 (g4) editar: sin cambios, duplicado y no existe rechazados; un cambio de ícono audita SOLO el ícono');
+
+-- Cambiar solo mayúsculas del propio nombre es un cambio válido.
+select pg_temp.t41_admin(format('select admin.editar_categoria(%s, ''RLS T41 ACTIVA'', ''muebles'', ''motivo g6'')::text', :t41_ca)) as t41_g11 \gset
+select pg_temp.assert(
+  :'t41_g11' = '' and (select nombre from public.categories where id = :t41_ca) = 'RLS T41 ACTIVA',
+  'T41 (g5) editar solo las mayúsculas del propio nombre es válido');
+
+-- (h) Desactivar y reactivar -------------------------------------------------------
+select pg_temp.t41_admin(format('select admin.desactivar_categoria(%s, ''motivo h'')::text', :t41_co)) as t41_h1 \gset
+select pg_temp.t41_admin(format('select admin.desactivar_categoria(%s, ''motivo h'')::text', :t41_co)) as t41_h2 \gset
+select pg_temp.assert(
+  :'t41_h1' = ''
+  and not (select activa from public.categories where id = :t41_co)
+  and :'t41_h2' = 'ERR:55000:categoria_ya_inactiva'
+  and (select categoria_id from public.listings where id = :t41_lv) = :t41_co
+  and exists (select 1 from public.user_intereses where user_id = :U41::uuid and categoria_id = :t41_co)
+  and (select antes = '{"activa": true}'::jsonb and despues = '{"activa": false}'::jsonb
+         from pg_temp.t41_audit('desactivar_categoria')),
+  'T41 (h1) desactivar: CAS, audita, y las publicaciones e intereses conservan su categoría');
+select pg_temp.t41_admin(format('select admin.reactivar_categoria(%s, ''motivo h2'')::text', :t41_co)) as t41_h3 \gset
+select pg_temp.t41_admin(format('select admin.reactivar_categoria(%s, ''motivo h2'')::text', :t41_co)) as t41_h4 \gset
+select pg_temp.assert(
+  :'t41_h3' = '' and (select activa from public.categories where id = :t41_co)
+  and :'t41_h4' = 'ERR:55000:categoria_ya_activa'
+  and pg_temp.t41_admin('select admin.desactivar_categoria(-1, ''motivo h3'')::text') = 'ERR:P0002:categoria_no_existe',
+  'T41 (h2) reactivar: CAS y audita; una categoría que no existe → P0002');
+
+-- (i) Reordenar ---------------------------------------------------------------------
+select array_agg(id order by orden)::text as t41_ids,
+       (select count(*) from private.admin_acciones where accion = 'reordenar_categorias') as t41_aud0
+  from public.categories \gset
+-- Intercambia las dos primeras.
+select (array_cat(array[((:'t41_ids')::bigint[])[2], ((:'t41_ids')::bigint[])[1]],
+                  ((:'t41_ids')::bigint[])[3:]))::text as t41_ids2 \gset
+select
+  pg_temp.t41_admin(format('select admin.reordenar_categorias(%L, ''motivo i'')::text', :'t41_ids')) as t41_i1,
+  pg_temp.t41_admin(format('select admin.reordenar_categorias(%L, ''motivo i'')::text', ((:'t41_ids')::bigint[])[2:])) as t41_i2,
+  pg_temp.t41_admin(format('select admin.reordenar_categorias(%L, ''motivo i'')::text',
+    array_append(((:'t41_ids')::bigint[])[2:], ((:'t41_ids')::bigint[])[2]))) as t41_i3,
+  pg_temp.t41_admin(format('select admin.reordenar_categorias(%L, ''no'')::text', :'t41_ids2')) as t41_i4
+\gset
+select pg_temp.assert(
+  :'t41_i1' = 'ERR:55000:sin_cambios'
+  and :'t41_i2' = 'ERR:55000:orden_desactualizado'
+  and :'t41_i3' = 'ERR:55000:orden_desactualizado'
+  and :'t41_i4' = 'ERR:22023:motivo_invalido',
+  'T41 (i1) reordenar: el mismo orden → sin_cambios; faltando o repitiendo una id → orden_desactualizado');
+select pg_temp.t41_admin(format('select admin.reordenar_categorias(%L, ''motivo i2'')::text', :'t41_ids2')) as t41_i5 \gset
+select pg_temp.assert(
+  :'t41_i5' = ''
+  and (select array_agg(id order by orden)::text from public.categories) = :'t41_ids2'
+  and (select array_agg(orden order by orden) from public.categories)
+      = (select array_agg(g) from generate_series(1, (select count(*)::int from public.categories)) g)
+  and (select count(*) from private.admin_acciones where accion = 'reordenar_categorias') - :t41_aud0
+      = (select count(*) from public.categories where nombre like 'RLS T41 %') + 2,
+  'T41 (i2) reordenar aplica el orden, lo deja en 1..n y audita una fila por categoría movida');
+select pg_temp.t41_admin(format('select admin.reordenar_categorias(%L, ''restaurar'')::text', :'t41_ids')) as t41_i6 \gset
+select pg_temp.assert(
+  :'t41_i6' = '' and (select array_agg(id order by orden)::text from public.categories) = :'t41_ids'
+  and pg_temp.t41_orden('Alimentos') = 12 and pg_temp.t41_orden('Otros') = 13,
+  'T41 (i3) reordenar de vuelta restaura el orden del seed');
+
+-- (j) Las claves de auditoría de `categoria` --------------------------------------
+select
+  pg_temp.t41(null, format($q$insert into private.admin_acciones
+    (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+    values (%L, 'x', 'editar_categoria', 'categoria', 'x', null, '{"nombre": "a", "icono": "b", "orden": 1, "activa": true}', 'motivo')$q$, :E41)) as t41_j1,
+  pg_temp.t41(null, format($q$insert into private.admin_acciones
+    (admin_id, admin_correo, accion, objetivo_tipo, objetivo_id, antes, despues, motivo)
+    values (%L, 'x', 'editar_categoria', 'categoria', 'x', null, '{"estado": "x"}', 'motivo')$q$, :E41)) as t41_j2
+\gset
+select pg_temp.assert(
+  :'t41_j1' = 'ok' and :'t41_j2' = '23514:admin_acciones_claves_ok',
+  'T41 (j) auditoría de categoría: nombre/icono/orden/activa entran; otra clave → 23514');
 
 \echo ''
 \echo '==========================================='

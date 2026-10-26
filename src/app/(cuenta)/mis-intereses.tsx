@@ -26,6 +26,7 @@ import { Screen } from '@/components/Screen';
 import { SkeletonCatGrid } from '@/components/Skeleton';
 import { useToast } from '@/components/Toast';
 import { Colors, ScreenPadding, Typography } from '@/constants/theme';
+import { esCategoriaInactiva } from '@/lib/categorias';
 import { useExplorarState } from '@/lib/explorar-state';
 import { fetchMisIntereses, guardarIntereses } from '@/lib/intereses';
 import { useSession } from '@/lib/session';
@@ -101,7 +102,12 @@ function Formulario({ userId, guardados }: { userId: string; guardados: Set<numb
       router.back();
     } catch (e: any) {
       console.warn('[mis-intereses] no se pudieron guardar:', e?.message ?? e);
-      mostrar('No pudimos guardar tus intereses. Intenta de nuevo.', 'error');
+      mostrar(
+        esCategoriaInactiva(e)
+          ? 'Una de esas categorías ya no está disponible.'
+          : 'No pudimos guardar tus intereses. Intenta de nuevo.',
+        'error'
+      );
       setGuardando(false);
     }
   };

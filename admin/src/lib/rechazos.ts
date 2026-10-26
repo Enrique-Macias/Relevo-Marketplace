@@ -32,7 +32,7 @@ export function clasificarRechazo(err: ErrorRpc | null | undefined): AccionRecha
 /**
  * Texto para el admin. Los códigos los fijan 20260930000478 (guardas G1-G6),
  * 20260930000479 (reportes y bloqueo), 20261007000481 (aprobar), 20261008000483 (restablecer la
- * app autenticadora, más los dos de la Edge Function `admin-reset-mfa`) y 20261008000484 (catálogo). Es
+ * app autenticadora, más los dos de la Edge Function `admin-reset-mfa`), 20261008000484 (catálogo) y 20261025000489 (categorías). Es
  * copy PERSISTENTE (un `.notice` o un `.field-error`), así que cada texto está dibujado en
  * `design/admin-panel.html`.
  */
@@ -70,6 +70,12 @@ const TEXTOS: Record<string, string> = {
   dominio_ya_activo: 'El dominio ya estaba activo. Recarga el detalle.',
   // Ola 6 (20261009000485, métricas): copy de la variante del frame "Métricas".
   rango_invalido: 'No pudimos calcular ese rango de fechas. Recarga la página e inténtalo de nuevo.',
+  // Categorías (20261025000489): copy de los frames "Categorías — reordenar" y
+  // "Desactivar o reactivar categoría". `nombre_invalido`/`nombre_duplicado`
+  // cambian de texto con el sujeto `categoria` (abajo).
+  categoria_ya_inactiva: 'La categoría ya estaba desactivada. Recarga la lista.',
+  categoria_ya_activa: 'La categoría ya estaba activa. Recarga la lista.',
+  orden_desactualizado: 'Otra persona cambió las categorías mientras tanto. Recarga la lista y vuelve a ordenarlas.',
   [NO_ADMIN]: 'Esta cuenta no es admin del panel.',
   [MFA_REQUERIDO]: 'Falta confirmar tu código de la app autenticadora.',
   [TOTP_VENCIDO]: 'Tu código de la app autenticadora venció. Confírmalo otra vez.',
@@ -93,6 +99,9 @@ export const SIN_TEXTO_PROPIO: readonly string[] = [
   // Ola 6 (20261009000485/486): el selector del panel no pide más de 90 días, y
   // la auditoría solo se pide con un tipo y un id que el panel ya tiene.
   'rango_demasiado_largo', 'objetivo_tipo_invalido', 'objetivo_invalido',
+  // Categorías (20261025000489): el selector solo ofrece los 13 íconos que
+  // admite el CHECK, y los ids salen de `admin.categorias()`.
+  'icono_invalido', 'categoria_no_existe',
 ];
 
 export function tieneTextoDecidido(mensaje: string): boolean {
@@ -108,15 +117,20 @@ const NOMBRE_DUPLICADO_CAMPUS = 'Esta universidad ya tiene un campus con ese nom
  * variante): ahí la provoca el selector. En el catálogo sigue siendo el texto
  * genérico (está en SIN_TEXTO_PROPIO), porque allá el panel no la provoca.
  */
+/** Las categorías tienen su propio tope (50) y su propio sujeto. */
+const NOMBRE_INVALIDO_CATEGORIA = 'El nombre debe tener entre 2 y 50 caracteres.';
+const NOMBRE_DUPLICADO_CATEGORIA = 'Ya existe una categoría con ese nombre.';
 const UNIVERSIDAD_NO_EXISTE_METRICAS = 'Esa universidad ya no está en el catálogo. Elige otra o «Todas las universidades».';
 
 export function textoDeRechazo(
   err: ErrorRpc | null | undefined,
-  sujeto: 'cuenta' | 'publicacion' | 'campus' | 'metricas' = 'cuenta',
+  sujeto: 'cuenta' | 'publicacion' | 'campus' | 'metricas' | 'categoria' = 'cuenta',
 ): string {
   const m = err?.message ?? '';
   if (m === 'estado_inesperado' && sujeto === 'publicacion') return ESTADO_INESPERADO_PUBLICACION;
   if (m === 'nombre_duplicado' && sujeto === 'campus') return NOMBRE_DUPLICADO_CAMPUS;
+  if (m === 'nombre_invalido' && sujeto === 'categoria') return NOMBRE_INVALIDO_CATEGORIA;
+  if (m === 'nombre_duplicado' && sujeto === 'categoria') return NOMBRE_DUPLICADO_CATEGORIA;
   if (m === 'universidad_no_existe' && sujeto === 'metricas') return UNIVERSIDAD_NO_EXISTE_METRICAS;
   return TEXTOS[m] ?? `No se pudo completar la acción (${err?.code ?? 'sin código'}).`;
 }

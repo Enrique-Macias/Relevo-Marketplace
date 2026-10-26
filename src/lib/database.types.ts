@@ -106,16 +106,25 @@ export type Database = {
       }
       categories: {
         Row: {
+          activa: boolean
+          icono: string
           id: number
           nombre: string
+          orden: number
         }
         Insert: {
+          activa?: boolean
+          icono: string
           id?: never
           nombre: string
+          orden: number
         }
         Update: {
+          activa?: boolean
+          icono?: string
           id?: never
           nombre?: string
+          orden?: number
         }
         Relationships: []
       }

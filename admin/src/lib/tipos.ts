@@ -108,6 +108,10 @@ export interface DominioCatalogo { dominio: string; activo: boolean; created_at:
 export interface UniversidadCatalogo {
   id: number; nombre: string; usuarios: number; campus: CampusCatalogo[]; dominios: DominioCatalogo[];
 }
+/** Una fila de `admin.categorias()` (`20261025000489`), ya en orden. */
+export interface CategoriaAdmin {
+  id: number; nombre: string; icono: string; orden: number; activa: boolean; publicaciones: number; intereses: number;
+}
 
 /** Adónde puede ir el panel. Sin router: un estado en el Panel. */
 export type Vista =
@@ -118,5 +122,6 @@ export type Vista =
   | { tipo: 'usuarios' }
   | { tipo: 'usuario'; id: string; desde?: number }
   | { tipo: 'catalogo' }
+  | { tipo: 'categorias' }
   | { tipo: 'universidad'; id: number }
   | { tipo: 'metricas' };

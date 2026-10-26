@@ -34,6 +34,7 @@ import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, ScreenPadding } from '@/constants/theme';
+import { esCategoriaInactiva } from '@/lib/categorias';
 import { useExplorarState } from '@/lib/explorar-state';
 import { elegirFotos, PermisoDenegadoError } from '@/lib/foto-picker';
 import { useListingForm } from '@/lib/listing-form';
@@ -348,7 +349,12 @@ export default function PublicarScreen() {
         // propaga (devuelve `falloGeneral`). No se tocó Storage, no hay nada que
         // recuperar, y el formulario sigue completo.
         console.warn('[publicar] no se pudo crear la publicación:', e?.message ?? e);
-        mostrar('No pudimos publicar tu artículo. Intenta de nuevo.', 'error');
+        mostrar(
+          esCategoriaInactiva(e)
+            ? 'Esa categoría ya no está disponible. Elige otra.'
+            : 'No pudimos publicar tu artículo. Intenta de nuevo.',
+          'error'
+        );
         setFase({ t: 'form' });
       }
     } finally {
