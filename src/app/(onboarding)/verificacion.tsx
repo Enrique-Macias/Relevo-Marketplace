@@ -8,7 +8,9 @@ import { PrimaryButton } from '@/components/Buttons';
 import { Field } from '@/components/Field';
 import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
+import { useToast } from '@/components/Toast';
 import { Colors, Typography } from '@/constants/theme';
+import { URL_PRIVACIDAD, URL_TERMINOS } from '@/lib/configuracion';
 import { mensajeErrorAuth } from '@/lib/errores-auth';
 import { useRedirectSiPerfilCompleto } from '@/lib/session';
 import {
@@ -18,6 +20,7 @@ import {
   esDominioNoParticipante,
 } from '@/lib/registro';
 import { supabase } from '@/lib/supabase';
+import { abrirDocumentoLegal } from '@/lib/terminos';
 
 import { usePerfilDraft } from './_layout';
 
@@ -34,6 +37,10 @@ export const CORREO_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function VerificacionScreen() {
   const redirect = useRedirectSiPerfilCompleto();
   const { correo, setCorreo } = usePerfilDraft();
+  const { mostrar } = useToast();
+  const abrir = async (url: string) => {
+    if (!(await abrirDocumentoLegal(url))) mostrar('No pudimos abrir el documento.', 'error');
+  };
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Los rechazos del hook van aparte del error genérico porque tienen su
@@ -117,8 +124,19 @@ export default function VerificacionScreen() {
             Inicia sesión
           </AuthLinkStrong>
         </AuthLink>
+        {/* PL-016: aquí todavía no hay sesión, así que no se acepta nada; la
+            aceptación es la casilla de "Completar perfil". Los enlaces abren las
+            páginas públicas (sin sesión no se lee el catálogo de versiones). */}
         <AuthTerms>
-          Al continuar aceptas los Términos de uso y el Aviso de privacidad de RLVO.
+          Consulta los{' '}
+          <Text style={styles.legalLink} onPress={() => void abrir(URL_TERMINOS)} accessibilityRole="link" suppressHighlighting>
+            Términos de uso
+          </Text>{' '}
+          y el{' '}
+          <Text style={styles.legalLink} onPress={() => void abrir(URL_PRIVACIDAD)} accessibilityRole="link" suppressHighlighting>
+            Aviso de privacidad
+          </Text>{' '}
+          de RLVO.
         </AuthTerms>
       </AuthBody>
     </Screen>
@@ -128,6 +146,12 @@ export default function VerificacionScreen() {
 // El prototipo no dibuja un estado de error para estas pantallas; se usa el rol
 // tipográfico y el color de marca ya existentes, sin tokens nuevos.
 const styles = StyleSheet.create({
+  // .legal-link{color:var(--brick); font-weight:600; text-decoration:underline;}
+  legalLink: {
+    fontFamily: Typography.label.fontFamily,
+    color: Colors.brick,
+    textDecorationLine: 'underline',
+  },
   // El frame le pone `margin-bottom:12px` inline al .notice: con el `margin-top`
   // de 4 del botón quedan 16, igual que del .field al aviso. Los 24 de la clase
   // son para el .sticky-cta de Publicar.

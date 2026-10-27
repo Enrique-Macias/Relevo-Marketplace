@@ -44,6 +44,7 @@ import {
   type PerfilEditable,
 } from '@/lib/perfil';
 import { type OpcionCatalogo } from '@/lib/catalogos';
+import { useExigirTerminos } from '@/lib/exigir-terminos';
 import { useSession } from '@/lib/session';
 import { paisPorIso, type Pais } from '@/lib/paises';
 import {
@@ -136,6 +137,7 @@ function Formulario({
   telefonoGuardado: string | null;
 }) {
   const { profile, refreshProfile } = useSession();
+  const exigirTerminos = useExigirTerminos();
   const { mostrar } = useToast();
 
   // Solo se muestra: la universidad no se cambia desde la app.
@@ -227,6 +229,15 @@ function Formulario({
     // nada. Se calcula una vez y lo usan el UPDATE y el toast de abajo.
     const mandaTelefono = telefonoTocado.current && telefonoValido(pais.iso, telefono);
 
+    // Escribir un teléfono o una carrera exige aceptar los términos
+    // (`users_exige_terminos`); quitar la carrera o cambiar solo nombre y
+    // campus, no. Se pregunta antes para no chocar con el rechazo.
+    const cambiaCarrera = carrera.trim() !== '' && carrera.trim() !== perfil.carrera.trim();
+    if ((mandaTelefono || cambiaCarrera) && !exigirTerminos()) {
+      setGuardando(false);
+      return;
+    }
+
     try {
       await guardarPerfil(userId, {
         nombre,
@@ -312,7 +323,9 @@ function Formulario({
           */}
           <Pressable
             style={styles.photoCircle}
-            onPress={cambiarFoto}
+            onPress={() => {
+              if (exigirTerminos()) cambiarFoto();
+            }}
             disabled={subiendoFoto}
             accessibilityRole="button"
             accessibilityLabel="Cambiar foto de perfil"

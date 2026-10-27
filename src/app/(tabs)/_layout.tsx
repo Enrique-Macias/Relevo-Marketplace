@@ -18,7 +18,15 @@ import { useSession } from '@/lib/session';
 // de design/relevo-app.html — NativeTabs.Trigger.Icon no acepta un <Svg> de
 // react-native-svg como `src` (solo VectorIcon), ver CLAUDE.md §9.
 export default function TabsLayout() {
-  const { status, session, isProfileComplete, profileError, refreshProfile } = useSession();
+  const {
+    status,
+    session,
+    isProfileComplete,
+    profileError,
+    refreshProfile,
+    terminosAceptados,
+    terminosResuelto,
+  } = useSession();
   const pathname = usePathname();
   const [reintentando, setReintentando] = useState(false);
 
@@ -70,6 +78,14 @@ export default function TabsLayout() {
       }
       return <Redirect href="/completar-perfil" />;
     }
+    // PL-016: puerta obligatoria. Sin aceptar la versión vigente de los
+    // Términos no se entra al Feed: "Términos actualizados" no se puede saltar,
+    // y sus únicas salidas son aceptar, cerrar sesión o eliminar la cuenta.
+    // Mientras se lee el estado no se pinta el Feed, para que no asome detrás.
+    // Si la lectura falla o no hay versión vigente (`null`), se entra: no saber
+    // no es motivo para dejar a nadie fuera, y el candado es de la base.
+    if (!terminosResuelto) return <View style={styles.esperando} />;
+    if (terminosAceptados === false) return <Redirect href="/terminos-actualizados" />;
   }
 
   /**
@@ -145,5 +161,10 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   contenedor: {
     flex: 1,
+  },
+  // Mientras se lee el estado de términos: el fondo de la app, sin el Feed.
+  esperando: {
+    flex: 1,
+    backgroundColor: Colors.paper,
   },
 });

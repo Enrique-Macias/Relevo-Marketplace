@@ -23,8 +23,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useState } from 'react';
 import { Linking, Platform, Share, StyleSheet, Text, View } from 'react-native';
 
-import { ConfirmModal } from '@/components/ConfirmModal';
-import { Field } from '@/components/Field';
+import { useEliminarCuenta } from '@/components/EliminarCuentaModal';
 import {
   IconBan,
   IconBell,
@@ -37,7 +36,6 @@ import {
   IconStar,
   IconTrash,
 } from '@/components/icons';
-import { Notice } from '@/components/Notice';
 import { PageHeader } from '@/components/PageHeader';
 import { Screen } from '@/components/Screen';
 import { SectionHead } from '@/components/SectionHead';
@@ -52,16 +50,8 @@ import {
   URL_PRIVACIDAD,
   URL_TERMINOS,
 } from '@/lib/configuracion';
-import {
-  copyDeFallo,
-  EliminarCuentaError,
-  eliminarCuenta,
-  type FalloEliminarCuenta,
-} from '@/lib/eliminar-cuenta';
 import { estadoPermisoPush, pushDisponible, registrarPushToken, type EstadoPermisoPush } from '@/lib/push';
-import { salirHacia } from '@/lib/salida-sesion';
 import { useSession } from '@/lib/session';
-import { supabase } from '@/lib/supabase';
 
 export default function ConfiguracionScreen() {
   const { session } = useSession();
@@ -69,11 +59,8 @@ export default function ConfiguracionScreen() {
 
   const [permisoPush, setPermisoPush] = useState<EstadoPermisoPush | null>(null);
 
-  // "Confirmar eliminar cuenta".
-  const [eliminarVisible, setEliminarVisible] = useState(false);
-  const [password, setPassword] = useState('');
-  const [eliminando, setEliminando] = useState(false);
-  const [fallo, setFallo] = useState<FalloEliminarCuenta | null>(null);
+  // "Confirmar eliminar cuenta", el mismo de "Términos actualizados".
+  const eliminarCuenta = useEliminarCuenta();
 
   // Re-lee al ENFOCAR, no solo al montar: revocar el permiso desde Ajustes y
   // volver a esta pantalla (sin matar la app) tiene que actualizar el texto.
@@ -133,39 +120,6 @@ export default function ConfiguracionScreen() {
     } catch {
       mostrar('No pudimos abrir el documento.', 'error');
     }
-  }
-
-  function abrirEliminarCuenta() {
-    // Todo se resetea al ABRIR, no solo al cerrar: un intento anterior que
-    // Fast Refresh preservó a medias dejaría el modal sin salida (el mismo bug
-    // de "Cerrar sesión", cuenta-perfil.md).
-    setPassword('');
-    setFallo(null);
-    setEliminando(false);
-    setEliminarVisible(true);
-  }
-
-  async function confirmarEliminarCuenta() {
-    const correo = session?.user.email;
-    if (!correo || !password) return;
-    setEliminando(true);
-    setFallo(null);
-    try {
-      await eliminarCuenta(correo, password);
-    } catch (e) {
-      setFallo(e instanceof EliminarCuentaError ? e.motivo : 'servidor');
-      if (!(e instanceof EliminarCuentaError)) console.error('[eliminar-cuenta]', e);
-      setEliminando(false);
-      return;
-    }
-    // La cuenta ya no existe. Cerrar la sesión LOCAL es lo que dispara la
-    // salida: el guard global ve la sesión desaparecer y aterriza en "Cuenta
-    // eliminada". `signOut` limpia el storage aunque el servidor conteste
-    // 401/404 (la sesión ya no existe allá; auth-js lo ignora,
-    // `GoTrueClient.js:3424-3440`). El push token no se borra desde aquí: se fue
-    // con la cascada de `push_tokens` al borrar la cuenta.
-    salirHacia('cuenta-eliminada');
-    await supabase.auth.signOut({ scope: 'local' });
   }
 
   async function compartirApp() {
@@ -315,66 +269,19 @@ export default function ConfiguracionScreen() {
               label="Eliminar cuenta"
               trailing={<IconChevronRight size={14} color={Colors.inkSoft} />}
               danger
-              onPress={abrirEliminarCuenta}
+              onPress={eliminarCuenta.abrir}
               last
             />
           </View>
         ) : null}
       </Screen>
 
-      {/* Frame "Confirmar eliminar cuenta" (data-cat="sistema"). La contraseña
-          ES la confirmación. Los errores van dentro del modal: son copy
-          persistente que se lee mientras se corrige (§0 regla 4). */}
-      <ConfirmModal
-        visible={eliminarVisible}
-        icon={<IconTrash size={22} color={Colors.danger} />}
-        title="¿Eliminar tu cuenta?"
-        body="Se borrarán tu perfil y tus publicaciones de inmediato. Esta acción no se puede deshacer."
-        confirmLabel="Eliminar"
-        onConfirm={() => void confirmarEliminarCuenta()}
-        // `onCancel` también es el "atrás" de Android (`onRequestClose`): con el
-        // borrado en curso no hay nada que cancelar.
-        onCancel={() => {
-          if (!eliminando) setEliminarVisible(false);
-        }}
-        confirming={eliminando}
-        confirmDisabled={password.length === 0}
-      >
-        <Field
-          label="Confirma con tu contraseña"
-          placeholder="••••••••"
-          value={password}
-          onChangeText={(v) => {
-            setPassword(v);
-            // El error de contraseña habla de la que se mandó.
-            if (fallo === 'contrasena') setFallo(null);
-          }}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          textContentType="password"
-          editable={!eliminando}
-          error={fallo === 'contrasena' ? copyDeFallo('contrasena') : null}
-          containerStyle={styles.campoModal}
-        />
-        {fallo && fallo !== 'contrasena' ? (
-          <Notice text={copyDeFallo(fallo)} style={styles.noticeModal} />
-        ) : null}
-      </ConfirmModal>
+      {eliminarCuenta.modal}
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  campoModal: {
-    marginBottom: 0,
-  },
-  // .notice trae margin-bottom:24px para el .sticky-cta; dentro del modal lo
-  // separa el hueco de `children` (20px) de los botones.
-  noticeModal: {
-    marginTop: 12,
-    marginBottom: 0,
-  },
   firstSection: {
     paddingTop: 4,
   },

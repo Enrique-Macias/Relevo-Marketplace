@@ -49,6 +49,12 @@ type AvatarProps = {
    * prop `fallback` de `ListingPhoto`.
    */
   fallback?: React.ReactNode;
+  /**
+   * Una foto que todavía NO subió (`file://` del teléfono): gana sobre `path`.
+   * Hoy solo la usa "Completar perfil", que guarda la foto hasta Continuar
+   * (PL-016, `useFotoPerfil({ diferida })`).
+   */
+  uriLocal?: string | null;
   /** Contenido extra SOBRE la foto (el scrim de "subiendo", el `.cam-badge`). */
   children?: React.ReactNode;
   accessibilityLabel?: string;
@@ -62,6 +68,7 @@ export function Avatar({
   fallback,
   children,
   accessibilityLabel,
+  uriLocal,
 }: AvatarProps) {
   // Se guarda el PATH que falló, no un booleano: así una fila reciclada de una
   // lista (reseñas, `BuyerRow`) no hereda el error de la anterior. Mismo
@@ -72,7 +79,14 @@ export function Avatar({
 
   return (
     <View style={[styles.contenedor, style]}>
-      {puedePintar ? (
+      {uriLocal ? (
+        <Image
+          source={{ uri: uriLocal }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          accessibilityLabel={accessibilityLabel}
+        />
+      ) : puedePintar ? (
         <Image
           source={{ uri: urlAvatarPublica(path) }}
           style={StyleSheet.absoluteFill}

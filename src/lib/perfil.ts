@@ -316,6 +316,12 @@ export type ModalesFotoPerfilEstado = {
  * runtime (solo tipos), así que el aviso sale por `onAviso` y la pantalla decide
  * con qué lo muestra.
  *
+ * Con `diferida` (PL-016, solo "Completar perfil"), "Usar foto" recorta pero NO
+ * sube: la foto queda en el teléfono (`pendiente`) hasta `subirPendiente()`, que
+ * la pantalla llama al tocar Continuar, DESPUÉS de registrar la aceptación de
+ * los Términos. Sin aceptación la base rechaza escribir `foto_url`
+ * (`users_exige_terminos`) y subir el objeto (`avatars_objects_insert_own`).
+ *
  * El guard de reentrada va en un `ref` y no en el estado, mismo motivo que
  * `agregarFoto()` de Publicar: tiene que valer ANTES del primer `await`, sin
  * esperar a un re-render, o un doble tap abre el picker dos veces. Se toma al
@@ -326,9 +332,11 @@ export function useFotoPerfil({
   inicial,
   onAviso,
   onGuardada,
+  diferida = false,
 }: {
   userId: string;
   inicial: string | null;
+  diferida?: boolean;
   onAviso: (texto: string, variante?: 'exito' | 'error') => void;
   /** Se llama tras escribir `foto_url`. Las pantallas hacen `refreshProfile()`. */
   onGuardada?: () => void | Promise<void>;
@@ -337,6 +345,7 @@ export function useFotoPerfil({
   const [subiendo, setSubiendo] = useState(false);
   const [hojaVisible, setHojaVisible] = useState(false);
   const [editorUri, setEditorUri] = useState<string | null>(null);
+  const [pendiente, setPendiente] = useState<FotoLocal | null>(null);
   const enCurso = useRef(false);
 
   const cambiar = useCallback(() => {
@@ -417,6 +426,10 @@ export function useFotoPerfil({
       setSubiendo(true);
       try {
         const recortada = await recortarAvatar(uri, rect);
+        if (diferida) {
+          setPendiente(recortada);
+          return;
+        }
         const path = await guardarFotoPerfil(userId, recortada, fotoUrl);
         setFotoUrl(path);
         await onGuardada?.();
@@ -428,8 +441,30 @@ export function useFotoPerfil({
         setSubiendo(false);
       }
     },
-    [editorUri, fotoUrl, onAviso, onGuardada, userId]
+    [diferida, editorUri, fotoUrl, onAviso, onGuardada, userId]
   );
+
+  /**
+   * Sube la foto `pendiente` (modo `diferida`). Devuelve false si falló, ya
+   * avisado: la foto se conserva para reintentar.
+   */
+  const subirPendiente = useCallback(async (): Promise<boolean> => {
+    if (!pendiente) return true;
+    setSubiendo(true);
+    try {
+      const path = await guardarFotoPerfil(userId, pendiente, fotoUrl);
+      setFotoUrl(path);
+      setPendiente(null);
+      await onGuardada?.();
+      return true;
+    } catch (e: any) {
+      console.warn('[foto-perfil] no se pudo subir la foto pendiente:', e?.message ?? e);
+      onAviso(avisoDe(e), 'error');
+      return false;
+    } finally {
+      setSubiendo(false);
+    }
+  }, [fotoUrl, onAviso, onGuardada, pendiente, userId]);
 
   const modales: ModalesFotoPerfilEstado = {
     hojaVisible,
@@ -442,5 +477,5 @@ export function useFotoPerfil({
     usar: (rect) => void usar(rect),
   };
 
-  return { fotoUrl, subiendo, cambiar, modales };
+  return { fotoUrl, subiendo, cambiar, modales, pendiente, subirPendiente };
 }

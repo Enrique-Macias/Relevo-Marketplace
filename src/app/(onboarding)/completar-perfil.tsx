@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -18,15 +18,18 @@ import { CampusBottomSheet } from '@/components/CampusBottomSheet';
 import { ModalesFotoPerfil } from '@/components/EditorFotoPerfil';
 import { Field, FixedField, SelectField } from '@/components/Field';
 import { IconCamera, IconPlus } from '@/components/icons';
+import { LegalCheck } from '@/components/LegalCheck';
 import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { fetchUniversidad, type OpcionCatalogo } from '@/lib/catalogos';
+import { URL_PRIVACIDAD, URL_TERMINOS } from '@/lib/configuracion';
 import { mensajeErrorAuth } from '@/lib/errores-auth';
 import { useFotoPerfil } from '@/lib/perfil';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
+import { abrirDocumentoLegal, aceptarTerminos, esVersionNoVigente } from '@/lib/terminos';
 import { COPY_NOMBRE_INVALIDO, nombreValido, normalizarNombre } from '@/lib/validacion-perfil';
 
 import { usePerfilDraft } from './_layout';
@@ -46,7 +49,8 @@ export const MIN_PASSWORD = 8;
 
 /** Frame "Completar perfil". Sin `.auth-logo`: el frame no lo tiene. */
 export default function CompletarPerfilScreen() {
-  const { session, profile, refreshProfile, signOut } = useSession();
+  const { session, profile, refreshProfile, signOut, estadoTerminos, refreshTerminos } =
+    useSession();
   const {
     nombre,
     setNombre,
@@ -61,6 +65,19 @@ export default function CompletarPerfilScreen() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [campusSheetVisible, setCampusSheetVisible] = useState(false);
+  // PL-016: la casilla de Términos y Aviso, y la variante "error al registrar
+  // la aceptación" del frame.
+  const [aceptaTerminos, setAceptaTerminos] = useState(false);
+  const [errorAceptacion, setErrorAceptacion] = useState(false);
+
+  /**
+   * Los pasos de `guardar()` que ya llegaron al servidor, para que un reintento
+   * no los repita: volver a fijar la MISMA contraseña lo rechaza GoTrue
+   * (`same_password`). Guardan el valor que se escribió, no un booleano: si el
+   * usuario cambia el campo antes de reintentar, ese paso se vuelve a hacer.
+   */
+  const passwordGuardada = useRef<string | null>(null);
+  const perfilGuardado = useRef<string | null>(null);
 
   /**
    * La universidad NO se elige: la asignó el trigger de alta desde el dominio
@@ -109,6 +126,8 @@ export default function CompletarPerfilScreen() {
     subiendo: subiendoFoto,
     cambiar: cambiarFoto,
     modales: modalesFoto,
+    pendiente: fotoPendiente,
+    subirPendiente: subirFotoPendiente,
   } = useFotoPerfil({
     // La ruta del objeto ES la llave de autorización, así que sin sesión no hay
     // carpeta válida a la que subir. En la práctica no se llega aquí sin ella
@@ -122,11 +141,18 @@ export default function CompletarPerfilScreen() {
     inicial: profile?.foto_url ?? null,
     onAviso: mostrar,
     onGuardada: refreshProfile,
+    // PL-016 (V2): la foto se queda en el teléfono hasta Continuar, después de
+    // aceptar los Términos. Sin aceptación la base rechaza subirla.
+    diferida: true,
   });
 
   const passwordOk = password.length >= MIN_PASSWORD && password === passwordConfirm;
   const puedeGuardar =
-    nombreValido(nombre) && universidadId !== null && campus !== null && passwordOk;
+    nombreValido(nombre) &&
+    universidadId !== null &&
+    campus !== null &&
+    passwordOk &&
+    aceptaTerminos;
 
   /**
    * La variante "nombre no válido" del frame. Solo con algo escrito: el campo
@@ -141,18 +167,67 @@ export default function CompletarPerfilScreen() {
     if (!session?.user) return;
     setGuardando(true);
     setError(null);
+    setErrorAceptacion(false);
 
     // Orden deliberado: primero la contraseña, después el perfil. Si falla el
     // update de la tabla, la contraseña ya quedó fija y reintentar es
     // inofensivo; al revés dejaría un perfil completo sin contraseña, y el
     // gating mandaría al usuario al Feed sin poder volver a entrar nunca por
     // login (RF-02).
-    const { error: ePass } = await supabase.auth.updateUser({ password });
-    if (ePass) {
-      setGuardando(false);
-      setError(mensajeErrorAuth(ePass));
-      return;
+    if (passwordGuardada.current !== password) {
+      const { error: ePass } = await supabase.auth.updateUser({ password });
+      if (ePass) {
+        setGuardando(false);
+        setError(mensajeErrorAuth(ePass));
+        return;
+      }
+      passwordGuardada.current = password;
     }
+
+    const perfilClave = `${normalizarNombre(nombre)}|${campus!.id}`;
+    if (perfilGuardado.current !== perfilClave) {
+      const listo = await guardarPerfil();
+      if (!listo) return;
+      perfilGuardado.current = perfilClave;
+    }
+
+    // PL-016: la aceptación va DESPUÉS del perfil y ANTES de la foto. Sin versión
+    // vigente (catálogo vacío) no hay nada que aceptar: la cuenta entra igual y
+    // la base sigue bloqueando lo que exige aceptación (Q3, falla cerrado).
+    if (estadoTerminos && !estadoTerminos.terminos.aceptado) {
+      try {
+        await aceptarTerminos(estadoTerminos);
+      } catch (e: any) {
+        setGuardando(false);
+        if (esVersionNoVigente(e)) {
+          // La versión cambió mientras se llenaba el formulario: se relee y se
+          // desmarca, porque lo aceptado tiene que ser lo mostrado.
+          await refreshTerminos();
+          setAceptaTerminos(false);
+          mostrar('Los términos se actualizaron. Revísalos y vuelve a aceptarlos.', 'error');
+        } else {
+          console.warn('[completar-perfil] no se pudo registrar la aceptación:', e?.message ?? e);
+          setErrorAceptacion(true);
+        }
+        return;
+      }
+    }
+    await refreshTerminos();
+
+    // La foto, al final y sin frenar el alta: si falla, el aviso sale por toast
+    // (`useFotoPerfil`) y el usuario la pone después desde Editar perfil.
+    if (fotoPendiente) await subirFotoPendiente();
+
+    await refreshProfile();
+    setGuardando(false);
+    // Siguiente: el paso OPCIONAL de intereses, que después sigue a
+    // "Permiso de notificaciones" (con o sin guardar nada).
+    router.replace('/intereses');
+  };
+
+  /** El update de `users`. Devuelve false si ya resolvió (error o navegación). */
+  const guardarPerfil = async (): Promise<boolean> => {
+    if (!session?.user) return false;
 
     // Solo las columnas del grant de update. Mandar `correo`/`estado`/
     // `rating_promedio` —o `universidad_id`, que salió del grant en
@@ -173,7 +248,7 @@ export default function CompletarPerfilScreen() {
     if (ePerfil) {
       setGuardando(false);
       setError(mensajeErrorAuth(ePerfil));
-      return;
+      return false;
     }
 
     // Cero filas NO es éxito (AUTH-2): la cuenta no tiene fila de perfil
@@ -185,14 +260,13 @@ export default function CompletarPerfilScreen() {
       await refreshProfile();
       setGuardando(false);
       router.replace('/splash');
-      return;
+      return false;
     }
+    return true;
+  };
 
-    await refreshProfile();
-    setGuardando(false);
-    // Siguiente: el paso OPCIONAL de intereses, que después sigue a
-    // "Permiso de notificaciones" (con o sin guardar nada).
-    router.replace('/intereses');
+  const abrirDocumento = async (url: string) => {
+    if (!(await abrirDocumentoLegal(url))) mostrar('No pudimos abrir el documento.', 'error');
   };
 
   return (
@@ -225,7 +299,7 @@ export default function CompletarPerfilScreen() {
           nada que esperar. Ver `guardarFotoPerfil()`.
         */}
         <Pressable
-          style={[styles.photoCircle, fotoUrl ? styles.photoCircleConFoto : null]}
+          style={[styles.photoCircle, fotoUrl || fotoPendiente ? styles.photoCircleConFoto : null]}
           onPress={cambiarFoto}
           disabled={subiendoFoto || !session?.user}
           accessibilityRole="button"
@@ -233,6 +307,7 @@ export default function CompletarPerfilScreen() {
         >
           <Avatar
             path={fotoUrl}
+            uriLocal={fotoPendiente?.uri}
             nombre={nombre}
             style={styles.avatar}
             fallback={<IconCamera size={24} color={Colors.inkSoft} />}
@@ -307,12 +382,34 @@ export default function CompletarPerfilScreen() {
           />
         ) : null}
 
-        {/* El frame le pone `style="margin-top:28px"` al botón. */}
+        {/*
+          PL-016: la casilla va al final, justo antes de "Continuar", que sigue
+          apagado mientras no esté marcada. Los enlaces abren la versión exacta
+          que se acepta (la URL del catálogo); sin versión vigente, las páginas
+          públicas.
+        */}
+        <LegalCheck
+          checked={aceptaTerminos}
+          onToggle={() => setAceptaTerminos((v) => !v)}
+          onTerminos={() => void abrirDocumento(estadoTerminos?.terminos.url ?? URL_TERMINOS)}
+          onAviso={() => void abrirDocumento(estadoTerminos?.aviso.url ?? URL_PRIVACIDAD)}
+          disabled={guardando}
+        />
+
+        {errorAceptacion ? (
+          <Notice
+            text="No pudimos registrar tu aceptación. Revisa tu conexión e inténtalo de nuevo."
+            style={styles.noticeAceptacion}
+          />
+        ) : null}
+
+        {/* El frame le pone `style="margin-top:22px"` al botón; tras el aviso, 16. */}
         <PrimaryButton
-          label={guardando ? 'Guardando…' : 'Continuar'}
+          label={guardando ? 'Guardando' : 'Continuar'}
           onPress={guardar}
-          disabled={!puedeGuardar || guardando}
-          style={sinUniversidad ? undefined : styles.submit}
+          disabled={!puedeGuardar}
+          busy={guardando}
+          style={errorAceptacion ? styles.submitTrasAviso : styles.submit}
         />
 
         {/*
@@ -414,7 +511,14 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   submit: {
-    marginTop: 28,
+    marginTop: 22,
+  },
+  submitTrasAviso: {
+    marginTop: 16,
+  },
+  noticeAceptacion: {
+    marginTop: 16,
+    marginBottom: 0,
   },
   noticeSinUniversidad: {
     marginTop: 28,

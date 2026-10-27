@@ -28,6 +28,7 @@ import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { marcarListingOmitido } from '@/lib/calificar-omitidas';
 import { crearRating } from '@/lib/confianza';
+import { useExigirTerminos } from '@/lib/exigir-terminos';
 import { useSession } from '@/lib/session';
 
 export default function CalificarScreen() {
@@ -44,6 +45,7 @@ export default function CalificarScreen() {
     fotoUrl?: string;
   }>();
   const { session } = useSession();
+  const exigirTerminos = useExigirTerminos();
   const { mostrar } = useToast();
 
   const [estrellas, setEstrellas] = useState(0);
@@ -57,6 +59,7 @@ export default function CalificarScreen() {
 
   async function enviar() {
     if (estrellas === 0 || guardando) return;
+    if (!exigirTerminos()) return;
 
     const fromUserId = session?.user.id;
     if (!fromUserId) return;

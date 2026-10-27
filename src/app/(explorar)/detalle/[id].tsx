@@ -54,6 +54,7 @@ import {
   type ListingDetalle,
 } from '@/lib/listings';
 import { fetchTelefonoVendedor, urlWhatsapp } from '@/lib/perfil';
+import { useExigirTerminos } from '@/lib/exigir-terminos';
 import { useSession } from '@/lib/session';
 
 const CONDICION_LABEL: Record<string, string> = {
@@ -84,6 +85,9 @@ export default function DetalleScreen() {
   const { favoritos, toggleFavorito, getCategoria } = useExplorarState();
   const { session, profile } = useSession();
   const { mostrar } = useToast();
+  // PL-016: contactar, reactivar, editar y marcar vendida exigen haber aceptado
+  // los Términos (lo rechaza la base); pausar, eliminar, reportar y bloquear no.
+  const exigirTerminos = useExigirTerminos();
 
   const [listing, setListing] = useState<ListingDetalle | null>(null);
   // De qué publicación es lo que tenemos cargado (o falló). Comparado contra
@@ -379,6 +383,9 @@ export default function DetalleScreen() {
    */
   async function contactarPorWhatsapp() {
     if (!listing) return;
+    // Sin aceptación `seller_whatsapp` devuelve null (su quinta causa) y el
+    // toast diría otra cosa: se abre "Términos actualizados" antes.
+    if (!exigirTerminos()) return;
 
     /**
      * EL NÚMERO VA PRIMERO, Y ESO CAMBIÓ EL ORDEN DE ESTA FUNCIÓN.
@@ -470,6 +477,11 @@ export default function DetalleScreen() {
   async function alternarPausaDetalle() {
     if (!listing) return;
     const nuevo: 'activa' | 'pausada' = listing.estado === 'pausada' ? 'activa' : 'pausada';
+
+    if (nuevo === 'activa' && !exigirTerminos()) {
+      setAccionesAbiertas(false);
+      return;
+    }
 
     if (nuevo === 'activa' && listing.fotos.length === 0) {
       setAccionesAbiertas(false);
@@ -917,10 +929,12 @@ export default function DetalleScreen() {
         onAlternarPausa={alternarPausaDetalle}
         onEditar={() => {
           setAccionesAbiertas(false);
+          if (!exigirTerminos()) return;
           router.push(`/(publicar)/editar/${listing.id}`);
         }}
         onVenta={() => {
           setAccionesAbiertas(false);
+          if (!exigirTerminos()) return;
           router.push({
             pathname: '/(confianza)/vendida/[id]',
             params: { id: String(listing.id), titulo: listing.titulo },

@@ -191,6 +191,17 @@ export const Typography = {
     fontSize: 12.5,
     lineHeight: 18.75, // 12.5 × 1.5
   }, // .review-text (Perfil público) — mismo tamaño que `meta`/`modalSub`, pero su propio line-height (1.5, no 1.55)
+  legalCheck: {
+    fontFamily: face(Fonts.body, FontWeights.regular),
+    fontSize: 12.5,
+    lineHeight: 18.75, // 12.5 × 1.5
+  }, // .legal-check-text (PL-016) — MISMOS valores que `reviewText`, rol distinto: si la casilla legal cambia de escala, las reseñas no.
+  legalVersion: {
+    fontFamily: face(Fonts.body, FontWeights.regular),
+    fontSize: 11,
+    lineHeight: 16.5, // 11 × 1.5
+  }, // .legal-version (PL-016) — MISMOS valores que `terms` y `fieldError`, rol distinto
+  textButton: { fontFamily: face(Fonts.body, FontWeights.semibold), fontSize: 13.5 }, // .text-btn ("Cerrar sesión", PL-016) — mismo tamaño y peso que `emphasis`, rol distinto
   rowSub: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 11.5 }, // .list-row-sub, .buyer-time
   cropHint: { fontFamily: face(Fonts.body, FontWeights.regular), fontSize: 12 }, // .crop-hint — mismo tamaño que `activeChip`, pero regular
   sheetNote: {

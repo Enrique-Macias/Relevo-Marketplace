@@ -42,12 +42,15 @@ import { antiguedadEnRelevo } from '@/lib/format';
 import { fetchActivasVendedor, fetchVentasVendedor } from '@/lib/listings';
 import { fetchTelefonoVendedor, urlWhatsapp } from '@/lib/perfil';
 import { fetchPerfilPublico, fetchReviews, type PerfilPublico, type Review } from '@/lib/perfil-publico';
+import { useExigirTerminos } from '@/lib/exigir-terminos';
 import { useSession } from '@/lib/session';
 
 export default function PerfilPublicoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { profile } = useSession();
   const { mostrar } = useToast();
+  // PL-016: contactar exige haber aceptado los Términos (`seller_whatsapp`).
+  const exigirTerminos = useExigirTerminos();
   const miId = profile?.id ?? null;
 
   const [perfil, setPerfil] = useState<PerfilPublico | null>(null);
@@ -219,6 +222,7 @@ export default function PerfilPublicoScreen() {
    */
   async function contactarPorWhatsapp() {
     if (!perfil) return;
+    if (!exigirTerminos()) return;
 
     let telefono: string | null = null;
     try {

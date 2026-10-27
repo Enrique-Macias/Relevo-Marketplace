@@ -68,6 +68,10 @@ export default function RootLayout() {
             <Stack.Screen name="(cuenta)" />
             <Stack.Screen name="(confianza)" />
             <Stack.Screen name="(notificaciones)" />
+            {/* PL-016: pantalla completa, en el raíz porque la abren la puerta
+                de (tabs) y acciones de varios grupos (Perfil, Detalle, Perfil
+                público, Calificar). Es obligatoria: sin el gesto de cerrar. */}
+            <Stack.Screen name="terminos-actualizados" options={{ gestureEnabled: false }} />
             <Stack.Screen
               name="(sistema)"
               options={{ presentation: "modal" }}

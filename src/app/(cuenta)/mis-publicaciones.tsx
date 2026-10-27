@@ -41,6 +41,7 @@ import {
   type MiListing,
 } from '@/lib/listings';
 import { useSession } from '@/lib/session';
+import { useExigirTerminos } from '@/lib/exigir-terminos';
 
 /**
  * Los `.chip` del frame. `undefined` es "Todas": no manda filtro a la query.
@@ -96,6 +97,9 @@ const TINT_FG: Record<string, string> = {
 export default function MisPublicacionesScreen() {
   const { session } = useSession();
   const { mostrar } = useToast();
+  // PL-016: reactivar, editar y marcar vendida exigen haber aceptado los
+  // Términos (lo rechaza la base); pausar y eliminar no.
+  const exigirTerminos = useExigirTerminos();
   const userId = session?.user.id ?? null;
 
   const [filtro, setFiltro] = useState<EstadoFiltrable | undefined>(undefined);
@@ -173,6 +177,11 @@ export default function MisPublicacionesScreen() {
    */
   async function alternarPausa(item: MiListing) {
     const nuevo: 'activa' | 'pausada' = item.estado === 'pausada' ? 'activa' : 'pausada';
+
+    if (nuevo === 'activa' && !exigirTerminos()) {
+      setAcciones(null);
+      return;
+    }
 
     /**
      * El candado real es el trigger `listings_enforce_activation_has_photos`,
@@ -321,6 +330,7 @@ export default function MisPublicacionesScreen() {
         onEditar={() => {
           if (!acciones) return;
           setAcciones(null);
+          if (!exigirTerminos()) return;
           router.push(`/(publicar)/editar/${acciones.id}`);
         }}
         onEliminar={() => {
@@ -331,6 +341,7 @@ export default function MisPublicacionesScreen() {
         onVenta={() => {
           if (!acciones) return;
           setAcciones(null);
+          if (!exigirTerminos()) return;
           router.push({
             pathname: '/(confianza)/vendida/[id]',
             params: { id: String(acciones.id), titulo: acciones.titulo },

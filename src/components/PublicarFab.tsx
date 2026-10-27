@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconPlus } from '@/components/icons';
 import { Colors, Radii } from '@/constants/theme';
+import { useExigirTerminos } from '@/lib/exigir-terminos';
 
 /**
  * Altura del tab bar nativo, que hay que despejar a mano.
@@ -50,11 +51,15 @@ const SEPARACION = 18;
 
 export function PublicarFab() {
   const insets = useSafeAreaInsets();
+  // PL-016: publicar exige haber aceptado los Términos (lo rechaza la base).
+  const exigirTerminos = useExigirTerminos();
 
   return (
     <Pressable
       style={[styles.fab, { bottom: insets.bottom + ALTURA_TAB_BAR + SEPARACION }]}
-      onPress={() => router.push('/(publicar)/nueva')}
+      onPress={() => {
+        if (exigirTerminos()) router.push('/(publicar)/nueva');
+      }}
       accessibilityRole="button"
       accessibilityLabel="Publicar artículo"
     >

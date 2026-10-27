@@ -1227,6 +1227,7 @@
   .legal-summary li{font-size:12.5px; line-height:1.5; color:var(--ink-soft); margin-bottom:4px;}
   .legal-version{width:100%; text-align:left; font-size:11px; line-height:1.5; color:var(--ink-soft); margin-top:2px;}
   .text-btn{display:block; width:100%; background:none; border:none; padding:14px 0; font-size:13.5px; font-weight:600; color:var(--ink-soft); text-align:center; font-family:inherit;}
+  .text-btn.danger{color:var(--danger); padding-top:0;}
 </style>
 </head>
 <body>
@@ -7444,11 +7445,13 @@
            de perfil, teléfono, carrera, reseñar, contactar por WhatsApp,
            reactivar, editar o marcar vendida), y al aceptar se vuelve a esa
            acción.
-           "Ahora no" deja seguir explorando (D8-C, preliminar): cerrar aquí no
-           abre ningún hueco, porque el candado de esas acciones es de la base.
-           Lo mismo vale para pausar una publicación, cambiar de campus,
-           guardar favoritos, reportar, bloquear y eliminar la cuenta, que NO
-           exigen aceptar.
+           Es una PUERTA OBLIGATORIA (decisión del usuario, 2026-10-27; reemplaza
+           el "Ahora no" de D8-C): sin aceptar no se usa la app, y la pantalla no
+           se cierra con gesto ni con "atrás". Las únicas salidas son "Cerrar
+           sesión" y "Eliminar mi cuenta", que abre el MISMO "Confirmar eliminar
+           cuenta" de Configuración (Apple 5.1.1(v): borrar la cuenta tiene que
+           ser posible también sin aceptar). El candado de las acciones sigue
+           siendo de la base; esta puerta es de la app.
            El resumen lo redacta el abogado por versión (PL-008); el de abajo es
            un marcador. La línea de versión dice qué versión exacta se acepta, y
            los enlaces abren ESA versión, no "la más reciente".
@@ -7457,7 +7460,7 @@
         <div class="auth-body" style="padding-bottom:40px;">
           <div class="auth-logo"><img src="rlvo-final-brand/rlvo-isotipo-menta.svg" alt="RLVO" width="38" height="38"></div>
           <div class="auth-headline">Actualizamos nuestros términos</div>
-          <div class="auth-sub" style="margin-bottom:20px;">Para seguir publicando, contactando vendedores y calificando, revisa y acepta la nueva versión.</div>
+          <div class="auth-sub" style="margin-bottom:20px;">Para seguir usando RLVO, revisa y acepta la nueva versión.</div>
 
           <div class="legal-summary">
             <div class="legal-summary-title">Qué cambió</div>
@@ -7471,7 +7474,8 @@
           <div class="legal-check" role="checkbox" aria-checked="true"><span class="check-box is-checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
 
           <button class="primary-btn" style="margin-top:22px;">Aceptar</button>
-          <button class="text-btn">Ahora no</button>
+          <button class="text-btn">Cerrar sesión</button>
+          <button class="text-btn danger">Eliminar mi cuenta</button>
 
           <!-- Variantes de ESTE frame. "Sin marcar": Aceptar apagado.
                "Ocupado": .is-busy de siempre. "Error de red": copy persistente,
@@ -7517,7 +7521,7 @@
               Variante (doc, no es parte del flujo): cuenta previa (sin ninguna aceptación)
             </div>
             <div class="auth-headline" style="font-size:20px; text-align:left;">Acepta los términos de RLVO</div>
-            <div class="auth-sub" style="max-width:none; text-align:left; margin-bottom:0;">Para seguir publicando, contactando vendedores y calificando, revisa y acepta los Términos de uso.</div>
+            <div class="auth-sub" style="max-width:none; text-align:left; margin-bottom:0;">Para seguir usando RLVO, revisa y acepta los Términos de uso.</div>
           </div>
         </div>
       </div>
@@ -9248,7 +9252,8 @@
   </div>
 
   <!-- "Confirmar eliminar cuenta" (Apple 5.1.1(v)). Se abre desde la última
-       fila de "Configuración". Es el MISMO shell que "Confirmar eliminar" y
+       fila de "Configuración" y desde "Eliminar mi cuenta" de "Términos
+       actualizados". Es el MISMO shell que "Confirmar eliminar" y
        "Confirmar cerrar sesión" (.modal-card), con una sola pieza más: el campo
        de contraseña entre el texto y los botones. La contraseña ES la
        confirmación: no hay otra pantalla ni un segundo "¿seguro?".

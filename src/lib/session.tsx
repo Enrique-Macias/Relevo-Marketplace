@@ -21,6 +21,7 @@ import { registrarActividad } from '@/lib/actividad';
 import { esCuentaInexistente } from '@/lib/cuenta-inexistente';
 import { borrarPushToken, registrarPushToken } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
+import { fetchEstadoTerminos, terminosAceptados, type EstadoTerminos } from '@/lib/terminos';
 
 /**
  * Las columnas que el cliente puede leer de `public.users`.
@@ -163,6 +164,20 @@ type SessionState = {
   profileError: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
+  /**
+   * PL-016. `true`/`false`: la sesión aceptó (o no) la versión vigente de los
+   * Términos. `null`: todavía no se sabe, la lectura falló o no hay versión
+   * vigente que aceptar. Con `null` la app NO abre "Términos actualizados": el
+   * candado de las acciones es de la base, así que no saber solo significa no
+   * adelantar la pantalla (§0 regla 7).
+   */
+  terminosAceptados: boolean | null;
+  /** Ya terminó la primera lectura del estado de términos de esta cuenta (bien o mal). */
+  terminosResuelto: boolean;
+  /** Lo último que se leyó de `estado_terminos()`, para pintar la pantalla. */
+  estadoTerminos: EstadoTerminos | null;
+  /** Relee el estado. Devuelve lo leído, o `null` si falló o no hay versión. */
+  refreshTerminos: () => Promise<EstadoTerminos | null>;
 };
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -181,6 +196,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [perfilErrorPara, setPerfilErrorPara] = useState<string | null>(null);
 
   const userId = session?.user.id ?? null;
+
+  // De qué usuario es el estado de términos cargado: mismo patrón que
+  // `perfilCargadoPara`, para no decidir con el de la cuenta anterior.
+  const [terminos, setTerminos] = useState<{ para: string; estado: EstadoTerminos | null } | null>(
+    null
+  );
 
   // La cuenta vigente, para que `refreshProfile` (asíncrono) sepa si su
   // resultado sigue siendo de la cuenta actual al terminar. Se asigna en un
@@ -277,6 +298,39 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [userId]);
 
   /**
+   * PL-016: el estado de los términos, al arrancar con sesión. Si la lectura
+   * falla se deja como "no sé" (`null`): no se abre la pantalla por un fallo de
+   * red, y las acciones las sigue rechazando la base.
+   */
+  useEffect(() => {
+    if (!userId) return;
+    let activo = true;
+    fetchEstadoTerminos()
+      .then((estado) => {
+        if (activo) setTerminos({ para: userId, estado });
+      })
+      .catch((e) => {
+        console.warn('[session] no se pudo leer el estado de los términos:', e?.message ?? e);
+        if (activo) setTerminos({ para: userId, estado: null });
+      });
+    return () => {
+      activo = false;
+    };
+  }, [userId]);
+
+  const refreshTerminos = useCallback(async (): Promise<EstadoTerminos | null> => {
+    if (!userId) return null;
+    try {
+      const estado = await fetchEstadoTerminos();
+      if (userIdActual.current === userId) setTerminos({ para: userId, estado });
+      return estado;
+    } catch (e: any) {
+      console.warn('[session] no se pudo leer el estado de los términos:', e?.message ?? e);
+      return null;
+    }
+  }, [userId]);
+
+  /**
    * Señal diaria de uso (RF-17 Ola 6): al arrancar con sesión y cada vez que la
    * app vuelve a primer plano. `registrarActividad` deduplica por cuenta y día
    * en memoria y se traga sus errores, así que llamarla de más es barato y
@@ -298,6 +352,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // así, al cambiar de cuenta, el gating no decide con el perfil del anterior.
   const perfilResuelto = userId === null || perfilCargadoPara === userId;
   const perfilVigente = userId === null ? null : profile;
+  const estadoTerminosVigente = terminos !== null && terminos.para === userId ? terminos.estado : null;
 
   /**
    * Relee el perfil y **espera** a tenerlo antes de resolver. Ese await importa:
@@ -370,8 +425,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       profileError: userId !== null && perfilErrorPara === userId,
       refreshProfile,
       signOut,
+      terminosAceptados: estadoTerminosVigente ? terminosAceptados(estadoTerminosVigente) : null,
+      estadoTerminos: estadoTerminosVigente,
+      terminosResuelto: userId === null || (terminos !== null && terminos.para === userId),
+      refreshTerminos,
     }),
-    [session, perfilVigente, authResuelto, perfilResuelto, userId, perfilErrorPara, refreshProfile, signOut]
+    [
+      session,
+      perfilVigente,
+      authResuelto,
+      perfilResuelto,
+      userId,
+      perfilErrorPara,
+      refreshProfile,
+      signOut,
+      estadoTerminosVigente,
+      terminos,
+      refreshTerminos,
+    ]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
