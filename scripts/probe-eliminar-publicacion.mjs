@@ -28,6 +28,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { guardaRelevo } from './_guarda-relevo.mjs';
+import { aceptarTerminosDePrueba } from './_terminos-prueba.mjs';
 
 const RUN = Date.now();
 const DB = 'supabase_db_relevo-marketplace';
@@ -67,6 +68,8 @@ async function crearUsuario(E, correo) {
   if (!res.ok) throw new Error(`crearUsuario ${correo}: ${res.status} ${await res.text()}`);
   const id = (await res.json()).id;
   sql(`update public.users set nombre = 'Probador', campus_id = 1 where id = '${id}'`);
+  // Sin aceptar los términos (PL-016) no sube fotos.
+  await aceptarTerminosDePrueba(E.API_URL, E.SECRET, id);
   return id;
 }
 

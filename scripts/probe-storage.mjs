@@ -84,6 +84,7 @@ import http from 'node:http';
 import { createPrivateKey, sign as firmar } from 'node:crypto';
 import { totp } from './totp.mjs';
 import { guardaRelevo } from './_guarda-relevo.mjs';
+import { aceptarTerminosDePrueba } from './_terminos-prueba.mjs';
 
 const BUCKET = 'listing-photos';
 const BUCKET_AVATARS = 'avatars';
@@ -148,7 +149,10 @@ async function crearUsuario(E, correo) {
     body: JSON.stringify({ email: correo, password: 'probe-1234', email_confirm: true }),
   });
   if (!res.ok) throw new Error(`crearUsuario ${correo}: ${res.status} ${await res.text()}`);
-  return (await res.json()).id;
+  const id = (await res.json()).id;
+  // Sin aceptar los términos (PL-016) no publica, no sube fotos ni contacta.
+  await aceptarTerminosDePrueba(E.API_URL, E.SECRET, id);
+  return id;
 }
 
 async function token(E, correo) {

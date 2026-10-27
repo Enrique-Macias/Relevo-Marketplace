@@ -218,6 +218,38 @@ end $$;
 -- final, así que la suite es idempotente y puede correrse cuantas veces sea.
 -- ---------------------------------------------------------------------------
 
+-- Términos (PL-016, 20261026000490): sin aceptar la versión vigente, la base
+-- rechaza publicar, contactar, reseñar, subir fotos, etc. Las secciones
+-- anteriores a T42 no prueban eso, así que TODA cuenta de la suite acepta al
+-- nacer: una versión de prueba de cada documento, vigente desde el inicio de
+-- esta transacción (gana a la de seed.sql, que es anterior), y un trigger en
+-- `pg_temp` (no aparece en las invariantes de `private` de T12) que registra la
+-- aceptación de cada usuario nuevo. Las cuentas que ya existían en la base
+-- también aceptan. T42 crea sus propios actores y les BORRA la aceptación.
+insert into public.documentos_legales (tipo, version, vigente_desde, url, contenido_sha256)
+values ('terminos', 'rls-fixture', now(), 'https://example.test/terminos', sha256('rls terminos')),
+       ('aviso_privacidad', 'rls-fixture', now(), 'https://example.test/aviso', sha256('rls aviso'));
+
+create function pg_temp.fixture_acepta_terminos()
+returns trigger
+language plpgsql
+as $$
+begin
+  insert into public.aceptaciones_legales (user_id, tipo, version, accion)
+  values (new.id, 'terminos', 'rls-fixture', 'aceptado'),
+         (new.id, 'aviso_privacidad', 'rls-fixture', 'presentado');
+  return new;
+end $$;
+
+create trigger zz_fixture_acepta_terminos
+  after insert on public.users
+  for each row execute function pg_temp.fixture_acepta_terminos();
+
+insert into public.aceptaciones_legales (user_id, tipo, version, accion)
+select u.id, d.tipo, 'rls-fixture', case d.tipo when 'terminos' then 'aceptado' else 'presentado' end
+  from public.users u
+ cross join (values ('terminos'), ('aviso_privacidad')) d(tipo);
+
 \set A '''aaaaaaaa-0000-0000-0000-00000000000a'''
 \set B '''bbbbbbbb-0000-0000-0000-00000000000b'''
 \set C '''cccccccc-0000-0000-0000-00000000000c'''
@@ -2519,8 +2551,14 @@ select pg_temp.assert(
   -- RF-17, Ola 4 (20261007000482): definer que escribe el registro retenido.
   and not has_function_privilege('authenticated', 'private.retiene_moderacion()', 'execute')
   -- DESIGN-1 fase 4 (20261025000489): definer que lee `categories.activa`.
-  and not has_function_privilege('authenticated', 'private.exige_categoria_activa()', 'execute'),
-  'las 23 funciones que solo disparan por trigger siguen revocadas');
+  and not has_function_privilege('authenticated', 'private.exige_categoria_activa()', 'execute')
+  -- PL-016 (20261026000490): la inmutabilidad del catálogo legal (invoker,
+  -- solo lanza) y los dos candados de términos (definer, leen las
+  -- aceptaciones).
+  and not has_function_privilege('authenticated', 'private.documento_legal_inmutable()', 'execute')
+  and not has_function_privilege('authenticated', 'private.exige_terminos_listing()', 'execute')
+  and not has_function_privilege('authenticated', 'private.exige_terminos_perfil()', 'execute'),
+  'las 26 funciones que solo disparan por trigger siguen revocadas');
 
 -- Las DOS funciones de trigger que NO están en la lista de arriba, a
 -- propósito: `set_updated_at()` y `limpia_veredicto_en_pantalla()` son
@@ -9010,6 +9048,440 @@ select
 select pg_temp.assert(
   :'t41_j1' = 'ok' and :'t41_j2' = '23514:admin_acciones_claves_ok',
   'T41 (j) auditoría de categoría: nombre/icono/orden/activa entran; otra clave → 23514');
+
+\echo ''
+\echo '== T42 — aceptación de términos (PL-016, 20261026000490) =='
+-- Autocontenida: su universidad (`rls-t42.mx`), un campus y sus actores.
+--
+--   :N42 — nunca aceptó (se le borra la aceptación del fixture global).
+--   :O42 — aceptó una versión ANTERIOR (`rls-t42-vieja`), no la vigente.
+--   :V42 — aceptó la vigente por la RPC: el CONTROL de cada rechazo.
+--   :X42 — tercero vendedor (aceptó por el fixture), con teléfono.
+--   :D42 — cuenta que se borra (cascade de su evidencia).
+--
+-- La vigente es `rls-fixture` (fixtures del principio del archivo). Cada
+-- acción corre como `authenticated` y cada comprobación en su sentencia.
+-- `pg_temp.t42()` devuelve 'ok' o `<sqlstate>:<mensaje>`: los dos candados
+-- de P3 (policy y trigger) comparten 42501 y solo el mensaje los distingue.
+
+\set N42 '''42424242-0000-0000-0000-0000000042a0'''
+\set O42 '''42424242-0000-0000-0000-0000000042b0'''
+\set V42 '''42424242-0000-0000-0000-0000000042c0'''
+\set X42 '''42424242-0000-0000-0000-0000000042d0'''
+\set D42 '''42424242-0000-0000-0000-0000000042e0'''
+
+create or replace function pg_temp.t42(p_uid uuid, p_sql text)
+returns text language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims',
+    case when p_uid is null then '{}'
+         else json_build_object('sub', p_uid, 'role', 'authenticated')::text end, true);
+  if p_uid is not null then
+    perform set_config('role', 'authenticated', true);
+  end if;
+  execute p_sql;
+  perform set_config('role', 'postgres', true);
+  return 'ok';
+exception when others then
+  perform set_config('role', 'postgres', true);
+  return sqlstate || ':' || sqlerrm;
+end $$;
+
+insert into public.universidades (nombre) values ('RLS T42 Universidad');
+insert into public.universidad_dominios (dominio, universidad_id)
+select 'rls-t42.mx', id from public.universidades where nombre = 'RLS T42 Universidad';
+insert into public.campus (universidad_id, nombre, ciudad)
+select id, c, 'Ciudad T42'
+  from public.universidades, (values ('RLS T42 Campus'), ('RLS T42 Campus 2')) x(c)
+ where nombre = 'RLS T42 Universidad';
+
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                        email_confirmed_at, created_at, updated_at)
+select u::uuid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       e, '', now(), now(), now()
+  from (values (:N42, 'rls-t42-n@rls-t42.mx'), (:O42, 'rls-t42-o@rls-t42.mx'),
+               (:V42, 'rls-t42-v@rls-t42.mx'), (:X42, 'rls-t42-x@rls-t42.mx'),
+               (:D42, 'rls-t42-d@rls-t42.mx')) as x(u, e);
+
+select (select id from public.campus where nombre = 'RLS T42 Campus')   as t42_campus,
+       (select id from public.campus where nombre = 'RLS T42 Campus 2') as t42_campus2,
+       (select id from public.categories order by id limit 1)            as t42_cat \gset
+
+-- Sin sesión (Studio): capturado, porque si el trigger de perfil frenara a
+-- quien no es el dueño, la precondición lo dice con nombre.
+select pg_temp.t42(null, format($q$update public.users u
+   set campus_id = %s,
+       nombre = 'Actor Prueba',
+       telefono = case u.id when %L::uuid then '+528142000004'
+                            when %L::uuid then '+528142000001' end
+ where u.id in (%L, %L, %L, %L, %L)$q$, :t42_campus, :X42, :N42, :N42, :O42, :V42, :X42, :D42)) as t42_seed \gset
+
+-- La versión anterior (vigente desde ayer, ya superada por `rls-fixture`).
+insert into public.documentos_legales (tipo, version, vigente_desde, url, contenido_sha256)
+values ('terminos', 'rls-t42-vieja', now() - interval '1 day',
+        'https://example.test/terminos/vieja', sha256('t42 terminos vieja')),
+       ('aviso_privacidad', 'rls-t42-vieja', now() - interval '1 day',
+        'https://example.test/aviso/vieja', sha256('t42 aviso vieja'));
+
+-- N, O y V sin la aceptación del fixture; O con la vieja (como postgres).
+delete from public.aceptaciones_legales
+ where user_id in (:N42::uuid, :O42::uuid, :V42::uuid);
+insert into public.aceptaciones_legales (user_id, tipo, version, accion)
+values (:O42::uuid, 'terminos', 'rls-t42-vieja', 'aceptado'),
+       (:O42::uuid, 'aviso_privacidad', 'rls-t42-vieja', 'presentado');
+
+-- Publicaciones como postgres, todas con foto (reactivar exige una):
+--   ln/lo/lv  — activa de N, O y V (editar, pausar, vender).
+--   lnp/lvp   — pausada de N y V (reactivar).
+--   lnd       — activa de N (la borra: P2).
+--   lx        — activa de X (contactar, WhatsApp, reseñar).
+insert into public.listings (user_id, categoria_id, universidad_id, campus_id,
+                             titulo, descripcion, precio, condicion, estado)
+select v.dueno::uuid, :t42_cat, u.universidad_id, :t42_campus,
+       v.titulo, 'T42', 300, 'usado', v.estado::public.listing_status
+  from (values (1, :N42, 'RLS T42 N activa',  'activa'),
+               (2, :O42, 'RLS T42 O activa',  'activa'),
+               (3, :V42, 'RLS T42 V activa',  'activa'),
+               (4, :N42, 'RLS T42 N pausada', 'pausada'),
+               (5, :V42, 'RLS T42 V pausada', 'pausada'),
+               (6, :N42, 'RLS T42 N borrar',  'activa'),
+               (7, :X42, 'RLS T42 X activa',  'activa'),
+               (8, :N42, 'RLS T42 N pausar',  'activa'))
+       as v(n, dueno, titulo, estado)
+  join public.users u on u.id = v.dueno::uuid
+ order by v.n;
+
+select (select id from public.listings where titulo = 'RLS T42 N activa')  as t42_ln,
+       (select id from public.listings where titulo = 'RLS T42 O activa')  as t42_lo,
+       (select id from public.listings where titulo = 'RLS T42 V activa')  as t42_lv,
+       (select id from public.listings where titulo = 'RLS T42 N pausada') as t42_lnp,
+       (select id from public.listings where titulo = 'RLS T42 V pausada') as t42_lvp,
+       (select id from public.listings where titulo = 'RLS T42 N borrar')  as t42_lnd,
+       (select id from public.listings where titulo = 'RLS T42 X activa')  as t42_lx,
+       (select id from public.listings where titulo = 'RLS T42 N pausar')  as t42_lnz \gset
+
+insert into public.listing_photos (listing_id, storage_path, orden)
+select id, id || '/foto.jpg', 0 from public.listings where titulo like 'RLS T42 %';
+
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+-- Contactos previos (como postgres) para que `can_rate()` y las ventas
+-- tengan con quién: X contactó las de N, O y V; N y O contactaron la de X.
+insert into public.listing_contacts (user_id, listing_id)
+values (:X42::uuid, :t42_ln), (:X42::uuid, :t42_lo), (:X42::uuid, :t42_lv),
+       (:V42::uuid, :t42_lo),
+       (:N42::uuid, :t42_lx), (:O42::uuid, :t42_lx);
+
+-- La venta de O ya registrada a X (O intentará corregirla a V) y una reseña
+-- de O a X (O intentará editarla).
+insert into public.listing_sales (listing_id, comprador_id) values (:t42_lo, :X42::uuid);
+insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas)
+values (:O42::uuid, :X42::uuid, :t42_lx, 4);
+
+select pg_temp.assert(
+  :'t42_seed' = 'ok'
+  and (select count(*) from public.listings where titulo like 'RLS T42 %') = 8
+  and (select count(*) from public.aceptaciones_legales
+        where user_id in (:N42::uuid, :V42::uuid)) = 0
+  and (select count(*) from public.aceptaciones_legales where user_id = :O42::uuid) = 2
+  and private.version_vigente('terminos') = 'rls-fixture'
+  and private.version_vigente('aviso_privacidad') = 'rls-fixture',
+  'T42 precondición: Studio siembra a los actores, 8 publicaciones, N y V sin aceptación, O con la vieja, rls-fixture vigente');
+
+-- (a) La RPC ------------------------------------------------------------------
+select pg_temp.t42(:V42::uuid, $q$select public.aceptar_terminos('rls-fixture', 'rls-fixture')$q$) as t42_a1 \gset
+select pg_temp.assert(
+  :'t42_a1' = 'ok'
+  and (select count(*) from public.aceptaciones_legales
+        where user_id = :V42::uuid and version = 'rls-fixture'
+          and ((tipo = 'terminos' and accion = 'aceptado')
+            or (tipo = 'aviso_privacidad' and accion = 'presentado'))
+          and aceptado_at = now()) = 2,
+  'T42 (a1) aceptar_terminos deja DOS filas: Términos aceptado y Aviso presentado, con la hora del servidor');
+
+select pg_temp.t42(:V42::uuid, $q$select public.aceptar_terminos('rls-fixture', 'rls-fixture')$q$) as t42_a2 \gset
+select pg_temp.assert(
+  :'t42_a2' = 'ok'
+  and (select count(*) from public.aceptaciones_legales where user_id = :V42::uuid) = 2,
+  'T42 (a2) aceptar dos veces es idempotente');
+
+select pg_temp.t42(:N42::uuid, $q$select public.aceptar_terminos('rls-t42-vieja', 'rls-t42-vieja')$q$) as t42_a3,
+       pg_temp.t42(:N42::uuid, $q$select public.aceptar_terminos('inventada', 'rls-fixture')$q$)   as t42_a4,
+       pg_temp.t42(:N42::uuid, $q$select public.aceptar_terminos('rls-fixture', 'rls-t42-vieja')$q$) as t42_a5,
+       pg_temp.t42(:N42::uuid, $q$select public.aceptar_terminos(null, null)$q$)                   as t42_a6 \gset
+select pg_temp.assert(
+  :'t42_a3' = '22023:version_no_vigente' and :'t42_a4' = '22023:version_no_vigente'
+  and :'t42_a5' = '22023:version_no_vigente' and :'t42_a6' = '22023:version_no_vigente'
+  and (select count(*) from public.aceptaciones_legales where user_id = :N42::uuid) = 0,
+  'T42 (a3) una versión vieja, inventada, mezclada o null se rechaza (22023) y no escribe nada');
+
+select pg_temp.t42(null, $q$select public.aceptar_terminos('rls-fixture', 'rls-fixture')$q$) as t42_a7 \gset
+select pg_temp.assert(:'t42_a7' = '42501:no_autenticado',
+  'T42 (a4) sin sesión, aceptar_terminos rechaza con 42501 no_autenticado');
+
+select pg_temp.t42(:N42::uuid, format($q$insert into public.aceptaciones_legales (user_id, tipo, version, accion)
+         values (%L, 'terminos', 'rls-fixture', 'aceptado')$q$, :N42)) as t42_a8,
+       pg_temp.t42(:N42::uuid, format($q$insert into public.aceptaciones_legales (user_id, tipo, version, accion)
+         values (%L, 'terminos', 'rls-fixture', 'aceptado')$q$, :X42)) as t42_a9,
+       pg_temp.t42(:V42::uuid, $q$delete from public.aceptaciones_legales$q$) as t42_a10 \gset
+select pg_temp.assert(
+  :'t42_a8' like '42501:%' and :'t42_a9' like '42501:%' and :'t42_a10' like '42501:%'
+  and (select count(*) from public.aceptaciones_legales where user_id = :V42::uuid) = 2,
+  'T42 (a5) el cliente no inserta aceptaciones (propias ni ajenas) ni borra las suyas');
+
+select pg_temp.assert(
+  has_function_privilege('authenticated', 'public.aceptar_terminos(text, text)', 'execute')
+  and not has_function_privilege('anon', 'public.aceptar_terminos(text, text)', 'execute')
+  and (select prosecdef from pg_proc where oid = 'public.aceptar_terminos(text, text)'::regprocedure)
+  and has_function_privilege('authenticated', 'public.estado_terminos()', 'execute')
+  and not has_function_privilege('anon', 'public.estado_terminos()', 'execute')
+  and not (select prosecdef from pg_proc where oid = 'public.estado_terminos()'::regprocedure)
+  and has_function_privilege('authenticated', 'private.terminos_vigentes_aceptados()', 'execute')
+  and not has_function_privilege('anon', 'private.terminos_vigentes_aceptados()', 'execute')
+  and not (select prosecdef from pg_proc where oid = 'private.terminos_vigentes_aceptados()'::regprocedure),
+  'T42 (a6) aceptar_terminos definer; estado_terminos y el helper invoker; EXECUTE solo para authenticated');
+
+-- (b) El estado ---------------------------------------------------------------
+select pg_temp.as_user_text(:N42::uuid, 'select private.terminos_vigentes_aceptados()::text') as t42_b_n,
+       pg_temp.as_user_text(:O42::uuid, 'select private.terminos_vigentes_aceptados()::text') as t42_b_o,
+       pg_temp.as_user_text(:V42::uuid, 'select private.terminos_vigentes_aceptados()::text') as t42_b_v,
+       pg_temp.as_user_text(:O42::uuid,
+         $q$select string_agg(tipo || '=' || version || ':' || aceptado, ',' order by tipo) from public.estado_terminos()$q$) as t42_b_eo,
+       pg_temp.as_user_text(:V42::uuid,
+         $q$select string_agg(tipo || '=' || version || ':' || aceptado, ',' order by tipo) from public.estado_terminos()$q$) as t42_b_ev \gset
+select pg_temp.assert(
+  :'t42_b_n' = 'false' and :'t42_b_o' = 'false' and :'t42_b_v' = 'true'
+  and :'t42_b_eo' = 'aviso_privacidad=rls-fixture:false,terminos=rls-fixture:false'
+  and :'t42_b_ev' = 'aviso_privacidad=rls-fixture:true,terminos=rls-fixture:true',
+  'T42 (b1) solo V tiene la vigente; estado_terminos da la vigente y si la aceptó (O aceptó la vieja: false)');
+
+select pg_temp.as_user_int(:V42::uuid,
+         format('select count(*) from public.aceptaciones_legales where user_id <> %L', :V42)) as t42_b2 \gset
+select pg_temp.assert(:t42_b2 = 0, 'T42 (b2) cada quien lee solo sus aceptaciones');
+
+-- (c) Lo que P3 bloquea: N y O rechazados, V permitido ---------------------------
+-- `t42_3(fmt, a, b, c)` corre el MISMO SQL como N, O y V (en ese orden), con
+-- `%1$L` = el usuario y `%2$s` = su argumento, y devuelve 'N | O | V'.
+create or replace function pg_temp.t42_3(p_fmt text, p_n text, p_o text, p_v text)
+returns text language sql as $$
+  select pg_temp.t42('42424242-0000-0000-0000-0000000042a0', format(p_fmt, '42424242-0000-0000-0000-0000000042a0', p_n))
+         || ' | ' ||
+         pg_temp.t42('42424242-0000-0000-0000-0000000042b0', format(p_fmt, '42424242-0000-0000-0000-0000000042b0', p_o))
+         || ' | ' ||
+         pg_temp.t42('42424242-0000-0000-0000-0000000042c0', format(p_fmt, '42424242-0000-0000-0000-0000000042c0', p_v));
+$$;
+
+\set t42_rls '''42501:new row violates row-level security policy%'''
+\set t42_trg '''42501:terminos_no_aceptados'''
+
+select pg_temp.t42_3(format($q$insert into public.listings
+         (user_id, categoria_id, universidad_id, campus_id, titulo, precio, condicion, estado)
+         select %%1$L, %s, universidad_id, %s, 'RLS T42 nueva', 10, 'usado', 'pendiente'
+           from public.users where id = %%1$L$q$, :t42_cat, :t42_campus), null, null, null) as t42_c1 \gset
+select pg_temp.assert(:'t42_c1' like :t42_rls || ' | ' || :t42_rls || ' | ok',
+  'T42 (c1) publicar: N y O rechazados por la policy, V publica (' || :'t42_c1' || ')');
+
+select pg_temp.t42_3($q$update public.listings set titulo = 'RLS T42 editada' where id = %2$s$q$,
+         :'t42_ln', :'t42_lo', :'t42_lv') as t42_c2 \gset
+select pg_temp.assert(:'t42_c2' = :t42_trg || ' | ' || :t42_trg || ' | ok',
+  'T42 (c2) editar su publicación: N y O rechazados por el trigger, V edita (' || :'t42_c2' || ')');
+
+select pg_temp.t42_3($q$update public.listings set estado = 'activa' where id = %2$s$q$,
+         :'t42_lnp', :'t42_lnp', :'t42_lvp') as t42_c3 \gset
+select pg_temp.assert(:'t42_c3' = :t42_trg || ' | ok | ok'
+  and (select estado from public.listings where id = :t42_lnp) = 'pausada'
+  and (select estado from public.listings where id = :t42_lvp) = 'activa',
+  'T42 (c3) reactivar: N rechazado, V reactiva (O no es dueño: 0 filas) (' || :'t42_c3' || ')');
+
+select pg_temp.t42_3($q$update public.listings set estado = 'vendida' where id = %2$s$q$,
+         :'t42_ln', :'t42_lo', :'t42_lv') as t42_c4 \gset
+select pg_temp.assert(:'t42_c4' = :t42_trg || ' | ' || :t42_trg || ' | ok',
+  'T42 (c4) marcar vendida: N y O rechazados, V la marca (' || :'t42_c4' || ')');
+
+select pg_temp.t42_3($q$insert into public.listing_photos (listing_id, storage_path, orden)
+         values (%2$s, %2$s || '/otra.jpg', 1)$q$, :'t42_ln', :'t42_lo', :'t42_lvp') as t42_c5,
+       pg_temp.t42_3($q$insert into storage.objects (bucket_id, name)
+         values ('listing-photos', %2$s || '/otra.jpg')$q$, :'t42_ln', :'t42_lo', :'t42_lvp') as t42_c6,
+       pg_temp.t42_3($q$insert into storage.objects (bucket_id, name)
+         values ('avatars', %1$L || '/a.jpg')$q$, null, null, null) as t42_c7 \gset
+select pg_temp.assert(
+  :'t42_c5' like :t42_rls || ' | ' || :t42_rls || ' | ok'
+  and :'t42_c6' like :t42_rls || ' | ' || :t42_rls || ' | ok'
+  and :'t42_c7' like :t42_rls || ' | ' || :t42_rls || ' | ok',
+  'T42 (c5) fotos (fila y objeto) y avatar: N y O rechazados, V sube ('
+  || :'t42_c5' || ' / ' || :'t42_c6' || ' / ' || :'t42_c7' || ')');
+
+select pg_temp.t42_3($q$update public.users set foto_url = %1$L || '/a.jpg' where id = %1$L$q$, null, null, null) as t42_c8a,
+       pg_temp.t42_3($q$update public.users set telefono = '+528142000099' where id = %1$L$q$, null, null, null) as t42_c8b,
+       pg_temp.t42_3($q$update public.users set carrera = 'Física' where id = %1$L$q$, null, null, null) as t42_c8c \gset
+select pg_temp.assert(
+  :'t42_c8a' = :t42_trg || ' | ' || :t42_trg || ' | ok'
+  and :'t42_c8b' = :t42_trg || ' | ' || :t42_trg || ' | ok'
+  and :'t42_c8c' = :t42_trg || ' | ' || :t42_trg || ' | ok'
+  and (select telefono from public.users where id = :N42::uuid) = '+528142000001',
+  'T42 (c6) foto de perfil, teléfono y carrera: N y O rechazados, V los guarda');
+
+select pg_temp.t42_3(format($q$insert into public.listing_contacts (user_id, listing_id) values (%%1$L, %s)$q$, :t42_lx),
+         null, null, null) as t42_c9 \gset
+select pg_temp.assert(:'t42_c9' like :t42_rls || ' | ' || :t42_rls || ' | ok',
+  'T42 (c7) contactar: N y O rechazados, V registra el contacto (' || :'t42_c9' || ')');
+
+select coalesce(pg_temp.as_user_text(:N42::uuid, format('select public.seller_whatsapp(%L)', :X42)), '') as t42_c10n,
+       coalesce(pg_temp.as_user_text(:O42::uuid, format('select public.seller_whatsapp(%L)', :X42)), '') as t42_c10o,
+       coalesce(pg_temp.as_user_text(:V42::uuid, format('select public.seller_whatsapp(%L)', :X42)), '') as t42_c10v \gset
+select pg_temp.assert(:'t42_c10n' = '' and :'t42_c10o' = '' and :'t42_c10v' = '+528142000004',
+  'T42 (c8) seller_whatsapp: null para N y O, el número para V (quinta causa de null)');
+
+select pg_temp.t42_3(format($q$insert into public.ratings (from_user_id, to_user_id, listing_id, estrellas)
+         values (%%1$L, %L, %s, 5)$q$, :X42, :t42_lx), null, null, null) as t42_c11 \gset
+select pg_temp.t42(:O42::uuid, $q$update public.ratings set estrellas = 2$q$) as t42_c12 \gset
+select pg_temp.assert(
+  :'t42_c11' like :t42_rls || ' | ' || :t42_rls || ' | ok'
+  and :'t42_c12' like :t42_rls
+  and (select estrellas from public.ratings where from_user_id = :O42::uuid) = 4,
+  'T42 (c9) reseñar: N y O no crean reseñas y O no edita la suya; V reseña ('
+  || :'t42_c11' || ' / ' || :'t42_c12' || ')');
+
+select pg_temp.t42_3(format($q$insert into public.listing_sales (listing_id, comprador_id) values (%%2$s, %L)$q$, :X42),
+         :'t42_ln', :'t42_lo', :'t42_lv') as t42_c13,
+       pg_temp.t42(:O42::uuid, format($q$update public.listing_sales set comprador_id = %L where listing_id = %s$q$,
+         :V42, :t42_lo)) as t42_c14 \gset
+select pg_temp.assert(
+  :'t42_c13' like :t42_rls || ' | ' || :t42_rls || ' | ok'
+  and :'t42_c14' like :t42_rls
+  and (select comprador_id from public.listing_sales where listing_id = :t42_lo) = :X42::uuid,
+  'T42 (c10) registrar o corregir una venta: N y O rechazados, V registra ('
+  || :'t42_c13' || ' / ' || :'t42_c14' || ')');
+
+-- (d) Lo que P2 deja pasar sin aceptar (N) -----------------------------------
+select pg_temp.t42(:N42::uuid, format($q$update public.listings set estado = 'pausada' where id = %s$q$, :t42_lnz)) as t42_d1,
+       pg_temp.t42(:N42::uuid, format($q$update public.listings set estado = 'pausada', titulo = 'RLS T42 colada' where id = %s$q$, :t42_ln)) as t42_d2 \gset
+select pg_temp.assert(
+  :'t42_d1' = 'ok' and :'t42_d2' = :t42_trg
+  and (select estado from public.listings where id = :t42_lnz) = 'pausada'
+  and (select estado from public.listings where id = :t42_ln) = 'activa',
+  'T42 (d1) pausar sí; pausar Y cambiar el título a la vez, no (' || :'t42_d1' || ' / ' || :'t42_d2' || ')');
+
+select pg_temp.t42(:N42::uuid, format($q$update public.users set nombre = 'Nuevo Actor', campus_id = %s,
+         telefono = null where id = %L$q$, :t42_campus2, :N42)) as t42_d3 \gset
+select pg_temp.assert(
+  :'t42_d3' = 'ok'
+  and (select nombre = 'Nuevo Actor' and campus_id = :t42_campus2 and telefono is null
+         from public.users where id = :N42::uuid),
+  'T42 (d2) nombre, campus y BORRAR el teléfono sí (' || :'t42_d3' || ')');
+
+select pg_temp.t42(:N42::uuid, format($q$insert into public.favorites (user_id, listing_id) values (%L, %s)$q$, :N42, :t42_lx)) as t42_d4,
+       pg_temp.t42(:N42::uuid, format($q$insert into public.reports (reporter_id, reported_user_id, motivo)
+         values (%L, %L, 'otro')$q$, :N42, :X42)) as t42_d5,
+       pg_temp.t42(:N42::uuid, format($q$insert into public.user_bloqueos (user_id, bloqueado_id) values (%L, %L)$q$, :N42, :D42)) as t42_d6,
+       pg_temp.t42(:N42::uuid, format($q$insert into public.actividad_diaria (user_id) values (%L)$q$, :N42)) as t42_d7,
+       pg_temp.t42(:N42::uuid, format($q$insert into public.push_tokens (token, user_id, platform)
+         values ('ExponentPushToken[t42]', %L, 'ios')$q$, :N42)) as t42_d8,
+       (select vistas_count from public.listings where id = :t42_lx) as t42_d9_antes \gset
+select pg_temp.t42(:N42::uuid, format('select public.increment_listing_view(%s)', :t42_lx)) as t42_d9,
+       pg_temp.t42(:N42::uuid, format('delete from public.listings where id = %s', :t42_lnd)) as t42_d10 \gset
+select pg_temp.assert(
+  :'t42_d4' = 'ok' and :'t42_d5' = 'ok' and :'t42_d6' = 'ok' and :'t42_d7' = 'ok'
+  and :'t42_d8' = 'ok' and :'t42_d9' = 'ok' and :'t42_d10' = 'ok'
+  and (select vistas_count from public.listings where id = :t42_lx) = :t42_d9_antes + 1
+  and not exists (select 1 from public.listings where id = :t42_lnd),
+  'T42 (d3) favorito, reporte, bloqueo, actividad, token, vista y eliminar su publicación sí ('
+  || concat_ws(' ', :'t42_d4', :'t42_d5', :'t42_d6', :'t42_d7', :'t42_d8', :'t42_d9', :'t42_d10') || ')');
+
+-- (e) Escrituras que los triggers NO deben frenar -----------------------------
+-- Otro usuario en la sesión (la ruta de una definer que actualiza la fila de
+-- otro), y Studio/service_role sin sesión. Las dos corren como postgres.
+create or replace function pg_temp.t42_otro(p_uid uuid, p_sql text)
+returns text language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  execute p_sql;
+  perform set_config('request.jwt.claims', '{}', true);
+  return 'ok';
+exception when others then
+  perform set_config('request.jwt.claims', '{}', true);
+  return sqlstate || ':' || sqlerrm;
+end $$;
+-- El "otro" es O, que TAMPOCO aceptó: si el trigger mirara a quien escribe
+-- en vez de al dueño, esto caería.
+select pg_temp.t42_otro(:O42::uuid, format($q$update public.listings set titulo = 'RLS T42 N por otro' where id = %s$q$, :t42_ln)) as t42_e4,
+       pg_temp.t42_otro(:O42::uuid, format($q$update public.users set carrera = 'Por otro' where id = %L$q$, :N42)) as t42_e5 \gset
+select pg_temp.assert(:'t42_e4' = 'ok' and :'t42_e5' = 'ok'
+  and (select titulo from public.listings where id = :t42_ln) = 'RLS T42 N por otro'
+  and (select carrera from public.users where id = :N42::uuid) = 'Por otro',
+  'T42 (e0) con OTRO usuario en sesión (una definer sobre la fila ajena), los triggers no frenan ('
+  || :'t42_e4' || ' / ' || :'t42_e5' || ')');
+select pg_temp.t42(null, format($q$update public.listings set titulo = 'RLS T42 N por Studio' where id = %s$q$, :t42_ln)) as t42_e1,
+       pg_temp.t42(null, format($q$update public.users set foto_url = null, carrera = 'Por Studio' where id = %L$q$, :N42)) as t42_e2 \gset
+select pg_temp.t42(null, format($q$update public.users set estado = 'suspendido', suspendido_at = now(),
+         suspension_motivo = 'T42 prueba' where id = %L$q$, :N42)) as t42_e3 \gset
+select pg_temp.assert(
+  :'t42_e1' = 'ok' and :'t42_e2' = 'ok' and :'t42_e3' = 'ok'
+  and (select titulo from public.listings where id = :t42_ln) = 'RLS T42 N por Studio'
+  and (select carrera from public.users where id = :N42::uuid) = 'Por Studio'
+  and (select estado from public.listings where id = :t42_ln) = 'pausada',
+  'T42 (e1) Studio y la suspensión (que pausa) tocan las filas de N sin aceptar');
+
+-- (f) Catálogo vacío o incompleto: nadie tiene la vigente --------------------
+savepoint t42_f;
+delete from public.aceptaciones_legales;
+delete from public.documentos_legales;
+select pg_temp.as_user_text(:V42::uuid, 'select private.terminos_vigentes_aceptados()::text') as t42_f1,
+       pg_temp.t42(:V42::uuid, $q$select public.aceptar_terminos('rls-fixture', 'rls-fixture')$q$) as t42_f2,
+       pg_temp.t42(:V42::uuid, format($q$update public.listings set titulo = 'RLS T42 sin catálogo' where id = %s$q$, :t42_lvp)) as t42_f3 \gset
+rollback to savepoint t42_f;
+delete from public.aceptaciones_legales where tipo = 'aviso_privacidad';
+delete from public.documentos_legales where tipo = 'aviso_privacidad';
+select pg_temp.as_user_text(:V42::uuid, 'select private.terminos_vigentes_aceptados()::text') as t42_f4 \gset
+rollback to savepoint t42_f;
+release savepoint t42_f;
+select pg_temp.assert(
+  :'t42_f1' = 'false' and :'t42_f2' = '22023:version_no_vigente' and :'t42_f3' = :t42_trg
+  and :'t42_f4' = 'false'
+  and (select private.version_vigente('terminos')) = 'rls-fixture',
+  'T42 (f1) sin documentos (o sin el Aviso) nadie cuenta como aceptado: falla cerrado ('
+  || concat_ws(' ', :'t42_f1', :'t42_f2', :'t42_f3', :'t42_f4') || ')');
+
+-- (g) Integridad del catálogo ------------------------------------------------
+select pg_temp.t42(null, $q$update public.documentos_legales set url = 'https://example.test/otra'
+         where tipo = 'terminos' and version = 'rls-fixture'$q$) as t42_g1,
+       pg_temp.t42(null, $q$delete from public.documentos_legales
+         where tipo = 'terminos' and version = 'rls-fixture'$q$) as t42_g2,
+       pg_temp.t42(null, $q$insert into public.documentos_legales (tipo, version, vigente_desde, url, contenido_sha256)
+         values ('terminos', 'rls-t42-corta', now() + interval '2 day', 'https://example.test/c', '\x00'::bytea)$q$) as t42_g3,
+       pg_temp.t42(null, format($q$insert into public.aceptaciones_legales (user_id, tipo, version, accion)
+         values (%L, 'terminos', 'rls-t42-vieja', 'presentado')$q$, :D42)) as t42_g4,
+       pg_temp.t42(:V42::uuid, $q$insert into public.documentos_legales (tipo, version, vigente_desde, url, contenido_sha256)
+         values ('terminos', 'rls-t42-cliente', now() + interval '3 day', 'https://example.test/x', sha256('x'))$q$) as t42_g5 \gset
+insert into public.documentos_legales (tipo, version, vigente_desde, url, contenido_sha256)
+values ('terminos', 'rls-t42-futura', now() + interval '1 day', 'https://example.test/futura', sha256('t42 futura'));
+select private.version_vigente('terminos') as t42_g6 \gset
+select pg_temp.t42(null, $q$delete from public.documentos_legales where version = 'rls-t42-futura'$q$) as t42_g7 \gset
+select pg_temp.assert(
+  :'t42_g1' = '55000:documento_legal_inmutable'
+  and :'t42_g2' like '23503:%'
+  and :'t42_g3' like '23514:%'
+  and :'t42_g4' like '23514:%'
+  and :'t42_g5' like '42501:%'
+  and :'t42_g6' = 'rls-fixture' and :'t42_g7' = 'ok'
+  and has_table_privilege('authenticated', 'public.documentos_legales', 'select')
+  and not has_table_privilege('authenticated', 'public.documentos_legales', 'insert, update, delete')
+  and not has_table_privilege('anon', 'public.documentos_legales', 'select')
+  and not has_table_privilege('anon', 'public.aceptaciones_legales', 'select')
+  and not has_table_privilege('authenticated', 'public.aceptaciones_legales', 'insert, update, delete'),
+  'T42 (g1) un documento no se edita ni se borra si alguien lo aceptó; hash y acción con check; '
+  || 'una futura no es vigente y se borra; el cliente solo lee ('
+  || concat_ws(' ', :'t42_g1', :'t42_g2', :'t42_g3', :'t42_g4', :'t42_g5', :'t42_g6', :'t42_g7') || ')');
+
+-- (i) Eliminar la cuenta se lleva su evidencia --------------------------------
+select count(*) as t42_i0 from public.aceptaciones_legales where user_id = :D42::uuid \gset
+select pg_temp.t42(null, format('delete from auth.users where id = %L', :D42)) as t42_i1 \gset
+select pg_temp.assert(:t42_i0 = 2 and :'t42_i1' = 'ok'
+  and not exists (select 1 from public.aceptaciones_legales where user_id = :D42::uuid),
+  'T42 (i1) la cuenta eliminada se lleva sus aceptaciones (cascade)');
 
 \echo ''
 \echo '==========================================='

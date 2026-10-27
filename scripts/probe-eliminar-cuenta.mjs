@@ -29,6 +29,7 @@
 // ===========================================================================
 
 import { execFileSync } from 'node:child_process';
+import { aceptarTerminosDePrueba } from './_terminos-prueba.mjs';
 
 import {
   reautenticacionReciente,
@@ -85,6 +86,8 @@ async function crearUsuario(E, correo, nombre) {
   if (!res.ok) throw new Error(`crearUsuario ${correo}: ${res.status} ${await res.text()}`);
   const id = (await res.json()).id;
   sql(`update public.users set nombre = '${nombre}', campus_id = 1 where id = '${id}'`);
+  // Sin aceptar los términos (PL-016) no sube fotos ni reseña.
+  await aceptarTerminosDePrueba(E.API_URL, E.SECRET, id);
   return id;
 }
 

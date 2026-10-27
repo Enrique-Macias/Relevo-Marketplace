@@ -805,6 +805,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      aceptar_terminos: {
+        Args: { p_version_aviso: string; p_version_terminos: string }
+        Returns: undefined
+      }
       buscar_listings: {
         Args: { q: string }
         Returns: {
@@ -830,6 +834,17 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      estado_terminos: {
+        Args: never
+        Returns: {
+          acepto_alguna: boolean
+          aceptado: boolean
+          tipo: string
+          url: string
+          version: string
+          vigente_desde: string
+        }[]
       }
       hook_before_user_created: { Args: { event: Json }; Returns: Json }
       increment_listing_view: {

@@ -29,6 +29,7 @@
 import { execFileSync } from 'node:child_process';
 import { createClient } from '@supabase/supabase-js';
 import { guardaRelevo, CONTENEDOR_DB } from './_guarda-relevo.mjs';
+import { aceptarTerminosDePrueba } from './_terminos-prueba.mjs';
 
 const RUN = Date.now().toString(36);
 const PASS = 'probe-bloqueos-1234';
@@ -104,6 +105,8 @@ async function main() {
       email: `probe-bloqueos-${etiqueta}-${RUN}@tec.mx`, password: PASS, email_confirm: true });
     if (error) throw new Error(`createUser ${etiqueta}: ${error.message}`);
     creadas.push(data.user.id);
+    // Sin aceptar los términos (PL-016) no contacta ni recibe un WhatsApp.
+    await aceptarTerminosDePrueba(E.API_URL, E.SECRET_KEY, data.user.id);
     sql(`update public.users set telefono = '${telefono}',
            campus_id = (select c.id from public.campus c where c.universidad_id = users.universidad_id order by c.id limit 1)
          where id = '${data.user.id}'`);
