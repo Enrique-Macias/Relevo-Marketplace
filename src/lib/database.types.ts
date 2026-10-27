@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      aceptaciones_legales: {
+        Row: {
+          accion: string
+          aceptado_at: string
+          tipo: string
+          user_id: string
+          version: string
+        }
+        Insert: {
+          accion: string
+          aceptado_at?: string
+          tipo: string
+          user_id: string
+          version: string
+        }
+        Update: {
+          accion?: string
+          aceptado_at?: string
+          tipo?: string
+          user_id?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aceptaciones_legales_documento_fkey"
+            columns: ["tipo", "version"]
+            isOneToOne: false
+            referencedRelation: "documentos_legales"
+            referencedColumns: ["tipo", "version"]
+          },
+          {
+            foreignKeyName: "aceptaciones_legales_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       actividad_diaria: {
         Row: {
           dia: string
@@ -140,6 +179,33 @@ export type Database = {
         Update: {
           correo_hash?: string
           created_at?: string
+        }
+        Relationships: []
+      }
+      documentos_legales: {
+        Row: {
+          contenido_sha256: string
+          created_at: string
+          tipo: string
+          url: string
+          version: string
+          vigente_desde: string
+        }
+        Insert: {
+          contenido_sha256: string
+          created_at?: string
+          tipo: string
+          url: string
+          version: string
+          vigente_desde: string
+        }
+        Update: {
+          contenido_sha256?: string
+          created_at?: string
+          tipo?: string
+          url?: string
+          version?: string
+          vigente_desde?: string
         }
         Relationships: []
       }
@@ -838,8 +904,8 @@ export type Database = {
       estado_terminos: {
         Args: never
         Returns: {
-          acepto_alguna: boolean
           aceptado: boolean
+          acepto_alguna: boolean
           tipo: string
           url: string
           version: string
