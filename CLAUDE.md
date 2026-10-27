@@ -242,12 +242,20 @@ directo del HTML pantalla por pantalla, no se inventa una escala genérica.
 
 ## 3. Modelo de datos — esquema implementado
 
-Definido en 53 migraciones (`supabase/migrations/`, medido con
-`ls supabase/migrations | wc -l` el 2026-10-26; la 53 es `20261025000489`,
-categorías administrables de DESIGN-1 fase 4, en remoto desde el 2026-10-26;
-la 51 y la 52 son `…487` y `…488`, de UGC-1; decía "52", "50", "48", "46", "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 21 tablas más
+Definido en 54 migraciones (`supabase/migrations/`, medido con
+`ls supabase/migrations | wc -l` el 2026-10-27; la 54 es `20261026000490`,
+aceptación de Términos de PL-016, en remoto (STAGING) desde el 2026-10-27; la
+53 es `20261025000489`, categorías administrables de DESIGN-1 fase 4;
+la 51 y la 52 son `…487` y `…488`, de UGC-1; decía "53", "52", "50", "48", "46", "43", "42", "40", "39", "38", "37", "35", "34", "33", "32", y antes "30" con 31 en el repo), con RLS activo y probado en las 23 tablas más
 los DOS buckets de Storage. Este es el esquema **real**, no solo la intención
 original.
+
+**Desde `20261026000490` (PL-016) son 23: 20 con policies más las mismas 3 sin
+policies.** `documentos_legales` (lectura del catálogo para `authenticated`) y
+`aceptaciones_legales` (lectura de las filas propias) suman dos a las "con
+policies"; bloque "Aceptación de Términos", más abajo. Medido en local el
+2026-10-27 con `pg_class.relrowsecurity` y `pg_policy`: 23 tablas, 23 con RLS,
+20 con al menos una policy. El párrafo de antes, tal como estaba:
 
 **Desde `20261013000487` (UGC-1) son 21: 18 con policies más las mismas 3 sin
 policies.** `user_bloqueos` suma una a las "con policies" (tres, todas sobre
@@ -274,6 +282,13 @@ a medio configurar. Medido en local con `pg_class.relrowsecurity` (15 antes de
 es para `supabase_auth_admin`, no para el cliente** (sus bloques, más abajo). El número venía diciendo "12" desde antes de esta tanda, cuando ya
 eran 13: otra confirmación de la moraleja del párrafo siguiente, esta vez
 encontrada al medir para otra cosa.
+
+**Repo y remoto: 54 y 54 (medido el 2026-10-27) — a la par.**
+`ls supabase/migrations | wc -l` da **54** y `supabase_migrations.schema_migrations`
+en remoto (STAGING) también, con `20261026000490` como última. La aplicó el
+usuario el 2026-10-27 con `scripts/pl016-activar.sh` (dry-run que proponía
+solo esa migración, push y carga de las versiones `staging-prueba` en la misma
+corrida; evidencia en §8, "Hecho"). La historia de antes, tal como estaba:
 
 **Repo y remoto: 53 y 53 (medido el 2026-10-26) — a la par.**
 `ls supabase/migrations | wc -l` da **53** y `supabase_migrations.schema_migrations`
@@ -527,6 +542,20 @@ user_bloqueos    (user_id → users on delete cascade, bloqueado_id → users on
                  las suyas (`user_id = auth.uid()`); el bloqueado no ve la fila
                  que lo nombra. Sin UPDATE; anon, nada. Fuera de Realtime. Ver
                  "Bloqueo entre usuarios", abajo.
+documentos_legales (tipo text 'terminos'|'aviso_privacidad', version text,
+                 vigente_desde, url, contenido_sha256 bytea, PK (tipo, version),
+                 unique (tipo, vigente_desde)) — una fila INMUTABLE por versión
+                 de los Términos y del Aviso de privacidad (PL-016, `…490`). La
+                 migración la crea VACÍA; las versiones se cargan aparte.
+                 `authenticated` solo lee; nadie la edita ni la trunca (trigger).
+aceptaciones_legales (user_id → users on delete cascade, tipo, version →
+                 documentos_legales (tipo, version) SIN cascade, accion
+                 'aceptado'|'presentado' atada al tipo, aceptado_at, PK
+                 (user_id, tipo, version)) — la evidencia de que la cuenta
+                 ACEPTÓ los Términos y se le PRESENTÓ el Aviso. El cliente solo
+                 lee las suyas; se escribe únicamente por
+                 `public.aceptar_terminos()`. Ver "Aceptación de Términos",
+                 abajo.
 
 **`campus.latitud`/`longitud` son para "Detectar campus más cercano" (fase
 2C, `20260925000467`).** Nullables a propósito: un campus sin coordenadas
@@ -847,10 +876,15 @@ No quites ninguno de los dos "por simplificar": T16 tiene una aserción por cada
 dirección, y cada una pide el número de alguien cuyo estado NO esté en juego,
 justo para que un `null` no pueda pasar por la razón equivocada.
 
-Consecuencia en la UI: `seller_whatsapp` devuelve `null` por **cuatro** causas —el
-vendedor no tiene número, quien llama está suspendido, el vendedor lo está, o
+Consecuencia en la UI: `seller_whatsapp` devuelve `null` por **cinco** causas —el
+vendedor no tiene número, quien llama está suspendido, el vendedor lo está,
 hay un bloqueo entre los dos en cualquier dirección (desde `20261013000487`,
-bloque "Bloqueo entre usuarios", más abajo)— y no dice cuál. El toast las separa con datos que el cliente ya tiene: `estado` de
+bloque "Bloqueo entre usuarios", más abajo), o quien llama no aceptó los
+Términos vigentes (desde `20261026000490`, bloque "Aceptación de Términos")— y
+no dice cuál. La quinta la adelanta `exigirTerminos()` en el cliente, que abre
+"Términos actualizados" antes de pedir el número; si el estado legal en
+memoria está viejo, el toast puede decir "no ha dejado un WhatsApp" (deuda en
+§8). El toast las separa con datos que el cliente ya tiene: `estado` de
 la propia sesión (`profile.estado`, en `PROFILE_COLUMNS`) y `estado` del vendedor
 (en el embed `VENDEDOR` de `src/lib/listings.ts`, que lo trae para esto). El
 mensaje del vendedor suspendido es **neutro** ("Esta cuenta no está disponible
@@ -1347,13 +1381,15 @@ para impedir. Tres cosas que conviene saber antes de tocarlo:
   `raise exception` a un toast con salida.
 
 **Funciones `SECURITY DEFINER`** viven en el esquema `private` (nunca en
-`public`) excepto CUATRO, que sí deben ser invocables por PostgREST desde el
+`public`) excepto CINCO, que sí deben ser invocables por PostgREST desde el
 cliente: `increment_listing_view`, `listing_favorites_count`,
-`seller_whatsapp` e `interaccion_disponible` (eran una sola hasta que Detalle
-necesitó el conteo de favoritos, dos hasta que el botón de WhatsApp necesitó el
-número real, y tres hasta que el Perfil público necesitó saber si hay un
-bloqueo sin revelar su dirección, `20261013000487`; si algún día hay una
-quinta, revisa primero si de verdad la invoca el cliente o si va en
+`seller_whatsapp`, `interaccion_disponible` y `aceptar_terminos` (eran una sola
+hasta que Detalle necesitó el conteo de favoritos, dos hasta que el botón de
+WhatsApp necesitó el número real, tres hasta que el Perfil público necesitó
+saber si hay un bloqueo sin revelar su dirección, `20261013000487`, y cuatro
+hasta que aceptar los Términos necesitó escribir en una tabla que el cliente
+no escribe, `20261026000490`; medido en local el 2026-10-27; si algún día hay
+una sexta, revisa primero si de verdad la invoca el cliente o si va en
 `private`). **`public.buscar_listings` y `public.recomendar_listings` NO cuentan
 aquí**: también son RPC de `public`, pero INVOKER a propósito (sus bloques,
 más arriba), y volverlas definer sería una fuga. `authenticated` tiene `USAGE` sobre `private` + `EXECUTE`
@@ -1363,13 +1399,20 @@ acotado a las SEIS que se invocan desde policies — `is_active_user()`,
 lleva el workaround del SIGSEGV desde que existe; desde `20260930000479` la
 invoca la policy `listing_photos_objects_select_admin`) y, desde
 `20261013000487`, `bloqueos_vigentes()` (`listings_select`) y
-`listing_con_bloqueo()` (`listing_contacts_insert_own`) — decía "CUATRO" hasta
-UGC-1, medido en local el 2026-10-15. **`private.bloqueo_entre()` (`…487`) va
+`listing_con_bloqueo()` (`listing_contacts_insert_own`) y, desde
+`20261026000490`, `terminos_vigentes_aceptados()` (9 policies de escritura) y
+`version_vigente()`, que aquella invoca siendo INVOKER — son OCHO, medido en
+local el 2026-10-27; decía "SEIS" hasta PL-016 y "CUATRO" hasta UGC-1. **`private.bloqueo_entre()` (`…487`) va
 aparte y con EXECUTE revocado para el cliente**: no la usa ninguna policy, solo
 cuerpos definer (los 4 productores de avisos y, desde `…488`,
 `increment_listing_view`), que la ejecutan como su dueño; abierta, sería un
-oráculo de bloqueos entre terceros (T40 (t2)). Mientras tanto, las **23** que solo
-disparan por trigger siguen revocadas (medido en local el 2026-10-26: **27**
+oráculo de bloqueos entre terceros (T40 (t2)). Mientras tanto, las **26** que solo
+disparan por trigger siguen revocadas (medido en local el 2026-10-27: **30**
+funciones de `private` cuelgan de un trigger, 26 sin EXECUTE para
+`authenticated` y las mismas 4 INVOKER con él; las tres nuevas son
+`documento_legal_inmutable()`, `exige_terminos_listing()` y
+`exige_terminos_perfil()`, de `20261026000490`. Decía 23, medido en local el
+2026-10-26: **27**
 funciones de `private` cuelgan de un trigger, 23 sin EXECUTE para
 `authenticated` y las mismas 4 INVOKER con él; la nueva es
 `exige_categoria_activa()`, de `20261025000489`. Decía 22, y antes "las otras
@@ -1419,7 +1462,7 @@ local con estas policias exactas:
 Por eso el cliente hace un **INSERT plano con `ignoreDuplicates`** (igual que
 `favorites`, `explorar.md`) y `private.claim_push_token()` borra la fila perdedora. Va
 como trigger y NO como RPC `SECURITY DEFINER` de `public` deliberadamente: habría
-sido una más de esas (hoy son cuatro), y sobre todo **movería el punto de enforcement** — con el
+sido una más de esas (hoy son cinco), y sobre todo **movería el punto de enforcement** — con el
 trigger, la policy `with check (user_id = auth.uid())` sigue siendo quien decide
 de quién puede ser la fila, y el código elevado solo puede BORRAR, nunca
 fabricar una fila a nombre de otro. Alcance honesto: quien conozca el token de
@@ -2232,8 +2275,81 @@ Cada pieza, con su porqué:
   (bloquear/desbloquear, los dos estados de Perfil público, "Usuarios
   bloqueados" y el fix de vistas, UGC-1E.5/1E.5d). Detalle en §8, "Hecho".
 
-**Regresión de RLS:** `supabase/tests/rls.sql`, 736 aserciones (medido con el
-`grep` de §8 el 2026-10-26; antes decía 715, 657, 606, 529, 501, 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
+**Aceptación de Términos (PL-016: `20261026000490`; en STAGING desde el
+2026-10-27, cerrado funcionalmente para iOS).** Plan, decisiones (P1-P5,
+Q1-Q5, V1-V2) y resultado de cada fase en `docs/pl-016-plan.md`. Aceptar es
+UNA casilla que deja DOS registros: los Términos `aceptado` y el Aviso
+`presentado`. **Presentar el Aviso NO es un consentimiento** a ningún
+tratamiento de datos (condición 1 de la aprobación); la validación legal sigue
+pendiente (PL-008, PL-009). Cada pieza, con su porqué:
+
+- **`documentos_legales`** (bloque del esquema, arriba): la vigente de cada
+  tipo es la de `vigente_desde` más reciente que ya empezó
+  (`private.version_vigente(tipo)`); el unique `(tipo, vigente_desde)` hace
+  determinista esa elección. **Inmutable**: los triggers
+  `documentos_legales_inmutable` y `documentos_legales_sin_truncate` rechazan
+  UPDATE, DELETE y TRUNCATE para todos los roles, así que una corrección es
+  una versión nueva. `contenido_sha256` es, por diseño, el sha256 del texto
+  CANÓNICO archivado en `docs/legal/versiones/<version>/` (V1). **La
+  migración crea el catálogo VACÍO, y vacío falla cerrado**: nadie puede
+  aceptar y todas las acciones bloqueadas quedan bloqueadas para todos. Las
+  versiones de prueba de LOCAL viven en `supabase/seeds-local/terminos.sql`,
+  fuera de `seed.sql`, porque `db push --include-seed` las llevaría a remoto.
+- **`aceptaciones_legales`**: `accion` atada al tipo por CHECK; `aceptado_at`
+  lo pone el servidor; `user_id` en cascade (P4: la evidencia se va con la
+  cuenta; lo valida el abogado en PL-009); la FK al documento NO es cascade, y
+  es lo que impide borrar una versión aceptada.
+- **`public.aceptar_terminos(p_version_terminos, p_version_aviso)`**, la
+  quinta definer de `public`: quién sale de `auth.uid()` y la hora de
+  `now()`; el cliente solo dice qué versiones vio, y si no son las vigentes da
+  `22023 version_no_vigente`. Idempotente (`on conflict do nothing`).
+  **`public.estado_terminos()`**, INVOKER: las vigentes, su URL y si la sesión
+  aceptó esa versión o alguna.
+- **`private.terminos_vigentes_aceptados()`**, INVOKER (no definer, como decía
+  el plan; T42 (a6) lo fija): solo lee las aceptaciones propias, que la policy
+  select-own ya deja ver, así que si esa policy desapareciera fallaría cerrado.
+  Va en el `with check` de **9 policies**: `listings_insert_own`,
+  `listing_photos_insert_own`, `listing_photos_objects_insert_own`,
+  `avatars_objects_insert_own`, `ratings_insert_own`, `ratings_update_own`,
+  `listing_contacts_insert_own`, `listing_sales_insert_seller` y
+  `listing_sales_update_seller`.
+- **Dos triggers BEFORE UPDATE para lo que una policy no distingue**, ambos
+  con `42501 terminos_no_aceptados`, que la app reconoce: en `listings`, sin
+  aceptación el dueño solo puede PAUSAR (`activa → pausada` sin tocar nada
+  más); en `users`, no escribe un valor nuevo en `foto_url`, `telefono` ni
+  `carrera` (ponerlos en NULL sí pasa). Los dos solo actúan cuando quien
+  escribe es el dueño (`auth.uid()`), así que no frenan a Studio, al panel,
+  a `increment_listing_view` ni a la pausa por suspensión.
+- **`seller_whatsapp`**: quinta causa de `null`, mirando solo a QUIEN LLAMA;
+  un vendedor que aceptó una versión anterior sigue siendo contactable (Q1).
+- **Lo que sigue permitido sin aceptar (P2):** explorar, nombre y campus,
+  favoritos, pausar, reportar, bloquear, eliminar sus publicaciones y la
+  cuenta. Las escrituras técnicas (actividad diaria, push tokens, vistas,
+  marcar avisos leídos) siguen igual (Q2).
+- **El cliente** (`src/lib/terminos.ts`, `src/lib/exigir-terminos.ts`,
+  `src/app/terminos-actualizados.tsx`): "Términos actualizados" es una
+  **puerta obligatoria** (`(tabs)/_layout.tsx` redirige ahí; salidas:
+  aceptar, "Cerrar sesión" y "Eliminar mi cuenta"); en Completar perfil la
+  casilla se registra después del perfil y antes de la foto. Sin estado
+  legible o sin versión vigente se entra normal, así que un build nuevo
+  funciona contra un servidor sin la migración. **El estado se lee solo
+  cuando cambia el `userId`** (`src/lib/session.tsx:305-319`): una sesión
+  abierta antes de activar una versión no ve la puerta hasta reiniciar o
+  volver a entrar; mientras tanto la base rechaza igual (deuda en §8).
+- **Pruebas:** T42 de `rls.sql` (27 aserciones; 26 controles negativos, cada
+  uno contra la suite completa y contra T42 aislada; el fixture global acepta
+  `rls-fixture`) y `scripts/probe-terminos.mjs` (15 pruebas por HTTP, 2
+  controles). `scripts/_terminos-prueba.mjs` acepta por los probes que suben
+  fotos o contactan (solo localhost).
+- **STAGING:** activado con `scripts/pl016-activar.sh` (dry-run, push e
+  `insert` de las versiones en una corrida), con la versión
+  `staging-prueba` archivada en `docs/legal/versiones/staging-prueba/`. Esa
+  versión usa el sha256 del HTML SERVIDO, no de un texto canónico: excepción
+  documentada en su `LEEME.md`, válida solo para ella. Recuperación:
+  `docs/pl-016-recuperacion.sql` (NO es una migración).
+
+**Regresión de RLS:** `supabase/tests/rls.sql`, 763 aserciones (medido con el
+`grep` de §8 el 2026-10-27; antes decía 736, 715, 657, 606, 529, 501, 455, 454, 453, 407, 406, 362, 358, 335, 317, 284, 282, 273, 259, y antes "212", que ya era viejo: la
 cronología de abajo llegaba a 223), corre dentro de
 una transacción con rollback (no deja estado, repetible sin `db reset`).
 
@@ -3149,6 +3265,24 @@ dentro de la suite y en (e2) aislada; EXECUTE de la función de trigger para
 resuelto al planear) en vez de en su aserción. Ahora el `set constraints` va
 condicionado a `condeferrable` y la comparación es `id::text`.
 
+Y a **763** con la aceptación de Términos (`20261026000490`, PL-016): 27 de
+T42, autocontenida, con sus actores sin aceptar, con una versión anterior y
+con la vigente. Cubre cada acción bloqueada (rechazada para los dos primeros y
+permitida para el tercero), cada acción permitida sin aceptar, la RPC (hora
+del servidor, idempotencia, versión vieja o inventada, no aceptar a nombre de
+otro), el catálogo vacío y el borrado de cuenta. La lista de funciones
+solo-trigger de T12 pasa de 23 a 26 sin cambiar la cuenta. **El fixture global
+acepta una versión `rls-fixture`** (decisión del usuario): sin eso, las
+secciones anteriores, cuyos usuarios no habían aceptado nada, caían por la
+razón equivocada. Los 26 controles negativos se corrieron uno a la vez, contra
+la suite completa y contra T42 aislada; los 26 caen, 23 en su aserción de T42
+en las dos corridas. Las excepciones: el trigger de `listings` sin la
+excepción del dueño cae antes, en (d3); el de `users` sin ella cae en la
+precondición (Studio siembra a los actores); "aceptaciones sin cascade" cae en
+la suite completa con un error crudo de FK en T8 (que borra a `:C`) y aislada
+en (i1); y el `grant select` de documentos a `anon` cae en T12 en la suite y
+en (g1) aislada. Detalle en `docs/pl-016-plan.md`, "Resultado de la Fase 2".
+
 **Gotcha: la suite espera 3 usuarios en local.** Una cuenta de prueba (la del
 admin de la prueba manual del panel) la rompe en T1; se arregla con
 `supabase db reset`.
@@ -3319,12 +3453,21 @@ mandado a `pendiente` al editar fotos, auto-aprobándose sin Studio.
 
 ---
 
-## 4. Inventario completo de pantallas (88)
+## 4. Inventario completo de pantallas (89)
 
 Cada pantalla corresponde 1:1 a un `<div class="phone-block" data-cat="...">`
 dentro de `relevo-app.html` — el atributo `data-cat` es el mismo agrupador que
 usa el filtro visual del prototipo. Para el estado de qué grupo ya existe
 como código real (vs. solo diseño), ver §8 y las reglas de `.claude/rules/`.
+
+**89 desde PL-016 (aceptación de Términos)**, medido con
+`grep -o 'class="phone-block[^"]*" data-cat="[a-z]*"' design/relevo-app.html |
+sort | uniq -c` el 2026-10-27: Onboarding 19, Explorar 23, Publicar 11, Cuenta
+21, Confianza 5, Notificaciones 2 y Sistema 8. Eran 88; el nuevo es
+"Términos actualizados" (Onboarding). Además cambiaron, sin contar aparte,
+"Completar perfil" y su estado inicial (la casilla de aceptación) y las dos
+variantes de "Verificación" (los enlaces a los dos documentos). La cuenta
+anterior, tal como estaba:
 
 **88 desde DESIGN-1 (Paleta 06, aprobada el 2026-10-25)**, medido con
 `grep -o 'class="phone-block[^"]*" data-cat="[a-z]*"' design/relevo-app.html |
@@ -3354,7 +3497,7 @@ Confianza 5, Notificaciones 2 y Sistema 8. Eran 73; los 8 nuevos son
 (Confianza) y "Confirmar bloquear" (Sistema). Cada uno se describe en su grupo,
 abajo.
 
-### Onboarding (18)
+### Onboarding (19)
 Splash · Onboarding 1/3 · Onboarding 2/3 · Onboarding 3/3 · Verificación ·
 **Verificación (correo no participante)** ·
 Código de verificación · Completar perfil ·
@@ -3362,7 +3505,16 @@ Completar perfil (estado inicial) · Completar perfil (selector de campus) ·
 **Intereses** · Permiso de notificaciones ·
 Iniciar sesión · Recuperar contraseña · **Código de recuperación** ·
 **Nueva contraseña** · **Cuenta eliminada** ·
-**Iniciar sesión (contraseña visible)**
+**Iniciar sesión (contraseña visible)** · **Términos actualizados**
+
+"Términos actualizados" llegó con PL-016 y es una **puerta obligatoria**: la
+ve quien tiene sesión y no aceptó la versión vigente de los Términos. Muestra
+la versión y la fecha, la casilla única ("Acepto los Términos de uso y leí el
+Aviso de privacidad") y "Aceptar", y sus otras salidas son "Cerrar sesión" y
+"Eliminar mi cuenta". No se cierra con gesto ni con "atrás". Variantes
+etiquetadas: cuenta sin ninguna aceptación previa, versión vencida a media
+pantalla, `busy` y error de red. En "Completar perfil", "Continuar" queda
+deshabilitado hasta marcar la casilla.
 
 "Iniciar sesión (contraseña visible)" llegó con DESIGN-1: el estado del ojo de
 mostrar/ocultar contraseña, que llevan TODOS los campos de contraseña del
@@ -3771,7 +3923,7 @@ en "Verificación (correo no participante)".
 - Pide **tokens antes que pantallas**: extraer `theme.ts` del CSS antes de
   construir el primer componente.
 - Ve **pantalla por pantalla, por grupo (`data-cat`)**, no "constrúyeme la
-  app" — con 88 pantallas, pedir todo junto es la forma más segura de que
+  app" — con 89 pantallas, pedir todo junto es la forma más segura de que
   algo se desvíe del diseño.
 - Separa **UI de datos en dos pasos**: primero el componente con datos de
   prueba fiel al frame del HTML, después la conexión a Supabase con RLS. Es
@@ -3800,7 +3952,7 @@ en "Verificación (correo no participante)".
   quedaba detrás de `20260925000467`.
 - Para tareas de backend en particular: **valida en local con Docker antes de
   aplicar a remoto**, y prueba como el rol `authenticated` real, no como
-  `postgres`/superusuario. Son DIECISIETE pasos, no uno (decía "DIECISÉIS" antes de DESIGN-1 fase 5, "QUINCE" antes de
+  `postgres`/superusuario. Son DIECIOCHO pasos, no uno (decía "DIECISIETE" antes de PL-016, "DIECISÉIS" antes de DESIGN-1 fase 5, "QUINCE" antes de
   UGC-1, "CATORCE" antes de la Ola 6 del panel, "TRECE" antes de la Ola 3b del panel, "DOCE" antes de la Ola 4, "ONCE" antes de la
   Ola 2 del panel, "DIEZ" antes del panel de admin, "NUEVE" antes de eliminar cuenta, y "SIETE" con ocho en la
   lista):
@@ -4040,7 +4192,21 @@ en "Verificación (correo no participante)".
      criterio que el paso 8: el módulo es puro (sin imports) y Node lo carga
      directo, así que no necesita nada. Los gestos y el recorte real dependen
      del módulo nativo y se verifican a mano en dispositivo.
-  Los probes 2, 3, 6, 7, 9, 10, 11, 13, 14, 15 y 16 necesitan el stack local arriba y limpian lo suyo (el
+  18. `node scripts/probe-terminos.mjs`: la aceptación de Términos (PL-016,
+     `20261026000490`) por HTTP, **15 pruebas**, con la misma
+     `@supabase/supabase-js` que la app, contra PostgREST local. Prueba
+     `estado_terminos`, `aceptar_terminos` (204; versión no vigente → 400 /
+     22023 `version_no_vigente`; aceptar dos veces no duplica) y, sin aceptar,
+     las formas que la app tiene que reconocer: publicar → 403 / 42501 por RLS,
+     editar la propia → 403 / 42501 `terminos_no_aceptados` (trigger),
+     `seller_whatsapp` → null, y pausar SÍ pasa; después de aceptar, las mismas
+     llamadas pasan. El cliente no inserta aceptaciones y anon no llama a
+     ninguna RPC. T42 prueba la semántica en SQL. Necesita solo el stack, pasa
+     por `_guarda-relevo.mjs` y limpia lo suyo. **Desde PL-016, los probes que
+     suben fotos o contactan (2, 3, 10, 13 y 16) aceptan primero** con
+     `scripts/_terminos-prueba.mjs` (secret key, solo localhost), que también
+     siembra las versiones de prueba si faltan: sin eso, la base los rechaza.
+  Los probes 2, 3, 6, 7, 9, 10, 11, 13, 14, 15, 16 y 18 necesitan el stack local arriba y limpian lo suyo (el
   9, con un rollback); si una corrida muere de golpe, `supabase db reset` borra la basura.
   Los pasos 4, 5, 8, 12 y 17 no necesitan nada: ni stack, ni red, ni credenciales.
 
@@ -4928,6 +5094,49 @@ de los route groups).
     6 headers iguales a `_headers`. El rollback de referencia es `2b1016db`
     (`83af816`), no usado.
 
+- **PL-016, aceptación de Términos y presentación del Aviso: EN STAGING, GO y
+  cerrado funcionalmente para iOS (2026-10-27, UTC). Android y PROD
+  pendientes.** Frames (88 → 89, `37a3712`), migración `20261026000490`
+  (`b1ae14b`), app con la puerta obligatoria (`37a3712`), tipos `--linked`
+  (`70d4dd2`) y el script de activación con las versiones archivadas
+  (`54a4082`). Esquema en §3, "Aceptación de Términos". El usuario autorizó
+  cada paso remoto y los corrió él; Claude midió con SELECT y logs.
+  - **LOCAL:** `rls.sql` 763/763 (T42, 27 aserciones y 26 controles),
+    `probe-terminos` 15/15 (2 controles); los 5 probes que suben fotos o
+    contactan, en verde tras aceptar con `_terminos-prueba.mjs`; `tsc` y
+    `lint` limpios.
+  - **Activación en STAGING (la corrió el usuario):** `scripts/pl016-activar.sh`
+    (dry-run con solo `…490`, push y el `insert` de
+    `docs/legal/versiones/staging-prueba/insert-staging.sql` en la misma
+    corrida). 54 = 54 migraciones; versiones `staging-prueba` vigentes desde
+    las 21:52:39 UTC (`terminos` sha `a54344e6…`, `aviso_privacidad` sha
+    `dfbb3742…`, con el hash del HTML servido: excepción de su `LEEME.md`).
+  - **Auditoría de solo lectura:** igual a LOCAL en las 13 llaves de la
+    consulta de auditoría (tablas, RLS, policies, privilegios, funciones, md5
+    de cuerpos, triggers, constraints, las 9 de 9 policies con el helper y
+    Realtime), con la huella esperada. Advisors: solo +1 definer
+    (`aceptar_terminos`); `rls_enabled_no_policy` sin cambios.
+  - **Pruebas en TestFlight RLVO 1.0.0 (4), con evidencia del servidor:** una
+    cuenta existente acepta (21:53:35) y la aceptación sobrevive a un
+    reinicio; un alta nueva acepta (22:31:00) antes de cualquier acción;
+    publicar (publicación 112, `limpio → activa`); contactar desde Detalle
+    (`listing_contacts` id 31, `POST 201` a las 22:37:04, con la aceptación
+    vigente previa; el contador del vendedor subió en 1); eliminar cuenta
+    (22:28:02, sin huérfanos). Desde la activación, 0 escrituras de cuentas sin
+    aceptación vigente.
+  - **Solo manuales en TestFlight:** la puerta no se puede saltar en una
+    cuenta sin aceptación, la casilla obligatoria del alta, y contraseña
+    incorrecta y Cancelar en "Eliminar mi cuenta".
+  - **Solo en LOCAL:** los rechazos de la base en las 9 rutas, la llamada
+    directa a la API sin aceptar, una versión vigente nueva que deja vieja la
+    aceptación anterior, y la recuperación con `docs/pl-016-recuperacion.sql`.
+  - **Una lección de la auditoría, no un fallo:** una consulta que corrió antes
+    del contacto dio 0 filas, y dos `seller_whatsapp` sin insert eran del botón
+    de **Perfil público**, que no registra contactos por diseño. Se distinguen
+    en los logs por las peticiones de carga de cada pantalla
+    (`interaccion_disponible` solo la llama Perfil público).
+  - **Pendiente:** Android (no hay build con PL-016), PROD (PL-001: textos
+    canónicos, URLs inmutables, versión real) y la deuda de §8.
 - **UGC-1, bloqueo entre usuarios (PL-006): EN STAGING, validado en LOCAL,
   en STAGING y en un iPhone físico (2026-10-12 al 2026-10-16, UTC). PROD
   pendiente (PL-001).** Migraciones `20261013000487_user_bloqueos.sql` y
@@ -5319,6 +5528,11 @@ deja este hueco para no romper las referencias cruzadas a "pendiente 0j" de
 vive COMPLETA —con su "Revisar cuando" y su "Fix"— en la regla de su feature, y
 aparece sola al tocar esos archivos. Índice para verlas todas de un vistazo:
 
+- **Deuda previa a PROD de PL-016** (registrada el 2026-10-27, sin implementar; todavía no tiene entrada en `docs/PRE_LAUNCH_DEBT.md`, que tiene cambios sin commitear del usuario):
+  - **Revalidar el estado legal al volver a primer plano.** Hoy solo se lee cuando cambia el `userId` (`src/lib/session.tsx:305-319`), así que una sesión abierta antes de activar una versión no ve la puerta hasta reiniciar o volver a entrar; la base rechaza igual. **Revisar cuando:** antes de activar cualquier versión en PROD, o de publicar una versión nueva con usuarios activos. **Fix:** volver a leer `estado_terminos()` (ya existe `refreshTerminos`, `src/lib/session.tsx:321`) al regresar a primer plano, con el mismo patrón de `AppState` que la actividad diaria (`src/lib/session.tsx:341-348`). → CLAUDE.md §3, "Aceptación de Términos"
+  - **Mensaje incorrecto de WhatsApp cuando falta la aceptación.** Con el estado legal en memoria viejo, `exigirTerminos()` deja pasar, `seller_whatsapp` devuelve null por su quinta causa y el toast dice "Este vendedor todavía no ha dejado un WhatsApp" (Detalle y Perfil público). **Fix:** el fix anterior, o, ante un null, volver a leer `estado_terminos()` y abrir "Términos actualizados" en vez del toast. → CLAUDE.md §3, bloque del teléfono
+  - **Probar PL-016 en Android.** No existe un build de Android con PL-016: la puerta, el alta con la casilla, publicar y contactar solo se probaron en iOS. **Revisar cuando:** el siguiente build de EAS para Android, antes de PROD.
+  - **Versiones legales canónicas e inmutables para PROD** (PL-001, PL-008). Hacen falta el texto aprobado por el abogado y su sha256 sobre ESE texto (no sobre el HTML, como en `staging-prueba`), URLs inmutables por versión (hoy `/terminos` y `/privacidad` muestran siempre la última; condición 2 de la aprobación: proponer la estrategia antes de implementarla) y un nombre de versión real con su propio `insert`. → `docs/legal/versiones/staging-prueba/LEEME.md`
 - Cambiar el avatar puede dejar el anterior huérfano en Storage → `cuenta-perfil.md`
 - ~~La base no ata `users.campus_id` a `users.universidad_id`~~ **[CERRADA]** por `20260924000466` (FK compuesta + check) → `cuenta-perfil.md`
 - La universidad se fija en el ALTA: cambiar el correo de una cuenta no la re-deriva → `onboarding-auth.md`
@@ -6388,3 +6602,18 @@ del componente y no de la pantalla está en `componentes-compartidos.md`.
   `motionUsagePermission` debe tener un texto válido en `app.json`, nunca
   `false`.** RLVO no llama a `requestMotionActivity*`, así que iOS nunca le
   muestra ese aviso al usuario.
+- **El formato de salida del Supabase CLI cambia según QUIÉN lo corre: un
+  script que lea su stdout tiene que pasar `--output-format json`.** Medido
+  con el CLI 2.116.0 al preparar la activación de PL-016 (2026-10-27): sin el
+  flag, `supabase db push --dry-run` escribe TEXTO en stdout ("Finished
+  supabase db push.") cuando lo corre una persona en una terminal normal, y
+  JSON solo cuando detecta un agente (`AI_AGENT`/`CLAUDECODE` en el entorno,
+  `--agent auto`). O sea que un validador probado desde Claude Code veía JSON
+  y habría fallado al correrlo el usuario. Con `--output-format json`, stdout
+  es el JSON en los dos casos y el progreso va a stderr (contra `--linked`
+  además sale "Initialising login role...", también por stderr). **Cómo
+  aplicarlo:** todo script que valide la salida del CLI pasa el flag, lee
+  stdout y stderr por separado y valida solo stdout
+  (`scripts/pl016-activar.sh`, `valida_dryrun`). Y, como regla general:
+  cuando una herramienta se comporta distinto bajo un agente, probar el
+  script solo desde el agente no prueba el script.
