@@ -13,6 +13,7 @@
       },
       "bundleIdentifier": "mx.com.rlvo.app",
       "infoPlist": {
+        "CFBundleDevelopmentRegion": "es",
         "NSLocationDefaultAccuracyReduced": true,
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -45,11 +46,16 @@
           "imageWidth": 140
         }
       ],
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "RLVO guarda tu sesión cifrada en este dispositivo. No te pediremos Face ID para usar la app."
+        }
+      ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Relevo usa tus fotos para que puedas ilustrar las publicaciones que pones en venta.",
+          "photosPermission": "RLVO usa tus fotos para que ilustres lo que vendes y elijas tu foto de perfil.",
           "cameraPermission": "RLVO usa tu cámara para que tomes fotos de lo que vendes y de tu perfil.",
           "microphonePermission": false
         }
@@ -57,7 +63,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Relevo usa tu ubicación para sugerirte el campus más cercano.",
+          "locationWhenInUsePermission": "RLVO usa tu ubicación para sugerirte el campus más cercano.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
           "motionUsagePermission": "RLVO usa servicios de ubicación para ayudarte a detectar el campus más cercano.",

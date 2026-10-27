@@ -8,6 +8,7 @@ import { PrimaryButton } from '@/components/Buttons';
 import { Field } from '@/components/Field';
 import { Screen } from '@/components/Screen';
 import { Colors, Typography } from '@/constants/theme';
+import { mensajeErrorAuth } from '@/lib/errores-auth';
 import { useRedirectSiPerfilCompleto } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 
@@ -33,7 +34,7 @@ export default function IniciarSesionScreen() {
     });
     setEntrando(false);
     if (e) {
-      setError(e.message);
+      setError(mensajeErrorAuth(e));
       return;
     }
     // No se navega a mano: al cambiar la sesión, el gating decide el destino

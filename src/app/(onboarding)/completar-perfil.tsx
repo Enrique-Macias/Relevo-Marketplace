@@ -23,6 +23,7 @@ import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Radii, Typography } from '@/constants/theme';
 import { fetchUniversidad, type OpcionCatalogo } from '@/lib/catalogos';
+import { mensajeErrorAuth } from '@/lib/errores-auth';
 import { useFotoPerfil } from '@/lib/perfil';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
@@ -149,7 +150,7 @@ export default function CompletarPerfilScreen() {
     const { error: ePass } = await supabase.auth.updateUser({ password });
     if (ePass) {
       setGuardando(false);
-      setError(ePass.message);
+      setError(mensajeErrorAuth(ePass));
       return;
     }
 
@@ -171,7 +172,7 @@ export default function CompletarPerfilScreen() {
 
     if (ePerfil) {
       setGuardando(false);
-      setError(ePerfil.message);
+      setError(mensajeErrorAuth(ePerfil));
       return;
     }
 

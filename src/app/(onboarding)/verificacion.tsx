@@ -9,6 +9,7 @@ import { Field } from '@/components/Field';
 import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
 import { Colors, Typography } from '@/constants/theme';
+import { mensajeErrorAuth } from '@/lib/errores-auth';
 import { useRedirectSiPerfilCompleto } from '@/lib/session';
 import {
   COPY_CORREO_BLOQUEADO,
@@ -68,7 +69,7 @@ export default function VerificacionScreen() {
       // traduce su rechazo a copy. No hay lista de dominios en el cliente.
       if (esDominioNoParticipante(e)) setRechazo('dominio');
       else if (esCorreoBloqueado(e)) setRechazo('bloqueado');
-      else setError(e.message);
+      else setError(mensajeErrorAuth(e));
       return;
     }
     router.push('/codigo');

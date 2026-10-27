@@ -8,6 +8,7 @@ import { PrimaryButton } from '@/components/Buttons';
 import { Field } from '@/components/Field';
 import { Screen } from '@/components/Screen';
 import { Colors, Typography } from '@/constants/theme';
+import { mensajeErrorAuth } from '@/lib/errores-auth';
 import { supabase } from '@/lib/supabase';
 
 import { CORREO_RE } from './verificacion';
@@ -42,7 +43,7 @@ export default function RecuperarPasswordScreen() {
     const { error: e } = await supabase.auth.resetPasswordForEmail(correo.trim());
     setEnviando(false);
     if (e) {
-      setError(e.message);
+      setError(mensajeErrorAuth(e));
       return;
     }
     router.push({ pathname: '/recuperar-codigo', params: { correo: correo.trim() } });

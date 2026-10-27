@@ -8,6 +8,7 @@ import { PrimaryButton } from '@/components/Buttons';
 import { OTP_LENGTH, OtpInput } from '@/components/OtpInput';
 import { Screen } from '@/components/Screen';
 import { Colors, Typography } from '@/constants/theme';
+import { mensajeErrorAuth } from '@/lib/errores-auth';
 import { supabase } from '@/lib/supabase';
 
 /**
@@ -45,7 +46,7 @@ export default function RecuperarCodigoScreen() {
     });
     setVerificando(false);
     if (e) {
-      setError(e.message);
+      setError(mensajeErrorAuth(e));
       return;
     }
     // `replace` y no `push`: el código ya se consumió, así que volver aquí con el
@@ -57,7 +58,7 @@ export default function RecuperarCodigoScreen() {
   const reenviar = async () => {
     setError(null);
     const { error: e } = await supabase.auth.resetPasswordForEmail(correo);
-    if (e) setError(e.message);
+    if (e) setError(mensajeErrorAuth(e));
   };
 
   return (

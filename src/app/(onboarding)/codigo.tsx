@@ -9,6 +9,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { OTP_LENGTH, OtpInput } from '@/components/OtpInput';
 import { Screen } from '@/components/Screen';
 import { Colors, Typography } from '@/constants/theme';
+import { mensajeErrorAuth } from '@/lib/errores-auth';
 import { useRedirectSiPerfilCompleto, useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 
@@ -100,7 +101,7 @@ export default function CodigoScreen() {
     });
     setVerificando(false);
     if (e) {
-      setError(e.message);
+      setError(mensajeErrorAuth(e));
       return;
     }
     const uid = data.user?.id ?? null;
@@ -121,7 +122,7 @@ export default function CodigoScreen() {
       email: correo.trim(),
       options: { shouldCreateUser: true },
     });
-    if (e) setError(e.message);
+    if (e) setError(mensajeErrorAuth(e));
   };
 
   return (

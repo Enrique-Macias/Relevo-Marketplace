@@ -992,6 +992,12 @@
     display:flex; align-items:center; justify-content:center;
   }
   .toast-text{font-size:13px; font-weight:500;}
+  /* Error de Auth bajo el botón (Iniciar sesión, Verificación, códigos,
+     contraseñas y Completar perfil): texto en --danger, centrado. El copy por
+     código de error vive en src/lib/errores-auth.ts; aquí solo los de cada
+     pantalla. Nunca se muestra el mensaje crudo (en inglés) del servidor. */
+  .auth-error { font-size:12.5px; color:var(--danger); text-align:center; margin-top:12px; width:100%; }
+
   /* Aviso PERSISTENTE dentro del flujo — hermano del toast, no una variante:
      el toast flota sobre la pantalla y se va solo a los 4s, y hay avisos que el
      usuario tiene que poder leer con calma porque traen una acción asociada
@@ -1203,6 +1209,24 @@
   .crop-actions .ghost-btn{background:transparent; color:var(--mint-50); border-color:rgba(245,250,248,0.35); cursor:pointer;}
   .crop-actions .primary-btn{background:var(--mint-400); color:var(--mint-900); cursor:pointer;}
   .proto-toast{position:absolute; left:20px; right:20px; bottom:100px; z-index:30;}
+  /* Aceptación de los términos (PL-016, docs/pl-016-plan.md). Casilla nueva del
+     sistema, solo con tokens existentes: sin marcar, borde --ink-muted (3.35:1,
+     el mínimo de 3:1 de un control); marcada, relleno del primario con la
+     palomita en blanco. 20px con el radio de 8 de `Radii`. La fila ENTERA es el
+     área táctil (accessibilityRole="checkbox", accessibilityState.checked) y
+     los dos enlaces son hermanos con su propio accessibilityRole="link": tocar
+     un enlace abre el documento y NO marca la casilla. */
+  .legal-check{width:100%; display:flex; align-items:flex-start; gap:11px; text-align:left; margin-top:22px; cursor:pointer;}
+  .check-box{width:20px; height:20px; border-radius:8px; border:1.5px solid var(--ink-muted); background:var(--card); flex-shrink:0; display:flex; align-items:center; justify-content:center; margin-top:-1px;}
+  .check-box.is-checked{background:var(--brick); border-color:var(--brick);}
+  .legal-check-text{font-size:12.5px; line-height:1.5; color:var(--ink-soft);}
+  .legal-link{color:var(--brick); font-weight:600; text-decoration:underline; text-underline-offset:2px;}
+  .legal-summary{width:100%; text-align:left; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:6px;}
+  .legal-summary-title{font-size:12.5px; font-weight:600; color:var(--ink); margin-bottom:8px;}
+  .legal-summary ul{margin:0; padding-left:18px;}
+  .legal-summary li{font-size:12.5px; line-height:1.5; color:var(--ink-soft); margin-bottom:4px;}
+  .legal-version{width:100%; text-align:left; font-size:11px; line-height:1.5; color:var(--ink-soft); margin-top:2px;}
+  .text-btn{display:block; width:100%; background:none; border:none; padding:14px 0; font-size:13.5px; font-weight:600; color:var(--ink-soft); text-align:center; font-family:inherit;}
 </style>
 </head>
 <body>
@@ -3406,7 +3430,35 @@
           <button class="primary-btn">Enviar código de verificación</button>
 
           <div class="auth-link">¿Ya tienes cuenta? <b>Inicia sesión</b></div>
-          <div class="auth-terms">Al continuar aceptas los Términos de uso y el Aviso de privacidad de RLVO.</div>
+          <!-- PL-016: aquí YA NO se acepta nada (la aceptación pasó a "Completar
+               perfil", donde ya hay sesión), así que "Al continuar aceptas…" dejó de
+               ser cierto. Quedan los dos enlaces, que abren la versión vigente de
+               cada documento (PL-007 para esta pantalla). -->
+          <div class="auth-terms">Consulta los <span class="legal-link">Términos de uso</span> y el <span class="legal-link">Aviso de privacidad</span> de RLVO.</div>
+
+          <!-- Errores de Auth de ESTE frame (traducidos por código; nunca el
+               mensaje crudo del servidor). Cualquier otro código: "Algo salió mal. Inténtalo de nuevo." -->
+          <div style="width:100%; text-align:left; margin:28px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): correo mal escrito
+            </div>
+            <button class="primary-btn">Enviar código de verificación</button>
+            <div class="auth-error">Revisa que el correo esté bien escrito.</div>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): demasiados intentos
+            </div>
+            <button class="primary-btn">Enviar código de verificación</button>
+            <div class="auth-error">Hiciste demasiados intentos. Espera unos minutos y vuelve a intentarlo.</div>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): sin conexión
+            </div>
+            <button class="primary-btn">Enviar código de verificación</button>
+            <div class="auth-error">No hay conexión. Revisa tu internet e inténtalo de nuevo.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -3455,7 +3507,11 @@
           <button class="primary-btn">Enviar código de verificación</button>
 
           <div class="auth-link">¿Ya tienes cuenta? <b>Inicia sesión</b></div>
-          <div class="auth-terms">Al continuar aceptas los Términos de uso y el Aviso de privacidad de RLVO.</div>
+          <!-- PL-016: aquí YA NO se acepta nada (la aceptación pasó a "Completar
+               perfil", donde ya hay sesión), así que "Al continuar aceptas…" dejó de
+               ser cierto. Quedan los dos enlaces, que abren la versión vigente de
+               cada documento (PL-007 para esta pantalla). -->
+          <div class="auth-terms">Consulta los <span class="legal-link">Términos de uso</span> y el <span class="legal-link">Aviso de privacidad</span> de RLVO.</div>
 
           <!-- El OTRO rechazo del mismo hook (20260929000474): el correo es de
                una cuenta que se eliminó estando suspendida. Mismo lugar, mismo
@@ -5207,6 +5263,30 @@
 
           <div class="auth-link"><b>¿Olvidaste tu contraseña?</b></div>
           <div class="auth-link">¿No tienes cuenta? <b>Verifica tu correo institucional para crear una.</b></div>
+
+          <!-- Errores de Auth de ESTE frame (traducidos por código; nunca el
+               mensaje crudo del servidor). Cualquier otro código: "Algo salió mal. Inténtalo de nuevo." -->
+          <div style="width:100%; text-align:left; margin:28px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): correo o contraseña incorrectos
+            </div>
+            <button class="primary-btn">Iniciar sesión</button>
+            <div class="auth-error">El correo o la contraseña no son correctos.</div>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): demasiados intentos
+            </div>
+            <button class="primary-btn">Iniciar sesión</button>
+            <div class="auth-error">Hiciste demasiados intentos. Espera unos minutos y vuelve a intentarlo.</div>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): sin conexión
+            </div>
+            <button class="primary-btn">Iniciar sesión</button>
+            <div class="auth-error">No hay conexión. Revisa tu internet e inténtalo de nuevo.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -5276,6 +5356,23 @@
           <button class="primary-btn">Enviar código</button>
 
           <div class="auth-link"><b>Volver a iniciar sesión</b></div>
+
+          <!-- Errores de Auth de ESTE frame (traducidos por código; nunca el
+               mensaje crudo del servidor). Cualquier otro código: "Algo salió mal. Inténtalo de nuevo." -->
+          <div style="width:100%; text-align:left; margin:28px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): demasiados intentos
+            </div>
+            <button class="primary-btn">Enviar código</button>
+            <div class="auth-error">Hiciste demasiados intentos. Espera unos minutos y vuelve a intentarlo.</div>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): sin conexión
+            </div>
+            <button class="primary-btn">Enviar código</button>
+            <div class="auth-error">No hay conexión. Revisa tu internet e inténtalo de nuevo.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -5313,6 +5410,23 @@
           <button class="primary-btn">Verificar</button>
 
           <div class="auth-link">¿No llegó el código? <b>Reenviar</b></div>
+
+          <!-- Errores de Auth de ESTE frame (traducidos por código; nunca el
+               mensaje crudo del servidor). Cualquier otro código: "Algo salió mal. Inténtalo de nuevo." -->
+          <div style="width:100%; text-align:left; margin:28px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): código vencido o incorrecto
+            </div>
+            <button class="primary-btn">Verificar</button>
+            <div class="auth-error">El código no es válido o ya venció. Pide uno nuevo.</div>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): demasiados intentos
+            </div>
+            <button class="primary-btn">Verificar</button>
+            <div class="auth-error">Hiciste demasiados intentos. Espera unos minutos y vuelve a intentarlo.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -5351,6 +5465,30 @@
           <button class="primary-btn" style="margin-top:28px;">Guardar contraseña</button>
 
           <div class="auth-link"><b>Volver a iniciar sesión</b></div>
+
+          <!-- Errores de Auth de ESTE frame (traducidos por código; nunca el
+               mensaje crudo del servidor). Cualquier otro código: "Algo salió mal. Inténtalo de nuevo." -->
+          <div style="width:100%; text-align:left; margin:28px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): misma contraseña que la anterior
+            </div>
+            <button class="primary-btn">Guardar contraseña</button>
+            <div class="auth-error">La nueva contraseña debe ser distinta a la anterior.</div>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): contraseña débil
+            </div>
+            <button class="primary-btn">Guardar contraseña</button>
+            <div class="auth-error">La contraseña debe tener al menos 8 caracteres.</div>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): sin conexión
+            </div>
+            <button class="primary-btn">Guardar contraseña</button>
+            <div class="auth-error">No hay conexión. Revisa tu internet e inténtalo de nuevo.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -6873,6 +7011,23 @@
           <button class="primary-btn">Verificar</button>
 
           <div class="auth-link">¿No llegó el código? <b>Reenviar</b></div>
+
+          <!-- Errores de Auth de ESTE frame (traducidos por código; nunca el
+               mensaje crudo del servidor). Cualquier otro código: "Algo salió mal. Inténtalo de nuevo." -->
+          <div style="width:100%; text-align:left; margin:28px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): código vencido o incorrecto
+            </div>
+            <button class="primary-btn">Verificar</button>
+            <div class="auth-error">El código no es válido o ya venció. Pide uno nuevo.</div>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): demasiados intentos
+            </div>
+            <button class="primary-btn">Verificar</button>
+            <div class="auth-error">Hiciste demasiados intentos. Espera unos minutos y vuelve a intentarlo.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -7001,7 +7156,45 @@
           </div>
           <div class="auth-terms" style="margin-top:6px;">Usa al menos 8 caracteres.</div>
 
-          <button class="primary-btn" style="margin-top:28px;">Continuar</button>
+          <!-- PL-016: la casilla va al final del formulario, justo antes de
+               "Continuar", y es lo último que se hace. "Continuar" sigue
+               deshabilitado mientras no esté marcada (además de las reglas de
+               siempre). Al tocar "Continuar" el servidor registra, en la misma
+               acción que guarda el perfil, la aceptación de la versión vigente de
+               los Términos y la presentación de la del Aviso (dos registros: leer
+               el Aviso NO es consentir ningún tratamiento). Los enlaces abren la
+               versión exacta que se está aceptando. -->
+          <div class="legal-check" role="checkbox" aria-checked="true"><span class="check-box is-checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+
+          <button class="primary-btn" style="margin-top:22px;">Continuar</button>
+
+          <!-- Variantes PL-016 de ESTE frame. "Sin marcar": Continuar apagado.
+               "Error al registrar": el perfil ya se guardó pero la aceptación no
+               llegó (red); copy persistente, la casilla sigue marcada y
+               "Continuar" reintenta solo la aceptación (es idempotente).
+               "Ocupado": mismo .is-busy de siempre. -->
+          <div style="width:100%; text-align:left; margin:28px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): casilla sin marcar
+            </div>
+            <div class="legal-check" role="checkbox" aria-checked="false"><span class="check-box"></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+            <button class="primary-btn disabled" style="margin-top:22px;">Continuar</button>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): error al registrar la aceptación
+            </div>
+            <div class="legal-check" role="checkbox" aria-checked="true"><span class="check-box is-checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+            <div class="notice" style="margin:16px 0 0;"><div class="notice-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg></div><div class="notice-text">No pudimos registrar tu aceptación. Revisa tu conexión e inténtalo de nuevo.</div></div>
+            <button class="primary-btn" style="margin-top:16px;">Continuar</button>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): guardando
+            </div>
+            <div class="legal-check" role="checkbox" aria-checked="true"><span class="check-box is-checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+            <button class="primary-btn is-busy" style="margin-top:22px;">Guardando<span class="splash-dots"><span class="splash-dot"></span><span class="splash-dot"></span><span class="splash-dot"></span></span></button>
+          </div>
 
           <!-- Variante de ESTE frame, no una pantalla aparte: la cuenta no tiene
                universidad asignada. No se alcanza por el registro normal —el Auth
@@ -7037,6 +7230,23 @@
             </div>
             <button class="primary-btn disabled">Continuar</button>
             <div class="auth-link">¿Es otro correo? <b>Usar otro correo</b></div>
+          </div>
+
+          <!-- Errores de Auth de ESTE frame (traducidos por código; nunca el
+               mensaje crudo del servidor). Cualquier otro código: "Algo salió mal. Inténtalo de nuevo." -->
+          <div style="width:100%; text-align:left; margin:28px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): error al guardar
+            </div>
+            <button class="primary-btn">Continuar</button>
+            <div class="auth-error">Algo salió mal. Inténtalo de nuevo.</div>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): sin conexión
+            </div>
+            <button class="primary-btn">Continuar</button>
+            <div class="auth-error">No hay conexión. Revisa tu internet e inténtalo de nuevo.</div>
           </div>
         </div>
       </div>
@@ -7100,7 +7310,9 @@
           </div>
           <div class="auth-terms" style="margin-top:6px;">Usa al menos 8 caracteres.</div>
 
-          <button class="primary-btn disabled" style="margin-top:28px;">Continuar</button>
+          <div class="legal-check" role="checkbox" aria-checked="false"><span class="check-box"></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+
+          <button class="primary-btn disabled" style="margin-top:22px;">Continuar</button>
         </div>
       </div>
     </div>
@@ -7157,7 +7369,9 @@
           </div>
           <div class="auth-terms" style="margin-top:6px;">Usa al menos 8 caracteres.</div>
 
-          <button class="primary-btn" style="margin-top:28px;">Continuar</button>
+          <div class="legal-check" role="checkbox" aria-checked="true"><span class="check-box is-checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+
+          <button class="primary-btn" style="margin-top:22px;">Continuar</button>
         </div>
 
         <!-- .modal-backdrop reusado con align-items:flex-end — ancla la tarjeta
@@ -7205,6 +7419,105 @@
                 <div class="radio-circle"></div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-block" data-cat="onboarding">
+    <div class="phone-label">Términos actualizados</div>
+    <div class="device">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span>9:41</span>
+        <div class="icons">
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="0.5" fill="#183D39"/><rect x="4.5" y="5" width="3" height="6" rx="0.5" fill="#183D39"/><rect x="9" y="3" width="3" height="8" rx="0.5" fill="#183D39"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#183D39"/></svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="none"><path d="M12 3C7 3 3.5 5 1 7.5L12 15L23 7.5C20.5 5 17 3 12 3Z" fill="#183D39"/></svg>
+          <svg width="22" height="11" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="2.5" stroke="#183D39" stroke-width="1"/><rect x="2.5" y="2.5" width="16" height="7" rx="1.3" fill="#183D39"/><rect x="22" y="4" width="1.6" height="4" rx="0.8" fill="#183D39"/></svg>
+        </div>
+      </div>
+      <!-- PL-016. Pantalla completa que ve, al abrir la app, quien tiene sesión
+           pero NO aceptó la versión vigente de los Términos: aceptó una
+           anterior, o la cuenta es previa a PL-016 (variante de abajo). También
+           la abre cualquier acción que exige aceptación (publicar, fotos, foto
+           de perfil, teléfono, carrera, reseñar, contactar por WhatsApp,
+           reactivar, editar o marcar vendida), y al aceptar se vuelve a esa
+           acción.
+           "Ahora no" deja seguir explorando (D8-C, preliminar): cerrar aquí no
+           abre ningún hueco, porque el candado de esas acciones es de la base.
+           Lo mismo vale para pausar una publicación, cambiar de campus,
+           guardar favoritos, reportar, bloquear y eliminar la cuenta, que NO
+           exigen aceptar.
+           El resumen lo redacta el abogado por versión (PL-008); el de abajo es
+           un marcador. La línea de versión dice qué versión exacta se acepta, y
+           los enlaces abren ESA versión, no "la más reciente".
+           Mismo cascarón de auth (.auth-body, .auth-logo), sin tokens nuevos. -->
+      <div class="screen">
+        <div class="auth-body" style="padding-bottom:40px;">
+          <div class="auth-logo"><img src="rlvo-final-brand/rlvo-isotipo-menta.svg" alt="RLVO" width="38" height="38"></div>
+          <div class="auth-headline">Actualizamos nuestros términos</div>
+          <div class="auth-sub" style="margin-bottom:20px;">Para seguir publicando, contactando vendedores y calificando, revisa y acepta la nueva versión.</div>
+
+          <div class="legal-summary">
+            <div class="legal-summary-title">Qué cambió</div>
+            <ul>
+              <li>[Resumen del cambio 1: lo redacta el abogado para cada versión.]</li>
+              <li>[Resumen del cambio 2.]</li>
+            </ul>
+          </div>
+          <div class="legal-version">Términos de uso, versión del 26 de octubre de 2026 · Aviso de privacidad, versión del 26 de octubre de 2026</div>
+
+          <div class="legal-check" role="checkbox" aria-checked="true"><span class="check-box is-checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+
+          <button class="primary-btn" style="margin-top:22px;">Aceptar</button>
+          <button class="text-btn">Ahora no</button>
+
+          <!-- Variantes de ESTE frame. "Sin marcar": Aceptar apagado.
+               "Ocupado": .is-busy de siempre. "Error de red": copy persistente,
+               "Aceptar" reintenta (la llamada es idempotente). "Versión vencida":
+               la versión cambió mientras la pantalla estaba abierta y el servidor
+               rechazó la anterior; la pantalla se recarga con la nueva y la
+               casilla se DESMARCA, porque lo aceptado tiene que ser lo mostrado.
+               "Cuenta previa": una cuenta sin ninguna aceptación registrada
+               (anterior a PL-016) ve el mismo frame con otro título y sin
+               "Qué cambió". -->
+          <div style="width:100%; text-align:left; margin:18px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): casilla sin marcar
+            </div>
+            <div class="legal-check" role="checkbox" aria-checked="false"><span class="check-box"></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+            <button class="primary-btn disabled" style="margin-top:22px;">Aceptar</button>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): guardando
+            </div>
+            <div class="legal-check" role="checkbox" aria-checked="true"><span class="check-box is-checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+            <button class="primary-btn is-busy" style="margin-top:22px;">Guardando<span class="splash-dots"><span class="splash-dot"></span><span class="splash-dot"></span><span class="splash-dot"></span></span></button>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): error de red
+            </div>
+            <div class="legal-check" role="checkbox" aria-checked="true"><span class="check-box is-checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+            <div class="notice" style="margin:16px 0 0;"><div class="notice-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg></div><div class="notice-text">No pudimos registrar tu aceptación. Revisa tu conexión e inténtalo de nuevo.</div></div>
+            <button class="primary-btn" style="margin-top:16px;">Aceptar</button>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): versión vencida
+            </div>
+            <div class="notice" style="margin:0;"><div class="notice-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--paper)" stroke-width="3" stroke-linecap="round"><path d="M12 6v8M12 17.5v.5"/></svg></div><div class="notice-text">Los términos se actualizaron mientras los revisabas. Revisa la versión más reciente y vuelve a aceptarla.</div></div>
+            <div class="legal-check" role="checkbox" aria-checked="false"><span class="check-box"></span><span class="legal-check-text">Acepto los <span class="legal-link">Términos de uso</span> y leí el <span class="legal-link">Aviso de privacidad</span>.</span></div>
+            <button class="primary-btn disabled" style="margin-top:16px;">Aceptar</button>
+          </div>
+          <div style="width:100%; text-align:left; margin:22px 0 0; padding-top:14px; border-top:1.5px dashed var(--line);">
+            <div style="font-size:10px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:12px;">
+              Variante (doc, no es parte del flujo): cuenta previa (sin ninguna aceptación)
+            </div>
+            <div class="auth-headline" style="font-size:20px; text-align:left;">Acepta los términos de RLVO</div>
+            <div class="auth-sub" style="max-width:none; text-align:left; margin-bottom:0;">Para seguir publicando, contactando vendedores y calificando, revisa y acepta los Términos de uso.</div>
           </div>
         </div>
       </div>

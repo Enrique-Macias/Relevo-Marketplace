@@ -17,6 +17,7 @@ import { Field } from '@/components/Field';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Colors, Typography } from '@/constants/theme';
+import { mensajeErrorAuth } from '@/lib/errores-auth';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 
@@ -51,10 +52,9 @@ export default function NuevaPasswordScreen() {
     const { error: e } = await supabase.auth.updateUser({ password });
     if (e) {
       setGuardando(false);
-      // El caso esperable es teclear la contraseña ACTUAL: GoTrue responde "New
-      // password should be different from the old password". Se muestra tal cual,
-      // como en el resto de las pantallas de auth.
-      setError(e.message);
+      // El caso esperable es teclear la contraseña ACTUAL: GoTrue responde con
+      // `same_password`, que `mensajeErrorAuth()` traduce (variante del frame).
+      setError(mensajeErrorAuth(e));
       return;
     }
 
